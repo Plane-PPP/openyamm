@@ -250,6 +250,8 @@ public:
     static SpeechId resolveIdentifyMonsterSpeech(const Character &character, int monsterLevel);
     static CombatDamageType parseCombatDamageType(const std::string &value);
     static CombatDamageType spellCombatDamageType(uint32_t spellId, const SpellTable *pSpellTable);
+    static int minotaurDamageResistancePercent(const Character &character);
+    static int applyMinotaurPhysicalDamageResistance(const Character &character, int damage);
     static int resolveCharacterIncomingDamage(
         const Character &character,
         const ItemTable *pItemTable,

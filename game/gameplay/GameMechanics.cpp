@@ -29,6 +29,10 @@ constexpr int OeMinimumMeleeRecoveryTicks = 30;
 constexpr int OeMinimumRangedRecoveryTicks = 5;
 constexpr uint32_t WandAttackSkillLevel = 8;
 constexpr uint32_t Mm7WetsuitItemId = 1406;
+constexpr int MinotaurBaseDamageResistancePercent = 5;
+constexpr int MinotaurDamageResistanceLevelInterval = 5;
+constexpr int MinotaurLordDamageResistanceBonusPercent = 7;
+constexpr int MinotaurMaximumDamageResistancePercent = 30;
 
 constexpr int ParameterBonusThresholds[29] = {
     500, 400, 350, 300, 275, 250, 225, 200, 175, 150, 125, 100, 75, 50, 40,
@@ -3014,6 +3018,41 @@ CombatDamageType GameMechanics::spellCombatDamageType(uint32_t spellId, const Sp
     return parseCombatDamageType(pSpellEntry->schoolName);
 }
 
+int GameMechanics::minotaurDamageResistancePercent(const Character &character)
+{
+    const std::string className = canonicalClassName(character.className);
+
+    if (className != "Minotaur" && className != "MinotaurLord")
+    {
+        return 0;
+    }
+
+    const int promotionBonus = className == "MinotaurLord" ? MinotaurLordDamageResistanceBonusPercent : 0;
+    const uint32_t uncappedLevelBonus = character.level / MinotaurDamageResistanceLevelInterval;
+    const int levelBonus = static_cast<int>(std::min(
+        uncappedLevelBonus,
+        static_cast<uint32_t>(MinotaurMaximumDamageResistancePercent)));
+    return std::min(
+        MinotaurMaximumDamageResistancePercent,
+        MinotaurBaseDamageResistancePercent + levelBonus + promotionBonus);
+}
+
+int GameMechanics::applyMinotaurPhysicalDamageResistance(const Character &character, int damage)
+{
+    const int clampedDamage = std::max(0, damage);
+    const int damageResistancePercent = minotaurDamageResistancePercent(character);
+
+    if (clampedDamage == 0 || damageResistancePercent == 0)
+    {
+        return clampedDamage;
+    }
+
+    const int remainingDamagePercent = 100 - damageResistancePercent;
+    const int64_t reducedDamage =
+        static_cast<int64_t>(clampedDamage) * static_cast<int64_t>(remainingDamagePercent) / 100;
+    return static_cast<int>(reducedDamage);
+}
+
 int GameMechanics::resolveCharacterIncomingDamage(
     const Character &character,
     const ItemTable *pItemTable,
@@ -3103,6 +3142,8 @@ int GameMechanics::resolveCharacterIncomingDamage(
         {
             resolvedDamage = (resolvedDamage * 2) / 3;
         }
+
+        resolvedDamage = applyMinotaurPhysicalDamageResistance(character, resolvedDamage);
     }
 
     return std::max(0, resolvedDamage);

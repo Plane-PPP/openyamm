@@ -52,6 +52,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <random>
 #include <set>
@@ -3648,6 +3649,171 @@ TEST_CASE("energy damage does not use earth resistance or immunity")
             OpenYAMM::Game::CombatDamageType::Energy,
             rng),
         137);
+}
+
+TEST_CASE("Minotaur damage resistance percentage scales with level and promotion")
+{
+    OpenYAMM::Game::Character character = {};
+    character.className = "Minotaur";
+
+    const std::array<std::pair<uint32_t, int>, 3> minotaurCases = {{
+        {1, 5},
+        {20, 9},
+        {50, 15},
+    }};
+
+    for (const auto &[level, expectedPercent] : minotaurCases)
+    {
+        character.level = level;
+        CHECK_EQ(
+            OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(character),
+            expectedPercent);
+    }
+
+    character.className = "MinotaurLord";
+    const std::array<std::pair<uint32_t, int>, 4> minotaurLordCases = {{
+        {20, 16},
+        {50, 22},
+        {90, 30},
+        {100, 30},
+    }};
+
+    for (const auto &[level, expectedPercent] : minotaurLordCases)
+    {
+        character.level = level;
+        CHECK_EQ(
+            OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(character),
+            expectedPercent);
+    }
+
+    for (const char *pClassName : {"Knight", "Troll", "DarkElf"})
+    {
+        character.className = pClassName;
+        character.level = 100;
+        CHECK_EQ(OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(character), 0);
+    }
+}
+
+TEST_CASE("Minotaur physical damage resistance uses deterministic truncating percentage reduction")
+{
+    OpenYAMM::Game::Character character = {};
+    character.className = "Minotaur";
+    character.level = 75;
+
+    CHECK_EQ(OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(character), 20);
+    CHECK_EQ(OpenYAMM::Game::GameMechanics::applyMinotaurPhysicalDamageResistance(character, 100), 80);
+    CHECK_EQ(OpenYAMM::Game::GameMechanics::applyMinotaurPhysicalDamageResistance(character, 0), 0);
+    CHECK_EQ(OpenYAMM::Game::GameMechanics::applyMinotaurPhysicalDamageResistance(character, -10), 0);
+    CHECK_EQ(OpenYAMM::Game::GameMechanics::applyMinotaurPhysicalDamageResistance(character, 1), 0);
+    CHECK(
+        OpenYAMM::Game::GameMechanics::applyMinotaurPhysicalDamageResistance(
+            character,
+            std::numeric_limits<int>::max())
+        >= 0);
+    CHECK_EQ(
+        OpenYAMM::Game::GameMechanics::applyMinotaurPhysicalDamageResistance(
+            character,
+            std::numeric_limits<int>::max()),
+        static_cast<int>(static_cast<int64_t>(std::numeric_limits<int>::max()) * 80 / 100));
+
+    character.level = 20;
+    const int baseClassPercent =
+        OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(character);
+    character.className = "MinotaurLord";
+    CHECK_EQ(
+        OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(character),
+        baseClassPercent + 7);
+
+    OpenYAMM::Game::Character higherLevelMinotaur = character;
+    character.className = "Minotaur";
+    character.level = 10;
+    higherLevelMinotaur.className = "Minotaur";
+    higherLevelMinotaur.level = 50;
+    CHECK(
+        OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(character)
+        < OpenYAMM::Game::GameMechanics::minotaurDamageResistancePercent(higherLevelMinotaur));
+}
+
+TEST_CASE("Minotaur damage resistance is connected after existing physical combat mitigation")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Game::Character minotaurLord =
+        makeRegressionPartyMember("Bjarni", "MinotaurLord", "PC09-01", 9);
+    minotaurLord.level = 50;
+    minotaurLord.equipment.armor = findFirstItemIdBySkillGroup(gameData.itemTable, "Plate");
+    REQUIRE(minotaurLord.equipment.armor != 0);
+    minotaurLord.skills["PlateArmor"] = {
+        "PlateArmor",
+        10,
+        OpenYAMM::Game::SkillMastery::Master,
+    };
+
+    std::mt19937 rng(17);
+    CHECK_EQ(
+        OpenYAMM::Game::GameMechanics::resolveCharacterIncomingDamage(
+            minotaurLord,
+            &gameData.itemTable,
+            &gameData.standardItemEnchantTable,
+            &gameData.specialItemEnchantTable,
+            200,
+            OpenYAMM::Game::CombatDamageType::Physical,
+            rng),
+        78);
+
+    for (OpenYAMM::Game::CombatDamageType damageType : {
+             OpenYAMM::Game::CombatDamageType::Fire,
+             OpenYAMM::Game::CombatDamageType::Water,
+             OpenYAMM::Game::CombatDamageType::Air,
+             OpenYAMM::Game::CombatDamageType::Earth,
+             OpenYAMM::Game::CombatDamageType::Spirit,
+             OpenYAMM::Game::CombatDamageType::Mind,
+             OpenYAMM::Game::CombatDamageType::Body,
+             OpenYAMM::Game::CombatDamageType::Dark,
+             OpenYAMM::Game::CombatDamageType::Light,
+             OpenYAMM::Game::CombatDamageType::Energy,
+             OpenYAMM::Game::CombatDamageType::Irresistible,
+         })
+    {
+        rng.seed(17);
+        CHECK_EQ(
+            OpenYAMM::Game::GameMechanics::resolveCharacterIncomingDamage(
+                minotaurLord,
+                nullptr,
+                nullptr,
+                nullptr,
+                100,
+                damageType,
+                rng),
+            100);
+    }
+
+    OpenYAMM::Game::Character knight = minotaurLord;
+    knight.className = "Knight";
+    knight.equipment.armor = 0;
+    knight.skills.clear();
+    rng.seed(17);
+    CHECK_EQ(
+        OpenYAMM::Game::GameMechanics::resolveCharacterIncomingDamage(
+            knight,
+            nullptr,
+            nullptr,
+            nullptr,
+            100,
+            OpenYAMM::Game::CombatDamageType::Physical,
+            rng),
+        100);
+
+    rng.seed(17);
+    CHECK_EQ(
+        OpenYAMM::Game::GameMechanics::resolveCharacterIncomingDamage(
+            minotaurLord,
+            nullptr,
+            nullptr,
+            nullptr,
+            0,
+            OpenYAMM::Game::CombatDamageType::Physical,
+            rng),
+        0);
 }
 
 TEST_CASE("monster physical attack damage roll follows OE dice and bonus formula")
