@@ -45,6 +45,18 @@ file(COPY
     DESTINATION "${OPENYAMM_RELEASE_STAGE_DIR}"
 )
 
+# Include mod documentation when present in the source checkout. Other package workflows may use sparse checkouts.
+foreach(document README.md CHANGELOG.md BUILD-NOTES.md BUILD-REVISION.txt)
+    if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../${document}")
+        file(COPY "${CMAKE_CURRENT_LIST_DIR}/../${document}" DESTINATION "${OPENYAMM_RELEASE_STAGE_DIR}")
+    endif()
+endforeach()
+if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../docs/MINOTAUR_REBALANCE.md")
+    file(MAKE_DIRECTORY "${OPENYAMM_RELEASE_STAGE_DIR}/docs")
+    file(COPY "${CMAKE_CURRENT_LIST_DIR}/../docs/MINOTAUR_REBALANCE.md"
+        "${CMAKE_CURRENT_LIST_DIR}/../docs/ROADMAP.md" DESTINATION "${OPENYAMM_RELEASE_STAGE_DIR}/docs")
+endif()
+
 set(openyammReleaseRuntimeDependencyDirs "")
 get_filename_component(openyammReleaseExecutableDir "${OPENYAMM_RELEASE_EXECUTABLE}" DIRECTORY)
 list(APPEND openyammReleaseRuntimeDependencyDirs "${openyammReleaseExecutableDir}")

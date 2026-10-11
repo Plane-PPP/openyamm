@@ -20,6 +20,8 @@ add_executable(openyamm_unit_tests
     GameplayBolsterRuntimeTests.cpp
     GameplaySaveLoadUiSupportTests.cpp
     GameplayRuleRegressionTests.cpp
+    AxeRebalanceTests.cpp
+    AxeActionTestStubs.cpp
     GameInputSystemTests.cpp
     GlUniformCacheTests.cpp
     AwardRuntimeTests.cpp
@@ -140,6 +142,7 @@ add_executable(openyamm_unit_tests
     ../game/gameplay/LootContainerRuntime.cpp
     ../game/gameplay/GameplayDialogController.cpp
     ../game/gameplay/GameplayCombatController.cpp
+    ../game/gameplay/GameplayActionController.cpp
     ../game/gameplay/GameplaySpeechRules.cpp
     ../game/gameplay/GameplayWorldItemInteraction.cpp
     ../game/gameplay/InteractiveDecorationRules.cpp

@@ -19,6 +19,15 @@ struct MapStatsEntry;
 struct ItemDefinition;
 struct CharacterDollTypeEntry;
 
+// Optional observation of the existing physical damage calculation; never changes its result.
+struct MinotaurDamageObservation
+{
+    int beforePassive = 0;
+    int resistancePercent = 0;
+    int afterPassive = 0;
+    bool passiveReached = false;
+};
+
 struct CharacterSheetValue
 {
     int base = 0;
@@ -96,6 +105,32 @@ struct MonsterDamageResistances
     int physical = 0;
 };
 
+struct AxeAttackObservation
+{
+    bool relevant = false;
+    bool twoHanded = false;
+    int level = 0;
+    SkillMastery mastery = SkillMastery::None;
+    int mightBonus = 0;
+    int armsmasterBonus = 0;
+    int weaponSkillBonus = 0;
+    int enchantmentBonus = 0;
+    int flatBonus = 0;
+    int weaponMin = 0;
+    int weaponMax = 0;
+    int recoveryBefore = 0;
+    int recoveryBonus = 0;
+    int recoveryAfter = 0;
+    int recoveryFinal = 0;
+    int physicalBefore = 0;
+    int damageMultiplier = 1;
+    int physicalAfter = 0;
+    int physicalFinal = 0;
+    int elementalDamage = 0;
+    int targetMultiplier = 1;
+    bool damageResolved = false;
+};
+
 struct CharacterAttackProfile
 {
     bool canMelee = false;
@@ -117,6 +152,7 @@ struct CharacterAttackProfile
     uint8_t rangedProjectileCount = 1;
     int wandSpellId = 0;
     int rangedSpellId = 0;
+    AxeAttackObservation axe;
     float meleeRecoverySeconds = 1.0f;
     float rangedRecoverySeconds = 1.0f;
 };
@@ -137,6 +173,7 @@ struct CharacterAttackResult
     uint8_t projectileCount = 1;
     int spellId = 0;
     CombatDamageType damageType = CombatDamageType::Physical;
+    AxeAttackObservation axe;
     bool criticalDamage = false;
     bool stunTarget = false;
     bool paralyzeTarget = false;
@@ -259,20 +296,26 @@ public:
         const SpecialItemEnchantTable *pSpecialItemEnchantTable,
         int damage,
         CombatDamageType damageType,
-        std::mt19937 &rng);
+        std::mt19937 &rng,
+        MinotaurDamageObservation *pObservation = nullptr);
     static int resolveMonsterIncomingDamage(
         int damage,
         CombatDamageType damageType,
         int resistance,
         int hourOfPowerResistanceBonus,
         std::mt19937 &rng);
+    static int resolveAxeMeleeWeaponDamage(
+        const Character &character, const ItemTable *pItemTable, int damage, CombatDamageType damageType,
+        const ElementalDamageBonuses &additionalDamage, const MonsterDamageResistances &resistances,
+        int hourOfPowerResistanceBonus, std::mt19937 &rng, AxeAttackObservation *pObservation = nullptr);
     static int resolveMonsterIncomingWeaponDamage(
         int damage,
         CombatDamageType damageType,
         const ElementalDamageBonuses &additionalDamage,
         const MonsterDamageResistances &resistances,
         int hourOfPowerResistanceBonus,
-        std::mt19937 &rng);
+        std::mt19937 &rng,
+        int *pPhysicalDamage = nullptr);
     static int rollMonsterAttackDamage(int diceRolls, int diceSides, int damageBonus, std::mt19937 &rng);
     static int resolveShieldedPhysicalProjectileDamage(int damage);
     static bool monsterAttackHitsArmorClass(

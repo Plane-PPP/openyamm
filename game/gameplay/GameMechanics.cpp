@@ -1610,7 +1610,8 @@ float resolveAttackRecoverySeconds(
     const EquippedItems &equippedItems,
     const SpellTable *pSpellTable,
     CharacterAttackMode mode,
-    CharacterAttackTuning attackTuning)
+    CharacterAttackTuning attackTuning,
+    AxeAttackObservation *pObservation = nullptr)
 {
     bool usesBow = mode == CharacterAttackMode::Bow;
     bool usesBlaster = mode == CharacterAttackMode::Blaster;
@@ -1758,6 +1759,21 @@ float resolveAttackRecoverySeconds(
     int recoveryTicks = weaponRecoveryTicks + shieldRecoveryTicks + armorRecoveryTicks
         - playerSpeedRecoveryReduction - weaponSkillRecoveryReduction - armsmasterRecoveryReduction
         - character.attackRecoveryReductionTicks;
+    const int recoveryBeforeAxe = recoveryTicks;
+    int axeRecoveryBonus = 0;
+    if (mode == CharacterAttackMode::Melee && skillMastery(character, "Axe") == SkillMastery::Grandmaster)
+    {
+        const auto oneHandedAxe = [](const ItemDefinition *pItem)
+        {
+            return pItem != nullptr && canonicalSkillName(pItem->skillGroup) == "Axe"
+                && pItem->equipStat == "Weapon";
+        };
+        if (oneHandedAxe(equippedItems.pMainHand) || oneHandedAxe(equippedItems.pOffHand))
+        {
+            axeRecoveryBonus = std::max(0, skillLevel(character, "Axe"));
+            recoveryTicks -= axeRecoveryBonus;
+        }
+    }
     int minimumRecoveryTicks = OeMinimumMeleeRecoveryTicks;
 
     if (mode == CharacterAttackMode::Blaster)
@@ -1771,6 +1787,13 @@ float resolveAttackRecoverySeconds(
         minimumRecoveryTicks = OeMinimumRangedRecoveryTicks;
     }
 
+    if (pObservation != nullptr)
+    {
+        pObservation->recoveryBefore = recoveryBeforeAxe;
+        pObservation->recoveryBonus = axeRecoveryBonus;
+        pObservation->recoveryAfter = recoveryTicks;
+        pObservation->recoveryFinal = std::max(recoveryTicks, minimumRecoveryTicks);
+    }
     return ticksToRecoverySeconds(std::max(recoveryTicks, minimumRecoveryTicks));
 }
 
@@ -1907,18 +1930,6 @@ void applyMeleeWeaponEffects(
         {
             result.paralyzeTarget = true;
             result.skillLevel = std::max<uint32_t>(result.skillLevel, static_cast<uint32_t>(maceLevel));
-        }
-    }
-
-    if (weaponUsesSkill(equippedItems.pMainHand, "Axe"))
-    {
-        const int axeLevel = skillLevel(character, "Axe");
-
-        if (axeLevel > 0 && skillMastery(character, "Axe") >= SkillMastery::Grandmaster
-            && percentRoll(rng, axeLevel))
-        {
-            result.halveTargetArmorClass = true;
-            result.skillLevel = std::max<uint32_t>(result.skillLevel, static_cast<uint32_t>(axeLevel));
         }
     }
 
@@ -2471,12 +2482,19 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         rangedRecoveryMode = CharacterAttackMode::Wand;
     }
 
+    profile.axe.relevant = weaponUsesSkill(equippedItems.pMainHand, "Axe")
+        || weaponUsesSkill(equippedItems.pOffHand, "Axe");
+    profile.axe.twoHanded = weaponUsesSkill(equippedItems.pMainHand, "Axe")
+        && isTwoHandedWeapon(*equippedItems.pMainHand);
+    profile.axe.level = skillLevel(character, "Axe");
+    profile.axe.mastery = skillMastery(character, "Axe");
     profile.meleeRecoverySeconds = resolveAttackRecoverySeconds(
         character,
         equippedItems,
         pSpellTable,
         CharacterAttackMode::Melee,
-        attackTuning);
+        attackTuning,
+        &profile.axe);
     profile.rangedRecoverySeconds = resolveAttackRecoverySeconds(
         character,
         equippedItems,
@@ -2504,6 +2522,15 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
             + character.weaponEnchantmentDamageBonus
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
+
+    profile.axe.mightBonus = meleeMightBonus;
+    profile.axe.armsmasterBonus = resolveArmsmasterDamageBonus(character);
+    profile.axe.weaponSkillBonus = resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning)
+        - profile.axe.armsmasterBonus;
+    profile.axe.enchantmentBonus = character.weaponEnchantmentDamageBonus;
+    profile.axe.flatBonus = character.permanentBonuses.meleeDamage + character.magicalBonuses.meleeDamage;
+    profile.axe.weaponMin = resolveMeleeMinDamageItemBonus(equippedItems);
+    profile.axe.weaponMax = resolveMeleeMaxDamageItemBonus(equippedItems);
 
     if (profile.hasDragonBreath && pDragonAbility != nullptr)
     {
@@ -2612,6 +2639,7 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
         pItemTable,
         pSpellTable,
         attackTuning);
+    result.axe = profile.axe;
     const bool inMeleeRange = targetDistance <= OeCharacterMeleeAttackDistance;
     const bool inRangedRange = targetDistance <= OeCharacterRangedAttackDistance;
     result.targetArmorClass = std::max(0, targetArmorClass);
@@ -3060,8 +3088,15 @@ int GameMechanics::resolveCharacterIncomingDamage(
     const SpecialItemEnchantTable *pSpecialItemEnchantTable,
     int damage,
     CombatDamageType damageType,
-    std::mt19937 &rng)
+    std::mt19937 &rng,
+    MinotaurDamageObservation *pObservation)
 {
+    if (pObservation != nullptr)
+    {
+        *pObservation = {};
+        pObservation->resistancePercent = minotaurDamageResistancePercent(character);
+    }
+
     int resolvedDamage = std::max(0, damage);
 
     if (resolvedDamage <= 0 || damageType == CombatDamageType::Irresistible)
@@ -3143,7 +3178,16 @@ int GameMechanics::resolveCharacterIncomingDamage(
             resolvedDamage = (resolvedDamage * 2) / 3;
         }
 
+        if (pObservation != nullptr)
+        {
+            pObservation->beforePassive = resolvedDamage;
+            pObservation->passiveReached = true;
+        }
         resolvedDamage = applyMinotaurPhysicalDamageResistance(character, resolvedDamage);
+        if (pObservation != nullptr)
+        {
+            pObservation->afterPassive = resolvedDamage;
+        }
     }
 
     return std::max(0, resolvedDamage);
@@ -3185,13 +3229,48 @@ int GameMechanics::resolveMonsterIncomingDamage(
     return std::max(0, resolvedDamage);
 }
 
+int GameMechanics::resolveAxeMeleeWeaponDamage(
+    const Character &character, const ItemTable *pItemTable, int damage, CombatDamageType damageType,
+    const ElementalDamageBonuses &additionalDamage, const MonsterDamageResistances &resistances,
+    int hourOfPowerResistanceBonus, std::mt19937 &rng, AxeAttackObservation *pObservation)
+{
+    // The melee controller calls this once, after target-specific bonuses and before resistance.
+    // The rolled aggregate includes elemental damage, which must be excluded from the GM multiplier.
+    const EquippedItems equippedItems = resolveEquippedItems(character, pItemTable);
+    const bool doublesPhysical = damageType == CombatDamageType::Physical
+        && weaponUsesSkill(equippedItems.pMainHand, "Axe")
+        && isTwoHandedWeapon(*equippedItems.pMainHand)
+        && skillMastery(character, "Axe") == SkillMastery::Grandmaster;
+    const int physicalBefore = damageType == CombatDamageType::Physical
+        ? std::max(0, damage - additionalDamage.total()) : 0;
+    const int multiplier = doublesPhysical ? 2 : 1;
+    const int physicalAfter = static_cast<int>(std::min<int64_t>(
+        int64_t(physicalBefore) * multiplier, std::numeric_limits<int>::max() - additionalDamage.total()));
+    const int totalDamage = doublesPhysical ? physicalAfter + additionalDamage.total() : damage;
+    int physicalFinal = 0;
+    const int result = resolveMonsterIncomingWeaponDamage(
+        totalDamage, damageType, additionalDamage, resistances, hourOfPowerResistanceBonus, rng,
+        pObservation != nullptr ? &physicalFinal : nullptr);
+    if (pObservation != nullptr)
+    {
+        pObservation->physicalBefore = physicalBefore;
+        pObservation->damageMultiplier = multiplier;
+        pObservation->physicalAfter = physicalAfter;
+        pObservation->physicalFinal = physicalFinal;
+        pObservation->elementalDamage = additionalDamage.total();
+        pObservation->damageResolved = true;
+    }
+    return result;
+}
+
 int GameMechanics::resolveMonsterIncomingWeaponDamage(
     int damage,
     CombatDamageType damageType,
     const ElementalDamageBonuses &additionalDamage,
     const MonsterDamageResistances &resistances,
     int hourOfPowerResistanceBonus,
-    std::mt19937 &rng)
+    std::mt19937 &rng,
+    int *pPhysicalDamage)
 {
     const auto resistanceForType = [&resistances](CombatDamageType type)
     {
@@ -3228,6 +3307,10 @@ int GameMechanics::resolveMonsterIncomingWeaponDamage(
     int resolvedDamage = resolveComponent(
         std::max(0, damage - additionalDamage.total()),
         damageType);
+    if (pPhysicalDamage != nullptr)
+    {
+        *pPhysicalDamage = damageType == CombatDamageType::Physical ? resolvedDamage : 0;
+    }
     resolvedDamage += resolveComponent(additionalDamage.fire, CombatDamageType::Fire);
     resolvedDamage += resolveComponent(additionalDamage.air, CombatDamageType::Air);
     resolvedDamage += resolveComponent(additionalDamage.water, CombatDamageType::Water);
@@ -3771,7 +3854,8 @@ std::optional<CharacterEquipPlan> GameMechanics::resolveCharacterEquipPlan(
         const bool canUseOffHand =
             !hasTwoHandedMain
             && ((skillName == "Dagger" && skillMastery(character, "Dagger") >= SkillMastery::Expert)
-                || (skillName == "Sword" && skillMastery(character, "Sword") >= SkillMastery::Master));
+                || (skillName == "Sword" && skillMastery(character, "Sword") >= SkillMastery::Master)
+                || (skillName == "Axe" && skillMastery(character, "Axe") >= SkillMastery::Master));
 
         if (preferOffHand && canUseOffHand)
         {

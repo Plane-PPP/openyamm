@@ -11,6 +11,7 @@
 #include "game/gameplay/GameplayCombatController.h"
 #include "game/gameplay/CorpseLootRuntime.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayWorldItemInteraction.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/gameplay/ReputationRuntime.h"
@@ -10325,4 +10326,97 @@ TEST_CASE("item class restrictions accept role-only base classes and promotions"
     explicitClass.className = "Knight";
     explicitClass.role = "Paladin";
     CHECK_FALSE(OpenYAMM::Game::ItemRuntime::characterMeetsClassRestriction(explicitClass, broderickItem));
+}
+
+TEST_CASE("minotaur damage observation preserves damage and random generator state")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    using namespace OpenYAMM::Game;
+    Character member = makeRegressionPartyMember("Bjarni", "MinotaurLord", "PC09-01", 9);
+    member.level = 50;
+    member.equipment.armor = findFirstItemIdBySkillGroup(gameData.itemTable, "Plate");
+    REQUIRE(member.equipment.armor != 0);
+    member.skills["PlateArmor"] = {"PlateArmor", 10, SkillMastery::Master};
+    for (int damage : {0, 1, 17, 200})
+    {
+        for (CombatDamageType type : {CombatDamageType::Physical, CombatDamageType::Fire})
+        {
+            for (uint32_t seed = 0; seed < 32; ++seed)
+            {
+                std::mt19937 plainRng(seed);
+                std::mt19937 observedRng(seed);
+                MinotaurDamageObservation observation;
+                const int plain = GameMechanics::resolveCharacterIncomingDamage(
+                    member, &gameData.itemTable, &gameData.standardItemEnchantTable,
+                    &gameData.specialItemEnchantTable, damage, type, plainRng);
+                const int observed = GameMechanics::resolveCharacterIncomingDamage(
+                    member, &gameData.itemTable, &gameData.standardItemEnchantTable,
+                    &gameData.specialItemEnchantTable, damage, type, observedRng, &observation);
+                CHECK_EQ(plain, observed);
+                CHECK(plainRng == observedRng);
+                if (damage > 0 && type == CombatDamageType::Physical)
+                {
+                    CHECK(observation.passiveReached);
+                    CHECK_EQ(observation.resistancePercent, 22);
+                    CHECK_EQ(observation.afterPassive, observed);
+                    CHECK_EQ(observation.afterPassive, observation.beforePassive * 78 / 100);
+                }
+                else
+                {
+                    CHECK_FALSE(observation.passiveReached);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("minotaur damage trace reports actual combat hit without changing HP")
+{
+    using namespace OpenYAMM::Game;
+    const std::filesystem::path log = std::filesystem::temp_directory_path() / "openyamm-minotaur-hit-test.log";
+    int healthWithoutTrace = 0;
+    for (bool enabled : {false, true})
+    {
+        Party party = makeMonsterSpecialAttackTestParty();
+        Character *pMember = party.member(0);
+        REQUIRE(pMember != nullptr);
+        pMember->className = "MinotaurLord";
+        pMember->level = 50;
+        MonsterSpecialAttackTestWorldRuntime world;
+        world.actorInfo = GameplayCombatActorInfo{
+            .actorId = 64,
+            .monsterLevel = 1,
+            .attackBonus = 1000,
+            .displayName = "Diagnostic Striker",
+        };
+        configureGameplayCombatTrace(false, log.string(), false, enabled);
+        GameplayCombatController controller;
+        controller.recordMonsterMeleeImpact(64, 100, 1000, CombatDamageType::Physical,
+            GameplayActorAttackAbility::Attack1);
+        GameplayCombatController::PendingCombatEventContext context{party, &world, nullptr};
+        controller.handleAndClearPendingCombatEvents(context);
+        if (!enabled)
+        {
+            healthWithoutTrace = pMember->health;
+        }
+        else
+        {
+            CHECK_EQ(pMember->health, healthWithoutTrace);
+            CHECK_EQ(pMember->health, 22);
+        }
+    }
+    configureGameplayCombatTrace(false, log.string(), true);
+    std::ifstream input(log);
+    std::string line;
+    REQUIRE(bool(std::getline(input, line)));
+    for (const char *pField : {"minotaur_damage", "member_name=\"Ariel\"", "member_class=\"MinotaurLord\"",
+             "member_level=50", "actor_name=\"Diagnostic Striker\"", "damage_type=physical",
+             "before_passive=100", "passive_percent=22", "passive_prevented=22", "after_passive=78",
+             "final_damage=78", "hp_damage=78"})
+    {
+        CHECK_MESSAGE(line.find(pField) != std::string::npos, line);
+    }
+    CHECK_FALSE(bool(std::getline(input, line)));
+    input.close();
+    std::filesystem::remove(log);
 }

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <iomanip>
 #include <limits>
 #include <random>
 #include <sstream>
@@ -493,7 +494,8 @@ int adjustedIncomingDamageForMember(
     const GameplayCombatController::CombatEvent &event,
     const Character &member,
     size_t memberIndex,
-    bool isPhysicalProjectile)
+    bool isPhysicalProjectile,
+    MinotaurDamageObservation *pObservation = nullptr)
 {
     int damage = event.damage;
 
@@ -516,7 +518,40 @@ int adjustedIncomingDamageForMember(
         context.pRuntime != nullptr ? context.pRuntime->specialItemEnchantTable() : nullptr,
         damage,
         event.damageType,
-        rng);
+        rng,
+        pObservation);
+}
+
+void traceMinotaurDamage(
+    const Character &member,
+    const GameplayCombatController::CombatEvent &event,
+    const std::optional<GameplayCombatActorInfo> &sourceActor,
+    const MinotaurDamageObservation &observation,
+    int finalDamage,
+    int healthBefore,
+    bool applied)
+{
+    if (!gameplayMinotaurDamageTraceEnabled() || event.damageType != CombatDamageType::Physical
+        || observation.resistancePercent == 0)
+    {
+        return;
+    }
+    std::ostringstream out;
+    out << "minotaur_damage"
+        << " member_name=" << std::quoted(member.name)
+        << " member_class=" << std::quoted(member.className)
+        << " member_level=" << member.level;
+    appendCombatEventSummary(out, event);
+    appendActorSummary(out, sourceActor);
+    out << " before_passive=" << observation.beforePassive
+        << " passive_percent=" << observation.resistancePercent
+        << " passive_prevented=" << (observation.beforePassive - observation.afterPassive)
+        << " after_passive=" << observation.afterPassive
+        << " passive_reached=" << boolText(observation.passiveReached)
+        << " final_damage=" << finalDamage
+        << " applied=" << boolText(applied)
+        << " hp_damage=" << std::max(0, healthBefore - member.health);
+    gameplayCombatTraceWrite(out.str());
 }
 
 int parameterBonusForCombat(int value)
@@ -1489,6 +1524,12 @@ void GameplayCombatController::handlePendingCombatEvents(
 
         if (ignorePhysicalDamage)
         {
+            if (gameplayMinotaurDamageTraceEnabled())
+            {
+                MinotaurDamageObservation observation;
+                observation.resistancePercent = GameMechanics::minotaurDamageResistancePercent(*pTargetMember);
+                traceMinotaurDamage(*pTargetMember, event, sourceActor, observation, 0, pTargetMember->health, false);
+            }
             GAMEPLAY_COMBAT_TRACE_BLOCK(
             {
                 std::ostringstream out;
@@ -1549,6 +1590,12 @@ void GameplayCombatController::handlePendingCombatEvents(
                 if (pMember->physicalDamageImmune
                     && event.damageType == CombatDamageType::Physical)
                 {
+                    if (gameplayMinotaurDamageTraceEnabled())
+                    {
+                        MinotaurDamageObservation observation;
+                        observation.resistancePercent = GameMechanics::minotaurDamageResistancePercent(*pMember);
+                        traceMinotaurDamage(*pMember, event, sourceActor, observation, 0, pMember->health, false);
+                    }
                     GAMEPLAY_COMBAT_TRACE_BLOCK(
                     {
                         std::ostringstream out;
@@ -1590,10 +1637,15 @@ void GameplayCombatController::handlePendingCombatEvents(
 
                 specialAttackMembers.push_back(memberIndex);
 
-                const int adjustedDamage =
-                    adjustedIncomingDamageForMember(context, event, *pMember, memberIndex, isPhysicalProjectile);
+                MinotaurDamageObservation observation;
+                const int healthBefore = pMember->health;
+                const int adjustedDamage = adjustedIncomingDamageForMember(
+                    context, event, *pMember, memberIndex, isPhysicalProjectile,
+                    gameplayMinotaurDamageTraceEnabled() ? &observation : nullptr);
                 const bool applied = context.party.applyDamageToMember(memberIndex, adjustedDamage, "", true);
                 damagedParty = applied || damagedParty;
+                traceMinotaurDamage(
+                    *pMember, event, sourceActor, observation, adjustedDamage, healthBefore, applied);
 
                 GAMEPLAY_COMBAT_TRACE_BLOCK(
                 {
@@ -1622,6 +1674,8 @@ void GameplayCombatController::handlePendingCombatEvents(
         }
         else
         {
+            MinotaurDamageObservation observation;
+            const int healthBefore = pTargetMember != nullptr ? pTargetMember->health : 0;
             const int adjustedDamage =
                 pTargetMember != nullptr && targetMemberIndex
                     ? adjustedIncomingDamageForMember(
@@ -1629,7 +1683,8 @@ void GameplayCombatController::handlePendingCombatEvents(
                         event,
                         *pTargetMember,
                         *targetMemberIndex,
-                        isPhysicalProjectile)
+                        isPhysicalProjectile,
+                        gameplayMinotaurDamageTraceEnabled() ? &observation : nullptr)
                     : event.damage;
             const bool evaded =
                 pTargetMember != nullptr && targetMemberIndex
@@ -1681,6 +1736,11 @@ void GameplayCombatController::handlePendingCombatEvents(
 
             if (!evaded)
             {
+                if (pTargetMember != nullptr)
+                {
+                    traceMinotaurDamage(*pTargetMember, event, sourceActor, observation,
+                        adjustedDamage, healthBefore, damagedParty);
+                }
                 GAMEPLAY_COMBAT_TRACE_BLOCK(
                 {
                     std::ostringstream out;

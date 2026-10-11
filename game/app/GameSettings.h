@@ -175,6 +175,8 @@ struct GameSettings
     bool gameplayTraceAppend = true;
     std::string gameplayTraceFile = "logs/gameplay_trace.log";
     bool combatTrace = false;
+    bool minotaurDamageTrace = false;
+    bool axeDamageTrace = false;
     bool combatTraceAppend = true;
     std::string combatTraceFile = "logs/combat_trace.log";
     float hitchThresholdMilliseconds = 8.0f;

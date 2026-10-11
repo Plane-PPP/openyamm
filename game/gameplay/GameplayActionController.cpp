@@ -1,6 +1,7 @@
 #include "game/gameplay/GameplayActionController.h"
 
 #include "game/audio/GameAudioSystem.h"
+#include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayFxService.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/GameplaySpellService.h"
@@ -13,8 +14,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <random>
+#include <sstream>
 
 namespace OpenYAMM::Game
 {
@@ -252,6 +255,7 @@ CharacterAttackResult buildUntargetedMeleeAttack(const CharacterAttackProfile &p
     attack.mode = CharacterAttackMode::Melee;
     attack.canAttack = true;
     attack.hit = false;
+    attack.axe = profile.axe;
     attack.attackBonus = profile.meleeAttackBonus;
     attack.recoverySeconds = profile.meleeRecoverySeconds;
     attack.attackSoundHook = "melee_swing";
@@ -464,30 +468,18 @@ int resolveMeleeAppliedDamage(
     const GameplayActionController::PartyAttackConfig &config,
     const Character &attacker,
     const GameplayActionController::PartyAttackActorFacts &target,
-    const CharacterAttackResult &attack,
+    CharacterAttackResult &attack,
     std::mt19937 &rng)
 {
     int appliedDamage = attack.damage;
 
-    if (config.pMonsterTable == nullptr)
-    {
-        return appliedDamage;
-    }
-
-    const MonsterTable::MonsterStatsEntry *pStats = config.pMonsterTable->findStatsById(target.monsterId);
-
-    if (pStats == nullptr)
-    {
-        return appliedDamage;
-    }
-
-    const int multiplier =
-        ItemEnchantRuntime::characterAttackDamageMultiplierAgainstMonster(
-            attacker,
-            CharacterAttackMode::Melee,
-            config.pItemTable,
-            config.pSpecialItemEnchantTable,
-            pStats->kindFlags);
+    const MonsterTable::MonsterStatsEntry *pStats = config.pMonsterTable != nullptr
+        ? config.pMonsterTable->findStatsById(target.monsterId) : nullptr;
+    const int multiplier = pStats != nullptr
+        ? ItemEnchantRuntime::characterAttackDamageMultiplierAgainstMonster(
+            attacker, CharacterAttackMode::Melee, config.pItemTable, config.pSpecialItemEnchantTable, pStats->kindFlags)
+        : 1;
+    attack.axe.targetMultiplier = multiplier;
     ElementalDamageBonuses additionalDamage = ItemEnchantRuntime::characterAttackElementalDamageBonuses(
         attacker,
         CharacterAttackMode::Melee,
@@ -500,24 +492,37 @@ int resolveMeleeAppliedDamage(
     additionalDamage.light *= multiplier;
     additionalDamage.dark *= multiplier;
 
-    return GameMechanics::resolveMonsterIncomingWeaponDamage(
-        appliedDamage * multiplier,
+    if (pStats == nullptr && !(attack.axe.twoHanded && attack.axe.mastery == SkillMastery::Grandmaster
+        && attack.damageType == CombatDamageType::Physical))
+    {
+        attack.axe.elementalDamage = additionalDamage.total();
+        attack.axe.physicalBefore = attack.damageType == CombatDamageType::Physical
+            ? std::max(0, attack.damage - additionalDamage.total()) : 0;
+        attack.axe.physicalAfter = attack.axe.physicalBefore;
+        attack.axe.physicalFinal = attack.axe.physicalBefore;
+        attack.axe.damageResolved = true;
+        return appliedDamage;
+    }
+
+    return GameMechanics::resolveAxeMeleeWeaponDamage(
+        attacker, config.pItemTable, appliedDamage * multiplier,
         attack.damageType,
         additionalDamage,
         MonsterDamageResistances{
-            .fire = pStats->fireResistance,
-            .air = pStats->airResistance,
-            .water = pStats->waterResistance,
-            .earth = pStats->earthResistance,
-            .spirit = pStats->spiritResistance,
-            .mind = pStats->mindResistance,
-            .body = pStats->bodyResistance,
-            .light = pStats->lightResistance,
-            .dark = pStats->darkResistance,
-            .physical = pStats->physicalResistance,
+            .fire = pStats != nullptr ? pStats->fireResistance : 0,
+            .air = pStats != nullptr ? pStats->airResistance : 0,
+            .water = pStats != nullptr ? pStats->waterResistance : 0,
+            .earth = pStats != nullptr ? pStats->earthResistance : 0,
+            .spirit = pStats != nullptr ? pStats->spiritResistance : 0,
+            .mind = pStats != nullptr ? pStats->mindResistance : 0,
+            .body = pStats != nullptr ? pStats->bodyResistance : 0,
+            .light = pStats != nullptr ? pStats->lightResistance : 0,
+            .dark = pStats != nullptr ? pStats->darkResistance : 0,
+            .physical = pStats != nullptr ? pStats->physicalResistance : 0,
         },
-        target.hourOfPowerPower,
-        rng);
+        pStats != nullptr ? target.hourOfPowerPower : 0,
+        rng,
+        &attack.axe);
 }
 
 std::mt19937 buildPartyAttackRng(
@@ -1027,6 +1032,51 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     if (!(attack.mode == CharacterAttackMode::Melee && !targetInMeleeRange) && target)
     {
         targetName = !config.directTargetName.empty() ? config.directTargetName : target->displayName;
+    }
+
+    if (gameplayAxeDamageTraceEnabled() && actionPerformed && attack.mode == CharacterAttackMode::Melee
+        && attack.axe.relevant)
+    {
+        const AxeAttackObservation &axe = attack.axe;
+        std::ostringstream out;
+        out << "axe_attack"
+            << " member_name=" << std::quoted(pAttacker->name)
+            << " member_class=" << std::quoted(pAttacker->className)
+            << " member_level=" << pAttacker->level
+            << " axe_level=" << axe.level << " axe_mastery=" << static_cast<int>(axe.mastery);
+        for (const std::pair<const char *, uint32_t> &weapon : {
+                 std::pair<const char *, uint32_t>{"main", pAttacker->equipment.mainHand},
+                 {"off", pAttacker->equipment.offHand}})
+        {
+            const ItemDefinition *pItem = config.pItemTable != nullptr
+                ? config.pItemTable->get(weapon.second) : nullptr;
+            out << " " << weapon.first << "_id=" << weapon.second;
+            if (pItem != nullptr)
+            {
+                out << " " << weapon.first << "_name=" << std::quoted(pItem->name)
+                    << " " << weapon.first << "_equip=" << std::quoted(pItem->equipStat);
+            }
+        }
+        out << " two_handed_axe=" << (axe.twoHanded ? "true" : "false")
+            << " target_name=" << std::quoted(targetName)
+            << " hit=" << (attack.hit ? "true" : "false")
+            << " raw_damage=" << attack.damage
+            << " physical_before_gm=" << axe.physicalBefore
+            << " might_bonus=" << axe.mightBonus << " armsmaster_bonus=" << axe.armsmasterBonus
+            << " weapon_skill_bonus=" << axe.weaponSkillBonus
+            << " enchantment_total_bonus=" << axe.enchantmentBonus
+            << " physical_enchantment_bonus="
+            << axe.enchantmentBonus - axe.elementalDamage / std::max(1, axe.targetMultiplier)
+            << " flat_bonus=" << axe.flatBonus << " weapon_min=" << axe.weaponMin << " weapon_max=" << axe.weaponMax
+            << " target_multiplier=" << axe.targetMultiplier
+            << " gm_multiplier=" << axe.damageMultiplier
+            << " physical_after_gm=" << axe.physicalAfter << " final_physical_damage=" << axe.physicalFinal
+            << " elemental_before_resistance=" << axe.elementalDamage
+            << " damage_resolved=" << (axe.damageResolved ? "true" : "false")
+            << " recovery_before_gm=" << axe.recoveryBefore << " gm_recovery_bonus=" << axe.recoveryBonus
+            << " recovery_after_gm=" << axe.recoveryAfter << " final_recovery_ticks=" << axe.recoveryFinal
+            << " final_recovery_seconds=" << attack.recoverySeconds;
+        gameplayCombatTraceWrite(out.str());
     }
 
     GameplayCombatController::handlePartyAttackPresentation(

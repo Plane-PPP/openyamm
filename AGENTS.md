@@ -330,3 +330,14 @@ missing world hooks. Prefer fixing the shared path or the world hook over adding
 - Audio uses SDL3 with an engine mixer layer for effects, music, volume groups, and fades.
 - Video uses FFmpeg OGV decoding with audio/video sync and looping/cutscene support.
 - Editor code must reuse runtime engine systems and must not duplicate gameplay logic.
+
+## Minotaur Rebalance maintenance
+
+- Changes to mod mechanics require updating `docs/MINOTAUR_REBALANCE.md` and the relevant in-game descriptions.
+- Record every significant mod change in `CHANGELOG.md`; update `docs/ROADMAP.md` when implementing planned work.
+- Formulas and examples must match the real code. Separate confirmed source behavior from design decisions.
+- Track automatic tests and manual gameplay verification separately. Never claim complete verification without evidence.
+- Do not change previously agreed balance without explicit user instructions.
+- For a Windows build, record its actual commit SHA and changes relative to the previous confirmed build in
+  `BUILD-NOTES.md`. Do not invent a previous package SHA or treat an uncommitted worktree as a packaged revision.
+- Windows packaging, push and release require separate authorization for the current task.

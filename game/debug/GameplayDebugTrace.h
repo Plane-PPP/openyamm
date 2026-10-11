@@ -13,7 +13,10 @@ bool gameplayDebugTraceEnabled();
 bool gameplayDebugTraceSuppressed();
 void gameplayDebugTraceWrite(const std::string &message);
 void configureGameplayDebugTrace(bool enabled, const std::string &filePath, bool append);
-void configureGameplayCombatTrace(bool enabled, const std::string &filePath, bool append);
+void configureGameplayCombatTrace(
+    bool enabled, const std::string &filePath, bool append, bool minotaurDamageTrace = false, bool axeDamageTrace = false);
+bool gameplayAxeDamageTraceEnabled();
+bool gameplayMinotaurDamageTraceEnabled();
 bool gameplayCombatTraceEnabled();
 void gameplayCombatTraceWrite(const std::string &message);
 bool gameplayProjectileTraceEnabled();

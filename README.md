@@ -310,3 +310,10 @@ with thanks due to:
 
 - the OpenEnroth development team
 - Rodril and all MMMerge contributors
+
+## Minotaur Rebalance
+
+This fork's `feature/minotaur-rebalance` branch develops passive physical resistance and Axe rebalancing for MM8.
+Russian documentation: [mechanics and diagnostics](docs/MINOTAUR_REBALANCE.md),
+[roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md), and [next Windows build notes](BUILD-NOTES.md).
+Automatic test results and pending manual gameplay checks are tracked separately in these documents.

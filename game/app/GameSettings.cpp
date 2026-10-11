@@ -1376,6 +1376,24 @@ std::optional<GameSettings> loadGameSettings(const std::filesystem::path &path, 
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "debug", "axe_damage_trace"))
+    {
+        bool parsed = settings.axeDamageTrace;
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.axeDamageTrace = parsed;
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "debug", "minotaur_damage_trace"))
+    {
+        bool parsed = settings.minotaurDamageTrace;
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.minotaurDamageTrace = parsed;
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "debug", "preseed_party"))
     {
         bool parsed = settings.preseedParty;
@@ -1873,6 +1891,8 @@ bool saveGameSettings(const std::filesystem::path &path, const GameSettings &set
         << "prefer_ttf=" << (settings.fonts.preferTtf ? "true" : "false") << '\n'
         << "ttf_fonts=" << ttfFontNames << "\n\n"
         << "[debug]\n"
+        << "axe_damage_trace=" << (settings.axeDamageTrace ? "true" : "false") << '\n'
+        << "minotaur_damage_trace=" << (settings.minotaurDamageTrace ? "true" : "false") << '\n'
         << "preseed_party=" << (settings.preseedParty ? "true" : "false") << '\n'
         << "party_seed_roster_id=" << settings.partySeedRosterId << '\n'
         << "start_world=" << settings.startWorldId << '\n'

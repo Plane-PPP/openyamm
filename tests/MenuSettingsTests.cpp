@@ -1,4 +1,5 @@
 #include "game/ui/MenuSettingsModel.h"
+#include "game/debug/GameplayDebugTrace.h"
 #include <doctest/doctest.h>
 #include <fstream>
 
@@ -205,4 +206,39 @@ TEST_CASE("ambient occlusion is optional and its intensity validates and persist
     CHECK_FALSE(bounded->ambientOcclusion);
     CHECK(bounded->ambientOcclusionStrength == 100);
     std::filesystem::remove(path);
+}
+
+TEST_CASE("minotaur damage trace setting persists and enables only its file channel")
+{
+    GameSettings settings = GameSettings::createDefault();
+    CHECK_FALSE(settings.minotaurDamageTrace);
+    const std::filesystem::path root = std::filesystem::temp_directory_path();
+    const std::filesystem::path ini = root / "openyamm-minotaur-trace-settings.ini";
+    const std::filesystem::path log = root / "openyamm-minotaur-trace-test.log";
+    std::string error;
+    settings.minotaurDamageTrace = true;
+    REQUIRE(saveGameSettings(ini, settings, error));
+    const std::optional<GameSettings> loaded = loadGameSettings(ini, error);
+    REQUIRE_MESSAGE(loaded, error);
+    CHECK(loaded->minotaurDamageTrace);
+    settings.minotaurDamageTrace = false;
+    REQUIRE(saveGameSettings(ini, settings, error));
+    const std::optional<GameSettings> disabled = loadGameSettings(ini, error);
+    REQUIRE_MESSAGE(disabled, error);
+    CHECK_FALSE(disabled->minotaurDamageTrace);
+    configureGameplayCombatTrace(false, log.string(), false, true);
+    CHECK_FALSE(gameplayCombatTraceEnabled());
+    CHECK(gameplayMinotaurDamageTraceEnabled());
+    gameplayCombatTraceWrite("minotaur_damage test");
+    configureGameplayCombatTrace(false, log.string(), true, false);
+    CHECK_FALSE(gameplayMinotaurDamageTraceEnabled());
+    gameplayCombatTraceWrite("disabled test");
+    std::ifstream input(log);
+    std::string line;
+    REQUIRE(bool(std::getline(input, line)));
+    CHECK_EQ(line, "[CombatTrace] minotaur_damage test");
+    CHECK_FALSE(bool(std::getline(input, line)));
+    input.close();
+    std::filesystem::remove(ini);
+    std::filesystem::remove(log);
 }

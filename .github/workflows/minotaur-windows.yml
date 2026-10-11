@@ -14,7 +14,16 @@ on:
       - "tools/**"
       - "assets_dev/**"
       - "settings_release.ini"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "BUILD-NOTES.md"
+      - "docs/**"
   workflow_dispatch:
+    inputs:
+      previous_build_sha:
+        description: "Commit SHA of the previous confirmed Windows package (optional)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -44,6 +53,10 @@ jobs:
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /README.md
+            /CHANGELOG.md
+            /BUILD-NOTES.md
+            /docs/
             /CMakeLists.txt
             /LICENSE
             /COPYRIGHT
@@ -88,6 +101,21 @@ jobs:
           -DOPENYAMM_BUILD_EDITOR=OFF
           -DOPENYAMM_BUILD_TOOLS=OFF
 
+      - name: Record package revision and changes
+        env:
+          PREVIOUS_BUILD_SHA: ${{ inputs.previous_build_sha }}
+        run: |
+          revision_file="BUILD-REVISION.txt"
+          printf 'Commit SHA: %s\nRepository: %s\nRef: %s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_REF" > "$revision_file"
+          if [ -n "$PREVIOUS_BUILD_SHA" ]; then
+            [[ "$PREVIOUS_BUILD_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid previous build SHA"; exit 1; }
+            git fetch --no-tags --depth=1 origin "$PREVIOUS_BUILD_SHA"
+            printf '\nPrevious confirmed package SHA: %s\nChanged files:\n' "$PREVIOUS_BUILD_SHA" >> "$revision_file"
+            git diff --name-status "$PREVIOUS_BUILD_SHA" "$GITHUB_SHA" >> "$revision_file"
+          else
+            printf '\nPrevious package SHA was not supplied; comparison is pending.\nSee BUILD-NOTES.md and CHANGELOG.md for the planned changes.\n' >> "$revision_file"
+          fi
+
       - name: Build Windows package
         run: >-
           cmake --build build-windows
@@ -101,6 +129,12 @@ jobs:
           cmake -E tar tf "$archive" > windows-package-contents.txt
           grep -Fxq "OpenYAMM/openyamm.exe" windows-package-contents.txt
           grep -Fxq "OpenYAMM/settings.ini" windows-package-contents.txt
+          grep -Fxq "OpenYAMM/README.md" windows-package-contents.txt
+          grep -Fxq "OpenYAMM/CHANGELOG.md" windows-package-contents.txt
+          grep -Fxq "OpenYAMM/BUILD-NOTES.md" windows-package-contents.txt
+          grep -Fxq "OpenYAMM/BUILD-REVISION.txt" windows-package-contents.txt
+          grep -Fxq "OpenYAMM/docs/MINOTAUR_REBALANCE.md" windows-package-contents.txt
+          grep -Fxq "OpenYAMM/docs/ROADMAP.md" windows-package-contents.txt
           grep -Fxq "OpenYAMM/runtime/shaders/glsl/vs_outdoor_billboard_lit.bin" windows-package-contents.txt
           grep -Fxq "OpenYAMM/runtime/shaders/glsl/fs_sprite_atlas.bin" windows-package-contents.txt
           grep -Fxq "OpenYAMM/assets/engine.zip" windows-package-contents.txt

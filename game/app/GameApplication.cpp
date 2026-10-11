@@ -5109,7 +5109,8 @@ void GameApplication::registerDebugConsoleCommands()
                 return commandResult(
                     false,
                     "Usage: config get|set|toggle "
-                    "immortal|unlimited_mana|invisible|start_flying|terrain_decorations|baked_sun_strength|"
+                    "immortal|unlimited_mana|invisible|start_flying|minotaur_damage_trace|axe_damage_trace|"
+                    "terrain_decorations|baked_sun_strength|"
                     "baked_sky_strength|baked_sun_color|baked_sky_color [value]");
             }
 
@@ -5146,6 +5147,16 @@ void GameApplication::registerDebugConsoleCommands()
                     return m_settings.terrainDecorations;
                 }
 
+                if (name == "axe_damage_trace")
+                {
+                    return m_settings.axeDamageTrace;
+                }
+
+                if (name == "minotaur_damage_trace")
+                {
+                    return m_settings.minotaurDamageTrace;
+                }
+
                 if (name == "immortal")
                 {
                     return m_settings.immortal;
@@ -5174,7 +5185,15 @@ void GameApplication::registerDebugConsoleCommands()
 
             const auto setSetting = [this, &name](bool value) -> bool
             {
-                if (name == "terrain_decorations")
+                if (name == "axe_damage_trace")
+                {
+                    m_settings.axeDamageTrace = value;
+                }
+                else if (name == "minotaur_damage_trace")
+                {
+                    m_settings.minotaurDamageTrace = value;
+                }
+                else if (name == "terrain_decorations")
                 {
                     m_settings.terrainDecorations = value;
                 }
@@ -6276,7 +6295,9 @@ void GameApplication::loadOrCreateSettings()
     m_config.performanceTrace = m_settings.performanceTrace;
     m_engineApplication.setConfiguration(m_config);
     configureGameplayDebugTrace(m_settings.gameplayTrace, m_settings.gameplayTraceFile, m_settings.gameplayTraceAppend);
-    configureGameplayCombatTrace(m_settings.combatTrace, m_settings.combatTraceFile, m_settings.combatTraceAppend);
+    configureGameplayCombatTrace(
+        m_settings.combatTrace, m_settings.combatTraceFile, m_settings.combatTraceAppend,
+        m_settings.minotaurDamageTrace, m_settings.axeDamageTrace);
 }
 
 void GameApplication::applyCurrentSettingsToActiveRuntime()
@@ -6284,7 +6305,9 @@ void GameApplication::applyCurrentSettingsToActiveRuntime()
     m_gameSession.gameplayUiRuntime().setFontSettings(m_settings.fonts);
     m_gameSession.gameplayUiRuntime().bindSpriteAtlasCache(m_spriteAtlasCache);
     configureGameplayDebugTrace(m_settings.gameplayTrace, m_settings.gameplayTraceFile, m_settings.gameplayTraceAppend);
-    configureGameplayCombatTrace(m_settings.combatTrace, m_settings.combatTraceFile, m_settings.combatTraceAppend);
+    configureGameplayCombatTrace(
+        m_settings.combatTrace, m_settings.combatTraceFile, m_settings.combatTraceAppend,
+        m_settings.minotaurDamageTrace, m_settings.axeDamageTrace);
     setTextureFilteringConfig(textureFilteringConfigFromSettings(m_settings));
     m_gameAudioSystem.setSoundVolume(normalizedVolumeLevel(m_settings.soundVolume));
     m_gameAudioSystem.setMusicVolume(normalizedVolumeLevel(m_settings.musicVolume));
