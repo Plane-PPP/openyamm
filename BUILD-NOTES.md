@@ -2,7 +2,8 @@
 
 Windows packaging в ветке `feature/minotaur-rebalance` разрешён пользователем. GitHub Release не создаётся.
 HEAD до текущих изменений: `4c3d7267346b03dafb76a53ecf99e5c1863101de`.
-Новый итоговый commit SHA ещё не существует: изменения в рабочем дереве.
+Commit реализации и тестов: `6869538e3eb22954ba4f224ad0f44890e703dba1`.
+Точный SHA packaged revision дописывается workflow ниже и в BUILD-REVISION.txt из GITHUB_SHA.
 Предыдущая подтверждённая Actions-сборка: `4c3d7267346b03dafb76a53ecf99e5c1863101de`,
 run https://github.com/Plane-PPP/openyamm/actions/runs/38039764246; успешна, ZIP artifact присутствует.
 Относительно неё добавлены обе диагностики, новые Master/GM Axe, игровые тексты, тесты
@@ -15,7 +16,7 @@ run https://github.com/Plane-PPP/openyamm/actions/runs/38039764246; успешн
 - Master Axe off-hand; GM одноручный Recovery; GM двуручный ×2 физического урона.
 - Новый `axe_damage_trace`, актуальные тексты и документация.
 
-## Проверки
+## Проверки до запуска Actions
 
 - Локальная сборка `openyamm_unit_tests` успешна (C++20, Linux).
 - Целевой прогон Axe + Minotaur: **12 тестов / 10633 проверки, все успешны**.
@@ -76,9 +77,9 @@ GM10/20/30 с Speed/Haste/Armsmaster, двуручные попадания по
 Windows-компилятор, полный ZIP и ручная игра ещё должны подтвердить результат.
 Commit, push и запуск packaging разрешены пользователем для этого этапа. GitHub Release не разрешён и не создаётся.
 
-## Файлы рабочего дерева
+## Файлы изменений относительно предыдущей сборки
 
-Список включает сохранённые изменения предыдущего этапа Minotaur-диагностики.
+Список включает изменения предыдущего этапа Minotaur-диагностики, вошедшие в commit реализации.
 
 - `.github/workflows/minotaur-windows.yml`
 - `.gitignore`
@@ -106,3 +107,12 @@ Commit, push и запуск packaging разрешены пользовател
 - `docs/ROADMAP.md`
 - `tests/AxeActionTestStubs.cpp`
 - `tests/AxeRebalanceTests.cpp`
+
+## Установка поверх предыдущей версии
+
+1. Закрыть игру; сделать резервную копию папки saves и settings.ini из установленной версии.
+2. Распаковать новый ZIP во временную папку и перенести содержимое OpenYAMM в папку игры
+   с заменой executable, библиотек, runtime и assets (включая engine.zip и world ZIP).
+3. Сохранить прежние saves и пользовательский settings.ini: не заменять их пакетными настройками.
+   Новые параметры диагностики при отсутствии в старом INI выключены по умолчанию.
+4. Запустить игру и загрузить копию сохранения. Старый exe с новыми assets отдельно не использовать.

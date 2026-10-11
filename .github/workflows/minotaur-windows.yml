@@ -116,6 +116,10 @@ jobs:
             printf '\nPrevious package SHA was not supplied; comparison is pending.\nSee BUILD-NOTES.md and CHANGELOG.md for the planned changes.\n' >> "$revision_file"
           fi
 
+          printf '\n## Фактическая ревизия Actions-пакета\n\n```text\n' >> BUILD-NOTES.md
+          cat "$revision_file" >> BUILD-NOTES.md
+          printf '\n```\n' >> BUILD-NOTES.md
+
       - name: Build Windows package
         run: >-
           cmake --build build-windows
