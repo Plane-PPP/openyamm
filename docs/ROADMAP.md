@@ -24,7 +24,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Навык и обучение | Implemented | ID40, Normal1, идемпотентная миграция, M/GM caps, три MM8 Axe-учителя с сохранением услуг |
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
 | Skills/Stats | Implemented | Динамический P0, Damage Resistance под AC, RMB, English/Russian mod texts |
-| Автоматические проверки | Automatically tested | 21 focused /29884 assertions;3 runtime /58;187 расширенных /7048. Ограничения suite в BUILD-NOTES |
+| Автоматические проверки | Automatically tested | 21 focused /30044 assertions;3 runtime /58;187 расширенных /7048. Ограничения suite в BUILD-NOTES |
 | Windows packaging | Authorized / pending | Существующий Minotaur Windows build; успех/артефакт фиксировать только по Actions |
 | Ручной тест v0.4 | Pending user | Новая сборка не считается проверенной до внутриигрового прогона |
 | Identify Monster | Deferred | Caps/UI/поведение не меняются; knowledge, AC/damage/aura/GM magic отложены |

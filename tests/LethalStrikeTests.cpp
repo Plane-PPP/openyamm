@@ -294,7 +294,12 @@ TEST_CASE("Lethal Strike one roll after a complete melee action and trace invari
                 c.skills["LethalStrike"].level = 20;
                 c.skills["Perception"].level = 20;
                 if (setup != 0) c.equipment.mainHand = weapon("Axe", setup == 2 ? "Weapon2" : "Weapon");
-                if (setup == 3 || setup == 4) c.equipment.offHand = weapon(setup == 3 ? "Axe" : "Mace", "Weapon");
+                if (setup == 3) c.equipment.offHand = weapon("Axe", "Weapon");
+                if (setup == 4)
+                {
+                    c.equipment.mainHand = weapon("Mace", "Weapon");
+                    c.equipment.offHand = weapon("Axe", "Weapon");
+                }
                 PartySeed seed;
                 seed.members.push_back(c);
                 party.seed(seed);

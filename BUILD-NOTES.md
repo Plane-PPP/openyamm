@@ -32,7 +32,7 @@ Linux Release, C++20, `OPENYAMM_USE_VULKAN=OFF`.
 они загружены из закреплённой версии a73c12db8f502022d292cc6fb8872482997b0664 в build/_deps,
 без изменения проекта/CI. Неизменённый character_inspect.yml восстановлен из Git для проверки layout.
 
-- Focused: **21 test /29884 assertions, passed** — новые формулы/пороги/классификация,
+- Focused: **21 test /30044 assertions, passed** — новые формулы/пороги/классификация,
   выдача/рост/найм/миграция и настоящий v84 reader, обучение/продвижение, динамический P0,
   layout Stats, одна проверка за melee и инвариантность trace, исключения shooting/spells/objects;
   все12 предыдущих Axe/Minotaur-тестов включены.
@@ -66,7 +66,8 @@ MM9 trainer table, MM6 common scripts (2 cases), character inspect layout. Layou
 combat_target_panel development/release и недоступные fonts/maps/Android tests также исключены.
 **Полный suite не заявляется успешным.** Соответствующий CI не изменялся.
 
-Дополнительная проверка ненулевого loot выполнена отдельным тестовым этапом после dispatch;
+Дополнительные проверки ненулевого loot и разрешённой пары Mace main / Axe off-hand выполнены
+отдельными тестовыми этапами после dispatch;
 production source Windows run385a1e4 остался тем же. Новых изменений игрового кода не было.
 
 ## Ручная проверка и ограничения
