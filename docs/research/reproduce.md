@@ -1,5 +1,15 @@
 # Воспроизведение исследований
 
+> **Историческая методика v0.2.** Встроенный генератор ниже сохранён для восстановления
+> предыдущих исследований; он перезаписывает исторические формулы и предварительную классификацию.
+> Для текущей версии используйте только `python3 tools/generate_lethal_strike_research.py`,
+> затем `python3 docs/research/final-review.py` для повторения инвентарного coverage/correlation audit.
+> Новый генератор берёт утверждённую классификацию из lethal-strike-classification.csv,
+> обновляет compiled registry, категории monster-stats.csv и lethal-strike-probabilities-v0.4.csv.
+> death-strike-probabilities.csv и combat-scenarios.csv остаются историческими v0.2;
+> identification-matrix.csv и identification-coverage.csv относятся к Deferred Identify Monster.
+
+
 Статус: **Research**. Назначение: точное восстановление CSV и методики,
 этапы R1/R2/R6 [ROADMAP](../ROADMAP.md#этапы-разработки).
 Подтверждённый срез: commit `142a54e01da50d9faf258e38919e88dba9e8de29`, 2026-10-14.

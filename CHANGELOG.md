@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+### Lethal Strike v0.4 — Implemented / Automatically tested
+
+- Добавлен уникальный прокачиваемый Lethal Strike: бесплатно Normal1 для Minotaur/Lord при
+  создании/найме/гидратации старых saves; прежний прогресс и остальные skills сохраняются.
+- Caps M/GM, три MM8 Axe-учителя с отдельными LS-услугами и штатными требованиями/ценой.
+- Формула v0.4 от базовых LS/Perception, без Identify Monster; cap30%, GIANT строго ниже60%HP,
+  один fractional RNG trial за успешную завершённую melee-атаку любого оружия/Unarmed.
+- Утверждённый registry658:48 GIANT /610 NORMAL, unknown NORMAL; runtime размеры/статы не менялись.
+- Штатное завершение смерти без фиктивного урона; отдельное High-priority сообщение на4секунды,
+  независимый lethal_strike_trace и тестовые console-команды.
+- Skills RMB показывает динамический P0; Stats показывает Damage Resistance под Armor Class,
+  используя существующий расчёт без перебалансировки. Новые тексты поддерживают English/Russian.
+- Save v85 сохраняет cached outdoor monster combat Level. Старые v84 и ранее читаются;
+  синтетический v84 fixture проверяет реальную миграцию без сброса остальных навыков.
+- Linux executable и оба test targets собраны:21 focused tests/29884 assertions,
+  3 runtime tests/46 assertions и187 extended tests/7048 assertions прошли. Прогоны пересекаются.
+  Ограничения sparse suite и будущие ручные проверки — [BUILD-NOTES](BUILD-NOTES.md).
+- Windows packaging разрешён и ожидает фактического результата Actions; ручная проверка нового
+  билда пользователем ещё не выполнена. Axe, Armsmaster, DR и Identify Monster не перебалансированы.
+- Identify Monster extensions, knowledge и бестиарий помечены **Deferred**; исторические v0.2
+  исследования сохранены и отделены от действующего контракта.
+
 ### Added
 
 - Пассивное сопротивление физическому урону Minotaur / MinotaurLord с потолком 30%.
@@ -68,7 +90,7 @@
   полный save/load и все боевые ситуации ручным прогоном не подтверждены.
   Passive/Axe/Recovery не перебалансированы.
 
-### Documentation / Research / Planned
+### Исторический исследовательский этап 69bed40 — Research / Deferred
 
 - Финальная ревизия 2026-10-15: подтверждены loader/caps/UI, выделены 184 кампанийные
   разновидности из 198 MM8, исправлен знаменатель coverage и уточнены корреляции.
@@ -84,4 +106,5 @@
 - Выявлены расхождения текущего UI со ступенями описаний Identify Monster и class caps
   с пользовательским Expert у минотавра; Necromancer в текущих таблицах имеет Master, не GM.
 - Это проектирование и документация: новые навыки/боевые эффекты/knowledge/UI/сохранения
-  **не реализованы**. Игровой код, таблицы, ресурсы, CI и существующий баланс не изменены.
+  **не были реализованы в 69bed40**. Тогда игровой код, таблицы, ресурсы, CI и баланс не менялись;
+  Lethal Strike реализован отдельным этапом v0.4 выше. Identify Monster и бестиарий остаются Deferred.

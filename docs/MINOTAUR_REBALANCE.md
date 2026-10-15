@@ -228,6 +228,152 @@ Recovery записывается и для таких действий. Диа�
 Headless-проверка использует реальный общий контроллер атаки; графика, звук и представление
 не запускаются. Отдельно требуются игровая проверка куклы/off-hand, анимаций, учителей,
 интерфейсных текстов и загруженных Windows assets за пределами подтверждённых выше результатов.
-Прежний план Lethal Strike уточнён как [Death Strike v0.2](design/death-strike.md);
-он и [расширения Identify Monster](design/identify-monster.md) пока только спроектированы.
-Полная инвентаризация и расчёты — [ROADMAP](ROADMAP.md#этапы-разработки).
+Актуальная новая механика описана ниже: Lethal Strike v0.4. Identify Monster и бестиарий Deferred.
+
+## Lethal Strike v0.4 — Implemented
+
+Полный контракт: [дизайн](design/death-strike.md). Это единственное название нового навыка.
+Class Minotaur / MinotaurLord получают Normal1 бесплатно сверх старых навыков. Другие классы,
+включая персонажей другой профессии с расой Minotaur, не получают его. Создание, seed/roster,
+найм и старые saves используют идемпотентную выдачу; существующие значения не сбрасываются.
+Minotaur может обучиться до Master, Lord — до GM. Продвижение не выдаёт GM автоматически.
+
+| Ранг | P0 в процентах |
+| --- | --- |
+| N | 0.60×S |
+| E | 0.90×S + 0.56×V |
+| M | 1.10×S + 0.64×V |
+| GM | 1.30×S + 0.72×V |
+
+S/V — базовые Lethal Strike / Perception, без предметов. Ранг Perception значения не имеет;
+нет Perception — V=0. Identify Monster не участвует. `delta=PL-ML`;
+KL=`min(1.4,1+delta/60)` при delta≥0, иначе `30/(30+1.5*abs(delta))`.
+Итог=`min(30,P0*KL*KG)`, дробная точность. NORMAL: KG=1 приHP>0;
+GIANT: KG=1 только при `0<5*HP<3*maxHP`, иначе0. Ровно60% запрещено, ниже60% штрафа нет.
+Одна проверка после обычного успешного melee любого оружия/Unarmed, включая dual wield;
+не для стрельбы/магии/miss/objects/обычного убийства. Не добавлено иммунитетов по природе существа.
+
+Навык развивается за стандартные очки. Обычные MM8 Axe-учителя сохраняют Axe и обучают новому навыку:
+Herald Foestryke (Garrote Gorge, Foestryke Residence) E4/2000;
+Jasp Hunter (Ravenshore, Hunter's Hovel) M7/5000;
+Garic Senjac (Balthazar Lair, Senjac's House) GM10/8000.
+Master требует Expert, GM требует Master и класс MinotaurLord.
+Hunter's Hovel закрыта при QBit57 (вторжение пиратов); Senjac доступен после спасения минотавров/QBit23.
+Эти исходные сюжетные условия не обходятся. Новый пункт диалога не заменяет прежние услуги.
+
+### Быстрый тест в отдельном сохранении
+
+Открыть консоль, выбрать портрет нужного персонажа:
+
+```text
+player add Minotaur LethalTester
+player level 50
+skill set LethalStrike 10 2
+skill set Perception 10 1
+config set lethal_strike_trace true
+config get lethal_strike_trace
+```
+
+`skill set <canonical-name> <level1–63> <mastery1–4>` — явная тестовая команда, без расхода очков.
+Она проверяет class/race cap; GM для обычного Minotaur будет отклонён. Для теста Lord:
+
+```text
+player class MinotaurLord
+skill set LethalStrike 10 4
+skill set Perception 10 1
+```
+
+`player class` меняет класс выбранного персонажа для теста, не выполняет квест продвижения.
+Обычное продвижение и учителей также проверить в игре; старые квестовые команды приведены выше.
+Повышение через Skills должно списывать новый численный уровень очков:1→2 стоит2,2→3 стоит3.
+Остальные навыки, число свободных очков при стартовой выдаче и LS после продвижения не теряются.
+
+Для максимальной заметности экспериментальной механики: S20/V20/GM, итоговый cap30%.
+При S10/V10/Expert RMB обязан показывать `Base Lethal Strike Chance: 14.60%`.
+Повысить LS или Perception и снова открыть RMB: строка должна обновиться. При P0>30 показывается
+сам P0; ограничение30% применяется к итоговому шансу. Без навыка положительного P0 нет.
+
+Наносить обычные melee-атаки, включая Unarmed, двуручный Axe, два Axe и допустимую смешанную пару.
+При срабатывании увидеть `<имя> delivers a Lethal Strike!`. Это стандартная status bar с High priority
+на4секунды: следующий обычный урон не должен её мгновенно затирать. Сообщение появляется один раз,
+только если мгновенная смерть реально обработана. Смерть от обычного урона отдельного сообщения не даёт.
+Статус не требует show_hits=true; при его отключении LS остаётся видимым.
+
+### GIANT и точная граница60%
+
+Отключить bolster для простого численного опыта существующей опцией профиля, либо использовать
+фактические maxHP/Level из trace. Создать одного Green Dragon (ID70, базовые maxHP700):
+
+```text
+actor spawn 70 1
+```
+
+Actor index и template ID — разные вещи. Первый наведённый melee с trace записывает `actor_index`.
+Далее использовать полученный индекс N (в командах заменить N числом):
+
+```text
+actor health N 420
+lethal chance N
+actor health N 419
+lethal chance N
+```
+
+`lethal chance` читает реального actor и печатает HP/maxHP, актуальный Level, категорию, P0 и шанс,
+не делает RNG и не наносит урон. При420/700 шанс0, при419/700 полный min(30,P0×KL).
+При bolster рассчитать границу по фактическому maxHP; точное60% целочисленно существует при maxHP кратном5.
+В самом бою порог проверяется **после** обычного урона: старт при420 ещё может разрешить LS,
+если обычный удар опустил HP ниже420 в этом же действии. Сверять `hp_after` в trace, а не стартовое HP.
+Установка HP не меняет maxHP, не оживляет мёртвого actor и не выдаёт XP/добычу.
+
+Проверить NORMAL-переопределения28–33,58–63,76–81,91–93,106–108 при полном HP;
+Phoenix130–132 и Devil220–222 должны иметь GIANT. Остальной утверждённый реестр —
+[CSV](research/lethal-strike-classification.csv). Unknown/custom template получает NORMAL и warning в trace.
+
+### Диагностика
+
+```text
+config set lethal_strike_trace true
+config set lethal_strike_trace false
+config set minotaur_damage_trace true
+config set axe_damage_trace true
+```
+
+По умолчанию все выключены. LS использует существующий sink `[logging] combat_trace_file`,
+обычно `logs/combat_trace.log`; общий combat_trace включать не требуется.
+Пример формата (числа/ID условны, не запись измеренного боя):
+
+```text
+[CombatTrace] lethal_strike action_id=17 member_name="LethalTester" member_class="MinotaurLord" member_level=50 skill=10 mastery=4 perception=10 actor_index=9 monster_id=70 monster_name="Green Dragon" monster_level=70 category=GIANT unknown_template=0 hp_before=430 hp_after=410 max_hp=700 P0=20.2 KL=0.5 KG=1 chance=10.1 roll=3.25 success=1 death_processed=1 skip=""
+```
+
+Miss/ordinary_kill/no_actor_target/no_skill/giant_hp_threshold/death_rejected объясняют пропуск;
+`roll=none` означает отсутствие броска. `hp_after` — после обычного урона, до Lethal Strike.
+`unknown_template` сопровождается warning. Выключение trace не меняет RNG/урон/Recovery/результат.
+Успешный LS также записывается при общем combat_trace даже без отдельного канала.
+
+### Stats и русские тексты
+
+Под Armor Class расположена Damage Resistance: Minotaur10/20/50 =7/9/15%; Lord20/50 =16/22%;
+другие классы0%. Значение использует действующую боевую функцию и меняется после уровня/продвижения.
+RMB поясняет физический урон, отсутствие защиты от магии/стихий и предел30%.
+Проверить отсутствие наложения с Condition/Quick Spell и работу прежних RMB остальных характеристик.
+
+```text
+config set minotaur_russian_text true
+config set minotaur_russian_text false
+```
+
+Опция переводит новые mod-тексты, не весь UI. Русский P0: `Базовый шанс смертельного удара: 14,60%`;
+боевое сообщение: `<имя> наносит смертельный удар!`. Английский остаётся значением по умолчанию.
+
+### Совместимость и статусы
+
+Навыки сохраняются строковыми ключами; существующие ID0–39 не сдвинуты, LS добавлен как40.
+Сохранения v85 дополнительно хранят cached combat Level outdoor-monster; v84 и старше читаются,
+его значение восстанавливается через действующий bolster pipeline. Старый executable не читает v85;
+использовать копии тестовых сохранений. Способность в старых active/reserve персонажах добавляется
+при гидратации один раз; существующий прогресс сохраняется.
+
+Automatically tested и Windows packaging перечислены в [BUILD-NOTES](../BUILD-NOTES.md).
+Новые звуки/анимации/GUI и частота LS требуют ручного прогона пользователем. Новый билд не помечается
+Manually tested до такого прогона. Identify Monster/его caps/UI и бестиарий не изменены и Deferred.

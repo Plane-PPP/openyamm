@@ -1,3 +1,90 @@
+# Lethal Strike v0.4 — Windows test build
+
+ТЗ пользователя 2026-10-15 разрешает реализацию, commit/push и запуск существующего
+`Minotaur Windows build`. Merge main и GitHub Release не выполняются. Старые разрешения/планы
+ниже относятся к build #3; они не являются статусом новой сборки.
+
+Implementation commit: `a9b27e758fd136b0132732421f2997d6679296d1`.
+Предыдущая подтверждённая сборка: `142a54e01da50d9faf258e38919e88dba9e8de29`,
+[run #3](https://github.com/Plane-PPP/openyamm/actions/runs/38148278640).
+Документация после implementation-коммита входит в новую packaged revision; её SHA и diff
+будут записаны самим workflow в BUILD-REVISION.txt. Точный новый run/status/artifact фиксируется
+после фактического завершения Actions, а не по факту push.
+
+## Реализовано
+
+- Полноценный Lethal Strike ID40, численный рост, Normal1 для всех Minotaur/Lord, старые saves,
+  M/GM caps и три дополнительных teacher topics без изменения Axe-услуг.
+- v0.4: N0.60S; E0.90S+0.56V; M1.10S+0.64V; GM1.30S+0.72V, базовые S/V, без Identify Monster.
+- KL от актуальных уровней, cap30%, GIANT строго ниже60%HP с полным шансом; один melee trial.
+- Явная terminal death без фиктивного урона, заметное High-priority сообщение4секунды.
+- Динамический RMB P0 и Damage Resistance под Armor Class с общей действующей формулой.
+- Независимый lethal_strike_trace и тестовые команды skill/player level/player class/actor health/lethal chance.
+- Optional minotaur_russian_text для новых русских mod-текстов, English по умолчанию.
+- Save v85 хранит cached outdoor combat Level; чтение v84 и ранее сохранено. Синтетический
+  v84 fixture создан старым production-сериализатором и не содержит пользовательских данных.
+
+## Автоматические проверки
+
+Linux Release, C++20, `OPENYAMM_USE_VULKAN=OFF`.
+Собраны `openyamm`, `openyamm_unit_tests`, `openyamm_runtime_tests`.
+В локальном неполном dependency checkout отсутствовали3 стандартных GLSL binaries bgfx;
+они загружены из закреплённой версии a73c12db8f502022d292cc6fb8872482997b0664 в build/_deps,
+без изменения проекта/CI. Неизменённый character_inspect.yml восстановлен из Git для проверки layout.
+
+- Focused: **21 test /29884 assertions, passed** — новые формулы/пороги/классификация,
+  выдача/рост/найм/миграция и настоящий v84 reader, обучение/продвижение, динамический P0,
+  layout Stats, одна проверка за melee и инвариантность trace, исключения shooting/spells/objects;
+  все12 предыдущих Axe/Minotaur-тестов включены.
+- Runtime: **3 tests /46 assertions, passed** — реальное создание Minotaur через NewGameScreen
+  сверх выбранных skills; реальные indoor/outdoor terminal paths: HP0, dying, XP, death feedback,
+  outdoor MonsterKilled queue, повторная смерть отвергается без повторных XP/events/drops.
+- Extended: **187 tests /7048 assertions, passed** — attack/recovery/equip/Armsmaster/settings/
+  save/mastery/skill/bolster. Прогоны пересекаются; числа не суммируются как независимое покрытие.
+- CSV/compiled registry: повторная генерация дала одинаковые SHA256 всех11 аналитических/генерируемых
+  файлов; утверждённые658 категорий и5760 вероятностных сценариев. Относительные ссылки проверены.
+- `git diff --check` успешен с `core.whitespace=cr-at-eol` для родных CRLF TXT. Старые class caps
+  побайтно совпали; добавлена только строка LethalStrike.
+
+Команды (при необходимости локальный cmake находится в /tmp/openyamm-cmake/usr/bin,
+с LD_LIBRARY_PATH=/tmp/openyamm-cmake/usr/lib/x86_64-linux-gnu; это особенность среды):
+
+```sh
+cmake --build build --target openyamm_unit_tests openyamm_runtime_tests openyamm --parallel 4
+./build/tests/openyamm_unit_tests --test-case='*Lethal Strike*,*Axe Master*,*Axe GM*,*Axe trace*,*Axe traced*,*minotaur*'
+./build/tests/openyamm_runtime_tests --test-case='*Lethal Strike*'
+./build/tests/openyamm_unit_tests --test-case='*attack*,*recovery*,*equip*,*Armsmaster*,*settings*,*save*,*mastery*,*skill*,*bolster*' --test-case-exclude='*font*,*goblinwatch*,*merged continent weather*,*android settings*,*development and release settings*,*MM6 promotion sidecars*,*Every source MM9 RUDE skill-training*,*outdoor facet overlays reconstruct old saves*,*mm6 Shrine of the Gods*'
+python3 tools/generate_lethal_strike_research.py
+python3 docs/research/final-review.py
+git diff --check
+```
+
+Первый расширенный прогон имел5 failures от отсутствующих sparse assets: MM6 promotion sidecars,
+MM9 trainer table, MM6 common scripts (2 cases), character inspect layout. Layout восстановлен;
+остальные4 вне текущей задачи исключены точными именами. Предшествующее расхождение
+combat_target_panel development/release и недоступные fonts/maps/Android tests также исключены.
+**Полный suite не заявляется успешным.** Соответствующий CI не изменялся.
+
+## Ручная проверка и ограничения
+
+Новый билд **не Manually tested**. Проверить куклу/оружие, реальный звук/анимацию/добычу и квест,
+читабельность сообщения4секунды и русских glyphs, RMB P0, Stats при разных разрешениях,
+всех учителей с сюжетными ограничениями, реальные старые saves и частоту способности.
+Автотест world death использует синтетические actors без graphics/audio и item loot fixture;
+он не является ручным прослушиванием звука или проверкой всех конкретных квестов/loot tables.
+Формат v85 старым executable не читается: работать с копиями тестовых сохранений.
+Для старого outdoor save, не хранившего боевой Level, миграция использует текущие mounted bolster rules.
+MM9 actor canReceiveDamage=false остаётся защищённым. Unknown templates — NORMAL с trace warning.
+
+[Подробные команды и сценарии проверки](docs/MINOTAUR_REBALANCE.md#lethal-strike-v04--implemented),
+[действующий контракт](docs/design/death-strike.md), [ROADMAP](docs/ROADMAP.md).
+Identify Monster (включая caps/UI), knowledge, spell bonuses и бестиарий — Deferred.
+Старые расчёты v0.2 сохранены как исторические, не описание реализованного баланса.
+
+---
+
+## Исторические записи build #3
+
 # Minotaur Rebalance — следующая Windows-сборка
 
 > Исторические секции ниже описывают подготовку build #3. Актуальная запись после выпуска:
