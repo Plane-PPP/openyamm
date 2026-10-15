@@ -1,5 +1,16 @@
 # Minotaur Rebalance — следующая Windows-сборка
 
+> Исторические секции ниже описывают подготовку build #3. Актуальная запись после выпуска:
+> [Actions run #3](https://github.com/Plane-PPP/openyamm/actions/runs/38148278640),
+> workflow_dispatch 2026-10-11, Windows x64 release success,
+> SHA `142a54e01da50d9faf258e38919e88dba9e8de29`, артефакт `OpenYAMM-windows-Release.zip`.
+> Метаданные run/артефакта подтверждены API 2026-10-14. Пользователь сообщил результаты
+> ручных тестов Windows11: [CHANGELOG](CHANGELOG.md#minotaur-windows-build-3--ручные-испытания).
+> Фраза «ещё не выполнено» ниже относится к моменту подготовки. Историческое разрешение
+> packaging/push не разрешает новый запуск; текущий этап изменяет только документацию и аналитические данные/генератор.
+> От предыдущего подтверждённого `4c3d726...` входят commits `6869538...` и `142a54e...`.
+> Сам установленный ZIP и BUILD-REVISION.txt пользователя отдельно не сверялись.
+
 Windows packaging в ветке `feature/minotaur-rebalance` разрешён пользователем. GitHub Release не создаётся.
 HEAD до текущих изменений: `4c3d7267346b03dafb76a53ecf99e5c1863101de`.
 Commit реализации и тестов: `6869538e3eb22954ba4f224ad0f44890e703dba1`.

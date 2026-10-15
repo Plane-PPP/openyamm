@@ -1,0 +1,199 @@
+monster_id,name,family,campaign_evidence,evidence
+1,Lizardman Peasant,Lizardmen Male (Peasant),1,out01:placed
+2,Lizardman Farmer,Lizardmen Male (Peasant),1,out01:placed
+3,Lizardman Villager,Lizardmen Male (Peasant),1,out01:placed
+4,Lizardman Soldier,Lizardmen Warrior,1,out01:spawn
+5,Lizardman Sergeant,Lizardmen Warrior,1,out01:event|out01:placed|out01:spawn
+6,Lizardman Captain,Lizardmen Warrior,1,out01:spawn
+7,Young Couatl,Couatl (winged snake),1,d05:spawn
+8,Couatl,Couatl (winged snake),1,d05:spawn
+9,Winged Serpent,Couatl (winged snake),1,d05:spawn
+10,Regnan Bandit,Pirate Warrior Male,1,d06:spawn|d31:spawn|d32:spawn|d33:spawn|d34:spawn|out02:placed|out13:spawn
+11,Regnan Pirate,Pirate Warrior Male,1,d06:spawn|d31:spawn|d32:spawn|d33:spawn|d34:spawn|d50:placed|out02:placed|out13:spawn
+12,Regnan Brigadier,Pirate Warrior Male,1,d06:spawn|d31:spawn|d32:spawn|d33:spawn|d34:spawn|out01:placed|out02:placed|out13:spawn
+13,Regnan Crossbowman,Pirate Crossbowman (Female),1,d06:spawn|d31:spawn|d34:spawn|out13:spawn
+14,Regnan Arbalester,Pirate Crossbowman (Female),1,d06:spawn|d31:spawn|d34:spawn|d50:placed|out13:spawn
+15,Regnan Lieutenant,Pirate Crossbowman (Female),1,d06:spawn|d31:spawn|d34:spawn|out13:spawn
+16,Regnan Sorcerer,Pirate Mage Male,1,d32:spawn|d33:spawn|d34:spawn|out13:spawn
+17,Regnan Battlemage,Pirate Mage Male,1,d32:spawn|d33:spawn|d34:spawn|d50:placed|out13:spawn
+18,Regnan Archmage,Pirate Mage Male,1,d06:placed|d32:spawn|d33:spawn|d34:spawn|d50:placed|out13:spawn
+19,Dark Elf Peasant,Dark Elf Pesant Male,1,out03:placed
+20,Dark Elf Peasant,Dark Elf Pesant Male,1,out03:placed
+21,Dark Elf Peasant,Dark Elf Pesant Male,1,d28:placed
+22,Dark Elf Peasant,Dark Elf Pesant Female,1,out02:placed
+23,Dark Elf Peasant,Dark Elf Pesant Female,1,out02:placed
+24,Dark Elf Peasant,Dark Elf Pesant Female,1,d28:placed
+25,Dark Elven Warrior,Dark Elf Warrior,0,
+26,Dark Elven Defender,Dark Elf Warrior,1,out02:placed
+27,Dark Elven Crusader,Dark Elf Warrior,0,
+28,Ogre Peasant,Ogre Pesant Male,1,out08:placed
+29,Ogre Peasant,Ogre Pesant Male,0,
+30,Ogre Peasant,Ogre Pesant Male,0,
+31,Ogre Brawler,Ogre Warrior,1,d12:event|d12:spawn|d25:spawn|d33:spawn|out03:event|out03:spawn|out08:spawn
+32,Ogre Warrior,Ogre Warrior,1,d12:spawn|d25:spawn|d33:spawn|out03:spawn|out08:spawn
+33,Ogre Warleader,Ogre Warrior,1,d12:placed|d12:spawn|d25:spawn|d33:spawn|out03:spawn|out08:spawn
+34,Animalist,Wererat Human Form Male,1,d07:spawn|d44:spawn|d45:spawn|d46:spawn
+35,Shapeshifter,Wererat Human Form Male,1,d07:placed|d07:spawn|d44:spawn|d45:spawn|d46:spawn
+36,Lycanthrope,Wererat Human Form Male,1,d07:spawn|d44:spawn|d45:spawn|d46:spawn
+37,Ratman,Wererat Ratman Form Male,1,d07:spawn|d08:spawn|d44:spawn|d45:spawn|d46:spawn
+38,Wererat,Wererat Ratman Form Male,1,d07:spawn|d08:spawn|d44:spawn|d45:spawn|d46:spawn
+39,Greater Wererat,Wererat Ratman Form Male,1,d07:spawn|d08:placed|d08:spawn|d12:placed|d44:spawn|d45:spawn|d46:spawn
+40,Bestial Animalist,Wererat Rat Form Male,1,d07:spawn|d44:spawn|d46:spawn
+41,Bestial Shapeshifter,Wererat Rat Form Male,1,d07:spawn|d44:spawn|d46:spawn
+42,Bestial Lycanthrope,Wererat Rat Form Male,1,d07:spawn|d44:spawn|d46:spawn
+43,Dragon Hunter,Dragon Hunter,1,d16:event|d16:spawn|out05:event|out05:fixed-spawn|out05:spawn
+44,Crusader,Dragon Hunter,1,d16:placed|d16:spawn|out05:fixed-spawn|out05:spawn
+45,Dragonslayer,Dragon Hunter,1,d16:placed|d16:spawn|out05:placed|out05:spawn
+46,Acolyte of the Sun,Cleric (human male),1,d22:spawn
+47,Cleric of the Sun,Cleric (human male),1,d22:spawn|out07:placed
+48,Priest of the Sun,Cleric (human male),1,d22:spawn
+49,Peasant,Vampire Female Peasant,1,out06:placed
+50,Peasant,Vampire Female Peasant,1,out06:placed
+51,Peasant,Vampire Female Peasant,0,
+52,Vampire Minion,Vampire (monster),1,d19:spawn|d21:spawn|out06:spawn
+53,Vampire,Vampire (monster),1,d19:spawn|d21:spawn|out06:spawn
+54,Greater Vampire,Vampire (monster),1,d19:spawn|d21:spawn|out06:spawn
+55,Dark Path Journeyman,Necromancer (monster),1,d19:spawn|d20:spawn
+56,Necromancer,Necromancer (monster),1,d19:placed|d19:spawn|d20:spawn|out06:placed
+57,Master Necromancer,Necromancer (monster),1,d19:spawn|d20:spawn
+58,Troll Clubman,Troll,1,out04:spawn
+59,Troll Warrior,Troll,1,out04:placed|out04:spawn
+60,Troll Chieftain,Troll,1,out04:spawn
+61,Troll Peasant,Troll Pesant,1,out04:placed
+62,Troll Peasant,Troll Pesant,1,out04:placed
+63,Troll Peasant,Troll Pesant,0,
+64,Minotaur Guard,Minotaur,0,
+65,Minotaur Warrior,Minotaur,1,d24:placed
+66,Minotaur Battleleader,Minotaur,0,
+67,Minotaur Peasant,Minotaur Pesant,1,d24:placed
+68,Minotaur Peasant,Minotaur Pesant,1,d24:placed
+69,Minotaur Peasant,Minotaur Pesant,0,
+70,Dragon,Dragon,1,d17:spawn|d47:spawn|d48:spawn|d49:spawn
+71,Dragon Flightleader,Dragon,1,d17:placed|d17:spawn|d47:spawn|d48:spawn|d49:spawn
+72,Great Wyrm,Dragon,1,d17:placed|d17:spawn|d47:placed|d47:spawn|d48:placed|d48:spawn|d49:placed|d49:spawn|out05:placed
+73,Lesser Fire Elemental,Fire Elemental,1,d29:spawn|d38:spawn|elemf:spawn
+74,Fire Elemental,Fire Elemental,1,d29:spawn|d38:spawn|elemf:spawn
+75,Greater Fire Elemental,Fire Elemental,1,d29:spawn|d38:spawn|elemf:spawn
+76,Lesser Water Elemental,Water Elemental,1,d37:spawn|elemw:spawn
+77,Water Elemental,Water Elemental,1,d37:spawn|elemw:spawn
+78,Greater Water Elemental,Water Elemental,1,d37:spawn|elemw:spawn
+79,Lesser Earth Elemental,Earth Elemental,1,d36:spawn|eleme:spawn
+80,Earth Elemental,Earth Elemental,1,d36:spawn|eleme:spawn
+81,Greater Earth Elemental,Earth Elemental,1,d36:spawn|eleme:spawn
+82,Lesser Air Elemental,Air Elemental,1,d27:spawn|d39:spawn|elema:spawn
+83,Air Elemental,Air Elemental,1,d27:spawn|d39:spawn|elema:spawn
+84,Greater Air Elemental,Air Elemental,1,d27:spawn|d39:spawn|elema:spawn
+85,Dire Wolf Yearling,Dire Wolf,1,d08:event|d08:spawn|out02:event|out02:spawn
+86,Dire Wolf,Dire Wolf,1,d08:spawn|out02:spawn
+87,Pack Leader,Dire Wolf,1,d08:fixed-spawn|d08:spawn|out02:spawn
+88,Young Basilisk,Thunder Lizard,1,d43:spawn|out07:spawn
+89,Basilisk,Thunder Lizard,1,d43:spawn|out07:spawn
+90,Elder Basilisk,Thunder Lizard,1,d43:spawn|out07:spawn
+91,Cyclops,Cyclops,1,d14:spawn|out04:spawn
+92,Cyclops Hunter,Cyclops,1,d14:spawn|out04:spawn
+93,Cyclops Warrior,Cyclops,1,d14:spawn|out04:spawn
+94,Serpentman,Serpentmen,1,d05:spawn|d18:spawn
+95,Serpentman Elder,Serpentmen,1,d05:spawn|d18:spawn
+96,Serpentman Warrior,Serpentmen,1,d05:event|d05:spawn|d18:spawn
+97,Dancing Light,Will ' O Wisp,1,d43:spawn|out07:spawn
+98,Wisp,Will ' O Wisp,1,d43:spawn|out07:spawn
+99,Will O' Wisp,Will ' O Wisp,1,d43:spawn|out07:spawn
+100,Centaur,Centaur,1,out02:spawn
+101,Centaur Warrior,Centaur,1,out02:spawn
+102,Centaur Warlord,Centaur,1,out02:spawn
+103,Efreeti Soldier,Efreeti,1,d26:spawn|d30:spawn|elemf:spawn
+104,Efreeti Knight,Efreeti,1,d26:spawn|d30:spawn|elemf:spawn
+105,Efreeti Lord,Efreeti,1,d26:spawn|d30:spawn|elemf:spawn
+106,Ogre Mage Apprentice,Ogre Mage,1,d12:spawn|d25:spawn|d32:spawn
+107,Ogre Mage,Ogre Mage,1,d12:spawn|d25:spawn|d32:spawn
+108,Ogre Magi,Ogre Mage,1,d12:spawn|d25:placed|d25:spawn|d32:spawn
+109,Unicorn Foal,Unicorn,1,out07:spawn
+110,Unicorn,Unicorn,1,out07:spawn
+111,Unicorn Herd Leader,Unicorn,1,out07:placed|out07:spawn
+112,Emerald Dragon,Crystal Dragon,1,d10:spawn|d37:spawn
+113,Sapphire Dragon,Crystal Dragon,1,d10:spawn|d37:spawn
+114,Ruby Dragon,Crystal Dragon,1,d10:spawn|d37:spawn
+115,Mist Hawk,Thunderbird,1,elema:spawn
+116,Storm Eagle,Thunderbird,1,elema:spawn
+117,Thunderbird,Thunderbird,1,elema:spawn
+118,Wasp Worker,Wasp Warrior,1,d11:spawn|out03:spawn
+119,Wasp Sentry,Wasp Warrior,1,d11:spawn|out03:spawn
+120,Wasp Warrior,Wasp Warrior,1,d11:spawn|out03:spawn
+121,Wyvern,Wyvern,1,out08:spawn
+122,Horned Wyvern,Wyvern,1,out08:spawn
+123,Ancient Wyvern,Wyvern,1,out08:spawn
+124,Brass Gorgon,Gorgon,1,out08:spawn
+125,Bronze Gorgon,Gorgon,1,out08:spawn
+126,Iron Gorgon,Gorgon,1,out08:spawn
+127,Fire Newt,Salamander,1,d15:spawn|elemf:spawn
+128,Fire Lizard,Salamander,1,d15:spawn|elemf:spawn
+129,Salamander,Salamander,1,d15:spawn|elemf:spawn
+130,Fire Bird,Phoenix,1,d30:spawn
+131,Phoenix,Phoenix,1,d30:spawn
+132,Grand Phoenix,Phoenix,1,d30:spawn
+133,Triton,Triton,1,d24:spawn|d40:spawn|elemw:spawn
+134,Triton Warrior,Triton,1,d24:spawn|d40:spawn|elemw:spawn
+135,Triton Crusader,Triton,1,d24:spawn|d40:spawn|elemw:spawn
+136,Young Dragon Turtle,Dragon Turtle,1,elemw:spawn
+137,Dragon Turtle,Dragon Turtle,1,elemw:spawn
+138,Elder Tortoise,Dragon Turtle,1,elemw:spawn
+139,Rook,Raven Man,1,elema:spawn
+140,Corbie,Raven Man,1,elema:spawn
+141,Raven,Raven Man,1,elema:spawn
+142,Boulder,Malevolent Boulder,1,d23:spawn|d40:spawn|d41:spawn|eleme:spawn
+143,Boulder,Malevolent Boulder,1,d23:spawn|d40:spawn|d41:spawn|eleme:spawn
+144,Boulder,Malevolent Boulder,1,d23:spawn|d40:spawn|d41:spawn|eleme:spawn
+145,Plane Guardian,Plane Guardian,1,d39:spawn|pbp:spawn
+146,Plane Protector,Plane Guardian,1,d39:spawn|pbp:spawn
+147,Plane Overlord,Plane Guardian,1,d39:spawn|pbp:spawn
+148,Crystal Walker,Crystal Walker,1,d10:spawn|d36:spawn
+149,Crystal Sentry,Crystal Walker,1,d10:spawn|d36:spawn
+150,Crystal Guardian,Crystal Walker,1,d10:spawn|d36:spawn
+151,Fear,Nightmare,1,d38:spawn|d39:spawn|pbp:spawn
+152,Terror,Nightmare,1,d38:spawn|d39:spawn|pbp:spawn
+153,Nightmare,Nightmare,1,d38:spawn|d39:spawn|pbp:spawn
+154,Ether Knight,Ether Knight,1,d35:spawn|d36:spawn|d37:spawn|d38:spawn|pbp:spawn
+155,Ether Champion,Ether Knight,1,d35:spawn|d36:spawn|d37:spawn|d38:spawn|pbp:spawn
+156,Ether Lord,Ether Knight,1,d35:spawn|d36:spawn|d37:spawn|d38:spawn|pbp:spawn
+157,Charger,Juggernaut,1,d23:spawn|eleme:spawn
+158,Juggernaut,Juggernaut,1,d23:spawn|eleme:spawn
+159,Demolisher,Juggernaut,1,d23:spawn|eleme:spawn
+160,Smoke Gog,Gog,1,d13:spawn|d15:spawn|d30:spawn|out04:spawn
+161,Ember Gog,Gog,1,d13:spawn|d15:spawn|d30:spawn|out04:spawn
+162,Fire Gog,Gog,1,d13:spawn|d15:spawn|d30:spawn|out04:spawn
+163,Skeletal Dragon,Bone Dragon,1,d20:spawn|out06:spawn
+164,Bone Dragon,Bone Dragon,1,d20:spawn|out06:spawn
+165,Undead Dragon,Bone Dragon,1,d20:spawn|out06:spawn
+166,Human Peasant,Bedraggled Human (peasant),1,d14:spawn|out13:placed
+167,Human Peasant,Bedraggled Human (peasant),1,d14:spawn|out13:placed
+168,Human Peasant,Bedraggled Human (peasant),1,d14:spawn
+169,Naga,Naga,1,d18:spawn|d26:spawn|out05:spawn
+170,Naga Warrior,Naga,1,d18:spawn|d26:spawn|out05:spawn
+171,Naga Queen,Naga,1,d18:event|d18:placed|d18:spawn|d26:spawn|out05:spawn
+172,Skeleton Bowman,Skeletons Archer,1,d19:spawn|d20:spawn|out06:spawn
+173,Skeleton Hunter,Skeletons Archer,1,d19:spawn|d20:spawn|out06:spawn
+174,Skeleton Archer,Skeletons Archer,1,d19:spawn|d20:spawn|out06:spawn
+175,Dark Dwarf Grunt,Dark Dwarf,1,d23:spawn|d41:spawn
+176,Dark Dwarf Pounder,Dark Dwarf,1,d23:spawn|d41:spawn
+177,Dark Dwarf Berserker,Dark Dwarf,1,d23:spawn|d41:spawn
+178,Fish,School of Fish (non-combatant),0,
+179,Fish,School of Fish (non-combatant),1,elemw:placed
+180,Fish,School of Fish (non-combatant),0,
+181,Pirate,Wimpy Pirate Warrior Male,1,out01:spawn
+182,Buccaneer,Wimpy Pirate Warrior Male,1,out01:event|out01:spawn
+183,Corsair,Wimpy Pirate Warrior Male,1,out01:spawn
+184,Regnan Crossbowman,Wimpy Pirate Crossbowman (Female),0,
+185,Regnan Arbalester,Wimpy Pirate Crossbowman (Female),0,
+186,Regnan Lieutenant,Wimpy Pirate Crossbowman (Female),0,
+187,Pirate Seer,Wimpy Pirate Mage Male,1,d06:spawn
+188,Pirate Magi,Wimpy Pirate Mage Male,1,d06:spawn
+189,Pirate Wizard,Wimpy Pirate Mage Male,1,d06:spawn
+190,Hatchling,Wimpy Dragon,1,d17:event|d17:spawn|d47:spawn|d48:spawn|d49:spawn|out05:event|out05:spawn
+191,Dragonette,Wimpy Dragon,1,d17:spawn|d47:spawn|d48:spawn|d49:spawn|out05:spawn
+192,Young Dragon,Wimpy Dragon,1,d17:spawn|d47:spawn|d48:spawn|d49:spawn|out05:spawn
+193,Soldier of Fortune,Human Mercenary,1,d12:spawn|d16:spawn|d25:spawn|d31:spawn
+194,Mercenary,Human Mercenary,1,d12:spawn|d16:spawn|d25:spawn|d31:spawn
+195,Mercenary Captain,Human Mercenary,1,d12:spawn|d16:spawn|d25:spawn|d31:spawn
+196,Chaos Guardian,Wimpy Plane Guardian,1,d35:spawn
+197,Chaos Protector,Wimpy Plane Guardian,1,d35:spawn
+198,Chaos Overlord,Wimpy Plane Guardian,1,d35:spawn
