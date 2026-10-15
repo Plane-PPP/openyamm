@@ -20,7 +20,7 @@
 - Save v85 сохраняет cached outdoor monster combat Level. Старые v84 и ранее читаются;
   синтетический v84 fixture проверяет реальную миграцию без сброса остальных навыков.
 - Linux executable и оба test targets собраны:21 focused tests/29884 assertions,
-  3 runtime tests/46 assertions и187 extended tests/7048 assertions прошли. Прогоны пересекаются.
+  3 runtime tests/58 assertions и187 extended tests/7048 assertions прошли. Прогоны пересекаются.
   Ограничения sparse suite и будущие ручные проверки — [BUILD-NOTES](BUILD-NOTES.md).
 - Windows packaging разрешён и ожидает фактического результата Actions; ручная проверка нового
   билда пользователем ещё не выполнена. Axe, Armsmaster, DR и Identify Monster не перебалансированы.

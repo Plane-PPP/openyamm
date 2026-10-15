@@ -36,9 +36,10 @@ Linux Release, C++20, `OPENYAMM_USE_VULKAN=OFF`.
   выдача/рост/найм/миграция и настоящий v84 reader, обучение/продвижение, динамический P0,
   layout Stats, одна проверка за melee и инвариантность trace, исключения shooting/spells/objects;
   все12 предыдущих Axe/Minotaur-тестов включены.
-- Runtime: **3 tests /46 assertions, passed** — реальное создание Minotaur через NewGameScreen
+- Runtime: **3 tests /58 assertions, passed** — реальное создание Minotaur через NewGameScreen
   сверх выбранных skills; реальные indoor/outdoor terminal paths: HP0, dying, XP, death feedback,
-  outdoor MonsterKilled queue, повторная смерть отвергается без повторных XP/events/drops.
+  outdoor MonsterKilled queue;100%-й Wolf's Eye drop создаёт один реальный world item в обоих
+  adapters, повторная смерть отвергается без повторных XP/events/drops.
 - Extended: **187 tests /7048 assertions, passed** — attack/recovery/equip/Armsmaster/settings/
   save/mastery/skill/bolster. Прогоны пересекаются; числа не суммируются как независимое покрытие.
 - CSV/compiled registry: повторная генерация дала одинаковые SHA256 всех11 аналитических/генерируемых
@@ -65,12 +66,15 @@ MM9 trainer table, MM6 common scripts (2 cases), character inspect layout. Layou
 combat_target_panel development/release и недоступные fonts/maps/Android tests также исключены.
 **Полный suite не заявляется успешным.** Соответствующий CI не изменялся.
 
+Дополнительная проверка ненулевого loot выполнена отдельным тестовым этапом после dispatch;
+production source Windows run385a1e4 остался тем же. Новых изменений игрового кода не было.
+
 ## Ручная проверка и ограничения
 
 Новый билд **не Manually tested**. Проверить куклу/оружие, реальный звук/анимацию/добычу и квест,
 читабельность сообщения4секунды и русских glyphs, RMB P0, Stats при разных разрешениях,
 всех учителей с сюжетными ограничениями, реальные старые saves и частоту способности.
-Автотест world death использует синтетические actors без graphics/audio и item loot fixture;
+Автотест world death использует синтетические actors и детерминированный item loot fixture без graphics/audio;
 он не является ручным прослушиванием звука или проверкой всех конкретных квестов/loot tables.
 Формат v85 старым executable не читается: работать с копиями тестовых сохранений.
 Для старого outdoor save, не хранившего боевой Level, миграция использует текущие mounted bolster rules.

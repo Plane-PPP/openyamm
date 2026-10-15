@@ -11,6 +11,11 @@
 #include "game/tables/ItemTable.h"
 #include "game/items/ItemEnchantTables.h"
 #include "game/items/ItemRuntime.h"
+#include "engine/TextTable.h"
+#include "tests/RegressionGameData.h"
+
+#include <fstream>
+#include <iterator>
 
 using namespace OpenYAMM::Game;
 
@@ -41,6 +46,20 @@ struct Fixture
         row[7] = "0"; row[10] = "Stationary"; row[11] = "Normal";
         row[13] = "0"; row[14] = "100"; row[17] = "Phys"; row[18] = "1d6";
         REQUIRE(monsters.loadStatsFromRows({row}));
+        REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+        items = OpenYAMM::Tests::regressionGameData().itemTable;
+        std::ifstream input(std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/engine/data_tables/object_list.txt");
+        REQUIRE(input.good());
+        const std::string objectText{std::istreambuf_iterator<char>(input), {}};
+        const auto parsed = OpenYAMM::Engine::TextTable::parseTabSeparated(objectText);
+        REQUIRE(parsed);
+        std::vector<std::vector<std::string>> objectRows;
+        for (size_t i = 0; i < parsed->getRowCount(); ++i) objectRows.push_back(parsed->getRow(i));
+        REQUIRE(objects.loadRows(objectRows));
+        REQUIRE(monsters.loadDeathDropsFromRows({
+            {"MonsterID", "MonsterName", "ItemID", "ItemName", "ChancePercent", "Description"},
+            {"1", "Target", "201", "Wolf's Eye", "100", "Deterministic world drop"}}));
+
         map.id = 1;
         map.fileName = "out01.odm";
         map.worldId = "mm8";
@@ -91,6 +110,7 @@ TEST_CASE("Lethal Strike real outdoor terminal transition grants XP and hooks on
     CHECK(f.party.member(0)->experience == after);
     CHECK(world.drainMonsterKilledEvents().empty());
     CHECK(world.drainCombatFeedbackEvents().empty());
+    REQUIRE(snapshot.worldItems.size() == 1);
     CHECK(world.snapshot().worldItems.size() == snapshot.worldItems.size());
 }
 
@@ -117,5 +137,6 @@ TEST_CASE("Lethal Strike real indoor terminal transition grants XP once and keep
     CHECK_FALSE(world.killPartyAttackActor(0, {}));
     CHECK(f.party.member(0)->experience == after);
     CHECK(world.drainCombatFeedbackEvents().empty());
+    REQUIRE(drops == 1);
     CHECK(f.delta->spriteObjects.size() == drops);
 }
