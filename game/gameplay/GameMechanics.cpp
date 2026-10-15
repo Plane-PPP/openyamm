@@ -15,6 +15,8 @@
 #include <array>
 #include <cctype>
 #include <limits>
+#include <iomanip>
+#include <sstream>
 #include <string_view>
 
 namespace OpenYAMM::Game
@@ -3044,6 +3046,70 @@ CombatDamageType GameMechanics::spellCombatDamageType(uint32_t spellId, const Sp
     }
 
     return parseCombatDamageType(pSpellEntry->schoolName);
+}
+
+uint32_t GameMechanics::lethalStrikePlayerLevel(const Character &character)
+{
+    return levelWithModifier(character.level, character.levelModifier);
+}
+
+double GameMechanics::lethalStrikeBaseChance(const Character &character)
+{
+    const std::string className = canonicalClassName(character.className);
+    const CharacterSkill *pSkill = character.findSkill("LethalStrike");
+    if ((className != "Minotaur" && className != "MinotaurLord") || pSkill == nullptr || pSkill->level == 0)
+    {
+        return 0.0;
+    }
+    const CharacterSkill *pPerception = character.findSkill("Perception");
+    const double s = pSkill->level;
+    const double v = pPerception != nullptr ? pPerception->level : 0;
+    switch (pSkill->mastery)
+    {
+        case SkillMastery::Normal: return 0.60 * s;
+        case SkillMastery::Expert: return 0.90 * s + 0.56 * v;
+        case SkillMastery::Master: return 1.10 * s + 0.64 * v;
+        case SkillMastery::Grandmaster: return 1.30 * s + 0.72 * v;
+        case SkillMastery::None: return 0.0;
+    }
+    return 0.0;
+}
+
+double GameMechanics::lethalStrikeLevelFactor(uint32_t playerLevel, int monsterLevel)
+{
+    const double delta = static_cast<double>(playerLevel) - monsterLevel;
+    return delta >= 0 ? std::min(1.4, 1.0 + delta / 60.0) : 30.0 / (30.0 - 1.5 * delta);
+}
+
+bool GameMechanics::lethalStrikeHealthEligible(bool giant, int currentHp, int maxHp)
+{
+    return currentHp > 0 && (!giant || (maxHp > 0 && int64_t(5) * currentHp < int64_t(3) * maxHp));
+}
+
+double GameMechanics::lethalStrikeChance(
+    const Character &character, int monsterLevel, bool giant, int hp, int maxHp)
+{
+    return lethalStrikeHealthEligible(giant, hp, maxHp)
+        ? std::min(30.0, lethalStrikeBaseChance(character) * lethalStrikeLevelFactor(lethalStrikePlayerLevel(character), monsterLevel))
+        : 0.0;
+}
+
+std::string GameMechanics::lethalStrikeBaseChanceText(const Character &character, bool russian)
+{
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2) << lethalStrikeBaseChance(character);
+    std::string number = out.str();
+    if (russian)
+    {
+        std::replace(number.begin(), number.end(), '.', ',');
+    }
+    return (russian ? "Базовый шанс смертельного удара: " : "Base Lethal Strike Chance: ") + number + "%";
+}
+
+std::string GameMechanics::lethalStrikeSuccessText(const std::string &name, bool russian)
+{
+    return (name.empty() ? (russian ? "Минотавр" : "Minotaur") : name)
+        + (russian ? " наносит смертельный удар!" : " delivers a Lethal Strike!");
 }
 
 int GameMechanics::minotaurDamageResistancePercent(const Character &character)

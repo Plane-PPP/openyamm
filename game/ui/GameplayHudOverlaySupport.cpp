@@ -256,7 +256,7 @@ struct CharacterStatRowDefinition
     const char *pValueId;
 };
 
-constexpr std::array<CharacterStatRowDefinition, 26> CharacterStatRows = {{
+constexpr std::array<CharacterStatRowDefinition, 27> CharacterStatRows = {{
     {"SkillPoints", "CharacterStatsSkillPointsTextLabel", "CharacterStatsSkillPointsValue"},
     {"Might", "CharacterStatMightLabel", "CharacterStatMightValue"},
     {"Intellect", "CharacterStatIntellectLabel", "CharacterStatIntellectValue"},
@@ -268,6 +268,7 @@ constexpr std::array<CharacterStatRowDefinition, 26> CharacterStatRows = {{
     {"HitPoints", "CharacterStatHitPointsLabel", "CharacterStatHitPointsValue"},
     {"SpellPoints", "CharacterStatSpellPointsLabel", "CharacterStatSpellPointsValue"},
     {"ArmorClass", "CharacterStatArmorClassLabel", "CharacterStatArmorClassValue"},
+    {"DamageResistance", "CharacterStatDamageResistanceLabel", "CharacterStatDamageResistanceValue"},
     {"Condition", "CharacterStatConditionLabel", "CharacterStatConditionValue"},
     {"QuickSpell", "CharacterStatQuickSpellLabel", "CharacterStatQuickSpellValue"},
     {"Age", "CharacterStatAgeLabel", "CharacterStatAgeValue"},
@@ -654,6 +655,15 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
             overlay.title = pEntry->name;
             overlay.body = pEntry->description;
 
+            if (std::string_view(row.pStatName) == "DamageResistance" && context.settingsSnapshot().minotaurRussianText)
+            {
+                overlay.title = "Сопротивление урону";
+                overlay.body = "Сопротивление урону — врождённая способность минотавров. Она снижает получаемый "
+                    "физический урон в зависимости от уровня персонажа и продвижения. Минотавры-лорды получают "
+                    "дополнительный бонус. Магический и стихийный урон этой способностью не снижаются. "
+                    "Максимальное сопротивление — 30%.";
+            }
+
             if (std::string_view(row.pStatName) == "Experience")
             {
                 const std::string supplement = GameMechanics::buildExperienceInspectSupplement(*pCharacter);
@@ -783,6 +793,25 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                     masterDescription = "Skill added to Attack Bonus (triple effect)";
                     grandmasterDescription =
                         "Skill added to Attack Bonus (quintuple effect); +1 damage per skill point";
+                }
+
+                if (row.canonicalName == "LethalStrike")
+                {
+                    const bool russian = context.settingsSnapshot().minotaurRussianText;
+                    if (russian)
+                    {
+                        overlay.title = "Смертельный удар";
+                        overlay.body = "Врождённый навык минотавра: шанс мгновенно убить живого монстра после "
+                            "успешной обычной рукопашной атаки. Одна проверка за атаку, независимо от оружия. "
+                            "С Expert базовый уровень Perception повышает шанс. Слабых врагов убить легче, "
+                            "сильных — сложнее. GIANT должен иметь строго менее 60% HP после обычного урона. "
+                            "Итоговый шанс зависит от уровня и категории цели и ограничен 30%; базовый шанс не ограничен.";
+                        normalDescription = "0,60% за уровень навыка";
+                        expertDescription = "0,90% за уровень + 0,56% за уровень Perception";
+                        masterDescription = "1,10% за уровень + 0,64% за уровень Perception";
+                        grandmasterDescription = "1,30% за уровень + 0,72% за уровень Perception";
+                    }
+                    overlay.body += "\n\n" + GameMechanics::lethalStrikeBaseChanceText(*pCharacter, russian);
                 }
 
                 overlay.normal.text = "Normal: " + normalDescription;

@@ -190,6 +190,7 @@ enum class GameplayActorAttackAbility : uint8_t
 
 struct GameplayActorInspectState
 {
+    int effectiveLevel = 1;
     std::string displayName;
     std::string previewTextureName;
     size_t uniqueActorIndex = static_cast<size_t>(-1);
@@ -399,6 +400,7 @@ struct GameplayPartyAttackActorFacts
     int currentHp = 0;
     int maxHp = 0;
     int effectiveArmorClass = 0;
+    int effectiveLevel = 1;
     int hourOfPowerPower = 0;
     bool isDead = false;
     bool isInvisible = false;
@@ -767,6 +769,18 @@ public:
         size_t actorIndex,
         int damage,
         const GameplayWorldPoint &source) = 0;
+    virtual bool debugSetActorHealth(size_t actorIndex, int health)
+    {
+        (void)actorIndex;
+        (void)health;
+        return false;
+    }
+    virtual bool killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source)
+    {
+        (void)actorIndex;
+        (void)source;
+        return false;
+    }
     virtual bool applyPartyAttackMeleeBModelDamage(size_t bModelIndex, int damage)
     {
         (void)bModelIndex;

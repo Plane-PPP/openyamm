@@ -1358,14 +1358,26 @@ void GameplayCombatController::handlePartyAttackPresentation(
         }
     }
 
-    showHitStatus(
-        pRuntime,
-        formatPartyAttackStatusText(
-            attack.attackerName,
-            attack.targetName,
-            attack.attack,
-            attack.killed,
-            attack.appliedDamage));
+    if (attack.lethalStrikeSucceeded && pRuntime != nullptr)
+    {
+        // Always visible, including show_hits=false. High priority protects it from ordinary hit messages.
+        pRuntime->setStatusBarEvent(
+            GameMechanics::lethalStrikeSuccessText(attack.attackerName, pRuntime->settingsSnapshot().minotaurRussianText),
+            4.0f,
+            GameplayUiController::StatusBarEventPriority::High);
+    }
+    else
+    {
+        showHitStatus(
+            pRuntime,
+            formatPartyAttackStatusText(
+                attack.attackerName,
+                attack.targetName,
+                attack.attack,
+                attack.killed,
+                attack.appliedDamage));
+    }
+
 }
 
 void GameplayCombatController::handlePendingCombatEvents(

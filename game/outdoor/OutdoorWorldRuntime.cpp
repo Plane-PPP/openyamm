@@ -2997,6 +2997,7 @@ OutdoorWorldRuntime::MapActorState buildMapActorState(
     const int baseMaxHp = pStats != nullptr ? pStats->hitPoints : std::max(0, static_cast<int>(actor.hp));
     state.displayName = resolveMapDeltaActorName(monsterTable, actor);
     state.maxHp = pStats != nullptr ? bolster.maxHp : std::max(0, static_cast<int>(actor.hp));
+    state.effectiveLevel = bolster.effectiveLevel;
     state.currentHp = actor.hp > 0 && actor.hp > baseMaxHp ? actor.hp : state.maxHp;
     state.bolsterRewardMultiplier = pStats != nullptr
         ? std::max(
@@ -3973,6 +3974,7 @@ OutdoorWorldRuntime::MapActorState buildSpawnedMapActorState(
     const GameplayMonsterBolsterResult bolster =
         resolveGameplayMonsterBolster(bolsterContext, stats, pMonsterEntry);
     state.maxHp = bolster.maxHp;
+    state.effectiveLevel = bolster.effectiveLevel;
     state.currentHp = bolster.maxHp;
     state.bolsterRewardMultiplier = bolster.rewardMultiplier;
     state.x = static_cast<int>(std::lround(x));
@@ -7321,6 +7323,24 @@ void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_timerDefinitionsInitialized = false;
     m_resetLegacyTimersOnInitialize = false;
     m_mapActors = snapshot.mapActors;
+    // v84 and older saves had no explicit combat level. Reconstruct once from the same bolster pipeline.
+    for (MapActorState &actor : m_mapActors)
+    {
+        if (actor.effectiveLevel > 0 || m_pMonsterTable == nullptr)
+        {
+            continue;
+        }
+        const MonsterTable::MonsterStatsEntry *pStats = m_pMonsterTable->findStatsById(actor.monsterId);
+        if (pStats != nullptr)
+        {
+            const MonsterEntry *pEntry = resolveMonsterEntry(*m_pMonsterTable, actor.monsterId, pStats);
+            actor.effectiveLevel = resolveGameplayMonsterBolster(
+                GameplayBolsterRuntimeContext{.pMap = &m_map, .pMonsterTable = m_pMonsterTable,
+                    .pBolsterMapTable = m_pMergedBolsterMapTable, .pBolsterMonsterTable = m_pMergedBolsterMonsterTable,
+                    .pParty = m_pParty, .bolsterMonstersEnabled = m_bolsterMonstersEnabled}, *pStats, pEntry).effectiveLevel;
+        }
+    }
+
     m_chests = snapshot.chests;
     m_materializedChestViews = snapshot.materializedChestViews;
     m_activeChestView = snapshot.activeChestView;
@@ -14919,6 +14939,7 @@ std::optional<GameplayPartyAttackActorFacts> OutdoorWorldRuntime::partyAttackAct
         .currentHp = pActor->currentHp,
         .maxHp = pActor->maxHp,
         .effectiveArmorClass = effectiveMapActorArmorClass(actorIndex),
+        .effectiveLevel = pActor->effectiveLevel,
         .hourOfPowerPower = monsterHourOfPowerResistanceBonus(*pActor),
         .isDead = pActor->isDead,
         .isInvisible = pActor->isInvisible,
@@ -15728,9 +15749,10 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     int damage,
     float partyX,
     float partyY,
-    float partyZ)
+    float partyZ,
+    bool lethalStrike)
 {
-    if (actorIndex >= m_mapActors.size() || damage <= 0)
+    if (actorIndex >= m_mapActors.size() || (!lethalStrike && damage <= 0))
     {
         return false;
     }
@@ -15744,10 +15766,10 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
 
     if (actor.usesMm9ActorRules && !actor.canReceiveDamage)
     {
-        return true;
+        return !lethalStrike;
     }
 
-    if (m_pGameplayActorService != nullptr
+    if (!lethalStrike && m_pGameplayActorService != nullptr
         && m_pGameplayActorService->hasPainReflection(buildGameplayActorSpellEffectState(actor))
         && m_pParty != nullptr)
     {
@@ -15779,7 +15801,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     }
 
     const int previousHp = actor.currentHp;
-    actor.currentHp = std::max(0, actor.currentHp - damage);
+    actor.currentHp = lethalStrike ? 0 : std::max(0, actor.currentHp - damage);
     int experienceReward = 0;
     faceDirection(actor, partyX - actor.preciseX, partyY - actor.preciseY);
 
@@ -15865,7 +15887,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
 
     }
 
-    if (damage > 0)
+    if (damage > 0 || lethalStrike)
     {
         m_combatFeedbackEvents.push_back(
             GameplayCombatFeedbackEvent{
@@ -15893,6 +15915,22 @@ bool OutdoorWorldRuntime::applyPartyAttackMeleeDamage(
     const GameplayWorldPoint &source)
 {
     return applyPartyAttackToMapActor(actorIndex, damage, source.x, source.y, source.z);
+}
+
+bool OutdoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
+{
+    if (actorIndex >= m_mapActors.size() || isActorUnavailableForCombat(m_mapActors[actorIndex])
+        || health <= 0 || health > m_mapActors[actorIndex].maxHp)
+    {
+        return false;
+    }
+    m_mapActors[actorIndex].currentHp = health;
+    return true;
+}
+
+bool OutdoorWorldRuntime::killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source)
+{
+    return applyPartyAttackToMapActor(actorIndex, 0, source.x, source.y, source.z, true);
 }
 
 bool OutdoorWorldRuntime::applyPartyAttackMeleeBModelDamage(size_t bModelIndex, int damage)

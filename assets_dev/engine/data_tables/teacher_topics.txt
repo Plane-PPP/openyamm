@@ -176,4 +176,7 @@ TopicId	Notes	SkillId	Mastery	TextId	Req. Gold	Req. Skill
 1569	Expert Disarm Trap 	31	1	1948		
 1570	Master Disarm Trap	31	2	1949		
 1571	Expert Learning	38	1	1950		
-1572	Master Learning	38	2	1951		
+1572	Master Learning	38	2	1951
+29000	Expert Lethal Strike	40	1	29000	2000	4
+29001	Master Lethal Strike	40	2	29001	5000	7
+29002	Grandmaster Lethal Strike	40	3	29002	8000	10

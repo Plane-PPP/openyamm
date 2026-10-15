@@ -110,6 +110,27 @@ struct NewGameScreenTestAccess
             }
         }
     }
+
+    static void checkInnateLethalStrike(NewGameScreen &screen)
+    {
+        screen.selectContinent("jadame");
+        size_t checked = 0;
+        for (size_t i = 0; i < screen.m_candidates.size(); ++i)
+        {
+            screen.resetStateForCandidate(i);
+            if (screen.classNameForState(screen.m_state) != "Minotaur") continue;
+            const size_t oldSkillCount = screen.m_state.defaultSkills.size()
+                + screen.m_state.selectedOptionalSkills.size();
+            const Character c = screen.buildCharacter();
+            REQUIRE(c.hasSkill("LethalStrike"));
+            CHECK(c.findSkill("LethalStrike")->level == 1);
+            CHECK(c.findSkill("LethalStrike")->mastery == SkillMastery::Normal);
+            CHECK(c.skills.size() == oldSkillCount + 1);
+            CHECK(c.skillPoints == 0);
+            ++checked;
+        }
+        CHECK(checked > 0);
+    }
 };
 }
 
@@ -133,4 +154,19 @@ TEST_CASE("party creation offers all starting characters with continent-specific
             CHECK_FALSE(preserveDebugLoadout);
         }, {});
     NewGameScreenTestAccess::checkAllContinents(screen, data, createdParty, startingContinentId);
+}
+
+
+TEST_CASE("Lethal Strike new game creation adds innate skill beyond chosen skills")
+{
+    using namespace OpenYAMM::Game;
+    const std::filesystem::path root = OPENYAMM_SOURCE_DIR;
+    OpenYAMM::Engine::AssetFileSystem assets;
+    REQUIRE(assets.initialize(root, root / "assets_dev", OpenYAMM::Engine::AssetScaleTier::X1));
+    GameDataLoader loader;
+    REQUIRE(loader.loadCommonForGameplay(assets));
+    GameDataRepository data;
+    data.bind(loader);
+    NewGameScreen screen(assets, nullptr, data, false, false, true, {}, {});
+    NewGameScreenTestAccess::checkInnateLethalStrike(screen);
 }

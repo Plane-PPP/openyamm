@@ -5,6 +5,7 @@
 #include "game/app/ProfilingControl.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/gameplay/LethalStrikeMonsters.h"
 #include "game/gameplay/GameplayHeldItemController.h"
 #include "game/gameplay/ReputationRuntime.h"
 #include "game/scene/IndoorSceneRuntime.h"
@@ -3424,9 +3425,19 @@ void GameApplication::registerDebugConsoleCommands()
     m_debugConsole.registerCommand({
         .name = "actor",
         .description = "Count or spawn ordinary table-driven monsters on the current map.",
-        .usage = "actor count <id> [ids...] | actor spawn <id> [count] [x y z] [group|friendly]",
+        .usage = "actor health <actor-index> <hp> | actor count <id> [ids...] | actor spawn <id> [count] [x y z] [group|friendly]",
         .callback = [this, activeGameplayWorld, commandResult](const DebugConsole::CommandContext &context)
         {
+            if (context.args.size() == 3 && context.args[0] == "health")
+            {
+                const std::optional<int32_t> index = parseInt32Argument(context.args[1]);
+                const std::optional<int32_t> hp = parseInt32Argument(context.args[2]);
+                IGameplayWorldRuntime *pWorld = activeGameplayWorld();
+                const bool ok = pWorld != nullptr && index && *index >= 0 && hp
+                    && pWorld->debugSetActorHealth(size_t(*index), *hp);
+                return commandResult(ok, ok ? "Actor HP updated; max HP is unchanged."
+                    : "Invalid actor/HP, dead target, or HP exceeds maximum.");
+            }
             if (!context.args.empty() && toLowerCopy(context.args[0]) == "spawn")
             {
                 // actor spawn <id> <count> <x> <y> <z> [group|friendly], or without a position:
@@ -3476,7 +3487,7 @@ void GameApplication::registerDebugConsoleCommands()
             if (context.args.size() < 2 || toLowerCopy(context.args[0]) != "count")
             {
                 return commandResult(false,
-                    "Usage: actor count <id> [ids...] | actor spawn <id> [count] [x y z] [group|friendly]");
+                    "Usage: actor health <actor-index> <hp> | actor count <id> [ids...] | actor spawn <id> [count] [x y z] [group|friendly]");
             }
 
             IGameplayWorldRuntime *pWorldRuntime = activeGameplayWorld();
@@ -4737,11 +4748,94 @@ void GameApplication::registerDebugConsoleCommands()
         }});
 
     m_debugConsole.registerCommand({
-        .name = "player",
-        .description = "Create a level-1 player character and add it to the party.",
-        .usage = "player add <class-id|class-name> [name]",
+        .name = "lethal",
+        .description = "Inspect Lethal Strike probability against a real actor without rolling RNG.",
+        .usage = "lethal chance <actor-index>",
+        .callback = [activeParty, activeGameplayWorld, commandResult](const DebugConsole::CommandContext &context)
+        {
+            if (context.args.size() != 2 || context.args[0] != "chance")
+            {
+                return commandResult(false, "Usage: lethal chance <actor-index>");
+            }
+            Party *pParty = activeParty();
+            const Character *pMember = pParty != nullptr ? pParty->activeMember() : nullptr;
+            IGameplayWorldRuntime *pWorld = activeGameplayWorld();
+            const std::optional<int32_t> index = parseInt32Argument(context.args[1]);
+            const auto facts = pWorld != nullptr && index && *index >= 0
+                ? pWorld->partyAttackActorFacts(size_t(*index), false) : std::nullopt;
+            if (pMember == nullptr || !facts)
+            {
+                return commandResult(false, "Invalid character or actor.");
+            }
+            const bool giant = lethalStrikeGiantMonster(facts->monsterId);
+            std::ostringstream out;
+            out << "actor_index=" << *index << " monster_id=" << facts->monsterId
+                << " level=" << facts->effectiveLevel << " HP=" << facts->currentHp << "/" << facts->maxHp
+                << " category=" << (giant ? "GIANT" : "NORMAL")
+                << " P0=" << GameMechanics::lethalStrikeBaseChance(*pMember)
+                << " chance=" << GameMechanics::lethalStrikeChance(
+                    *pMember, facts->effectiveLevel, giant, facts->currentHp, facts->maxHp) << "% (no RNG)";
+            return commandResult(true, out.str());
+        }});
+
+    m_debugConsole.registerCommand({
+        .name = "skill",
+        .description = "Set a base skill on the selected character for testing; class caps still apply.",
+        .usage = "skill set <skill-name> <level 1-63> <mastery 1-4>",
         .callback = [this, activeParty, commandResult](const DebugConsole::CommandContext &context)
         {
+            if (context.args.size() != 4 || context.args[0] != "set")
+                return commandResult(false, "Usage: skill set LethalStrike|Perception <level 1-63> <mastery 1-4>");
+            Party *pParty = activeParty();
+            Character *pMember = pParty != nullptr ? pParty->activeMember() : nullptr;
+            const std::string name = canonicalSkillName(context.args[1]);
+            const std::optional<int32_t> level = parseInt32Argument(context.args[2]);
+            const std::optional<int32_t> mastery = parseInt32Argument(context.args[3]);
+            const ClassSkillTable *pCaps = pParty != nullptr ? pParty->classSkillTable() : nullptr;
+            if (pMember == nullptr || pCaps == nullptr || name.empty() || !level || *level < 1 || *level > 63
+                || !mastery || *mastery < 1 || *mastery > 4
+                || static_cast<int>(pCaps->getEffectiveCap(pMember->className, pMember->raceId, name)) < *mastery)
+                return commandResult(false, "Invalid skill, number or mastery above this character's class cap.");
+            pMember->skills[name] = CharacterSkill{name, uint32_t(*level), static_cast<SkillMastery>(*mastery)};
+            pMember->synchronizeInnateAbilitySpells();
+            pParty->refreshDerivedState();
+            synchronizeSessionFromRuntime();
+            return commandResult(true, displaySkillName(name) + " updated.");
+        }});
+
+    m_debugConsole.registerCommand({
+        .name = "player",
+        .description = "Create a level-1 player character and add it to the party.",
+        .usage = "player add <class-id|class-name> [name] | player level <1-200> | player class <class-name>",
+        .callback = [this, activeParty, commandResult](const DebugConsole::CommandContext &context)
+        {
+            if (context.args.size() == 2 && context.args[0] == "class")
+            {
+                Party *pParty = activeParty();
+                const ClassSkillTable *pCaps = pParty != nullptr ? pParty->classSkillTable() : nullptr;
+                const std::string name = canonicalClassName(context.args[1]);
+                if (pCaps == nullptr || !pCaps->classIdForName(name)
+                    || !pParty->setMemberClassName(pParty->activeMemberIndex(), name))
+                {
+                    return commandResult(false, "Invalid character class.");
+                }
+                synchronizeSessionFromRuntime();
+                return commandResult(true, "Character class updated for testing.");
+            }
+            if (context.args.size() == 2 && context.args[0] == "level")
+            {
+                Party *pParty = activeParty();
+                Character *pMember = pParty != nullptr ? pParty->activeMember() : nullptr;
+                const std::optional<int32_t> level = parseInt32Argument(context.args[1]);
+                if (pMember == nullptr || !level || *level < 1 || *level > 200)
+                    return commandResult(false, "Usage: player level <1-200> (selected character)");
+                pMember->level = uint32_t(*level);
+                pMember->experience = uint64_t(*level) * uint64_t(*level - 1) * 500;
+                GameMechanics::refreshCharacterBaseResources(*pMember, true, pParty->classMultiplierTable());
+                pParty->refreshDerivedState();
+                synchronizeSessionFromRuntime();
+                return commandResult(true, "Character level updated.");
+            }
             if (context.args.size() < 2 || toLowerCopy(context.args[0]) != "add")
             {
                 return commandResult(false, "Usage: player add <class-id|class-name> [name]");
@@ -5109,7 +5203,7 @@ void GameApplication::registerDebugConsoleCommands()
                 return commandResult(
                     false,
                     "Usage: config get|set|toggle "
-                    "immortal|unlimited_mana|invisible|start_flying|minotaur_damage_trace|axe_damage_trace|"
+                    "immortal|unlimited_mana|invisible|start_flying|minotaur_damage_trace|axe_damage_trace|lethal_strike_trace|minotaur_russian_text|"
                     "terrain_decorations|baked_sun_strength|"
                     "baked_sky_strength|baked_sun_color|baked_sky_color [value]");
             }
@@ -5151,6 +5245,14 @@ void GameApplication::registerDebugConsoleCommands()
                 {
                     return m_settings.axeDamageTrace;
                 }
+                if (name == "lethal_strike_trace")
+                {
+                    return m_settings.lethalStrikeTrace;
+                }
+                if (name == "minotaur_russian_text")
+                {
+                    return m_settings.minotaurRussianText;
+                }
 
                 if (name == "minotaur_damage_trace")
                 {
@@ -5188,6 +5290,14 @@ void GameApplication::registerDebugConsoleCommands()
                 if (name == "axe_damage_trace")
                 {
                     m_settings.axeDamageTrace = value;
+                }
+                else if (name == "lethal_strike_trace")
+                {
+                    m_settings.lethalStrikeTrace = value;
+                }
+                else if (name == "minotaur_russian_text")
+                {
+                    m_settings.minotaurRussianText = value;
                 }
                 else if (name == "minotaur_damage_trace")
                 {
@@ -6297,7 +6407,7 @@ void GameApplication::loadOrCreateSettings()
     configureGameplayDebugTrace(m_settings.gameplayTrace, m_settings.gameplayTraceFile, m_settings.gameplayTraceAppend);
     configureGameplayCombatTrace(
         m_settings.combatTrace, m_settings.combatTraceFile, m_settings.combatTraceAppend,
-        m_settings.minotaurDamageTrace, m_settings.axeDamageTrace);
+        m_settings.minotaurDamageTrace, m_settings.axeDamageTrace, m_settings.lethalStrikeTrace);
 }
 
 void GameApplication::applyCurrentSettingsToActiveRuntime()
@@ -6307,7 +6417,7 @@ void GameApplication::applyCurrentSettingsToActiveRuntime()
     configureGameplayDebugTrace(m_settings.gameplayTrace, m_settings.gameplayTraceFile, m_settings.gameplayTraceAppend);
     configureGameplayCombatTrace(
         m_settings.combatTrace, m_settings.combatTraceFile, m_settings.combatTraceAppend,
-        m_settings.minotaurDamageTrace, m_settings.axeDamageTrace);
+        m_settings.minotaurDamageTrace, m_settings.axeDamageTrace, m_settings.lethalStrikeTrace);
     setTextureFilteringConfig(textureFilteringConfigFromSettings(m_settings));
     m_gameAudioSystem.setSoundVolume(normalizedVolumeLevel(m_settings.soundVolume));
     m_gameAudioSystem.setMusicVolume(normalizedVolumeLevel(m_settings.musicVolume));

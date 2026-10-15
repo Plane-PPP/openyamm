@@ -338,7 +338,10 @@ void grantAllSkills(Character &character, uint32_t level, SkillMastery mastery)
 
     for (const std::string &skillName : skillNames)
     {
-        grantSeedSkill(character, skillName, level, mastery);
+        if (skillName != "LethalStrike")
+        {
+            grantSeedSkill(character, skillName, level, mastery);
+        }
     }
 }
 
@@ -2004,6 +2007,12 @@ bool Character::setSkillMastery(const std::string &skillName, SkillMastery maste
 
 void Character::synchronizeInnateAbilitySpells()
 {
+    const std::string canonicalClass = canonicalClassName(className);
+    if (canonicalClass == "Minotaur" || canonicalClass == "MinotaurLord")
+    {
+        skills.try_emplace("LethalStrike", CharacterSkill{"LethalStrike", 1, SkillMastery::Normal});
+    }
+
     static constexpr std::array<const char *, 3> InnateAbilitySkillNames = {
         "DarkElfAbility",
         "VampireAbility",
@@ -5505,6 +5514,7 @@ bool Party::setMemberClassName(size_t memberIndex, const std::string &className)
 
     pMember->className = canonicalClassName(className);
     pMember->role = normalizeRoleName(pMember->className);
+    pMember->synchronizeInnateAbilitySpells();
 
     if (pMember->className == "Lich")
     {

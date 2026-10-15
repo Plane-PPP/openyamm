@@ -11315,6 +11315,7 @@ bool IndoorWorldRuntime::actorInspectState(
             *pStats,
             pMonsterEntry);
     state.maxHp = std::max(0, bolster.maxHp);
+    state.effectiveLevel = bolster.effectiveLevel;
     state.attack1Damage.diceRolls = bolster.attack1DamageDiceRolls;
     state.attack1Damage.diceSides = bolster.attack1DamageDiceSides;
     state.attack1Damage.bonus = bolster.attack1DamageBonus;
@@ -13589,6 +13590,7 @@ std::optional<GameplayPartyAttackActorFacts> IndoorWorldRuntime::partyAttackActo
         .currentHp = inspectState.currentHp,
         .maxHp = inspectState.maxHp,
         .effectiveArmorClass = inspectState.armorClass,
+        .effectiveLevel = inspectState.effectiveLevel,
         .hourOfPowerPower = monsterHourOfPowerResistanceBonus(m_mapActorAiStates, actorIndex),
         .isDead = runtimeState.isDead,
         .isInvisible = runtimeState.isInvisible,
@@ -13667,11 +13669,12 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     size_t actorIndex,
     int damage,
     CombatDamageType damageType,
-    const GameplayWorldPoint &source)
+    const GameplayWorldPoint &source,
+    bool lethalStrike)
 {
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
-    if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size() || damage <= 0)
+    if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size() || (!lethalStrike && damage <= 0))
     {
         return false;
     }
@@ -13685,9 +13688,10 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     }
 
     const int16_t resolvedMonsterId = resolveIndoorActorStatsId(actor);
-    const int appliedDamage = applyMonsterDamageEventHooks(actorIndex, resolvedMonsterId, damage, damageType);
+    const int appliedDamage = lethalStrike ? 0
+        : applyMonsterDamageEventHooks(actorIndex, resolvedMonsterId, damage, damageType);
     const int previousHp = actor.hp;
-    const int nextHp = std::max(0, previousHp - appliedDamage);
+    const int nextHp = lethalStrike ? 0 : std::max(0, previousHp - appliedDamage);
     int experienceReward = 0;
     actor.hp = static_cast<int16_t>(nextHp);
     actor.attributes |= static_cast<uint32_t>(EvtActorAttribute::Hostile)
@@ -13721,7 +13725,7 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     if (actorIndex < m_mapActorAiStates.size())
     {
         MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
-        if (m_pGameplayActorService != nullptr
+        if (!lethalStrike && m_pGameplayActorService != nullptr
             && m_pGameplayActorService->hasPainReflection(aiState.spellEffects)
             && m_pParty != nullptr)
         {
@@ -13794,7 +13798,7 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
         }
     }
 
-    if (appliedDamage > 0)
+    if (appliedDamage > 0 || lethalStrike)
     {
         const MapActorAiState *pAiState =
             actorIndex < m_mapActorAiStates.size() ? &m_mapActorAiStates[actorIndex] : nullptr;
@@ -13821,6 +13825,24 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     const GameplayWorldPoint &source)
 {
     return applyPartyAttackMeleeDamage(actorIndex, damage, CombatDamageType::Physical, source);
+}
+
+bool IndoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
+{
+    MapDeltaData *pData = mapDeltaData();
+    const std::optional<GameplayPartyAttackActorFacts> facts = partyAttackActorFacts(actorIndex, false);
+    if (pData == nullptr || !facts || facts->isDead || health <= 0 || health > facts->maxHp
+        || health > std::numeric_limits<int16_t>::max())
+    {
+        return false;
+    }
+    pData->actors[actorIndex].hp = static_cast<int16_t>(health);
+    return true;
+}
+
+bool IndoorWorldRuntime::killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source)
+{
+    return applyPartyAttackMeleeDamage(actorIndex, 0, CombatDamageType::Physical, source, true);
 }
 
 std::vector<GameplayCombatFeedbackEvent> IndoorWorldRuntime::drainCombatFeedbackEvents()

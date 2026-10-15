@@ -20,6 +20,7 @@ add_executable(openyamm_unit_tests
     GameplayBolsterRuntimeTests.cpp
     GameplaySaveLoadUiSupportTests.cpp
     GameplayRuleRegressionTests.cpp
+    LethalStrikeTests.cpp
     AxeRebalanceTests.cpp
     AxeActionTestStubs.cpp
     GameInputSystemTests.cpp
@@ -325,6 +326,7 @@ endif()
 add_test(NAME openyamm_unit_tests COMMAND openyamm_unit_tests)
 
 add_executable(openyamm_runtime_tests
+    LethalStrikeWorldTests.cpp
     UnitTestMain.cpp
     RegressionGameData.cpp
     NewGameScreenTests.cpp

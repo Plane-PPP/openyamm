@@ -1,0 +1,659 @@
+monster_id,family,picture,category,approval
+1,Lizardmen Male (Peasant),Lizardmen Male (Peasant) A,NORMAL,user-approved-v0.4
+2,Lizardmen Male (Peasant),Lizardmen Male (Peasant) B,NORMAL,user-approved-v0.4
+3,Lizardmen Male (Peasant),Lizardmen Male (Peasant) C,NORMAL,user-approved-v0.4
+4,Lizardmen Warrior,Lizardmen Warrior A,NORMAL,user-approved-v0.4
+5,Lizardmen Warrior,Lizardmen Warrior B,NORMAL,user-approved-v0.4
+6,Lizardmen Warrior,Lizardmen Warrior C,NORMAL,user-approved-v0.4
+7,Couatl (winged snake),Couatl (winged snake) A,NORMAL,user-approved-v0.4
+8,Couatl (winged snake),Couatl (winged snake) B,NORMAL,user-approved-v0.4
+9,Couatl (winged snake),Couatl (winged snake) C,NORMAL,user-approved-v0.4
+10,Pirate Warrior Male,Pirate Warrior Male A,NORMAL,user-approved-v0.4
+11,Pirate Warrior Male,Pirate Warrior Male B,NORMAL,user-approved-v0.4
+12,Pirate Warrior Male,Pirate Warrior Male C,NORMAL,user-approved-v0.4
+13,Pirate Crossbowman (Female),Pirate Crossbowman (Female) A,NORMAL,user-approved-v0.4
+14,Pirate Crossbowman (Female),Pirate Crossbowman (Female) B,NORMAL,user-approved-v0.4
+15,Pirate Crossbowman (Female),Pirate Crossbowman (Female) C,NORMAL,user-approved-v0.4
+16,Pirate Mage Male,Pirate Mage Male A,NORMAL,user-approved-v0.4
+17,Pirate Mage Male,Pirate Mage Male B,NORMAL,user-approved-v0.4
+18,Pirate Mage Male,Pirate Mage Male C,NORMAL,user-approved-v0.4
+19,Dark Elf Pesant Male,Dark Elf Pesant Male A,NORMAL,user-approved-v0.4
+20,Dark Elf Pesant Male,Dark Elf Pesant Male B,NORMAL,user-approved-v0.4
+21,Dark Elf Pesant Male,Dark Elf Pesant Male C,NORMAL,user-approved-v0.4
+22,Dark Elf Pesant Female,Dark Elf Pesant Female A,NORMAL,user-approved-v0.4
+23,Dark Elf Pesant Female,Dark Elf Pesant Female B,NORMAL,user-approved-v0.4
+24,Dark Elf Pesant Female,Dark Elf Pesant Female C,NORMAL,user-approved-v0.4
+25,Dark Elf Warrior,Dark Elf Warrior A,NORMAL,user-approved-v0.4
+26,Dark Elf Warrior,Dark Elf Warrior B,NORMAL,user-approved-v0.4
+27,Dark Elf Warrior,Dark Elf Warrior C,NORMAL,user-approved-v0.4
+28,Ogre Pesant Male,Ogre Pesant Male A,NORMAL,user-approved-v0.4
+29,Ogre Pesant Male,Ogre Pesant Male B,NORMAL,user-approved-v0.4
+30,Ogre Pesant Male,Ogre Pesant Male C,NORMAL,user-approved-v0.4
+31,Ogre Warrior,Ogre Warrior A,NORMAL,user-approved-v0.4
+32,Ogre Warrior,Ogre Warrior B,NORMAL,user-approved-v0.4
+33,Ogre Warrior,Ogre Warrior C,NORMAL,user-approved-v0.4
+34,Wererat Human Form Male,Wererat Human Form Male A,NORMAL,user-approved-v0.4
+35,Wererat Human Form Male,Wererat Human Form Male B,NORMAL,user-approved-v0.4
+36,Wererat Human Form Male,Wererat Human Form Male C,NORMAL,user-approved-v0.4
+37,Wererat Ratman Form Male,Wererat Ratman Form Male A,NORMAL,user-approved-v0.4
+38,Wererat Ratman Form Male,Wererat Ratman Form Male B,NORMAL,user-approved-v0.4
+39,Wererat Ratman Form Male,Wererat Ratman Form Male C,NORMAL,user-approved-v0.4
+40,Wererat Rat Form Male,Wererat Rat Form Male A,NORMAL,user-approved-v0.4
+41,Wererat Rat Form Male,Wererat Rat Form Male B,NORMAL,user-approved-v0.4
+42,Wererat Rat Form Male,Wererat Rat Form Male C,NORMAL,user-approved-v0.4
+43,Dragon Hunter,Dragon Hunter A,NORMAL,user-approved-v0.4
+44,Dragon Hunter,Dragon Hunter B,NORMAL,user-approved-v0.4
+45,Dragon Hunter,Dragon Hunter C,NORMAL,user-approved-v0.4
+46,Cleric (human male),Cleric (human male) A,NORMAL,user-approved-v0.4
+47,Cleric (human male),Cleric (human male) B,NORMAL,user-approved-v0.4
+48,Cleric (human male),Cleric (human male) C,NORMAL,user-approved-v0.4
+49,Vampire Female Peasant,Vampire Female Peasant A,NORMAL,user-approved-v0.4
+50,Vampire Female Peasant,Vampire Female Peasant B,NORMAL,user-approved-v0.4
+51,Vampire Female Peasant,Vampire Female Peasant C,NORMAL,user-approved-v0.4
+52,Vampire (monster),Vampire (monster) A,NORMAL,user-approved-v0.4
+53,Vampire (monster),Vampire (monster) B,NORMAL,user-approved-v0.4
+54,Vampire (monster),Vampire (monster) C,NORMAL,user-approved-v0.4
+55,Necromancer (monster),Necromancer (monster) A,NORMAL,user-approved-v0.4
+56,Necromancer (monster),Necromancer (monster) B,NORMAL,user-approved-v0.4
+57,Necromancer (monster),Necromancer (monster) C,NORMAL,user-approved-v0.4
+58,Troll,Troll A,NORMAL,user-approved-v0.4
+59,Troll,Troll B,NORMAL,user-approved-v0.4
+60,Troll,Troll C,NORMAL,user-approved-v0.4
+61,Troll Pesant,Troll Pesant A,NORMAL,user-approved-v0.4
+62,Troll Pesant,Troll Pesant B,NORMAL,user-approved-v0.4
+63,Troll Pesant,Troll Pesant C,NORMAL,user-approved-v0.4
+64,Minotaur,Minotaur A,NORMAL,user-approved-v0.4
+65,Minotaur,Minotaur B,NORMAL,user-approved-v0.4
+66,Minotaur,Minotaur C,NORMAL,user-approved-v0.4
+67,Minotaur Pesant,Minotaur Pesant A,NORMAL,user-approved-v0.4
+68,Minotaur Pesant,Minotaur Pesant B,NORMAL,user-approved-v0.4
+69,Minotaur Pesant,Minotaur Pesant C,NORMAL,user-approved-v0.4
+70,Dragon,Dragon A,GIANT,user-approved-v0.4
+71,Dragon,Dragon B,GIANT,user-approved-v0.4
+72,Dragon,Dragon C,GIANT,user-approved-v0.4
+73,Fire Elemental,Fire Elemental A,NORMAL,user-approved-v0.4
+74,Fire Elemental,Fire Elemental B,NORMAL,user-approved-v0.4
+75,Fire Elemental,Fire Elemental C,NORMAL,user-approved-v0.4
+76,Water Elemental,Water Elemental A,NORMAL,user-approved-v0.4
+77,Water Elemental,Water Elemental B,NORMAL,user-approved-v0.4
+78,Water Elemental,Water Elemental C,NORMAL,user-approved-v0.4
+79,Earth Elemental,Earth Elemental A,NORMAL,user-approved-v0.4
+80,Earth Elemental,Earth Elemental B,NORMAL,user-approved-v0.4
+81,Earth Elemental,Earth Elemental C,NORMAL,user-approved-v0.4
+82,Air Elemental,Air Elemental A,NORMAL,user-approved-v0.4
+83,Air Elemental,Air Elemental B,NORMAL,user-approved-v0.4
+84,Air Elemental,Air Elemental C,NORMAL,user-approved-v0.4
+85,Dire Wolf,Dire Wolf A,NORMAL,user-approved-v0.4
+86,Dire Wolf,Dire Wolf B,NORMAL,user-approved-v0.4
+87,Dire Wolf,Dire Wolf C,NORMAL,user-approved-v0.4
+88,Thunder Lizard,Thunder Lizard A,NORMAL,user-approved-v0.4
+89,Thunder Lizard,Thunder Lizard B,NORMAL,user-approved-v0.4
+90,Thunder Lizard,Thunder Lizard C,NORMAL,user-approved-v0.4
+91,Cyclops,Cyclops A,NORMAL,user-approved-v0.4
+92,Cyclops,Cyclops B,NORMAL,user-approved-v0.4
+93,Cyclops,Cyclops C,NORMAL,user-approved-v0.4
+94,Serpentmen,Serpentmen A,NORMAL,user-approved-v0.4
+95,Serpentmen,Serpentmen B,NORMAL,user-approved-v0.4
+96,Serpentmen,Serpentmen C,NORMAL,user-approved-v0.4
+97,Will ' O Wisp,Will ' O Wisp A,NORMAL,user-approved-v0.4
+98,Will ' O Wisp,Will ' O Wisp B,NORMAL,user-approved-v0.4
+99,Will ' O Wisp,Will ' O Wisp C,NORMAL,user-approved-v0.4
+100,Centaur,Centaur A,NORMAL,user-approved-v0.4
+101,Centaur,Centaur B,NORMAL,user-approved-v0.4
+102,Centaur,Centaur C,NORMAL,user-approved-v0.4
+103,Efreeti,Efreeti A,NORMAL,user-approved-v0.4
+104,Efreeti,Efreeti B,NORMAL,user-approved-v0.4
+105,Efreeti,Efreeti C,NORMAL,user-approved-v0.4
+106,Ogre Mage,Ogre Mage A,NORMAL,user-approved-v0.4
+107,Ogre Mage,Ogre Mage B,NORMAL,user-approved-v0.4
+108,Ogre Mage,Ogre Mage C,NORMAL,user-approved-v0.4
+109,Unicorn,Unicorn A,NORMAL,user-approved-v0.4
+110,Unicorn,Unicorn B,NORMAL,user-approved-v0.4
+111,Unicorn,Unicorn C,NORMAL,user-approved-v0.4
+112,Crystal Dragon,Crystal Dragon A,GIANT,user-approved-v0.4
+113,Crystal Dragon,Crystal Dragon B,GIANT,user-approved-v0.4
+114,Crystal Dragon,Crystal Dragon C,GIANT,user-approved-v0.4
+115,Thunderbird,Thunderbird A,NORMAL,user-approved-v0.4
+116,Thunderbird,Thunderbird B,NORMAL,user-approved-v0.4
+117,Thunderbird,Thunderbird C,NORMAL,user-approved-v0.4
+118,Wasp Warrior,Wasp Warrior A,NORMAL,user-approved-v0.4
+119,Wasp Warrior,Wasp Warrior B,NORMAL,user-approved-v0.4
+120,Wasp Warrior,Wasp Warrior C,NORMAL,user-approved-v0.4
+121,Wyvern,Wyvern A,NORMAL,user-approved-v0.4
+122,Wyvern,Wyvern B,NORMAL,user-approved-v0.4
+123,Wyvern,Wyvern C,NORMAL,user-approved-v0.4
+124,Gorgon,Gorgon A,NORMAL,user-approved-v0.4
+125,Gorgon,Gorgon B,NORMAL,user-approved-v0.4
+126,Gorgon,Gorgon C,NORMAL,user-approved-v0.4
+127,Salamander,Salamander A,NORMAL,user-approved-v0.4
+128,Salamander,Salamander B,NORMAL,user-approved-v0.4
+129,Salamander,Salamander C,NORMAL,user-approved-v0.4
+130,Phoenix,Phoenix A,GIANT,user-approved-v0.4
+131,Phoenix,Phoenix B,GIANT,user-approved-v0.4
+132,Phoenix,Phoenix C,GIANT,user-approved-v0.4
+133,Triton,Triton A,NORMAL,user-approved-v0.4
+134,Triton,Triton B,NORMAL,user-approved-v0.4
+135,Triton,Triton C,NORMAL,user-approved-v0.4
+136,Dragon Turtle,Dragon Turtle A,GIANT,user-approved-v0.4
+137,Dragon Turtle,Dragon Turtle B,GIANT,user-approved-v0.4
+138,Dragon Turtle,Dragon Turtle C,GIANT,user-approved-v0.4
+139,Raven Man,Raven Man A,NORMAL,user-approved-v0.4
+140,Raven Man,Raven Man B,NORMAL,user-approved-v0.4
+141,Raven Man,Raven Man C,NORMAL,user-approved-v0.4
+142,Malevolent Boulder,Malevolent Boulder A,NORMAL,user-approved-v0.4
+143,Malevolent Boulder,Malevolent Boulder B,NORMAL,user-approved-v0.4
+144,Malevolent Boulder,Malevolent Boulder C,NORMAL,user-approved-v0.4
+145,Plane Guardian,Plane Guardian A,NORMAL,user-approved-v0.4
+146,Plane Guardian,Plane Guardian B,NORMAL,user-approved-v0.4
+147,Plane Guardian,Plane Guardian C,NORMAL,user-approved-v0.4
+148,Crystal Walker,Crystal Walker A,NORMAL,user-approved-v0.4
+149,Crystal Walker,Crystal Walker B,NORMAL,user-approved-v0.4
+150,Crystal Walker,Crystal Walker C,NORMAL,user-approved-v0.4
+151,Nightmare,Nightmare A,NORMAL,user-approved-v0.4
+152,Nightmare,Nightmare B,NORMAL,user-approved-v0.4
+153,Nightmare,Nightmare C,NORMAL,user-approved-v0.4
+154,Ether Knight,Ether Knight A,NORMAL,user-approved-v0.4
+155,Ether Knight,Ether Knight B,NORMAL,user-approved-v0.4
+156,Ether Knight,Ether Knight C,NORMAL,user-approved-v0.4
+157,Juggernaut,Juggernaut A,GIANT,user-approved-v0.4
+158,Juggernaut,Juggernaut B,GIANT,user-approved-v0.4
+159,Juggernaut,Juggernaut C,GIANT,user-approved-v0.4
+160,Gog,Gog A,NORMAL,user-approved-v0.4
+161,Gog,Gog B,NORMAL,user-approved-v0.4
+162,Gog,Gog C,NORMAL,user-approved-v0.4
+163,Bone Dragon,Bone Dragon A,GIANT,user-approved-v0.4
+164,Bone Dragon,Bone Dragon B,GIANT,user-approved-v0.4
+165,Bone Dragon,Bone Dragon C,GIANT,user-approved-v0.4
+166,Bedraggled Human (peasant),Bedraggled Human (peasant) A,NORMAL,user-approved-v0.4
+167,Bedraggled Human (peasant),Bedraggled Human (peasant) B,NORMAL,user-approved-v0.4
+168,Bedraggled Human (peasant),Bedraggled Human (peasant) C,NORMAL,user-approved-v0.4
+169,Naga,Naga A,NORMAL,user-approved-v0.4
+170,Naga,Naga B,NORMAL,user-approved-v0.4
+171,Naga,Naga C,NORMAL,user-approved-v0.4
+172,Skeletons Archer,Skeletons Archer A,NORMAL,user-approved-v0.4
+173,Skeletons Archer,Skeletons Archer B,NORMAL,user-approved-v0.4
+174,Skeletons Archer,Skeletons Archer C,NORMAL,user-approved-v0.4
+175,Dark Dwarf,Dark Dwarf A,NORMAL,user-approved-v0.4
+176,Dark Dwarf,Dark Dwarf B,NORMAL,user-approved-v0.4
+177,Dark Dwarf,Dark Dwarf C,NORMAL,user-approved-v0.4
+178,School of Fish (non-combatant),School of Fish (non-combatant) A,NORMAL,user-approved-v0.4
+179,School of Fish (non-combatant),School of Fish (non-combatant) B,NORMAL,user-approved-v0.4
+180,School of Fish (non-combatant),School of Fish (non-combatant) C,NORMAL,user-approved-v0.4
+181,Wimpy Pirate Warrior Male,Wimpy Pirate Warrior Male A,NORMAL,user-approved-v0.4
+182,Wimpy Pirate Warrior Male,Wimpy Pirate Warrior Male B,NORMAL,user-approved-v0.4
+183,Wimpy Pirate Warrior Male,Wimpy Pirate Warrior Male C,NORMAL,user-approved-v0.4
+184,Wimpy Pirate Crossbowman (Female),Wimpy Pirate Crossbowman (Female) A,NORMAL,user-approved-v0.4
+185,Wimpy Pirate Crossbowman (Female),Wimpy Pirate Crossbowman (Female) B,NORMAL,user-approved-v0.4
+186,Wimpy Pirate Crossbowman (Female),Wimpy Pirate Crossbowman (Female) C,NORMAL,user-approved-v0.4
+187,Wimpy Pirate Mage Male,Wimpy Pirate Mage Male A,NORMAL,user-approved-v0.4
+188,Wimpy Pirate Mage Male,Wimpy Pirate Mage Male B,NORMAL,user-approved-v0.4
+189,Wimpy Pirate Mage Male,Wimpy Pirate Mage Male C,NORMAL,user-approved-v0.4
+190,Wimpy Dragon,Wimpy Dragon A,GIANT,user-approved-v0.4
+191,Wimpy Dragon,Wimpy Dragon B,GIANT,user-approved-v0.4
+192,Wimpy Dragon,Wimpy Dragon C,GIANT,user-approved-v0.4
+193,Human Mercenary,Human Mercenary A,NORMAL,user-approved-v0.4
+194,Human Mercenary,Human Mercenary B,NORMAL,user-approved-v0.4
+195,Human Mercenary,Human Mercenary C,NORMAL,user-approved-v0.4
+196,Wimpy Plane Guardian,Wimpy Plane Guardian A,NORMAL,user-approved-v0.4
+197,Wimpy Plane Guardian,Wimpy Plane Guardian B,NORMAL,user-approved-v0.4
+198,Wimpy Plane Guardian,Wimpy Plane Guardian C,NORMAL,user-approved-v0.4
+199,Angel,Angel A,NORMAL,user-approved-v0.4
+200,Angel,Angel B,NORMAL,user-approved-v0.4
+201,Angel,Angel C,NORMAL,user-approved-v0.4
+202,Archer,Archer A,NORMAL,user-approved-v0.4
+203,Archer,Archer B,NORMAL,user-approved-v0.4
+204,Archer,Archer C,NORMAL,user-approved-v0.4
+205,Bat,Bat A,NORMAL,user-approved-v0.4
+206,Bat,Bat B,NORMAL,user-approved-v0.4
+207,Bat,Bat C,NORMAL,user-approved-v0.4
+208,Behemoth,Behemoth A,GIANT,user-approved-v0.4
+209,Behemoth,Behemoth B,GIANT,user-approved-v0.4
+210,Behemoth,Behemoth C,GIANT,user-approved-v0.4
+211,Beholder,Beholder A,NORMAL,user-approved-v0.4
+212,Beholder,Beholder B,NORMAL,user-approved-v0.4
+213,Beholder,Beholder C,NORMAL,user-approved-v0.4
+214,Cleric Moon,Cleric Moon A,NORMAL,user-approved-v0.4
+215,Cleric Moon,Cleric Moon B,NORMAL,user-approved-v0.4
+216,Cleric Moon,Cleric Moon C,NORMAL,user-approved-v0.4
+217,Cleric Sun,Cleric Sun A,NORMAL,user-approved-v0.4
+218,Cleric Sun,Cleric Sun B,NORMAL,user-approved-v0.4
+219,Cleric Sun,Cleric Sun C,NORMAL,user-approved-v0.4
+220,Devil,Devil A,GIANT,user-approved-v0.4
+221,Devil,Devil B,GIANT,user-approved-v0.4
+222,Devil,Devil C,GIANT,user-approved-v0.4
+223,ADragon,ADragon A,GIANT,user-approved-v0.4
+224,ADragon,ADragon B,GIANT,user-approved-v0.4
+225,ADragon,ADragon C,GIANT,user-approved-v0.4
+226,Dragonfly,Dragonfly A,NORMAL,user-approved-v0.4
+227,Dragonfly,Dragonfly B,NORMAL,user-approved-v0.4
+228,Dragonfly,Dragonfly C,NORMAL,user-approved-v0.4
+229,Dwarf,Dwarf A,NORMAL,user-approved-v0.4
+230,Dwarf,Dwarf B,NORMAL,user-approved-v0.4
+231,Dwarf,Dwarf C,NORMAL,user-approved-v0.4
+232,Elemental Air,Elemental Air A,NORMAL,user-approved-v0.4
+233,Elemental Air,Elemental Air B,NORMAL,user-approved-v0.4
+234,Elemental Air,Elemental Air C,NORMAL,user-approved-v0.4
+235,Elemental Earth,Elemental Earth A,NORMAL,user-approved-v0.4
+236,Elemental Earth,Elemental Earth B,NORMAL,user-approved-v0.4
+237,Elemental Earth,Elemental Earth C,NORMAL,user-approved-v0.4
+238,Elemental Fire,Elemental Fire A,NORMAL,user-approved-v0.4
+239,Elemental Fire,Elemental Fire B,NORMAL,user-approved-v0.4
+240,Elemental Fire,Elemental Fire C,NORMAL,user-approved-v0.4
+241,Elemental Light,Elemental Light A,NORMAL,user-approved-v0.4
+242,Elemental Light,Elemental Light B,NORMAL,user-approved-v0.4
+243,Elemental Light,Elemental Light C,NORMAL,user-approved-v0.4
+244,Elemental Water,Elemental Water A,NORMAL,user-approved-v0.4
+245,Elemental Water,Elemental Water B,NORMAL,user-approved-v0.4
+246,Elemental Water,Elemental Water C,NORMAL,user-approved-v0.4
+247,Elf Archer,Elf Archer A,NORMAL,user-approved-v0.4
+248,Elf Archer,Elf Archer B,NORMAL,user-approved-v0.4
+249,Elf Archer,Elf Archer C,NORMAL,user-approved-v0.4
+250,Elf Spearman,Elf Spearman A,NORMAL,user-approved-v0.4
+251,Elf Spearman,Elf Spearman B,NORMAL,user-approved-v0.4
+252,Elf Spearman,Elf Spearman C,NORMAL,user-approved-v0.4
+253,Fighter Chain,Fighter Chain A,NORMAL,user-approved-v0.4
+254,Fighter Chain,Fighter Chain B,NORMAL,user-approved-v0.4
+255,Fighter Chain,Fighter Chain C,NORMAL,user-approved-v0.4
+256,Fighter Leather,Fighter Leather A,NORMAL,user-approved-v0.4
+257,Fighter Leather,Fighter Leather B,NORMAL,user-approved-v0.4
+258,Fighter Leather,Fighter Leather C,NORMAL,user-approved-v0.4
+259,Fighter Plate,Fighter Plate A,NORMAL,user-approved-v0.4
+260,Fighter Plate,Fighter Plate B,NORMAL,user-approved-v0.4
+261,Fighter Plate,Fighter Plate C,NORMAL,user-approved-v0.4
+262,Gargoyle,Gargoyle A,NORMAL,user-approved-v0.4
+263,Gargoyle,Gargoyle B,NORMAL,user-approved-v0.4
+264,Gargoyle,Gargoyle C,NORMAL,user-approved-v0.4
+265,Genie,Genie A,NORMAL,user-approved-v0.4
+266,Genie,Genie B,NORMAL,user-approved-v0.4
+267,Genie,Genie C,NORMAL,user-approved-v0.4
+268,Ghost,Ghost A,NORMAL,user-approved-v0.4
+269,Ghost,Ghost B,NORMAL,user-approved-v0.4
+270,Ghost,Ghost C,NORMAL,user-approved-v0.4
+271,Goblin,Goblin A,NORMAL,user-approved-v0.4
+272,Goblin,Goblin B,NORMAL,user-approved-v0.4
+273,Goblin,Goblin C,NORMAL,user-approved-v0.4
+274,AGog,AGog A,NORMAL,user-approved-v0.4
+275,AGog,AGog B,NORMAL,user-approved-v0.4
+276,AGog,AGog C,NORMAL,user-approved-v0.4
+277,Golem,Golem A,GIANT,user-approved-v0.4
+278,Golem,Golem B,GIANT,user-approved-v0.4
+279,Golem,Golem C,GIANT,user-approved-v0.4
+280,Griffin,Griffin A,NORMAL,user-approved-v0.4
+281,Griffin,Griffin B,NORMAL,user-approved-v0.4
+282,Griffin,Griffin C,NORMAL,user-approved-v0.4
+283,Harpy,Harpy A,NORMAL,user-approved-v0.4
+284,Harpy,Harpy B,NORMAL,user-approved-v0.4
+285,Harpy,Harpy C,NORMAL,user-approved-v0.4
+286,Hydra,Hydra A,GIANT,user-approved-v0.4
+287,Hydra,Hydra B,GIANT,user-approved-v0.4
+288,Hydra,Hydra C,GIANT,user-approved-v0.4
+289,Lich,Lich A,NORMAL,user-approved-v0.4
+290,Lich,Lich B,NORMAL,user-approved-v0.4
+291,Lich,Lich C,NORMAL,user-approved-v0.4
+292,Mage,Mage A,NORMAL,user-approved-v0.4
+293,Mage,Mage B,NORMAL,user-approved-v0.4
+294,Mage,Mage C,NORMAL,user-approved-v0.4
+295,Manticore,Manticore A,NORMAL,user-approved-v0.4
+296,Manticore,Manticore B,NORMAL,user-approved-v0.4
+297,Manticore,Manticore C,NORMAL,user-approved-v0.4
+298,Medusa,Medusa A,NORMAL,user-approved-v0.4
+299,Medusa,Medusa B,NORMAL,user-approved-v0.4
+300,Medusa,Medusa C,NORMAL,user-approved-v0.4
+301,AMinotaur,AMinotaur A,NORMAL,user-approved-v0.4
+302,AMinotaur,AMinotaur B,NORMAL,user-approved-v0.4
+303,AMinotaur,AMinotaur C,NORMAL,user-approved-v0.4
+304,Monk,Monk A,NORMAL,user-approved-v0.4
+305,Monk,Monk B,NORMAL,user-approved-v0.4
+306,Monk,Monk C,NORMAL,user-approved-v0.4
+307,Necromancer,Necromancer A,NORMAL,user-approved-v0.4
+308,Necromancer,Necromancer B,NORMAL,user-approved-v0.4
+309,Necromancer,Necromancer C,NORMAL,user-approved-v0.4
+310,Ooze,Ooze A,NORMAL,user-approved-v0.4
+311,Ooze,Ooze B,NORMAL,user-approved-v0.4
+312,Ooze,Ooze C,NORMAL,user-approved-v0.4
+313,Peasant Dwarf FemaleA,Peasant Dwarf FemaleA A,NORMAL,user-approved-v0.4
+314,Peasant Dwarf FemaleA,Peasant Dwarf FemaleA B,NORMAL,user-approved-v0.4
+315,Peasant Dwarf FemaleA,Peasant Dwarf FemaleA C,NORMAL,user-approved-v0.4
+316,Peasant Dwarf FemaleB,Peasant Dwarf FemaleB A,NORMAL,user-approved-v0.4
+317,Peasant Dwarf FemaleB,Peasant Dwarf FemaleB B,NORMAL,user-approved-v0.4
+318,Peasant Dwarf FemaleB,Peasant Dwarf FemaleB C,NORMAL,user-approved-v0.4
+319,Peasant Dwarf FemaleC,Peasant Dwarf FemaleC A,NORMAL,user-approved-v0.4
+320,Peasant Dwarf FemaleC,Peasant Dwarf FemaleC B,NORMAL,user-approved-v0.4
+321,Peasant Dwarf FemaleC,Peasant Dwarf FemaleC C,NORMAL,user-approved-v0.4
+322,Peasant Dwarf MaleA,Peasant Dwarf MaleA A,NORMAL,user-approved-v0.4
+323,Peasant Dwarf MaleA,Peasant Dwarf MaleA B,NORMAL,user-approved-v0.4
+324,Peasant Dwarf MaleA,Peasant Dwarf MaleA C,NORMAL,user-approved-v0.4
+325,Peasant Dwarf MaleB,Peasant Dwarf MaleB A,NORMAL,user-approved-v0.4
+326,Peasant Dwarf MaleB,Peasant Dwarf MaleB B,NORMAL,user-approved-v0.4
+327,Peasant Dwarf MaleB,Peasant Dwarf MaleB C,NORMAL,user-approved-v0.4
+328,Peasant Dwarf MaleC,Peasant Dwarf MaleC A,NORMAL,user-approved-v0.4
+329,Peasant Dwarf MaleC,Peasant Dwarf MaleC B,NORMAL,user-approved-v0.4
+330,Peasant Dwarf MaleC,Peasant Dwarf MaleC C,NORMAL,user-approved-v0.4
+331,Peasant Elf FemaleA,Peasant Elf FemaleA A,NORMAL,user-approved-v0.4
+332,Peasant Elf FemaleA,Peasant Elf FemaleA B,NORMAL,user-approved-v0.4
+333,Peasant Elf FemaleA,Peasant Elf FemaleA C,NORMAL,user-approved-v0.4
+334,Peasant Elf FemaleB,Peasant Elf FemaleB A,NORMAL,user-approved-v0.4
+335,Peasant Elf FemaleB,Peasant Elf FemaleB B,NORMAL,user-approved-v0.4
+336,Peasant Elf FemaleB,Peasant Elf FemaleB C,NORMAL,user-approved-v0.4
+337,Peasant Elf FemaleC,Peasant Elf FemaleC A,NORMAL,user-approved-v0.4
+338,Peasant Elf FemaleC,Peasant Elf FemaleC B,NORMAL,user-approved-v0.4
+339,Peasant Elf FemaleC,Peasant Elf FemaleC C,NORMAL,user-approved-v0.4
+340,Peasant Elf MaleA,Peasant Elf MaleA A,NORMAL,user-approved-v0.4
+341,Peasant Elf MaleA,Peasant Elf MaleA B,NORMAL,user-approved-v0.4
+342,Peasant Elf MaleA,Peasant Elf MaleA C,NORMAL,user-approved-v0.4
+343,Peasant Elf MaleB,Peasant Elf MaleB A,NORMAL,user-approved-v0.4
+344,Peasant Elf MaleB,Peasant Elf MaleB B,NORMAL,user-approved-v0.4
+345,Peasant Elf MaleB,Peasant Elf MaleB C,NORMAL,user-approved-v0.4
+346,Peasant Elf MaleC,Peasant Elf MaleC A,NORMAL,user-approved-v0.4
+347,Peasant Elf MaleC,Peasant Elf MaleC B,NORMAL,user-approved-v0.4
+348,Peasant Elf MaleC,Peasant Elf MaleC C,NORMAL,user-approved-v0.4
+349,Peasant Human1 FemaleA,Peasant Human1 FemaleA A,NORMAL,user-approved-v0.4
+350,Peasant Human1 FemaleA,Peasant Human1 FemaleA B,NORMAL,user-approved-v0.4
+351,Peasant Human1 FemaleA,Peasant Human1 FemaleA C,NORMAL,user-approved-v0.4
+352,Peasant Human1 FemaleB,Peasant Human1 FemaleB A,NORMAL,user-approved-v0.4
+353,Peasant Human1 FemaleB,Peasant Human1 FemaleB B,NORMAL,user-approved-v0.4
+354,Peasant Human1 FemaleB,Peasant Human1 FemaleB C,NORMAL,user-approved-v0.4
+355,Peasant Human1 FemaleC,Peasant Human1 FemaleC A,NORMAL,user-approved-v0.4
+356,Peasant Human1 FemaleC,Peasant Human1 FemaleC B,NORMAL,user-approved-v0.4
+357,Peasant Human1 FemaleC,Peasant Human1 FemaleC C,NORMAL,user-approved-v0.4
+358,Peasant Human1 MaleA,Peasant Human1 MaleA A,NORMAL,user-approved-v0.4
+359,Peasant Human1 MaleA,Peasant Human1 MaleA B,NORMAL,user-approved-v0.4
+360,Peasant Human1 MaleA,Peasant Human1 MaleA C,NORMAL,user-approved-v0.4
+361,Peasant Human1 MaleB,Peasant Human1 MaleB A,NORMAL,user-approved-v0.4
+362,Peasant Human1 MaleB,Peasant Human1 MaleB B,NORMAL,user-approved-v0.4
+363,Peasant Human1 MaleB,Peasant Human1 MaleB C,NORMAL,user-approved-v0.4
+364,Peasant Human1 MaleC,Peasant Human1 MaleC A,NORMAL,user-approved-v0.4
+365,Peasant Human1 MaleC,Peasant Human1 MaleC B,NORMAL,user-approved-v0.4
+366,Peasant Human1 MaleC,Peasant Human1 MaleC C,NORMAL,user-approved-v0.4
+367,Peasant Human2 MaleA,Peasant Human2 MaleA A,NORMAL,user-approved-v0.4
+368,Peasant Human2 MaleA,Peasant Human2 MaleA B,NORMAL,user-approved-v0.4
+369,Peasant Human2 MaleA,Peasant Human2 MaleA C,NORMAL,user-approved-v0.4
+370,Peasant Human2 MaleB,Peasant Human2 MaleB A,NORMAL,user-approved-v0.4
+371,Peasant Human2 MaleB,Peasant Human2 MaleB B,NORMAL,user-approved-v0.4
+372,Peasant Human2 MaleB,Peasant Human2 MaleB C,NORMAL,user-approved-v0.4
+373,Peasant Human2 MaleC,Peasant Human2 MaleC A,NORMAL,user-approved-v0.4
+374,Peasant Human2 MaleC,Peasant Human2 MaleC B,NORMAL,user-approved-v0.4
+375,Peasant Human2 MaleC,Peasant Human2 MaleC C,NORMAL,user-approved-v0.4
+376,Peasant Human2 FemaleA,Peasant Human2 FemaleA A,NORMAL,user-approved-v0.4
+377,Peasant Human2 FemaleA,Peasant Human2 FemaleA B,NORMAL,user-approved-v0.4
+378,Peasant Human2 FemaleA,Peasant Human2 FemaleA C,NORMAL,user-approved-v0.4
+379,Peasant Human2 FemaleB,Peasant Human2 FemaleB A,NORMAL,user-approved-v0.4
+380,Peasant Human2 FemaleB,Peasant Human2 FemaleB B,NORMAL,user-approved-v0.4
+381,Peasant Human2 FemaleB,Peasant Human2 FemaleB C,NORMAL,user-approved-v0.4
+382,Peasant Human2 FemaleC,Peasant Human2 FemaleC A,NORMAL,user-approved-v0.4
+383,Peasant Human2 FemaleC,Peasant Human2 FemaleC B,NORMAL,user-approved-v0.4
+384,Peasant Human2 FemaleC,Peasant Human2 FemaleC C,NORMAL,user-approved-v0.4
+385,Rat,Rat A,NORMAL,user-approved-v0.4
+386,Rat,Rat B,NORMAL,user-approved-v0.4
+387,Rat,Rat C,NORMAL,user-approved-v0.4
+388,Robot,Robot A,NORMAL,user-approved-v0.4
+389,Robot,Robot B,NORMAL,user-approved-v0.4
+390,Robot,Robot C,NORMAL,user-approved-v0.4
+391,Roc,Roc A,NORMAL,user-approved-v0.4
+392,Roc,Roc B,NORMAL,user-approved-v0.4
+393,Roc,Roc C,NORMAL,user-approved-v0.4
+394,Sea Monster,Sea Monster A,NORMAL,user-approved-v0.4
+395,Sea Monster,Sea Monster B,NORMAL,user-approved-v0.4
+396,Sea Monster,Sea Monster C,NORMAL,user-approved-v0.4
+397,Skeleton Warrior,Skeleton Warrior A,NORMAL,user-approved-v0.4
+398,Skeleton Warrior,Skeleton Warrior B,NORMAL,user-approved-v0.4
+399,Skeleton Warrior,Skeleton Warrior C,NORMAL,user-approved-v0.4
+400,Spider,Spider A,NORMAL,user-approved-v0.4
+401,Spider,Spider B,NORMAL,user-approved-v0.4
+402,Spider,Spider C,NORMAL,user-approved-v0.4
+403,Swordsman,Swordsman A,NORMAL,user-approved-v0.4
+404,Swordsman,Swordsman B,NORMAL,user-approved-v0.4
+405,Swordsman,Swordsman C,NORMAL,user-approved-v0.4
+406,Thief,Thief A,NORMAL,user-approved-v0.4
+407,Thief,Thief B,NORMAL,user-approved-v0.4
+408,Thief,Thief C,NORMAL,user-approved-v0.4
+409,Titan,Titan A,GIANT,user-approved-v0.4
+410,Titan,Titan B,GIANT,user-approved-v0.4
+411,Titan,Titan C,GIANT,user-approved-v0.4
+412,Troglodyte,Troglodyte A,NORMAL,user-approved-v0.4
+413,Troglodyte,Troglodyte B,NORMAL,user-approved-v0.4
+414,Troglodyte,Troglodyte C,NORMAL,user-approved-v0.4
+415,Vampire,Vampire A,NORMAL,user-approved-v0.4
+416,Vampire,Vampire B,NORMAL,user-approved-v0.4
+417,Vampire,Vampire C,NORMAL,user-approved-v0.4
+418,Warlock,Warlock A,NORMAL,user-approved-v0.4
+419,Warlock,Warlock B,NORMAL,user-approved-v0.4
+420,Warlock,Warlock C,NORMAL,user-approved-v0.4
+421,Wight,Wight A,NORMAL,user-approved-v0.4
+422,Wight,Wight B,NORMAL,user-approved-v0.4
+423,Wight,Wight C,NORMAL,user-approved-v0.4
+424,AWyvern,AWyvern A,NORMAL,user-approved-v0.4
+425,AWyvern,AWyvern B,NORMAL,user-approved-v0.4
+426,AWyvern,AWyvern C,NORMAL,user-approved-v0.4
+427,Zombie,Zombie A,NORMAL,user-approved-v0.4
+428,Zombie,Zombie B,NORMAL,user-approved-v0.4
+429,Zombie,Zombie C,NORMAL,user-approved-v0.4
+430,Peasant Goblin female A,Peasant Goblin female A A,NORMAL,user-approved-v0.4
+431,Peasant Goblin female A,Peasant Goblin female A B,NORMAL,user-approved-v0.4
+432,Peasant Goblin female A,Peasant Goblin female A C,NORMAL,user-approved-v0.4
+433,Peasant Goblin female B,Peasant Goblin female B A,NORMAL,user-approved-v0.4
+434,Peasant Goblin female B,Peasant Goblin female B B,NORMAL,user-approved-v0.4
+435,Peasant Goblin female B,Peasant Goblin female B C,NORMAL,user-approved-v0.4
+436,Peasant Goblin female C,Peasant Goblin female C A,NORMAL,user-approved-v0.4
+437,Peasant Goblin female C,Peasant Goblin female C B,NORMAL,user-approved-v0.4
+438,Peasant Goblin female C,Peasant Goblin female C C,NORMAL,user-approved-v0.4
+439,Peasant Goblin Male A,Peasant Goblin Male A A,NORMAL,user-approved-v0.4
+440,Peasant Goblin Male A,Peasant Goblin Male A B,NORMAL,user-approved-v0.4
+441,Peasant Goblin Male A,Peasant Goblin Male A C,NORMAL,user-approved-v0.4
+442,Peasant Goblin Male B,Peasant Goblin Male B A,NORMAL,user-approved-v0.4
+443,Peasant Goblin Male B,Peasant Goblin Male B B,NORMAL,user-approved-v0.4
+444,Peasant Goblin Male B,Peasant Goblin Male B C,NORMAL,user-approved-v0.4
+445,Peasant Goblin Male C,Peasant Goblin Male C A,NORMAL,user-approved-v0.4
+446,Peasant Goblin Male C,Peasant Goblin Male C B,NORMAL,user-approved-v0.4
+447,Peasant Goblin Male C,Peasant Goblin Male C C,NORMAL,user-approved-v0.4
+448,ATroll,ATroll A,NORMAL,user-approved-v0.4
+449,ATroll,ATroll B,NORMAL,user-approved-v0.4
+450,ATroll,ATroll C,NORMAL,user-approved-v0.4
+451,Treant,Treant A,NORMAL,user-approved-v0.4
+452,Treant,Treant B,NORMAL,user-approved-v0.4
+453,Treant,Treant C,NORMAL,user-approved-v0.4
+454,Ghoul,Ghoul A,NORMAL,user-approved-v0.4
+455,Ghoul,Ghoul B,NORMAL,user-approved-v0.4
+456,Ghoul,Ghoul C,NORMAL,user-approved-v0.4
+457,zBlasterGuy,zBlasterGuy A,NORMAL,user-approved-v0.4
+458,zBlasterGuy,zBlasterGuy B,NORMAL,user-approved-v0.4
+459,zBlasterGuy,zBlasterGuy C,NORMAL,user-approved-v0.4
+460,zUltra Dragon,zUltra Dragon A,GIANT,user-approved-v0.4
+461,zUltra Dragon,zUltra Dragon B,GIANT,user-approved-v0.4
+462,zUltra Dragon,zUltra Dragon C,GIANT,user-approved-v0.4
+463,zcat a,zcat a,NORMAL,user-approved-v0.4
+464,zcat b,zcat b,NORMAL,user-approved-v0.4
+465,zcat c,zcat c,NORMAL,user-approved-v0.4
+466,zchicken a,zchicken a,NORMAL,user-approved-v0.4
+467,zchicken b,zchicken b,NORMAL,user-approved-v0.4
+468,zchicken c,zchicken c,NORMAL,user-approved-v0.4
+469,zdog a,zdog a,NORMAL,user-approved-v0.4
+470,zdog b,zdog b,NORMAL,user-approved-v0.4
+471,zdog c,zdog c,NORMAL,user-approved-v0.4
+472,zrat a,zrat a,NORMAL,user-approved-v0.4
+473,zrat b,zrat b,NORMAL,user-approved-v0.4
+474,zrat c,zrat c,NORMAL,user-approved-v0.4
+475,BArcher,BArcher A,NORMAL,user-approved-v0.4
+476,BArcher,BArcher B,NORMAL,user-approved-v0.4
+477,BArcher,BArcher C,NORMAL,user-approved-v0.4
+478,Barbarian,Barbarian A,NORMAL,user-approved-v0.4
+479,Barbarian,Barbarian B,NORMAL,user-approved-v0.4
+480,Barbarian,Barbarian C,NORMAL,user-approved-v0.4
+481,BBat,BBat A,NORMAL,user-approved-v0.4
+482,BBat,BBat B,NORMAL,user-approved-v0.4
+483,BBat,BBat C,NORMAL,user-approved-v0.4
+484,BBeholder,BBeholder A,NORMAL,user-approved-v0.4
+485,BBeholder,BBeholder B,NORMAL,user-approved-v0.4
+486,BBeholder,BBeholder C,NORMAL,user-approved-v0.4
+487,Bloodsucker,Bloodsucker A,NORMAL,user-approved-v0.4
+488,Bloodsucker,Bloodsucker B,NORMAL,user-approved-v0.4
+489,Bloodsucker,Bloodsucker C,NORMAL,user-approved-v0.4
+490,Cleric,Cleric A,NORMAL,user-approved-v0.4
+491,Cleric,Cleric B,NORMAL,user-approved-v0.4
+492,Cleric,Cleric C,NORMAL,user-approved-v0.4
+493,Cobra,Cobra A,NORMAL,user-approved-v0.4
+494,Cobra,Cobra B,NORMAL,user-approved-v0.4
+495,Cobra,Cobra C,NORMAL,user-approved-v0.4
+496,Cockatrice,Cockatrice A,NORMAL,user-approved-v0.4
+497,Cockatrice,Cockatrice B,NORMAL,user-approved-v0.4
+498,Cockatrice,Cockatrice C,NORMAL,user-approved-v0.4
+499,DemonFly,DemonFly A,NORMAL,user-approved-v0.4
+500,DemonFly,DemonFly B,NORMAL,user-approved-v0.4
+501,DemonFly,DemonFly C,NORMAL,user-approved-v0.4
+502,Demon,Demon A,NORMAL,user-approved-v0.4
+503,Demon,Demon B,NORMAL,user-approved-v0.4
+504,Demon,Demon C,NORMAL,user-approved-v0.4
+505,DragonCave,DragonCave A,NORMAL,user-approved-v0.4
+506,DragonCave,DragonCave B,NORMAL,user-approved-v0.4
+507,DragonCave,DragonCave C,NORMAL,user-approved-v0.4
+508,BDragonFly,BDragonFly A,NORMAL,user-approved-v0.4
+509,BDragonFly,BDragonFly B,NORMAL,user-approved-v0.4
+510,BDragonFly,BDragonFly C,NORMAL,user-approved-v0.4
+511,DragonLand,DragonLand A,NORMAL,user-approved-v0.4
+512,DragonLand,DragonLand B,NORMAL,user-approved-v0.4
+513,DragonLand,DragonLand C,NORMAL,user-approved-v0.4
+514,DragonCover,DragonCover A,NORMAL,user-approved-v0.4
+515,DragonCover,DragonCover B,NORMAL,user-approved-v0.4
+516,DragonCover,DragonCover C,NORMAL,user-approved-v0.4
+517,Druidess,Druidess A,NORMAL,user-approved-v0.4
+518,Druidess,Druidess B,NORMAL,user-approved-v0.4
+519,Druidess,Druidess C,NORMAL,user-approved-v0.4
+520,BDwarf,BDwarf A,NORMAL,user-approved-v0.4
+521,BDwarf,BDwarf B,NORMAL,user-approved-v0.4
+522,BDwarf,BDwarf C,NORMAL,user-approved-v0.4
+523,ElemAir,ElemAir A,NORMAL,user-approved-v0.4
+524,ElemAir,ElemAir B,NORMAL,user-approved-v0.4
+525,ElemAir,ElemAir C,NORMAL,user-approved-v0.4
+526,ElemEarth,ElemEarth A,NORMAL,user-approved-v0.4
+527,ElemEarth,ElemEarth B,NORMAL,user-approved-v0.4
+528,ElemEarth,ElemEarth C,NORMAL,user-approved-v0.4
+529,ElemFire,ElemFire A,NORMAL,user-approved-v0.4
+530,ElemFire,ElemFire B,NORMAL,user-approved-v0.4
+531,ElemFire,ElemFire C,NORMAL,user-approved-v0.4
+532,ElemWater,ElemWater A,NORMAL,user-approved-v0.4
+533,ElemWater,ElemWater B,NORMAL,user-approved-v0.4
+534,ElemWater,ElemWater C,NORMAL,user-approved-v0.4
+535,FighterChain,FighterChain A,NORMAL,user-approved-v0.4
+536,FighterChain,FighterChain B,NORMAL,user-approved-v0.4
+537,FighterChain,FighterChain C,NORMAL,user-approved-v0.4
+538,FighterLeath,FighterLeath A,NORMAL,user-approved-v0.4
+539,FighterLeath,FighterLeath B,NORMAL,user-approved-v0.4
+540,FighterLeath,FighterLeath C,NORMAL,user-approved-v0.4
+541,BGargoyle,BGargoyle A,NORMAL,user-approved-v0.4
+542,BGargoyle,BGargoyle B,NORMAL,user-approved-v0.4
+543,BGargoyle,BGargoyle C,NORMAL,user-approved-v0.4
+544,BGenie,BGenie A,NORMAL,user-approved-v0.4
+545,BGenie,BGenie B,NORMAL,user-approved-v0.4
+546,BGenie,BGenie C,NORMAL,user-approved-v0.4
+547,BGhost,BGhost A,NORMAL,user-approved-v0.4
+548,BGhost,BGhost B,NORMAL,user-approved-v0.4
+549,BGhost,BGhost C,NORMAL,user-approved-v0.4
+550,BGoblin,BGoblin A,NORMAL,user-approved-v0.4
+551,BGoblin,BGoblin B,NORMAL,user-approved-v0.4
+552,BGoblin,BGoblin C,NORMAL,user-approved-v0.4
+553,Guard,Guard A,NORMAL,user-approved-v0.4
+554,Guard,Guard B,NORMAL,user-approved-v0.4
+555,Guard,Guard C,NORMAL,user-approved-v0.4
+556,BHarpy,BHarpy A,NORMAL,user-approved-v0.4
+557,BHarpy,BHarpy B,NORMAL,user-approved-v0.4
+558,BHarpy,BHarpy C,NORMAL,user-approved-v0.4
+559,BHydra,BHydra A,GIANT,user-approved-v0.4
+560,BHydra,BHydra B,GIANT,user-approved-v0.4
+561,BHydra,BHydra C,GIANT,user-approved-v0.4
+562,Jackalman,Jackalman A,NORMAL,user-approved-v0.4
+563,Jackalman,Jackalman B,NORMAL,user-approved-v0.4
+564,Jackalman,Jackalman C,NORMAL,user-approved-v0.4
+565,KnightPlate,KnightPlate A,NORMAL,user-approved-v0.4
+566,KnightPlate,KnightPlate B,NORMAL,user-approved-v0.4
+567,KnightPlate,KnightPlate C,NORMAL,user-approved-v0.4
+568,BLich,BLich A,NORMAL,user-approved-v0.4
+569,BLich,BLich B,NORMAL,user-approved-v0.4
+570,BLich,BLich C,NORMAL,user-approved-v0.4
+571,LizardArch,LizardArch A,NORMAL,user-approved-v0.4
+572,LizardArch,LizardArch B,NORMAL,user-approved-v0.4
+573,LizardArch,LizardArch C,NORMAL,user-approved-v0.4
+574,BMedusa,BMedusa A,NORMAL,user-approved-v0.4
+575,BMedusa,BMedusa B,NORMAL,user-approved-v0.4
+576,BMedusa,BMedusa C,NORMAL,user-approved-v0.4
+577,Merchant,Merchant A,NORMAL,user-approved-v0.4
+578,Merchant,Merchant B,NORMAL,user-approved-v0.4
+579,Merchant,Merchant C,NORMAL,user-approved-v0.4
+580,BMinotaur,BMinotaur A,NORMAL,user-approved-v0.4
+581,BMinotaur,BMinotaur B,NORMAL,user-approved-v0.4
+582,BMinotaur,BMinotaur C,NORMAL,user-approved-v0.4
+583,BMonk,BMonk A,NORMAL,user-approved-v0.4
+584,BMonk,BMonk B,NORMAL,user-approved-v0.4
+585,BMonk,BMonk C,NORMAL,user-approved-v0.4
+586,Nobleman,Nobleman A,NORMAL,user-approved-v0.4
+587,Nobleman,Nobleman B,NORMAL,user-approved-v0.4
+588,Nobleman,Nobleman C,NORMAL,user-approved-v0.4
+589,BOoze,BOoze A,NORMAL,user-approved-v0.4
+590,BOoze,BOoze B,NORMAL,user-approved-v0.4
+591,BOoze,BOoze C,NORMAL,user-approved-v0.4
+592,Ogre,Ogre A,NORMAL,user-approved-v0.4
+593,Ogre,Ogre B,NORMAL,user-approved-v0.4
+594,Ogre,Ogre C,NORMAL,user-approved-v0.4
+595,PeasantF1,PeasantF1 A,NORMAL,user-approved-v0.4
+596,PeasantF1,PeasantF1 B,NORMAL,user-approved-v0.4
+597,Peasantf1,Peasantf1 C,NORMAL,user-approved-v0.4
+598,PeasantF2,PeasantF2 A,NORMAL,user-approved-v0.4
+599,PeasantF2,PeasantF2 B,NORMAL,user-approved-v0.4
+600,PeasantF2,PeasantF2 C,NORMAL,user-approved-v0.4
+601,PeasantF3,PeasantF3 A,NORMAL,user-approved-v0.4
+602,PeasantF3,PeasantF3 B,NORMAL,user-approved-v0.4
+603,PeasantF3,PeasantF3 C,NORMAL,user-approved-v0.4
+604,PeasantF4,PeasantF4 A,NORMAL,user-approved-v0.4
+605,PeasantF4,PeasantF4 B,NORMAL,user-approved-v0.4
+606,PeasantF4,PeasantF4 C,NORMAL,user-approved-v0.4
+607,PeasantM1,PeasantM1 A,NORMAL,user-approved-v0.4
+608,PeasantM1,PeasantM1 B,NORMAL,user-approved-v0.4
+609,PeasantM1,PeasantM1 C,NORMAL,user-approved-v0.4
+610,PeasantM2,PeasantM2 A,NORMAL,user-approved-v0.4
+611,PeasantM2,PeasantM2 B,NORMAL,user-approved-v0.4
+612,PeasantM2,PeasantM2 C,NORMAL,user-approved-v0.4
+613,PeasantM3,PeasantM3 A,NORMAL,user-approved-v0.4
+614,PeasantM3,PeasantM3 B,NORMAL,user-approved-v0.4
+615,PeasantM3,PeasantM3 C,NORMAL,user-approved-v0.4
+616,PeasantM4,PeasantM4 A,NORMAL,user-approved-v0.4
+617,PeasantM4,PeasantM4 B,NORMAL,user-approved-v0.4
+618,PeasantM4,PeasantM4 C,NORMAL,user-approved-v0.4
+619,BRat,BRat A,NORMAL,user-approved-v0.4
+620,BRat,BRat B,NORMAL,user-approved-v0.4
+621,BRat,BRat C,NORMAL,user-approved-v0.4
+622,BRobot,BRobot A,NORMAL,user-approved-v0.4
+623,BRobot,BRobot B,NORMAL,user-approved-v0.4
+624,BRobot,BRobot C,NORMAL,user-approved-v0.4
+625,SeaSerpent,SeaSerpent A,NORMAL,user-approved-v0.4
+626,SeaSerpent,SeaSerpent B,NORMAL,user-approved-v0.4
+627,SeaSerpent,SeaSerpent C,NORMAL,user-approved-v0.4
+628,Skeleton,Skeleton A,NORMAL,user-approved-v0.4
+629,Skeleton,Skeleton B,NORMAL,user-approved-v0.4
+630,Skeleton,Skeleton C,NORMAL,user-approved-v0.4
+631,Sorcerer,Sorcerer A,NORMAL,user-approved-v0.4
+632,Sorcerer,Sorcerer B,NORMAL,user-approved-v0.4
+633,Sorcerer,Sorcerer C,NORMAL,user-approved-v0.4
+634,BSpider,BSpider A,NORMAL,user-approved-v0.4
+635,BSpider,BSpider B,NORMAL,user-approved-v0.4
+636,BSpider,BSpider C,NORMAL,user-approved-v0.4
+637,BThief,BThief A,NORMAL,user-approved-v0.4
+638,BThief,BThief B,NORMAL,user-approved-v0.4
+639,BThief,BThief C,NORMAL,user-approved-v0.4
+640,BTitan,BTitan A,GIANT,user-approved-v0.4
+641,BTitan,BTitan B,GIANT,user-approved-v0.4
+642,BTitan,BTitan C,GIANT,user-approved-v0.4
+643,Werewolf,Werewolf A,NORMAL,user-approved-v0.4
+644,Werewolf,Werewolf B,NORMAL,user-approved-v0.4
+645,Werewolf,Werewolf C,NORMAL,user-approved-v0.4
+646,zDemonQueen,zDemonQueen,NORMAL,user-approved-v0.4
+647,zReactor,zReactor,NORMAL,user-approved-v0.4
+648,zReactor,zReactor,NORMAL,user-approved-v0.4
+649,Cactus,Cactus A,NORMAL,user-approved-v0.4
+650,Cactus,Cactus B,NORMAL,user-approved-v0.4
+651,Cactus,Cactus C,NORMAL,user-approved-v0.4
+652,zReactor,zReactor,NORMAL,user-approved-v0.4
+901,custom:crusader_green,custom:crusader_green,NORMAL,user-approved-v0.4
+902,custom:crusader_blue,custom:crusader_blue,NORMAL,user-approved-v0.4
+903,custom:crusader_red,custom:crusader_red,NORMAL,user-approved-v0.4
+904,custom:pmn2_red,custom:pmn2_red,NORMAL,user-approved-v0.4
+905,custom:pmn2_green,custom:pmn2_green,NORMAL,user-approved-v0.4
+906,custom:pmn2_blue,custom:pmn2_blue,NORMAL,user-approved-v0.4

@@ -1385,6 +1385,24 @@ std::optional<GameSettings> loadGameSettings(const std::filesystem::path &path, 
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "debug", "lethal_strike_trace"))
+    {
+        bool parsed = settings.lethalStrikeTrace;
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.lethalStrikeTrace = parsed;
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "debug", "minotaur_russian_text"))
+    {
+        bool parsed = settings.minotaurRussianText;
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.minotaurRussianText = parsed;
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "debug", "minotaur_damage_trace"))
     {
         bool parsed = settings.minotaurDamageTrace;
@@ -1892,6 +1910,8 @@ bool saveGameSettings(const std::filesystem::path &path, const GameSettings &set
         << "ttf_fonts=" << ttfFontNames << "\n\n"
         << "[debug]\n"
         << "axe_damage_trace=" << (settings.axeDamageTrace ? "true" : "false") << '\n'
+        << "lethal_strike_trace=" << (settings.lethalStrikeTrace ? "true" : "false") << '\n'
+        << "minotaur_russian_text=" << (settings.minotaurRussianText ? "true" : "false") << '\n'
         << "minotaur_damage_trace=" << (settings.minotaurDamageTrace ? "true" : "false") << '\n'
         << "preseed_party=" << (settings.preseedParty ? "true" : "false") << '\n'
         << "party_seed_roster_id=" << settings.partySeedRosterId << '\n'

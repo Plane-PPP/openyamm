@@ -542,10 +542,38 @@ elements:
         align_y: middle
         scale: 1.0588235294117647
       notes: Approved section geometry; retain dynamic original content/formatting and semantic colour runs.
+    - id: CharacterStatDamageResistanceLabel
+      anchor: top_left
+      offset_x: 21.866667
+      offset_y: 234.933334
+      width: 169.341667
+      height: 18
+      text:
+        value: Damage Resistance
+        font: Lucida
+        color: '#e5dcc7'
+        align_x: left
+        align_y: middle
+        scale: 0.90
+      notes: Approved section geometry; retain dynamic original content/formatting and semantic colour runs.
+    - id: CharacterStatDamageResistanceValue
+      anchor: top_left
+      offset_x: 191.208333
+      offset_y: 234.933334
+      width: 49
+      height: 18
+      text:
+        value: '{damage_resistance_value}'
+        font: Lucida
+        color: '#e5dcc7'
+        align_x: right
+        align_y: middle
+        scale: 0.90
+      notes: Approved section geometry; retain dynamic original content/formatting and semantic colour runs.
     - id: CharacterStatConditionLabel
       anchor: top_left
       offset_x: 21.866667
-      offset_y: 247.733334
+      offset_y: 265.733334
       width: 133.341667
       height: 18
       text:
@@ -559,7 +587,7 @@ elements:
     - id: CharacterStatConditionValue
       anchor: top_left
       offset_x: 155.208333
-      offset_y: 247.733334
+      offset_y: 265.733334
       width: 85
       height: 18
       text:
@@ -573,7 +601,7 @@ elements:
     - id: CharacterStatQuickSpellLabel
       anchor: top_left
       offset_x: 21.866667
-      offset_y: 265.733334
+      offset_y: 283.733334
       width: 133.341667
       height: 18
       text:
@@ -587,7 +615,7 @@ elements:
     - id: CharacterStatQuickSpellValue
       anchor: top_left
       offset_x: 155.208333
-      offset_y: 265.733334
+      offset_y: 283.733334
       width: 85
       height: 18
       text:
@@ -881,7 +909,7 @@ elements:
     - id: CharacterStatEarthResistanceLabel
       anchor: top_left
       offset_x: 261.541667
-      offset_y: 247.733334
+      offset_y: 283.733334
       width: 98.258333
       height: 18
       text:
@@ -895,7 +923,7 @@ elements:
     - id: CharacterStatEarthResistanceValue
       anchor: top_left
       offset_x: 359.8
-      offset_y: 247.733334
+      offset_y: 283.733334
       width: 85
       height: 18
       text:
@@ -909,7 +937,7 @@ elements:
     - id: CharacterStatMindResistanceLabel
       anchor: top_left
       offset_x: 261.541667
-      offset_y: 265.733334
+      offset_y: 283.733334
       width: 98.258333
       height: 18
       text:
@@ -923,7 +951,7 @@ elements:
     - id: CharacterStatMindResistanceValue
       anchor: top_left
       offset_x: 359.8
-      offset_y: 265.733334
+      offset_y: 283.733334
       width: 85
       height: 18
       text:

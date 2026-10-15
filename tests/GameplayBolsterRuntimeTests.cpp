@@ -871,6 +871,8 @@ TEST_CASE("runtime bolster caps low level monster rewards and damage at capped H
             nullptr);
 
     CHECK_EQ(mageBolster.maxHp, 18);
+    CHECK(mageBolster.effectiveLevel > pApprenticeMage->level);
+    CHECK(mageBolster.effectiveLevel < 100);
     CHECK_EQ(mageBolster.spell1SkillLevel, 1u);
     CHECK_EQ(mageBolster.spell1SkillMastery, SkillMastery::Normal);
     CHECK_EQ(mageBolster.rewardMultiplier, doctest::Approx(3.0f));

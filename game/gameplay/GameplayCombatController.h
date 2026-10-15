@@ -60,6 +60,7 @@ public:
         bool attacked = false;
         bool hadMeleeTarget = false;
         bool killed = false;
+        bool lethalStrikeSucceeded = false;
         bool targetStrongEnemy = false;
     };
 

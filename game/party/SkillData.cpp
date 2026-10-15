@@ -100,7 +100,7 @@ const std::array<std::string, 53> CanonicalClassNames = {
     "None",
 };
 
-const std::array<std::string, 40> CanonicalSkillNames = {
+const std::array<std::string, 41> CanonicalSkillNames = {
     "Staff",
     "Sword",
     "Dagger",
@@ -141,6 +141,7 @@ const std::array<std::string, 40> CanonicalSkillNames = {
     "Alchemy",
     "Learning",
     "Throwing",
+    "LethalStrike",
 };
 
 const std::unordered_map<std::string, std::string> ClassAliases = {
@@ -215,6 +216,7 @@ const std::unordered_map<std::string, std::string> DisplayClassNames = {
 };
 
 const std::unordered_map<std::string, std::string> DisplaySkillNames = {
+    {"LethalStrike", "Lethal Strike"},
     {"Throwing", "Throwing Weapons"},
     {"LeatherArmor", "Leather Armor"},
     {"ChainArmor", "Chain Armor"},

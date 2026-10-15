@@ -25,3 +25,4 @@ Earth	"Earth Resistance represents your character's ability to minimize damage t
 Mind	"Mind Resistance represents your character's ability to minimize damage taken from mind based attacks.  Though a high resistance can greatly reduce mind damage, it does not make your character immune."
 Body	"Body Resistance represents your character's ability to minimize damage taken from body based attacks.  Though a high resistance can greatly reduce body damage, it does not make your character immune."
 Skill Points	Skill Points are awarded whenever your character trains for a new level.  You can spend Skill Points on your skills at any time.
+DamageResistance	Damage Resistance is an innate ability of Minotaurs. It reduces incoming physical damage based on the Minotaur's level and promotion. Minotaur Lords receive an additional bonus. Magical and elemental damage are not reduced by this ability. Maximum resistance is 30%.

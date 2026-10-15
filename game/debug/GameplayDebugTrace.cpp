@@ -140,6 +140,7 @@ struct CombatTraceState
     bool combatEnabled = false;
     bool minotaurDamageEnabled = false;
     bool axeDamageEnabled = false;
+    bool lethalStrikeEnabled = false;
     bool append = true;
     std::string filePath;
     std::unique_ptr<std::ofstream> pOutput;
@@ -236,14 +237,16 @@ void configureGameplayDebugTrace(bool enabled, const std::string &filePath, bool
 }
 
 void configureGameplayCombatTrace(
-    bool enabled, const std::string &filePath, bool append, bool minotaurDamageTrace, bool axeDamageTrace)
+    bool enabled, const std::string &filePath, bool append, bool minotaurDamageTrace, bool axeDamageTrace,
+    bool lethalStrikeTrace)
 {
     std::lock_guard<std::mutex> lock(combatTraceOutputMutex());
     CombatTraceState &state = combatTraceState();
-    state.enabled = enabled || minotaurDamageTrace || axeDamageTrace;
+    state.enabled = enabled || minotaurDamageTrace || axeDamageTrace || lethalStrikeTrace;
     state.combatEnabled = enabled;
     state.minotaurDamageEnabled = minotaurDamageTrace;
     state.axeDamageEnabled = axeDamageTrace;
+    state.lethalStrikeEnabled = lethalStrikeTrace;
     state.append = append;
     state.filePath = filePath;
     state.pOutput.reset();
@@ -285,6 +288,11 @@ void configureGameplayCombatTrace(
 bool gameplayCombatTraceEnabled()
 {
     return combatTraceState().enabled && combatTraceState().combatEnabled;
+}
+
+bool gameplayLethalStrikeTraceEnabled()
+{
+    return combatTraceState().lethalStrikeEnabled;
 }
 
 bool gameplayAxeDamageTraceEnabled()

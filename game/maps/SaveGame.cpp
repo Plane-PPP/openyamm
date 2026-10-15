@@ -20,7 +20,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 84;
+constexpr uint32_t SaveVersion = 85;
+constexpr uint32_t SaveVersionMonsterCombatLevel = 85;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -2693,6 +2694,7 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.currentHp);
     writeValue(writer, value.maxHp);
     writeValue(writer, value.bolsterRewardMultiplier);
+    writeValue(writer, value.effectiveLevel);
     writeValue(writer, value.x);
     writeValue(writer, value.y);
     writeValue(writer, value.z);
@@ -2840,6 +2842,7 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && readValue(reader, value.currentHp)
         && readValue(reader, value.maxHp)
         && (reader.version() < SaveVersionMonsterBolsterRewards || readValue(reader, value.bolsterRewardMultiplier))
+        && (reader.version() < SaveVersionMonsterCombatLevel || readValue(reader, value.effectiveLevel))
         && readValue(reader, value.x)
         && readValue(reader, value.y)
         && readValue(reader, value.z)

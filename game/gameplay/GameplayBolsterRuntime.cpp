@@ -705,6 +705,7 @@ GameplayMonsterBolsterResult resolveGameplayMonsterBolster(
     const MonsterEntry *pMonsterEntry)
 {
     GameplayMonsterBolsterResult result = {};
+    result.effectiveLevel = stats.level;
     result.maxHp = std::max(1, stats.hitPoints);
     result.armorClass = stats.armorClass;
     result.moveSpeed = static_cast<uint16_t>(std::max(0, stats.speed));
@@ -809,6 +810,7 @@ GameplayMonsterBolsterResult resolveGameplayMonsterBolster(
     const int cappedTargetMonsterLevel = std::max(
         baseMonsterLevel,
         std::min(targetMonsterLevel, bolsteredHitPoints.effectiveLevel));
+    result.effectiveLevel = cappedTargetMonsterLevel;
     result.armorClass = bolsteredArmorClass(stats.armorClass, baseMonsterLevel, cappedTargetMonsterLevel);
     const MonsterTable::MonsterStatsEntry::DamageProfile attack1Damage =
         bolsteredAttackDamageProfile(stats.attack1Damage, baseMonsterLevel, cappedTargetMonsterLevel);

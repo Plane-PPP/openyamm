@@ -7083,4 +7083,7 @@ I will not be bribed.
 2711	Noah Charo	See Scripts/Global/Quest_CrossContinents.lua	
 2712	Chan Os Wy	See Scripts/Global/Quest_CrossContinents.lua	
 2713	R.C. Wosch	See Scripts/Global/Quest_CrossContinents.lua	
-2714	Placeholder	Last entry in NPCText.txt is a placeholder and must not be used	
+2714	Placeholder	Last entry in NPCText.txt is a placeholder and must not be used
+29000	I can teach you Expert Lethal Strike. It is an innate Minotaur skill; Grandmaster requires promotion to Minotaur Lord.	Lethal Strike
+29001	I can teach you Master Lethal Strike. It is an innate Minotaur skill; Grandmaster requires promotion to Minotaur Lord.	Lethal Strike
+29002	I can teach you Grandmaster Lethal Strike. It is an innate Minotaur skill; Grandmaster requires promotion to Minotaur Lord.	Lethal Strike

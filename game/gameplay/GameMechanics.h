@@ -287,6 +287,13 @@ public:
     static SpeechId resolveIdentifyMonsterSpeech(const Character &character, int monsterLevel);
     static CombatDamageType parseCombatDamageType(const std::string &value);
     static CombatDamageType spellCombatDamageType(uint32_t spellId, const SpellTable *pSpellTable);
+    static uint32_t lethalStrikePlayerLevel(const Character &character);
+    static double lethalStrikeBaseChance(const Character &character);
+    static double lethalStrikeLevelFactor(uint32_t playerLevel, int monsterLevel);
+    static bool lethalStrikeHealthEligible(bool giant, int currentHp, int maxHp);
+    static double lethalStrikeChance(const Character &character, int monsterLevel, bool giant, int hp, int maxHp);
+    static std::string lethalStrikeBaseChanceText(const Character &character, bool russian = false);
+    static std::string lethalStrikeSuccessText(const std::string &name, bool russian = false);
     static int minotaurDamageResistancePercent(const Character &character);
     static int applyMinotaurPhysicalDamageResistance(const Character &character, int damage);
     static int resolveCharacterIncomingDamage(

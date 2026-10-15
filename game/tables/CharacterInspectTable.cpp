@@ -101,6 +101,11 @@ std::string CharacterInspectTable::canonicalStatName(const std::string &name)
         return "SpellPoints";
     }
 
+    if (key == "damageresistance")
+    {
+        return "DamageResistance";
+    }
+
     if (key == "armorclass")
     {
         return "ArmorClass";

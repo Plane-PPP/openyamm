@@ -51,6 +51,7 @@ struct GameplayMonsterBolsterResult
     int bolsterStep = 0;
     float rewardMultiplier = 1.0f;
     int maxHp = 0;
+    int effectiveLevel = 1;
     int armorClass = 0;
     uint16_t moveSpeed = 0;
     int attack1DamageDiceRolls = 0;

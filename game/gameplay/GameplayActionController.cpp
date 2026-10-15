@@ -1,4 +1,5 @@
 #include "game/gameplay/GameplayActionController.h"
+#include "game/gameplay/LethalStrikeMonsters.h"
 
 #include "game/audio/GameAudioSystem.h"
 #include "game/debug/GameplayDebugTrace.h"
@@ -785,6 +786,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     bool actionPerformed = false;
     bool attacked = false;
     bool killed = false;
+    bool lethalStrikeSucceeded = false;
     std::optional<int> appliedMeleeDamage;
     const bool hadMeleeTarget = target.has_value() && targetInMeleeRange;
 
@@ -843,6 +845,105 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                 *config.directTargetBModelIndex,
                 attack.damage);
         }
+        const std::string attackerClass = canonicalClassName(pAttacker->className);
+        if (actionPerformed && attack.mode == CharacterAttackMode::Melee
+            && (attackerClass == "Minotaur" || attackerClass == "MinotaurLord"))
+        {
+            static uint64_t nextActionId = 0;
+            const uint64_t actionId = ++nextActionId;
+            const uint32_t playerLevel = GameMechanics::lethalStrikePlayerLevel(*pAttacker);
+            const double p0 = GameMechanics::lethalStrikeBaseChance(*pAttacker);
+            double kl = 0.0;
+            double kg = 0.0;
+            double chance = 0.0;
+            std::optional<double> roll;
+            std::string skipReason;
+            const std::optional<GameplayPartyAttackActorFacts> after = target && config.pWorldRuntime != nullptr
+                ? config.pWorldRuntime->partyAttackActorFacts(target->actorIndex, false) : std::nullopt;
+            const bool giant = after && lethalStrikeGiantMonster(after->monsterId);
+            if (!target || !targetInMeleeRange || !after)
+            {
+                skipReason = "no_actor_target";
+            }
+            else if (!attack.hit)
+            {
+                skipReason = "miss";
+            }
+            else if (after->currentHp <= 0 || after->isDead)
+            {
+                skipReason = "ordinary_kill";
+            }
+            else if (p0 <= 0.0)
+            {
+                skipReason = "no_skill";
+            }
+            else
+            {
+                // A successful hit remains eligible even when all ordinary damage was resisted.
+                attacked = true;
+                kl = GameMechanics::lethalStrikeLevelFactor(playerLevel, after->effectiveLevel);
+                kg = GameMechanics::lethalStrikeHealthEligible(giant, after->currentHp, after->maxHp) ? 1.0 : 0.0;
+                chance = GameMechanics::lethalStrikeChance(
+                    *pAttacker, after->effectiveLevel, giant, after->currentHp, after->maxHp);
+                if (kg == 0.0)
+                {
+                    skipReason = "giant_hp_threshold";
+                }
+                else
+                {
+                    roll = std::uniform_real_distribution<double>(0.0, 100.0)(rng);
+                    if (*roll < chance)
+                    {
+                        lethalStrikeSucceeded = config.pWorldRuntime->killPartyAttackActor(
+                            after->actorIndex, toRuntimeWorldPoint(config.partyPosition));
+                        if (!lethalStrikeSucceeded)
+                        {
+                            skipReason = "death_rejected";
+                        }
+                        killed = killed || lethalStrikeSucceeded;
+                    }
+                }
+            }
+            if (gameplayLethalStrikeTraceEnabled() || (lethalStrikeSucceeded && gameplayCombatTraceEnabled()))
+            {
+                const CharacterSkill *pSkill = pAttacker->findSkill("LethalStrike");
+                const CharacterSkill *pPerception = pAttacker->findSkill("Perception");
+                std::ostringstream out;
+                out << std::setprecision(12) << "lethal_strike action_id=" << actionId
+                    << " member_name=" << std::quoted(pAttacker->name)
+                    << " member_class=" << std::quoted(pAttacker->className)
+                    << " member_level=" << playerLevel
+                    << " skill=" << (pSkill != nullptr ? pSkill->level : 0)
+                    << " mastery=" << (pSkill != nullptr ? static_cast<int>(pSkill->mastery) : 0)
+                    << " perception=" << (pPerception != nullptr ? pPerception->level : 0)
+                    << " actor_index=" << (after ? after->actorIndex : 0)
+                    << " monster_id=" << (after ? after->monsterId : 0)
+                    << " monster_name=" << std::quoted(after ? after->displayName : "")
+                    << " monster_level=" << (after ? after->effectiveLevel : 0)
+                    << " category=" << (giant ? "GIANT" : "NORMAL")
+                    << " unknown_template=" << (after && !lethalStrikeKnownMonster(after->monsterId))
+                    << " hp_before=" << (target ? target->currentHp : 0)
+                    << " hp_after=" << (after ? after->currentHp : 0) << " max_hp=" << (after ? after->maxHp : 0)
+                    << " P0=" << p0 << " KL=" << kl << " KG=" << kg << " chance=" << chance << " roll=";
+                if (roll)
+                {
+                    out << *roll;
+                }
+                else out << "none";
+                out << " success=" << lethalStrikeSucceeded << " death_processed=" << lethalStrikeSucceeded
+                    << " skip=" << std::quoted(skipReason);
+                if (after && !lethalStrikeKnownMonster(after->monsterId))
+                {
+                    out << " warning=unknown_template_defaults_NORMAL";
+                }
+                gameplayCombatTraceWrite(out.str());
+            }
+            if (lethalStrikeSucceeded && config.pWorldRuntime != nullptr)
+            {
+                config.pWorldRuntime->refreshWorldHover(config.worldInspectionRefreshRequest);
+            }
+        }
+
     }
     else if (attack.canAttack)
     {
@@ -1091,6 +1192,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
             .attacked = attacked,
             .hadMeleeTarget = hadMeleeTarget,
             .killed = killed,
+            .lethalStrikeSucceeded = lethalStrikeSucceeded,
             .targetStrongEnemy = target.has_value() && target->maxHp >= 100,
         });
 
@@ -1102,6 +1204,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     result.actionPerformed = actionPerformed;
     result.attacked = attacked;
     result.killed = killed;
+    result.lethalStrikeSucceeded = lethalStrikeSucceeded;
     result.attack = attack;
     return result;
 }

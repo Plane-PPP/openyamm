@@ -184,6 +184,7 @@ public:
         int currentHp = 0;
         int maxHp = 0;
         float bolsterRewardMultiplier = 1.0f;
+        int effectiveLevel = 0;
         int x = 0;
         int y = 0;
         int z = 0;
@@ -689,7 +690,10 @@ public:
         float targetZ);
     bool debugSpawnEncounterFromSpawnPoint(size_t spawnIndex, uint32_t countOverride = 0);
     bool setMapActorDead(size_t actorIndex, bool isDead, bool emitAudio = true);
-    bool applyPartyAttackToMapActor(size_t actorIndex, int damage, float partyX, float partyY, float partyZ);
+    bool applyPartyAttackToMapActor(
+        size_t actorIndex, int damage, float partyX, float partyY, float partyZ, bool lethalStrike = false);
+    bool debugSetActorHealth(size_t actorIndex, int health) override;
+    bool killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source) override;
     bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,

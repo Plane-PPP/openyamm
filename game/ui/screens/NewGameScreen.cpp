@@ -1853,6 +1853,8 @@ Character NewGameScreen::buildCharacterFromState(const CreationState &state) con
         character.skills[skillName] = {skillName, 1, SkillMastery::Normal};
     }
 
+    character.synchronizeInnateAbilitySpells();
+
     GameMechanics::refreshCharacterBaseResources(
         character,
         true,

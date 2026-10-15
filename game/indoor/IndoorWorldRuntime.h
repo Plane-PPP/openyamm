@@ -452,7 +452,8 @@ public:
         size_t actorIndex,
         int damage,
         CombatDamageType damageType,
-        const GameplayWorldPoint &source);
+        const GameplayWorldPoint &source,
+        bool lethalStrike = false);
     bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
@@ -463,6 +464,8 @@ public:
         const GameplayWorldPoint &source) override;
     bool spawnPartyAttackProjectile(const GameplayPartyAttackProjectileRequest &request) override;
     bool castPartyAttackSpell(const GameplayPartyAttackSpellRequest &request) override;
+    bool debugSetActorHealth(size_t actorIndex, int health) override;
+    bool killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source) override;
     std::vector<GameplayCombatFeedbackEvent> drainCombatFeedbackEvents() override;
     void recordPartyAttackWorldResult(
         std::optional<size_t> actorIndex,

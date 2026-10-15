@@ -9613,6 +9613,14 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
             label = replaceAllText(label, "{hit_points_value}", hitPointsValue);
             label = replaceAllText(label, "{spell_points_value}", spellPointsValue);
             label = replaceAllText(label, "{armor_class_value}", armorClassValue);
+            if (normalizedLayoutId == "characterstatdamageresistancelabel"
+                && context.settingsSnapshot().minotaurRussianText)
+            {
+                label = "Сопротивление урону";
+            }
+            label = replaceAllText(label, "{damage_resistance_value}",
+                std::to_string(pCharacter != nullptr ? GameMechanics::minotaurDamageResistancePercent(*pCharacter) : 0)
+                    + "%");
             label = replaceAllText(label, "{condition_value}", conditionValue);
             label = replaceAllText(label, "{quick_spell_value}", quickSpellValue);
             label = replaceAllText(label, "{age_value}", ageValue);
@@ -9895,12 +9903,15 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
             for (size_t rowIndex = 0; rowIndex < displayRows.size(); ++rowIndex)
             {
                 const CharacterSkillUiRow &row = displayRows[rowIndex];
+                const std::string skillLabel = row.canonicalName == "LethalStrike"
+                    && context.settingsSnapshot().minotaurRussianText
+                    ? replaceAllText(row.label, "Lethal Strike", "Смертельный удар") : row.label;
                 const uint32_t textColorAbgr = row.upgradeable ? GameplayUiSkin::Learnable : GameplayUiSkin::Ivory;
 
                 UiLayoutManager::LayoutElement nameLayout = {};
                 nameLayout.fontName = "Lucida";
                 nameLayout.textScale = 1.0f;
-                const float textWidth = context.measureHudTextWidth("Lucida", row.label);
+                const float textWidth = context.measureHudTextWidth("Lucida", skillLabel);
                 if (textWidth > 0)
                 {
                     nameLayout.textScale = std::min(1.0f, (nameWidth / resolvedRegion->scale - 1.0f) / textWidth);
@@ -9914,7 +9925,7 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                 nameResolved.width = nameWidth;
                 nameResolved.height = rowHeightPixels;
                 nameResolved.scale = resolvedRegion->scale;
-                context.renderLayoutLabel(nameLayout, nameResolved, row.label, false,
+                context.renderLayoutLabel(nameLayout, nameResolved, skillLabel, false,
                     skillViewport ? &*skillViewport : nullptr);
 
                 if (!row.level.empty())

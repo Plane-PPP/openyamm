@@ -139,6 +139,7 @@ public:
         bool actionPerformed = false;
         bool attacked = false;
         bool killed = false;
+        bool lethalStrikeSucceeded = false;
         std::optional<size_t> targetActorIndex;
         size_t actingMemberIndex = 0;
         CharacterAttackResult attack = {};

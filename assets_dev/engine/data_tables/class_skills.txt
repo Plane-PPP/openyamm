@@ -39,3 +39,4 @@ Armsmaster	E	E	E	E	-	-	B	B	E	E	-	-	B	B	B	B	M	M	G	G	M	M	M	M	M	M	E	E	E	E	E	E	M	M	M
 Stealing	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	B	B	E	E	-	-	-	-	E	E	E	E	M	M	G	G	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-
 Alchemy	E	E	E	E	E	E	E	E	E	E	M	M	M	M	G	G	-	-	-	-	B	B	-	-	-	-	-	-	-	-	B	B	B	B	E	E	M	M	-	-	M	M	M	M	M	G	M	M	-	-	E	M	M
 Learning	M	M	M	M	M	M	M	M	E	E	M	G	M	M	M	M	B	B	B	B	B	B	M	M	G	G	B	B	B	B	E	E	E	E	E	E	E	E	B	B	B	B	M	M	M	M	M	M	B	B	M	M	M
+LethalStrike	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	M	G	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-

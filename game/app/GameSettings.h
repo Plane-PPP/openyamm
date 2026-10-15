@@ -177,6 +177,8 @@ struct GameSettings
     bool combatTrace = false;
     bool minotaurDamageTrace = false;
     bool axeDamageTrace = false;
+    bool lethalStrikeTrace = false;
+    bool minotaurRussianText = false;
     bool combatTraceAppend = true;
     std::string combatTraceFile = "logs/combat_trace.log";
     float hitchThresholdMilliseconds = 8.0f;
