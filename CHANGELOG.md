@@ -14,10 +14,10 @@
 
 - Добавлен уникальный прокачиваемый Lethal Strike: бесплатно Normal1 для Minotaur/Lord при
   создании/найме/гидратации старых saves; прежний прогресс и остальные skills сохраняются.
-- Caps M/GM и записи услуг трёх MM8 Axe-учителей добавлены. **Known bug LS-001:** пользователь
-  подтвердил отсутствие пункта у Herald Foestryke; все три темы имеют неверную схему строки
-  и пропускаются загрузчиком. Обучение пока не считается работоспособным;
-  [причина и план исправления](docs/research/lethal-strike-teacher-bug.md).
+- **Hotfix LS-001:** исправлена шестиколоночная схема тем обучения. Expert Lethal Strike
+  перенесён к Silk Nightwalker (Expert Perception), Master к Robert Morningstar (Master Mace),
+  GM оставлен у Garic Senjac (GM Axe). Прежние услуги сохранены; реальные темы/диалоги/повышение
+  проверены автоматически, ручная приёмка патча ожидается.
 - Формула v0.4 от базовых LS/Perception, без Identify Monster; cap30%, GIANT строго ниже60%HP,
   один fractional RNG trial за успешную завершённую melee-атаку любого оружия/Unarmed.
 - Утверждённый registry658:48 GIANT /610 NORMAL, unknown NORMAL; runtime размеры/статы не менялись.

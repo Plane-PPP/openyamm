@@ -5,9 +5,9 @@
 > DR на границе блоков и наложение Earth/Mind/Body справа; причина ещё исследуется;
 > [регистрация и план проверки](docs/research/damage-resistance-layout-bug.md). Исправление отложено.
 
-> **Known bug LS-001, 2026-10-16:** пользователь подтвердил отсутствие Lethal Strike у Herald Foestryke.
-> Все три новые темы имеют пять колонок и пропускаются загрузчиком; обучение у NPC не завершено.
-> [Причина и отложенное исправление](docs/research/lethal-strike-teacher-bug.md). Игровые ресурсы пока не исправлены.
+> **LS-001 исправлен в ресурсном hotfix:** темы загружаются; Expert у Silk Nightwalker
+> (Expert Perception), Master у Robert Morningstar (Master Mace), GM у Garic Senjac (GM Axe).
+> Исходная сборка без патча сохраняет дефект. Ручная проверка патча ещё не выполнена.
 
 ТЗ пользователя 2026-10-15 разрешает реализацию, commit/push и запуск существующего
 `Minotaur Windows build`. Merge main и GitHub Release не выполняются. Старые разрешения/планы

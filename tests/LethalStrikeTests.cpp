@@ -12,12 +12,15 @@
 #include "game/maps/SaveGame.h"
 #include "game/ui/GameplayUiController.h"
 #include "tests/RegressionGameData.h"
+#include "tests/HouseDialogueTestHarness.h"
 #include "tests/PartySpellTestHarness.h"
 
 #include <cmath>
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <array>
+#include <tuple>
 
 using namespace OpenYAMM::Game;
 
@@ -232,7 +235,7 @@ TEST_CASE("Lethal Strike innate migration hiring promotion and save persistence"
     }
 }
 
-TEST_CASE("Lethal Strike original MM8 Axe teachers retain services and enforce promotion")
+TEST_CASE("Lethal Strike teachers load real dialog topics retain services and enforce promotion")
 {
     Party party;
     party.setClassSkillTable(&data().classSkillTable);
@@ -244,11 +247,34 @@ TEST_CASE("Lethal Strike original MM8 Axe teachers retain services and enforce p
     party.seed(seed);
     for (uint32_t i = 0; i < 3; ++i)
     {
-        const NpcEntry *pNpc = data().npcDialogTable.getNpc(115 + i);
+        const NpcEntry *pNpc = data().npcDialogTable.getNpc(std::array<uint32_t, 3>{184, 131, 117}[i]);
         REQUIRE(pNpc != nullptr);
         CHECK(pNpc->houseId > 0);
-        CHECK(std::find(pNpc->topicIds.begin(), pNpc->topicIds.end(), 309 + i) != pNpc->topicIds.end());
+        CHECK(std::find(pNpc->topicIds.begin(), pNpc->topicIds.end(), std::array<uint32_t, 3>{387, 319, 311}[i]) != pNpc->topicIds.end());
         CHECK(std::find(pNpc->topicIds.begin(), pNpc->topicIds.end(), 29000 + i) != pNpc->topicIds.end());
+        const auto topics = data().npcDialogTable.getTopicsForNpc(pNpc->id);
+        CHECK(std::any_of(topics.begin(), topics.end(), [i](const auto &topic)
+        {
+            return topic.id == 29000 + i && !topic.topic.empty();
+        }));
+        OpenYAMM::Tests::HouseDialogueTestHarness harness(data());
+        const auto &dialog = harness.openNpcDialogue(pNpc->id, pNpc->houseId);
+        CHECK(std::any_of(dialog.actions.begin(), dialog.actions.end(), [i](const auto &action)
+        {
+            return action.id == 29000 + i && action.kind == EventDialogActionKind::MasteryTeacherOffer;
+        }));
+        REQUIRE(harness.party().setMemberClassName(harness.party().activeMemberIndex(), "MinotaurLord"));
+        auto *member = harness.party().activeMember();
+        REQUIRE(member);
+        member->skills["LethalStrike"] = {"LethalStrike", 10, static_cast<SkillMastery>(i + 1)};
+        harness.party().addGold(100000);
+        const auto &offer = harness.openMasteryTeacherOffer(pNpc->id,
+            std::array<std::string, 3>{"Expert Lethal Strike", "Master Lethal Strike", "Grandmaster Lethal Strike"}[i],
+            pNpc->houseId);
+        REQUIRE_FALSE(offer.actions.empty());
+        CHECK(offer.actions.front().label.find("Lethal Strike") != std::string::npos);
+        harness.executeAndPresent(0);
+        CHECK(member->skills.at("LethalStrike").mastery == static_cast<SkillMastery>(i + 2));
         auto evaluation = evaluateMasteryTeacherTopic(29000 + i, party, data().classSkillTable,
             data().npcDialogTable, &data().mergedTeacherTopicTable);
         REQUIRE(evaluation);

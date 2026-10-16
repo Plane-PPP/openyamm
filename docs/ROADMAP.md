@@ -21,7 +21,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Исследования таблиц/карт | Research completed | 658 общих шаблонов,198 исходных MM8,184 с кампанийными свидетельствами; [ревизия](research/final-review.md) |
 | Контракт v0.4 | Approved | P0 от S/V, потолок30%, GIANT строго ниже60%, Identify Monster не участвует |
 | Реестр категорий | Implemented | 48 GIANT /610 NORMAL; MM8 21/177; явные ID, unknown NORMAL + trace warning |
-| Навык и обучение | Partially implemented / LS-001 open | ID40, Normal1, миграция и caps реализованы; темы трёх учителей пропускаются загрузчиком, [дефект](research/lethal-strike-teacher-bug.md) |
+| Навык и обучение | LS-001 fixed / automatically tested | Корректная схема тем; Expert Perception / Master Mace / GM Axe; [детали](research/lethal-strike-teacher-bug.md) |
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
 | Skills/Stats | Implemented / LS-002 open | Динамический P0 и DR добавлены; пользователь сообщил нарушение вёрстки Stats, [дефект](research/damage-resistance-layout-bug.md) |
 | Автоматические проверки | Automatically tested | 21 focused /30044 assertions;3 runtime /58;187 расширенных /7048. Ограничения suite в BUILD-NOTES |
@@ -34,7 +34,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 
 Также исправить [LS-002 — вёрстка Stats](research/damage-resistance-layout-bug.md) с визуальной проверкой всего экрана.
 
-1. Исправить [LS-001](research/lethal-strike-teacher-bug.md), проверить загрузку и диалоги всех трёх учителей; новая сборка отдельным этапом.
+1. Установить ресурсный hotfix и вручную проверить три новых назначения учителей.
 2. Ручной прогон Windows v0.4: частота/сообщение, GIANT60%, dynamic P0, Damage Resistance, учителя и старые saves.
 3. Зафиксировать результаты пользователя отдельно от автоматически проверенного.
 4. По результатам отдельным этапом корректировать экспериментальный баланс.

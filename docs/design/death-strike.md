@@ -1,8 +1,8 @@
 # Lethal Strike v0.4 — Смертельный удар
 
-> **Known bug LS-001, 2026-10-16:** пользователь подтвердил отсутствие Lethal Strike у Herald Foestryke.
-> Все три новые темы имеют пять колонок и пропускаются загрузчиком; обучение у NPC не завершено.
-> [Причина и отложенное исправление](../research/lethal-strike-teacher-bug.md). Игровые ресурсы пока не исправлены.
+> **LS-001 исправлен в ресурсном hotfix:** темы загружаются; Expert у Silk Nightwalker
+> (Expert Perception), Master у Robert Morningstar (Master Mace), GM у Garic Senjac (GM Axe).
+> Исходная сборка без патча сохраняет дефект. Ручная проверка патча ещё не выполнена.
 
 Действующий контракт: ТЗ пользователя v0.4 от 2026-10-15. Прежнее проектное название Death Strike
 и формула v0.2 заменены; второй способности нет. Старые расчёты доступны в истории Git и помеченных
@@ -54,8 +54,8 @@ Unarmed дают один trial. Нет trial для miss, world object, shootin
 
 | Учитель MM8 | Место / house ID | Ранг | Навык / золото | Новый topic |
 | --- | --- | --- | --- | --- |
-| Herald Foestryke, NPC115 | Garrote Gorge, house540 | Expert | 4 / 2000 | 29000 |
-| Jasp Hunter, NPC116 | Ravenshore, house907 | Master | Expert7 / 5000 | 29001 |
+| Silk Nightwalker, NPC184 | Alvar, house519 | Expert | 4 / 2000 | 29000 |
+| Robert Morningstar, NPC131 | Garrote Gorge, house539 | Master | Expert7 / 5000 | 29001 |
 | Garic Senjac, NPC117 | Balthazar Lair, house635 | GM | Master10 / 8000 | 29002 |
 
 Оригинальные Axe topics309–311 и остальные услуги сохранены. Это обычные дополнительные пункты

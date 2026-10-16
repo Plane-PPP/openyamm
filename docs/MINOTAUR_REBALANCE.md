@@ -257,18 +257,19 @@ GIANT: KG=1 только при `0<5*HP<3*maxHP`, иначе0. Ровно60% з�
 Одна проверка после обычного успешного melee любого оружия/Unarmed, включая dual wield;
 не для стрельбы/магии/miss/objects/обычного убийства. Не добавлено иммунитетов по природе существа.
 
-**Known bug LS-001 (2026-10-16):** пункт у Herald Foestryke отсутствует по ручному тесту пользователя.
-Все три новые темы пропускаются загрузчиком из-за пяти колонок вместо требуемых шести.
-Обучение у NPC не считается рабочим до исправления и нового теста.
-[Подробности](research/lethal-strike-teacher-bug.md).
+**LS-001 исправлен ресурсным hotfix:** все три темы имеют корректную схему и загружаются.
+Исходная Windows-сборка без патча содержит дефект. Прежние услуги учителей сохранены:
 
-Навык развивается за стандартные очки. Планируемое подключение MM8 Axe-учителей:
-Herald Foestryke (Garrote Gorge, Foestryke Residence) E4/2000;
-Jasp Hunter (Ravenshore, Hunter's Hovel) M7/5000;
-Garic Senjac (Balthazar Lair, Senjac's House) GM10/8000.
-Master требует Expert, GM требует Master и класс MinotaurLord.
-Hunter's Hovel закрыта при QBit57 (вторжение пиратов); Senjac доступен после спасения минотавров/QBit23.
-Эти исходные сюжетные условия не обходятся. Новый пункт диалога не заменяет прежние услуги.
+| Lethal Strike | Учитель | Место | Требования | Команды посещения |
+| --- | --- | --- | --- | --- |
+| Expert | Silk Nightwalker, Expert Perception | Alvar, Nightwalker Cottage | LS4 Normal,2000 gold | `goto 3`, дождаться загрузки, `event 31` |
+| Master | Robert Morningstar, Master Mace | Garrote Gorge, Morningstar Residence | LS7 Expert,5000 gold | `goto 5`, дождаться загрузки, `event 13` |
+| GM | Garic Senjac, GM Axe | Balthazar Lair, Senjac's House | LS10 Master,MinotaurLord,8000 gold | `goto 35`, дождаться загрузки, `event 225` |
+
+Senjac доступен после спасения минотавров/QBit23. В тестовой копии save можно выполнить
+`qbit set 23`. Expert/Master у прежних Axe-учителей Herald/Jasp удалены, их Axe сохранён.
+Автотест проверяет реальные загруженные темы, действие диалога, оплату/повышение через него
+и cap GM; ручная проверка новой конфигурации пользователем ещё не выполнена.
 
 ### Быстрый тест в отдельном сохранении
 
