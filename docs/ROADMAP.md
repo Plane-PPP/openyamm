@@ -14,7 +14,7 @@ SHA142a54e01da50d9faf258e38919e88dba9e8de29,
 Axe, Armsmaster и формула пассивной защиты в v0.4 сохраняются.
 Подробности: [CHANGELOG](../CHANGELOG.md), [описание мода](MINOTAUR_REBALANCE.md).
 
-## Текущие этапы
+## Этапы разработки
 
 | Этап | Статус | Результат |
 | --- | --- | --- |
@@ -25,17 +25,20 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
 | Skills/Stats | Implemented | Динамический P0, Damage Resistance под AC, RMB, English/Russian mod texts |
 | Автоматические проверки | Automatically tested | 21 focused /30044 assertions;3 runtime /58;187 расширенных /7048. Ограничения suite в BUILD-NOTES |
-| Windows packaging | Authorized / pending | Существующий Minotaur Windows build; успех/артефакт фиксировать только по Actions |
+| Windows packaging | Packaged / success | [Run38784738765](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765); SHA385a1e4; OpenYAMM-windows-Release.zip |
 | Ручной тест v0.4 | Pending user | Новая сборка не считается проверенной до внутриигрового прогона |
 | Identify Monster | Deferred | Caps/UI/поведение не меняются; knowledge, AC/damage/aura/GM magic отложены |
 | Бестиарий/лор | Deferred | Исследования сохранены, парсинг и расширенный интерфейс отложены |
 
 ## Следующие этапы
 
-1. Зафиксировать завершённые автоматические проверки, SHA и ограничения в BUILD-NOTES.
-2. Отправить коммиты в feature/minotaur-rebalance и дождаться реального успеха Windows workflow.
-3. Проверить в игре частоту/сообщение, GIANT60%, dynamic P0, Damage Resistance, учителей и старые saves.
-4. По пользовательским результатам отдельным этапом корректировать экспериментальный баланс.
+1. Ручной прогон Windows v0.4: частота/сообщение, GIANT60%, dynamic P0, Damage Resistance, учителя и старые saves.
+2. Зафиксировать результаты пользователя отдельно от автоматически проверенного.
+3. По результатам отдельным этапом корректировать экспериментальный баланс.
+
+Автоматические проверки и Windows packaging завершены; артефакт существует. Production source —
+385a1e4; последующие тестовые и документальные коммиты не меняют собранный игровой код/ресурсы.
+Подробности и ограничения — [BUILD-NOTES](../BUILD-NOTES.md).
 
 Каждый законченный этап фиксировать отдельным коммитом с обновлением ROADMAP.
 Не выполнять merge main. Новый баланс Axe/DR и Identify Monster не входит в задачу.

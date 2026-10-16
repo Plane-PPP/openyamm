@@ -1,0 +1,33 @@
+{
+  "run": "https://github.com/Plane-PPP/openyamm/actions/runs/38784738765",
+  "sha": "385a1e447aadb17cdf3b0db36691a92889f23786",
+  "previous_sha": "142a54e01da50d9faf258e38919e88dba9e8de29",
+  "artifact_id": 11999735772,
+  "artifact_name": "OpenYAMM-windows-Release.zip",
+  "artifact_bytes": 3564147209,
+  "entries": 79,
+  "required_files": [
+    "openyamm.exe",
+    "settings.ini",
+    "README.md",
+    "CHANGELOG.md",
+    "BUILD-NOTES.md",
+    "BUILD-REVISION.txt",
+    "docs/MINOTAUR_REBALANCE.md",
+    "docs/ROADMAP.md",
+    "assets/engine.zip",
+    "assets/worlds/mm6.zip",
+    "assets/worlds/mm7.zip",
+    "assets/worlds/mm8.zip",
+    "assets/worlds/mmmerge.zip",
+    "runtime/shaders/glsl/vs_outdoor_billboard_lit.bin",
+    "runtime/shaders/glsl/fs_sprite_atlas.bin"
+  ],
+  "verified_executable_x64_pe_header": true,
+  "verified_lethal_binary_strings": false,
+  "embedded_runtime_tables_verified": false,
+  "engine_zip_outer_compression": 8,
+  "transferred_bytes": 299529,
+  "verification_scope": "ZIP directory, revision, documentation, settings defaults and x64 PE header; no full binary or nested archive audit",
+  "verified_trace_defaults_all_false": true
+}

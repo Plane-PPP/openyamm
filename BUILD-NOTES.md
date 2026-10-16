@@ -7,9 +7,21 @@
 Implementation commit: `a9b27e758fd136b0132732421f2997d6679296d1`.
 Предыдущая подтверждённая сборка: `142a54e01da50d9faf258e38919e88dba9e8de29`,
 [run #3](https://github.com/Plane-PPP/openyamm/actions/runs/38148278640).
-Документация после implementation-коммита входит в новую packaged revision; её SHA и diff
-будут записаны самим workflow в BUILD-REVISION.txt. Точный новый run/status/artifact фиксируется
-после фактического завершения Actions, а не по факту push.
+Новая Windows-сборка **успешна**:
+[Actions run38784738765](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765),
+workflow_dispatch; job `Windows x64 release` завершилась2026-10-15 в18:50:12UTC (30m5s).
+Packaged source SHA: `385a1e447aadb17cdf3b0db36691a92889f23786`.
+Артефакт: [OpenYAMM-windows-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765/artifacts/11999735772),
+ID11999735772, размер3 564 147 209 байт. Compile, Verify Windows package и Upload прошли.
+
+Последующие383a137/daa86f9 меняют только тесты и отчёты; игровой код/ресурсы совпадают
+с packaged SHA385a1e4. Финальная запись в документации также не требует пересборки.
+Новая сборка **готова к ручному тестированию**, но не считается Manually tested.
+Дополнительная read-only проверка опубликованного ZIP подтвердила BUILD-REVISION.txt
+(текущий и предыдущий SHA), обязательные файлы, x64 PE-заголовок executable, документацию
+и отключённые по умолчанию trace-настройки. Полное содержимое executable и вложенных
+архивов этой проверкой не проверялось; результат —
+[windows-v0.4-build.json](docs/research/windows-v0.4-build.json).
 
 ## Реализовано
 
@@ -99,7 +111,8 @@ Identify Monster (включая caps/UI), knowledge, spell bonuses и бест�
 > Метаданные run/артефакта подтверждены API 2026-10-14. Пользователь сообщил результаты
 > ручных тестов Windows11: [CHANGELOG](CHANGELOG.md#minotaur-windows-build-3--ручные-испытания).
 > Фраза «ещё не выполнено» ниже относится к моменту подготовки. Историческое разрешение
-> packaging/push не разрешает новый запуск; текущий этап изменяет только документацию и аналитические данные/генератор.
+> packaging/push не разрешало новый запуск на этапе исследования; приведённое там ограничение
+> «только документация» относилось к исследованию. Новый запуск v0.4 отдельно разрешён текущим ТЗ.
 > От предыдущего подтверждённого `4c3d726...` входят commits `6869538...` и `142a54e...`.
 > Сам установленный ZIP и BUILD-REVISION.txt пользователя отдельно не сверялись.
 

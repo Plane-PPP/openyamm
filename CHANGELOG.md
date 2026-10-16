@@ -5,7 +5,7 @@
 
 ## [Unreleased]
 
-### Lethal Strike v0.4 — Implemented / Automatically tested
+### Lethal Strike v0.4 — Implemented / Automatically tested / Windows packaged
 
 - Добавлен уникальный прокачиваемый Lethal Strike: бесплатно Normal1 для Minotaur/Lord при
   создании/найме/гидратации старых saves; прежний прогресс и остальные skills сохраняются.
@@ -22,8 +22,9 @@
 - Linux executable и оба test targets собраны:21 focused tests/30044 assertions,
   3 runtime tests/58 assertions и187 extended tests/7048 assertions прошли. Прогоны пересекаются.
   Ограничения sparse suite и будущие ручные проверки — [BUILD-NOTES](BUILD-NOTES.md).
-- Windows packaging разрешён и ожидает фактического результата Actions; ручная проверка нового
-  билда пользователем ещё не выполнена. Axe, Armsmaster, DR и Identify Monster не перебалансированы.
+- Windows packaging успешно завершён: [run38784738765](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765),
+  source SHA385a1e447aadb17cdf3b0db36691a92889f23786, `OpenYAMM-windows-Release.zip`.
+  Ручная проверка нового билда пользователем ещё не выполнена. Axe, Armsmaster, DR и Identify Monster не перебалансированы.
 - Identify Monster extensions, knowledge и бестиарий помечены **Deferred**; исторические v0.2
   исследования сохранены и отделены от действующего контракта.
 
