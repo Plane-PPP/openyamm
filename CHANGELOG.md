@@ -9,6 +9,14 @@
 
 ## [Unreleased]
 
+### Hotfix 1 — Implemented / Automatically tested / resource patch
+
+- LS-001: корректные темы обучения, Expert Perception / Master Mace / GM Axe.
+- LS-002: HP/SP/AC/DR внутри рамки, исходные Condition/Quick Spell, раздельные Earth/Mind/Body.
+- [ZIP-патч](docs/patches/Minotaur-v0.4-hotfix-1.zip) поверх Windows SHA385a1e4 без замены executable.
+  Проверки22 tests/30155 assertions прошли; новая ручная проверка Windows ещё не выполнена.
+  Формулы и баланс не менялись. [Установка](docs/patches/README.md).
+
 ### Lethal Strike v0.4 — Implemented / Automatically tested / Windows packaged
 
 - Добавлен уникальный прокачиваемый Lethal Strike: бесплатно Normal1 для Minotaur/Lord при

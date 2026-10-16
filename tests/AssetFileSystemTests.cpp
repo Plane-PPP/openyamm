@@ -1244,6 +1244,7 @@ TEST_CASE("AssetFileSystem resource hotfix overrides packaged engine without rep
         REQUIRE(fs.initialize(root, assets, OpenYAMM::Engine::AssetScaleTier::X1, "mm8"));
         CHECK(fs.readTextFile("engine/data_tables/npc.txt") == std::optional<std::string>("fixed"));
         CHECK(fs.readTextFile("engine/ui/gameplay/character.yml") == std::optional<std::string>("fixed-ui"));
+        CHECK(fs.readTextFile("Data/ui/gameplay/character.yml") == std::optional<std::string>("fixed-ui"));
         CHECK(fs.readTextFile("engine/data_tables/untouched.txt") == std::optional<std::string>("keep"));
     }
     std::filesystem::remove_all(root);

@@ -273,7 +273,9 @@ TEST_CASE("Lethal Strike teachers load real dialog topics retain services and en
             pNpc->houseId);
         REQUIRE_FALSE(offer.actions.empty());
         CHECK(offer.actions.front().label.find("Lethal Strike") != std::string::npos);
+        const auto goldBefore = harness.party().gold();
         harness.executeAndPresent(0);
+        CHECK(goldBefore - harness.party().gold() == std::array<int, 3>{2000, 5000, 8000}[i]);
         CHECK(member->skills.at("LethalStrike").mastery == static_cast<SkillMastery>(i + 2));
         auto evaluation = evaluateMasteryTeacherTopic(29000 + i, party, data().classSkillTable,
             data().npcDialogTable, &data().mergedTeacherTopicTable);

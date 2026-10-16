@@ -26,9 +26,15 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Skills/Stats | LS-002 fixed / automatically tested | Четыре resource rows внутри рамки, исходные Condition/Quick Spell, раздельные Earth/Mind/Body; [детали](research/damage-resistance-layout-bug.md) |
 | Автоматические проверки | Automatically tested | 21 focused /30044 assertions;3 runtime /58;187 расширенных /7048. Ограничения suite в BUILD-NOTES |
 | Windows packaging | Packaged / success | [Run38784738765](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765); SHA385a1e4; OpenYAMM-windows-Release.zip |
-| Ручной тест v0.4 | Pending user | Новая сборка не считается проверенной до внутриигрового прогона |
+| Ручной тест v0.4 | In progress / hotfix retest pending | Пользователь обнаружил LS-001/LS-002; исправления требуют повторной проверки |
 | Identify Monster | Deferred | Caps/UI/поведение не меняются; knowledge, AC/damage/aura/GM magic отложены |
 | Бестиарий/лор | Deferred | Исследования сохранены, парсинг и расширенный интерфейс отложены |
+
+## Ресурсный hotfix 1
+
+LS-001 и LS-002 исправлены отдельными коммитами. Подготовлен [малый патч](patches/Minotaur-v0.4-hotfix-1.zip)
+для executable385a1e4, [установка и тест](patches/README.md). Автоматический прогон22 tests/30155 assertions
+успешен; Windows-пересборка не требуется, ручная приёмка ожидается.
 
 ## Следующие этапы
 
@@ -40,7 +46,8 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 4. По результатам отдельным этапом корректировать экспериментальный баланс.
 
 Автоматические проверки и Windows packaging завершены; артефакт существует. Production source —
-385a1e4; последующие тестовые и документальные коммиты не меняют собранный игровой код/ресурсы.
+385a1e4. Hotfix меняет три ресурса поверх этой сборки, не executable;
+предшествовавшие hotfix тестовые/документальные коммиты игровой код не меняли.
 Подробности и ограничения — [BUILD-NOTES](../BUILD-NOTES.md).
 
 Каждый законченный этап фиксировать отдельным коммитом с обновлением ROADMAP.

@@ -31,6 +31,27 @@ ID11999735772, размер3 564 147 209 байт. Compile, Verify Windows packa
 архивов этой проверкой не проверялось; результат —
 [windows-v0.4-build.json](docs/research/windows-v0.4-build.json).
 
+## Ресурсный hotfix 1 — LS-001 / LS-002
+
+Для пакета SHA385a1e4 подготовлен [Minotaur-v0.4-hotfix-1.zip](docs/patches/Minotaur-v0.4-hotfix-1.zip)
+(58 679 байт); [инструкция](docs/patches/README.md). Новый executable не нужен:
+штатный AssetFileSystem монтирует assets/assets.zip перед engine.zip. В исходном пакете
+assets/assets.zip отсутствует; после распаковки он добавляется, engine.zip сохраняется.
+
+Изменены только npc.txt, npc_topic.txt, character.yml. LS-001: шестиколоночные темы,
+Expert у Expert Perception Silk Nightwalker (Alvar, goto3/event31), Master у Master Mace
+Robert Morningstar (Garrote Gorge, goto5/event13), GM у GM Axe Garic Senjac (goto35/event225).
+LS-002: четыре resource rows внутри исходной рамки без сдвига соседних блоков,
+Condition/Quick Spell на исходных позициях, Earth/Mind/Body с разными координатами.
+
+Hotfix Automatically tested:22 tests/30155 assertions, включая Axe/DR regression;
+реальные загруженные темы, действия диалога и повышение через них, GM cap,
+геометрия строк/рамок и lookup overlay по canonical/legacy UI paths.
+Архив воспроизводим; вложенный overlay и hashes сверены с тремя исходными ресурсами.
+Windows hotfix **не Manually tested**. Полная пересборка/новый Actions run не запускались;
+source SHA executable остаётся385a1e4, hotfix отмечен MINOTAUR-HOTFIX-1.json.
+Старые результаты сборки и тестов ниже относятся к базовой v0.4.
+
 ## Реализовано
 
 - Полноценный Lethal Strike ID40, численный рост, Normal1 для всех Minotaur/Lord, старые saves,
