@@ -1,5 +1,9 @@
 # Lethal Strike v0.4 — Windows test build
 
+> **Known bug LS-002 (2026-10-16):** пользователь сообщил нарушение вёрстки Stats после
+> добавления Damage Resistance. Причина и точные смещения пока не установлены;
+> [регистрация и план проверки](docs/research/damage-resistance-layout-bug.md). Исправление отложено.
+
 > **Known bug LS-001, 2026-10-16:** пользователь подтвердил отсутствие Lethal Strike у Herald Foestryke.
 > Все три новые темы имеют пять колонок и пропускаются загрузчиком; обучение у NPC не завершено.
 > [Причина и отложенное исправление](docs/research/lethal-strike-teacher-bug.md). Игровые ресурсы пока не исправлены.
