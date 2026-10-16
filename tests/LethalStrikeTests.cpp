@@ -435,6 +435,35 @@ TEST_CASE("Lethal Strike and Damage Resistance descriptions and Stats layout")
     REQUIRE(condition);
     CHECK(ac->gapY + ac->height <= dr->gapY);
     CHECK(dr->gapY + dr->height <= condition->gapY);
+    // Keep every label/value and hit rectangle inside the existing painted sections.
+    for (const auto &[names, top, bottom] : {
+        std::tuple{std::vector<std::string>{"HitPoints", "SpellPoints", "ArmorClass", "DamageResistance"}, 179.0f, 238.0f},
+        std::tuple{std::vector<std::string>{"Condition", "QuickSpell"}, 244.0f, 284.5f},
+        std::tuple{std::vector<std::string>{"FireResistance", "AirResistance", "WaterResistance",
+            "EarthResistance", "MindResistance", "BodyResistance"}, 190.0f, 303.0f}})
+    {
+        float previousBottom = top;
+        for (const auto &name : names)
+        {
+            const auto *label = layout.findElement("CharacterStat" + name + "Label");
+            const auto *value = layout.findElement("CharacterStat" + name + "Value");
+            REQUIRE(label);
+            REQUIRE(value);
+            CHECK(label->gapY >= previousBottom);
+            CHECK(label->gapY + label->height <= bottom);
+            CHECK(value->gapY == label->gapY);
+            CHECK(value->height == label->height);
+            previousBottom = label->gapY + label->height;
+        }
+    }
+    for (uint32_t npcId : {115u, 116u})
+    {
+        const auto topics = data().npcDialogTable.getTopicsForNpc(npcId);
+        CHECK(std::none_of(topics.begin(), topics.end(), [](const auto &topic)
+        {
+            return topic.id == 29000 || topic.id == 29001;
+        }));
+    }
     Character c = minotaur("Minotaur");
     for (const auto &[level,expected] : {std::pair{10,7}, {20,9}, {50,15}})
     {

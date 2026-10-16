@@ -1,9 +1,8 @@
 # Lethal Strike v0.4 — Windows test build
 
-> **Known bug LS-002 (2026-10-16):** пользователь сообщил нарушение вёрстки Stats после
-> добавления Damage Resistance. Скриншот подтвердил выход Quick Spell за рамку,
-> DR на границе блоков и наложение Earth/Mind/Body справа; причина ещё исследуется;
-> [регистрация и план проверки](docs/research/damage-resistance-layout-bug.md). Исправление отложено.
+> **LS-002 исправлен ресурсным hotfix:** четыре строки HP/SP/AC/DR помещены внутри
+> прежней рамки, Condition/Quick Spell возвращены на исходные позиции, Earth/Mind/Body
+> имеют разные Y. Автоматическая геометрия проверена; ручная приёмка патча ожидается.
 
 > **LS-001 исправлен в ресурсном hotfix:** темы загружаются; Expert у Silk Nightwalker
 > (Expert Perception), Master у Robert Morningstar (Master Mace), GM у Garic Senjac (GM Axe).

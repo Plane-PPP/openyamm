@@ -58,9 +58,9 @@ Unarmed дают один trial. Нет trial для miss, world object, shootin
 | Robert Morningstar, NPC131 | Garrote Gorge, house539 | Master | Expert7 / 5000 | 29001 |
 | Garic Senjac, NPC117 | Balthazar Lair, house635 | GM | Master10 / 8000 | 29002 |
 
-Оригинальные Axe topics309–311 и остальные услуги сохранены. Это обычные дополнительные пункты
+Оригинальные Perception topic387, Mace topic319 и Axe topic311 и остальные услуги сохранены. Это обычные дополнительные пункты
 диалога; проверка продвижения/очков/золота выполняется стандартным MasteryTeacherDialog.
-Доступ подтверждён map events: out05:event15 → house540; out02:event463 → house907 при !QBit57;
+Доступ подтверждён map events: out03:event31 → house519; out05:event13 → house539;
 d24:event225 → house635 после QBit23 (спасение минотавров). Эти сюжетные ограничения сохранены.
 
 ## Смерть и интерфейс
@@ -78,7 +78,9 @@ Skills отображает уровень и мастерство, станда
 
 Stats содержит Damage Resistance непосредственно под Armor Class. Значение каждый кадр берётся
 из существующего GameMechanics::minotaurDamageResistancePercent; остальные классы имеют0%.
-Нижние Condition/QuickSpell сдвинуты на18 logical pixels. RMB поясняет только физический урон,
+В hotfix HP/SP/AC/DR занимают четыре строки по14 logical pixels внутри прежней рамки;
+Condition/QuickSpell сохранены на исходных позициях. Earth/Mind/Body имеют Y247.733/265.733/283.733.
+RMB поясняет только физический урон,
 уровень, бонус продвижения и максимум30%.
 
 В проекте нет общей runtime-локализации этих UI-строк. Опция `[debug] minotaur_russian_text=true`

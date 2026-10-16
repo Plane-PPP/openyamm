@@ -1230,3 +1230,21 @@ TEST_CASE("menu HUD textures retain physical x2 resolution and logical half size
     CHECK(scalePhysicalPixelsToLogical(256, tier) == 128);
     CHECK(assetScaleTierFromResolvedPath("engine/hud/menus/button.png") == AssetScaleTier::X1);
 }
+
+TEST_CASE("AssetFileSystem resource hotfix overrides packaged engine without replacing it")
+{
+    const auto root = makeTemporaryRoot();
+    const auto assets = root / "assets";
+    writeZipFile(assets / "engine.zip", {{"data_tables/npc.txt", "old"},
+        {"ui/gameplay/character.yml", "old-ui"}, {"data_tables/untouched.txt", "keep"}});
+    writeZipFile(assets / "assets.zip", {{"engine/data_tables/npc.txt", "fixed"},
+        {"engine/ui/gameplay/character.yml", "fixed-ui"}});
+    {
+        OpenYAMM::Engine::AssetFileSystem fs;
+        REQUIRE(fs.initialize(root, assets, OpenYAMM::Engine::AssetScaleTier::X1, "mm8"));
+        CHECK(fs.readTextFile("engine/data_tables/npc.txt") == std::optional<std::string>("fixed"));
+        CHECK(fs.readTextFile("engine/ui/gameplay/character.yml") == std::optional<std::string>("fixed-ui"));
+        CHECK(fs.readTextFile("engine/data_tables/untouched.txt") == std::optional<std::string>("keep"));
+    }
+    std::filesystem::remove_all(root);
+}

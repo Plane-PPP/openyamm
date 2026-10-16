@@ -23,7 +23,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Реестр категорий | Implemented | 48 GIANT /610 NORMAL; MM8 21/177; явные ID, unknown NORMAL + trace warning |
 | Навык и обучение | LS-001 fixed / automatically tested | Корректная схема тем; Expert Perception / Master Mace / GM Axe; [детали](research/lethal-strike-teacher-bug.md) |
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
-| Skills/Stats | Implemented / LS-002 open | Динамический P0 и DR добавлены; пользователь сообщил нарушение вёрстки Stats, [дефект](research/damage-resistance-layout-bug.md) |
+| Skills/Stats | LS-002 fixed / automatically tested | Четыре resource rows внутри рамки, исходные Condition/Quick Spell, раздельные Earth/Mind/Body; [детали](research/damage-resistance-layout-bug.md) |
 | Автоматические проверки | Automatically tested | 21 focused /30044 assertions;3 runtime /58;187 расширенных /7048. Ограничения suite в BUILD-NOTES |
 | Windows packaging | Packaged / success | [Run38784738765](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765); SHA385a1e4; OpenYAMM-windows-Release.zip |
 | Ручной тест v0.4 | Pending user | Новая сборка не считается проверенной до внутриигрового прогона |
@@ -32,7 +32,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 
 ## Следующие этапы
 
-Также исправить [LS-002 — вёрстка Stats](research/damage-resistance-layout-bug.md) с визуальной проверкой всего экрана.
+Ресурсные исправления LS-001/LS-002 завершены. Требуется ручная визуальная приёмка Stats и посещение трёх учителей после установки патча.
 
 1. Установить ресурсный hotfix и вручную проверить три новых назначения учителей.
 2. Ручной прогон Windows v0.4: частота/сообщение, GIANT60%, dynamic P0, Damage Resistance, учителя и старые saves.
