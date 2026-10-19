@@ -648,6 +648,8 @@ TEST_CASE("Lethal Strike v0.4 campaign progress inventory quests and visited map
         CHECK(save->party.gold == 43210);
         CHECK(save->party.bankGold == 12500);
         CHECK(save->party.food == 23);
+        const std::unordered_map<std::string, uint32_t> packages = {{"engine", 1}, {"mm6", 1}, {"mm7", 1}, {"mm8", 1}};
+        REQUIRE_MESSAGE(validateRequiredContentPackages(*save, data().itemTable, data().houseTable, packages, error), error);
         CHECK(save->party.questBits == std::unordered_set<uint32_t>{23, 1545, 268});
         CHECK(save->party.npcTopicOverrides.at(117).at(1) == 426);
         REQUIRE(save->party.adventurersInnMembers.size() == 1);

@@ -126,22 +126,8 @@ jobs:
         run: |
           archive="build-windows/release/OpenYAMM-windows-Release.zip"
           test -s "$archive"
-          cmake -E tar tf "$archive" > windows-package-contents.txt
-          grep -Fxq "OpenYAMM/openyamm.exe" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/settings.ini" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/README.md" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/CHANGELOG.md" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/BUILD-NOTES.md" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/BUILD-REVISION.txt" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/docs/MINOTAUR_REBALANCE.md" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/docs/ROADMAP.md" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/runtime/shaders/glsl/vs_outdoor_billboard_lit.bin" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/runtime/shaders/glsl/fs_sprite_atlas.bin" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/assets/engine.zip" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/assets/worlds/mm6.zip" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/assets/worlds/mm7.zip" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/assets/worlds/mm8.zip" windows-package-contents.txt
-          grep -Fxq "OpenYAMM/assets/worlds/mmmerge.zip" windows-package-contents.txt
+          python3 tools/verify_minotaur_windows_package.py "$archive" \
+            --stage build-windows/release/Release/OpenYAMM
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v7

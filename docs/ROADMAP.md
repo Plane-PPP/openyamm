@@ -24,8 +24,8 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Навык и обучение | LS-001 fixed / topics manually confirmed | Корректная схема тем; Expert Perception / Master Mace / GM Axe; [детали](research/lethal-strike-teacher-bug.md) |
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
 | Skills/Stats | LS-002 fixed / layout manually confirmed | Четыре resource rows внутри рамки, исходные Condition/Quick Spell, раздельные Earth/Mind/Body; [детали](research/damage-resistance-layout-bug.md) |
-| Автоматические проверки | Automatically tested on1.5 | 25 focused /30285 assertions;3 runtime /58;205 selected /7329. Ограничения suite в BUILD-NOTES |
-| Windows packaging on1.5 | In progress | [Run39287322676](https://github.com/Plane-PPP/openyamm/actions/runs/39287322676); SHAcbaea4b; предыдущий пакет385a1e4 |
+| Автоматические проверки | Automatically tested on1.5 | 25 focused /30294 assertions;3 runtime /58;205 selected /7329. Ограничения suite в BUILD-NOTES |
+| Windows packaging on1.5 | Retry pending | Первый run39287322676 скомпилирован/упакован; исправлена проверка удалённого mmmerge.zip, повторный run ожидает результата |
 | Ручной тест v0.4 | In progress / hotfix retest pending | Исправление Stats и появление тем подтверждены; LS-003 и боевой прогон остаются |
 | Identify Monster | Deferred | Caps/UI/поведение не меняются; knowledge, AC/damage/aura/GM magic отложены |
 | Бестиарий/лор | Deferred | Исследования сохранены, парсинг и расширенный интерфейс отложены |
@@ -63,7 +63,7 @@ LS-001 и LS-002 исправлены отдельными коммитами. �
 сохранён fixture старого mod-v85. Обнаружена коллизия номера85 с upstream weather layout;
 совместимость обеспечена отдельным декодированием и проверена fixtures. Hotfix LS-001/LS-002 сохранён.
 
-Интеграция и совместимость проверены:25 focused/30285,3 runtime/58,205 selected/7329.
+Интеграция и совместимость проверены:25 focused/30294,3 runtime/58,205 selected/7329.
 [Отчёт](research/openyamm-1.5-compatibility.md). Оба hotfix встроены; отдельный старый overlay
 на новую сборку не переносить. Следующий этап: Windows packaging и пользовательская проверка копии save.
 LS-003 остаётся Planned до текстов пользователя и отдельной реализации, перенос1.5 не блокирует.
@@ -71,3 +71,7 @@ LS-003 остаётся Planned до текстов пользователя и 
 Дополнительно проверены3 цикла миграции fixture реального по структуре прогресса v0.4:
 inventory/XP/skill points/quest bits/NPC overrides/банк/резерв/посещённые карты сохраняются.
 Новый test-only commit не меняет executable запущенной Windows-сборки cbaea4b.
+
+Проверка пакета приведена к составу1.5 (engine+MM6/MM7/MM8); сверяет x64 PE и актуальные
+ресурсы hotfix в engine.zip. Первый run39287322676 завершился на устаревшем Verify,
+не на компиляции. Результат повторного run фиксировать после завершения.

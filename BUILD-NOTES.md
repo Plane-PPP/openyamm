@@ -7,13 +7,17 @@ Upstream tag1.5:1414884155362e613977a3444a3c7f81ed4ee047 (release2026-10-17).
 Баланс Lethal Strike v0.4/Axe/DR не меняется. LS-003 не реализован, тексты ожидаются.
 
 Implemented / Automatically tested: Linux executable и оба test targets собраны;
-25 focused/30285 assertions;3 runtime/58;205 selected/7329 passed (пересекаются).
+25 focused/30294 assertions;3 runtime/58;205 selected/7329 passed (пересекаются).
 [Save compatibility review](docs/research/openyamm-1.5-compatibility.md): старый mod85
 загружается и пересохраняется; upstream85/88 различаются; новый header OYMINO1/version89.
 Конкретный save пользователя и новая Windows-сборка ещё не Manually tested.
 
-Windows packaging: in progress — [run39287322676](https://github.com/Plane-PPP/openyamm/actions/runs/39287322676),
-source SHA cbaea4b2d814ff016fb6d80dcd594e99e22e1bd1. Успех и artifact пока не подтверждены.
+Первая Windows-попытка: [run39287322676](https://github.com/Plane-PPP/openyamm/actions/runs/39287322676),
+source SHAcbaea4b. Компиляция и упаковка прошли; Verify упал из-за старого требования
+mmmerge.zip. Тег1.5 содержит только миры MM6/MM7/MM8. Upload не выполнялся.
+Проверка исправлена: точный состав1.5, x64 PE, побайтовая сверка трёх hotfix-ресурсов
+в staged engine.zip с checkout. Python regression подтверждает отсутствие требования
+mmmerge и отказ при отсутствии MM8. Повторный Windows packaging ожидает результата.
 Техническая правка workflow: весь tools/ для новых1.5 texture cooker sources,
 cook-on-build OFF для committed cooked assets. CI job/публикация прежние.
 Локальная sparse проверка stale lighting:0; полной проверки всех lighting assets не заявляется.
