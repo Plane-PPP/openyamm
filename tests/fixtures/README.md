@@ -29,3 +29,13 @@ no mod combat-level field and exercise the upstream weather layout.
 openyamm-upstream-v85.oysav SHA256: `5efa5d78920020db22607a19c3a6126b8425091be0a4024b3c64cb59c6792b39`.
 
 openyamm-upstream-1.5-v88.oysav SHA256: `308a8d4fc50b9caac8e3c3bdcda3bd8fe50210d4c6f4b068f2e674f85fbabac2`.
+
+## minotaur-v04-progress-v85.oysav
+
+Synthetic campaign-progress fixture written by the v0.4 serializer from commit1b50dfd.
+For compilation against1.5 types only, the two retired weather member references are
+bound to false/preset0; their original two-byte wire layout and every writer field/order
+are unchanged. No user save or personal data is included. Covers inventory grid/quantity,
+XP/level/skill points, bank/gold/food, quest bits, NPC overrides, reserve character,
+visited outdoor and indoor map state. The test verifies three new-format roundtrips.
+SHA256: `0f8556439aa8e79020d1a9279a57d708ef6e459a9df75994edcfdf5c05a28c4e`.

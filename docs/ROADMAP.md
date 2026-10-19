@@ -24,8 +24,8 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Навык и обучение | LS-001 fixed / topics manually confirmed | Корректная схема тем; Expert Perception / Master Mace / GM Axe; [детали](research/lethal-strike-teacher-bug.md) |
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
 | Skills/Stats | LS-002 fixed / layout manually confirmed | Четыре resource rows внутри рамки, исходные Condition/Quick Spell, раздельные Earth/Mind/Body; [детали](research/damage-resistance-layout-bug.md) |
-| Автоматические проверки | Automatically tested | 21 focused /30044 assertions;3 runtime /58;187 расширенных /7048. Ограничения suite в BUILD-NOTES |
-| Windows packaging | Packaged / success | [Run38784738765](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765); SHA385a1e4; OpenYAMM-windows-Release.zip |
+| Автоматические проверки | Automatically tested on1.5 | 25 focused /30285 assertions;3 runtime /58;205 selected /7329. Ограничения suite в BUILD-NOTES |
+| Windows packaging on1.5 | In progress | [Run39287322676](https://github.com/Plane-PPP/openyamm/actions/runs/39287322676); SHAcbaea4b; предыдущий пакет385a1e4 |
 | Ручной тест v0.4 | In progress / hotfix retest pending | Исправление Stats и появление тем подтверждены; LS-003 и боевой прогон остаются |
 | Identify Monster | Deferred | Caps/UI/поведение не меняются; knowledge, AC/damage/aura/GM magic отложены |
 | Бестиарий/лор | Deferred | Исследования сохранены, парсинг и расширенный интерфейс отложены |
@@ -61,9 +61,13 @@ LS-001 и LS-002 исправлены отдельными коммитами. �
 
 Официальный тег1.5:1414884155362e613977a3444a3c7f81ed4ee047. До объединения
 сохранён fixture старого mod-v85. Обнаружена коллизия номера85 с upstream weather layout;
-совместимость требует отдельного декодирования и проверки. Hotfix LS-001/LS-002 сохраняется.
+совместимость обеспечена отдельным декодированием и проверена fixtures. Hotfix LS-001/LS-002 сохранён.
 
-Интеграция и совместимость проверены:24 focused/30194,3 runtime/58,205 selected/7329.
+Интеграция и совместимость проверены:25 focused/30285,3 runtime/58,205 selected/7329.
 [Отчёт](research/openyamm-1.5-compatibility.md). Оба hotfix встроены; отдельный старый overlay
 на новую сборку не переносить. Следующий этап: Windows packaging и пользовательская проверка копии save.
 LS-003 остаётся Planned до текстов пользователя и отдельной реализации, перенос1.5 не блокирует.
+
+Дополнительно проверены3 цикла миграции fixture реального по структуре прогресса v0.4:
+inventory/XP/skill points/quest bits/NPC overrides/банк/резерв/посещённые карты сохраняются.
+Новый test-only commit не меняет executable запущенной Windows-сборки cbaea4b.

@@ -33,10 +33,13 @@ The production reader loads and resaves it, then reloads while preserving tested
 LethalStrike15 GM, Perception10, XP, level, gold and cached actor level87.
 Separate fixtures were written by the original upstream v85 and v88 writers (see fixture README).
 Both load with correct actorID/HP/maxHP, absence of a cached level, and idempotent innate skill migration.
+An additional v0.4 progress fixture verifies three successive resaves preserve inventory
+positions/quantity, XP, free skill points, gold/bank/food, quest bits, NPC overrides,
+reserve character and visited indoor/outdoor map state. Generation details are in fixture README.
 All fixtures are synthetic; the user's actual campaign save was not supplied or directly tested.
 
 Linux release executable, unit and runtime targets built (Vulkan off).
-24 focused tests/30194 assertions;3 runtime tests/58 assertions;
+25 focused tests/30285 assertions;3 runtime tests/58 assertions;
 205 selected regression tests/7329 assertions passed. Runs overlap, not a full-suite claim.
 Regression excludes sparse MM6/MM9 asset-dependent cases and fonts; see historical BUILD-NOTES scope.
 Lighting stale-bake checker returned0 with the local sparse assets; this is not a full-assets lighting audit.

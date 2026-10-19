@@ -619,3 +619,50 @@ TEST_CASE("Lethal Strike imports official upstream v85 and v88 saves without mod
         CHECK(party.member(0)->findSkill("LethalStrike")->mastery == SkillMastery::Normal);
     }
 }
+
+TEST_CASE("Lethal Strike v0.4 campaign progress inventory quests and visited maps survive migration")
+{
+    std::string error;
+    const auto oldPath = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-v04-progress-v85.oysav";
+    auto save = loadGameDataFromPath(oldPath, error);
+    REQUIRE_MESSAGE(save, error);
+    const auto target = std::filesystem::temp_directory_path() / "minotaur-progress-1.5.oysav";
+    for (int roundtrip = 0; roundtrip < 3; ++roundtrip)
+    {
+        REQUIRE(save->party.members.size() == 1);
+        const auto &c = save->party.members[0];
+        CHECK(c.name == "Legacy Progress Fixture");
+        CHECK(c.className == "MinotaurLord");
+        CHECK(c.level == 20);
+        CHECK(c.experience == 201200);
+        CHECK(c.skillPoints == 17);
+        CHECK(c.health == 136);
+        CHECK(c.maxHealth == 150);
+        CHECK(c.findSkill("LethalStrike")->level == 7);
+        CHECK(c.findSkill("LethalStrike")->mastery == SkillMastery::Master);
+        CHECK(c.findSkill("Axe")->mastery == SkillMastery::Grandmaster);
+        const auto *eye = c.inventoryItemAt(2, 3);
+        REQUIRE(eye);
+        CHECK(eye->objectDescriptionId == 201);
+        CHECK(eye->quantity == 2);
+        CHECK(save->party.gold == 43210);
+        CHECK(save->party.bankGold == 12500);
+        CHECK(save->party.food == 23);
+        CHECK(save->party.questBits == std::unordered_set<uint32_t>{23, 1545, 268});
+        CHECK(save->party.npcTopicOverrides.at(117).at(1) == 426);
+        REQUIRE(save->party.adventurersInnMembers.size() == 1);
+        CHECK(save->party.adventurersInnMembers[0].character.skills.at("LethalStrike").level == 7);
+        CHECK(save->savedGameMinutes == 12345.0f);
+        CHECK(save->namedGlobalVars.at("progress") == 42);
+        CHECK(save->outdoorWorldStates.at("out05.odm").mapActors[0].currentHp == 456);
+        CHECK(save->outdoorWorldStates.at("out05.odm").mapActors[0].effectiveLevel == 59);
+        const auto &indoor = save->indoorSceneStates.at("d05.blv");
+        REQUIRE(indoor.eventRuntimeState);
+        CHECK(indoor.eventRuntimeState->mapVars[3] == 7);
+        CHECK(indoor.eventRuntimeState->namedMapVars.at("progress") == 17);
+        REQUIRE_MESSAGE(saveGameDataToPath(target, *save, error), error);
+        save = loadGameDataFromPath(target, error);
+        REQUIRE_MESSAGE(save, error);
+    }
+    std::filesystem::remove(target);
+}
