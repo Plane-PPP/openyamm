@@ -568,3 +568,54 @@ TEST_CASE("Lethal Strike trace settings persist independently")
     CHECK(restored->minotaurDamageTrace);
     std::filesystem::remove(path);
 }
+
+TEST_CASE("Lethal Strike v0.4 legacy mod v85 loads on upstream 1.5 and resaves losslessly")
+{
+    const auto source = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-v04-v85.oysav";
+    std::string error;
+    const auto save = loadGameDataFromPath(source, error);
+    REQUIRE_MESSAGE(save, error);
+    REQUIRE_FALSE(save->party.members.empty());
+    const auto &member = save->party.members[0];
+    CHECK(member.className == "MinotaurLord");
+    REQUIRE(member.findSkill("LethalStrike"));
+    CHECK(member.findSkill("LethalStrike")->level == 15);
+    CHECK(member.findSkill("LethalStrike")->mastery == SkillMastery::Grandmaster);
+    REQUIRE(member.findSkill("Perception"));
+    CHECK(member.findSkill("Perception")->level == 10);
+    REQUIRE(save->outdoorWorld.mapActors.size() == 1);
+    CHECK(save->outdoorWorld.mapActors[0].effectiveLevel == 87);
+    const auto target = std::filesystem::temp_directory_path() / "minotaur-1.5-roundtrip.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(target, *save, error), error);
+    const auto reloaded = loadGameDataFromPath(target, error);
+    REQUIRE_MESSAGE(reloaded, error);
+    CHECK(reloaded->party.members[0].skills.size() == member.skills.size());
+    CHECK(reloaded->party.members[0].findSkill("LethalStrike")->level == 15);
+    CHECK(reloaded->party.members[0].findSkill("LethalStrike")->mastery == SkillMastery::Grandmaster);
+    CHECK(reloaded->party.members[0].experience == member.experience);
+    CHECK(reloaded->party.members[0].level == member.level);
+    CHECK(reloaded->party.gold == save->party.gold);
+    CHECK(reloaded->outdoorWorld.mapActors[0].effectiveLevel == 87);
+    std::filesystem::remove(target);
+}
+
+TEST_CASE("Lethal Strike imports official upstream v85 and v88 saves without mod level fields")
+{
+    for (const std::string name : {"openyamm-upstream-v85.oysav", "openyamm-upstream-1.5-v88.oysav"})
+    {
+        std::string error;
+        const auto save = loadGameDataFromPath(std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures" / name, error);
+        REQUIRE_MESSAGE(save, (name + ": " + error));
+        REQUIRE(save->outdoorWorld.mapActors.size() == 1);
+        CHECK(save->outdoorWorld.mapActors[0].monsterId == 65);
+        CHECK(save->outdoorWorld.mapActors[0].currentHp == 456);
+        CHECK(save->outdoorWorld.mapActors[0].maxHp == 525);
+        CHECK(save->outdoorWorld.mapActors[0].effectiveLevel == 0);
+        Party party;
+        party.restoreSnapshot(save->party);
+        REQUIRE(party.member(0));
+        REQUIRE(party.member(0)->findSkill("LethalStrike"));
+        CHECK(party.member(0)->findSkill("LethalStrike")->level == 1);
+        CHECK(party.member(0)->findSkill("LethalStrike")->mastery == SkillMastery::Normal);
+    }
+}

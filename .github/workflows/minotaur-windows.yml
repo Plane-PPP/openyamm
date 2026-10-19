@@ -65,12 +65,7 @@ jobs:
             /engine/
             /game/
             /packaging/
-            /tools/openyamm_shaderc_stubs.cpp
-            /tools/cook_sprite_atlases_main.cpp
-            /tools/SpriteAtlasEncode.cpp
-            /tools/SpriteAtlasEncode.h
-            /tools/cook_sprite_atlases.py
-            /tools/package_runtime_assets.py
+            /tools/
             /assets_dev/_legacy/sprites_original/
             /assets_dev/engine/
             /assets_dev/worlds/mm6/
@@ -98,6 +93,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=ON
           -DOPENYAMM_BUILD_TESTS=OFF
+          -DOPENYAMM_COOK_ON_BUILD=OFF
           -DOPENYAMM_BUILD_EDITOR=OFF
           -DOPENYAMM_BUILD_TOOLS=OFF
 

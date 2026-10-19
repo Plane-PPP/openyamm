@@ -31,6 +31,8 @@ constexpr float IdleStandSeconds = 1.5f;
 constexpr float IdleBoredSeconds = 2.0f;
 constexpr float PursueMoveSpeedMultiplier = 1.5f;
 constexpr float FleeMoveSpeedMultiplier = 1.0f;
+// 16 of the original 2048 angle units.
+constexpr float RangedOrbitStepRadians = Pi / 64.0f;
 constexpr float MaxActorMoveSpeed = 1000.0f;
 constexpr uint32_t IdleStandChancePercent = 25u;
 
@@ -1246,6 +1248,33 @@ float attackAnimationSecondsForAbility(
         : actor.runtime.meleeAttackAnimationSeconds;
 }
 
+// Action time left when the attack applies. MM8 applies every attack when its sprite animation has played
+// (re_mm8/ACTOR_ATTACK_TIMING.md); an attack sprite with an authored contact frame applies it as that frame appears
+// and the action runs on to the end of the animation.
+float attackImpactLeadSecondsForAbility(
+    const ActorAiFacts &actor,
+    GameplayActorAttackAbility ability,
+    const GameplayActorAttackConstraintState &constraints)
+{
+    const float impactSeconds = attackAbilityIsRanged(ability, constraints)
+        ? actor.runtime.rangedAttackImpactSeconds
+        : actor.runtime.meleeAttackImpactSeconds;
+    return actorAttackImpactLeadSeconds(attackAnimationSecondsForAbility(actor, ability, constraints), impactSeconds);
+}
+
+// Action time left when the attack sound plays: the whole action (as the attack starts) without an authored delay.
+float attackSoundLeadSecondsForAbility(
+    const ActorAiFacts &actor,
+    GameplayActorAttackAbility ability,
+    const GameplayActorAttackConstraintState &constraints)
+{
+    const float delaySeconds = attackAbilityIsRanged(ability, constraints)
+        ? actor.runtime.rangedAttackSoundDelaySeconds
+        : actor.runtime.meleeAttackSoundDelaySeconds;
+    const float actionSeconds = std::max(0.1f, attackAnimationSecondsForAbility(actor, ability, constraints));
+    return actionSeconds - std::clamp(delaySeconds, 0.0f, actionSeconds);
+}
+
 ActorTargetState buildActorTargetStateFromFacts(const ActorAiFacts &actor)
 {
     ActorTargetState target = {};
@@ -1733,7 +1762,7 @@ struct ActorCombatFlowOutcome
 struct ActorAttackFrameState
 {
     bool attackInProgress = false;
-    bool attackJustCompleted = false;
+    bool impactDue = false;
 };
 
 enum class ActorDeathFrameAction : uint8_t
@@ -1803,7 +1832,12 @@ ActorStatusFrameOutcome resolveActorStatusFrame(
     return result;
 }
 
-ActorAttackFrameState buildActorAttackFrameState(bool attacking, bool impactTriggered, float actionSeconds)
+// The attack applies once the action has `impactLeadSeconds` or less to run: 0 applies it when the action ends.
+ActorAttackFrameState buildActorAttackFrameState(
+    bool attacking,
+    bool impactTriggered,
+    float actionSeconds,
+    float impactLeadSeconds)
 {
     ActorAttackFrameState result = {};
 
@@ -1813,7 +1847,7 @@ ActorAttackFrameState buildActorAttackFrameState(bool attacking, bool impactTrig
     }
 
     result.attackInProgress = actionSeconds > 0.0f;
-    result.attackJustCompleted = !result.attackInProgress && !impactTriggered;
+    result.impactDue = !impactTriggered && actionSeconds <= impactLeadSeconds;
     return result;
 }
 
@@ -1851,6 +1885,11 @@ ActorDeathFrameOutcome resolveActorDeathFrame(
 
 float actorAnimationTickDelta(const ActorAiFacts &actor, const ActorAiFrameFacts &frame)
 {
+    if (actor.runtime.hitstopActive)
+    {
+        return 0.0f;
+    }
+
     float tickScale = 1.0f;
 
     if (actor.runtime.animationState == ActorAiAnimationState::Walking
@@ -2328,12 +2367,13 @@ PursueActionResult resolvePursueAction(const PursueActionInput &input)
 
     if (input.mode == PursueActionMode::RangedOrbit)
     {
-        const float sideSign = (decisionSeed & 1u) == 0u ? 1.0f : -1.0f;
-        const float targetYaw = std::atan2(input.deltaTargetY, input.deltaTargetX);
-        const float inwardWeight = 0.16f;
-        const float sideYaw = targetYaw + sideSign * (Pi * 0.5f);
-        const float moveX = std::cos(sideYaw) + std::cos(targetYaw) * inwardWeight;
-        const float moveY = std::sin(sideYaw) + std::sin(targetYaw) * inwardWeight;
+        // MM8's Pursue1: head for the point a small step further round the target's circle at the current
+        // distance. Each actor keeps one side, so ranged monsters circle the party instead of closing in.
+        const float sideSign = (input.actorId & 1u) == 0u ? 1.0f : -1.0f;
+        const float orbitYaw =
+            std::atan2(-input.deltaTargetY, -input.deltaTargetX) + sideSign * RangedOrbitStepRadians;
+        const float moveX = input.deltaTargetX + std::cos(orbitYaw) * input.distanceToTarget;
+        const float moveY = input.deltaTargetY + std::sin(orbitYaw) * input.distanceToTarget;
         result.yawRadians = std::atan2(moveY, moveX);
         result.actionSeconds = 0.5f;
     }
@@ -2620,7 +2660,7 @@ void AI_ApplyDeathState(ActorAiCommandContext &ai)
         ai.setMotionState(ActorAiMotionState::Dying);
         ai.setActionSeconds(deathFrame.actionSeconds);
         ai.setAnimationState(ActorAiAnimationState::Dying);
-        ai.setAnimationTimeTicks(actor.runtime.animationTimeTicks + pFrame->fixedStepSeconds * ActorAiTicksPerSecond);
+        ai.setAnimationTimeTicks(actor.runtime.animationTimeTicks + actorAnimationTickDelta(actor, *pFrame));
     }
 }
 
@@ -2993,6 +3033,28 @@ void applyCombatEngagementUpdate(const ActorAiFacts &actor, const ActorAiFrameFa
 
 }
 
+// An authored attack sound delay plays the sound once the action clock passes it.
+void applyDelayedAttackSound(const ActorAiFacts &actor, ActorAiUpdate &update)
+{
+    if (!actor.world.active || actor.runtime.motionState != ActorAiMotionState::Attacking)
+    {
+        return;
+    }
+
+    const float soundLeadSeconds =
+        attackSoundLeadSecondsForAbility(actor, actor.runtime.queuedAttackAbility, actor.stats.attackConstraints);
+    const float actionSeconds = update.state.actionSeconds.value_or(actor.runtime.actionSeconds);
+
+    if (actor.runtime.actionSeconds > soundLeadSeconds && actionSeconds <= soundLeadSeconds)
+    {
+        ActorAudioRequest attackAudio = {};
+        attackAudio.kind = ActorAiAudioRequestKind::Attack;
+        attackAudio.actorIndex = actor.actorIndex;
+        attackAudio.position = actor.movement.position;
+        update.audioRequests.push_back(attackAudio);
+    }
+}
+
 void applyAttackImpactOutcome(const ActorAiFacts &actor, ActorAiUpdate &update)
 {
     if (!actor.world.active || actor.runtime.motionState != ActorAiMotionState::Attacking)
@@ -3001,10 +3063,13 @@ void applyAttackImpactOutcome(const ActorAiFacts &actor, ActorAiUpdate &update)
     }
 
     const float actionSeconds = update.state.actionSeconds.value_or(actor.runtime.actionSeconds);
-    const ActorAttackFrameState attackFrame =
-        buildActorAttackFrameState(true, actor.runtime.attackImpactTriggered, actionSeconds);
+    const ActorAttackFrameState attackFrame = buildActorAttackFrameState(
+        true,
+        actor.runtime.attackImpactTriggered,
+        actionSeconds,
+        attackImpactLeadSecondsForAbility(actor, actor.runtime.queuedAttackAbility, actor.stats.attackConstraints));
 
-    if (!attackFrame.attackJustCompleted)
+    if (!attackFrame.impactDue)
     {
         return;
     }
@@ -3216,14 +3281,13 @@ void AI_StartAttack(ActorAiCommandContext &ai, const CombatAbilityChoiceResult &
         abilityChoice.ability,
         actor.stats.attackConstraints);
 
-    const float effectiveRecoverySeconds =
-        actor.runtime.recoverySeconds * (actor.status.spellEffects.slowRemainingSeconds > 0.0f ? 2.0f : 1.0f);
+    // Slow's doubled recovery is applied while the cooldown ages, through slowRecoveryMultiplier.
     const AttackStartOutcome attackStart = startAttack(
         actor.actorId,
         abilityChoice.nextAttackDecisionCount,
         abilityChoice.abilityIsRanged,
         attackAnimationSeconds,
-        effectiveRecoverySeconds);
+        actor.runtime.recoverySeconds);
 
     ai.setMotionState(ActorAiMotionState::Attacking);
     ai.setQueuedAttackAbility(abilityChoice.ability);
@@ -3235,11 +3299,16 @@ void AI_StartAttack(ActorAiCommandContext &ai, const CombatAbilityChoiceResult &
     ai.setMovementAction(ActorAiMovementAction::Stand);
     ai.clearMovementDirection();
 
-    ActorAudioRequest attackAudio = {};
-    attackAudio.kind = ActorAiAudioRequestKind::Attack;
-    attackAudio.actorIndex = actor.actorIndex;
-    attackAudio.position = actor.movement.position;
-    ai.requestAudio(attackAudio);
+    // A delayed attack sound plays later on the action clock (applyDelayedAttackSound).
+    if (attackSoundLeadSecondsForAbility(actor, abilityChoice.ability, actor.stats.attackConstraints)
+        >= attackStart.actionSeconds)
+    {
+        ActorAudioRequest attackAudio = {};
+        attackAudio.kind = ActorAiAudioRequestKind::Attack;
+        attackAudio.actorIndex = actor.actorIndex;
+        attackAudio.position = actor.movement.position;
+        ai.requestAudio(attackAudio);
+    }
 }
 
 void AI_MeleeAttack(ActorAiCommandContext &ai, const CombatAbilityChoiceResult &abilityChoice)
@@ -3319,6 +3388,18 @@ void AI_PursueByMode(ActorAiCommandContext &ai, PursueActionMode mode, float min
     AI_Pursue1(ai, minimumActionSeconds);
 }
 
+bool actorAttackReady(const ActorAiFacts &actor, const ActorAiFrameFacts &frame)
+{
+    if (frame.turnBased.mode == ActorTurnBasedMode::RealTime)
+    {
+        return actor.runtime.attackCooldownSeconds <= 0.0f;
+    }
+
+    // Turn-based actors attack only when the turn engine grants them their queued action.
+    const std::vector<size_t> &grants = frame.turnBased.actionGrantActorIndices;
+    return std::find(grants.begin(), grants.end(), actor.actorIndex) != grants.end();
+}
+
 bool AI_AttackOrPursue(ActorAiCommandContext &ai)
 {
     const ActorAiFacts &actor = ai.actor();
@@ -3373,7 +3454,7 @@ bool AI_AttackOrPursue(ActorAiCommandContext &ai)
     engageInput.abilityIsRanged = abilityChoice.abilityIsRanged;
     engageInput.abilityIsMelee = abilityChoice.abilityIsMelee;
     engageInput.inMeleeRange = engagement.inMeleeRange;
-    engageInput.attackCooldownReady = actor.runtime.attackCooldownSeconds <= 0.0f;
+    engageInput.attackCooldownReady = actorAttackReady(actor, *pFrame);
     engageInput.movementAllowed = actor.movement.movementAllowed;
     engageInput.stationaryOrTooCloseForRangedPursuit = abilityChoice.stationaryOrTooCloseForRangedPursuit;
     engageInput.currentlyPursuing = actor.runtime.motionState == ActorAiMotionState::Pursuing;
@@ -3857,19 +3938,27 @@ ActorAiUpdate AI_ActiveCurrentAction(
 
     ActorAiUpdate update = ai.finish();
     applyActiveAgingUpdates(actor, frame, statusContinuation, update);
+    applyDelayedAttackSound(actor, update);
     applyAttackImpactOutcome(actor, update);
     const bool attackImpactResolved =
         update.state.attackImpactTriggered.value_or(false) && !actor.runtime.attackImpactTriggered;
+    const bool attackImpactApplied = update.state.attackImpactTriggered.value_or(actor.runtime.attackImpactTriggered);
     applyCombatEngagementUpdate(actor, frame, update);
     ai.replaceUpdate(update);
 
-    if (attackImpactResolved)
+    const bool attackInProgress = ai.update().state.actionSeconds.value_or(actor.runtime.actionSeconds) > 0.0f;
+
+    if (attackImpactApplied && !attackInProgress)
     {
         AI_Stand(ai);
         return ai.finish();
     }
 
-    const bool attackInProgress = ai.update().state.actionSeconds.value_or(actor.runtime.actionSeconds) > 0.0f;
+    if (attackImpactResolved)
+    {
+        // Applied at its contact frame: the attack keeps its stance until the native action ends.
+        return ai.finish();
+    }
 
     if (AI_CombatFlow(ai, attackInProgress))
     {
@@ -3909,6 +3998,40 @@ ActorAiUpdate AI_ActiveBehavior(
     }
 
     AI_StandOrBored(ai, ai.update().state.actionSeconds.value_or(actor.runtime.actionSeconds));
+    return finishActiveMovementCommand(ai);
+}
+
+// A behaviour script's action (see ActorBehaviorFacts): stand, keep facing the target and hold the scripted
+// animation. Status, death and an attack already under way take precedence and are handled before this.
+ActorAiUpdate AI_ScriptedHold(
+    const ActorAiFacts &actor,
+    const ActorAiFrameFacts &frame,
+    const std::optional<ActorAiUpdate> &statusContinuation)
+{
+    ActorAiCommandContext ai = beginActiveActorCommand(actor, frame, statusContinuation);
+    ai.setMotionState(ActorAiMotionState::Standing);
+    ai.setAnimationState(actor.behavior.holdAnimation);
+    ai.setActionSeconds(0.0f);
+    ai.setMovementAction(ActorAiMovementAction::Stand);
+    ai.clearMovementDirection();
+    ai.clearVelocity();
+
+    if (actor.behavior.holdRestartAnimation || actor.runtime.animationState != actor.behavior.holdAnimation)
+    {
+        ai.setAnimationTimeTicks(0.0f);
+    }
+
+    if (actor.target.currentKind != ActorAiTargetKind::None && actor.target.currentCanSense)
+    {
+        const float dx = actor.target.currentPosition.x - actor.movement.position.x;
+        const float dy = actor.target.currentPosition.y - actor.movement.position.y;
+
+        if (dx * dx + dy * dy > 0.0001f)
+        {
+            ai.faceYaw(std::atan2(dy, dx));
+        }
+    }
+
     return finishActiveMovementCommand(ai);
 }
 
@@ -3974,6 +4097,11 @@ ActorAiUpdate updateActor(const ActorAiFacts &actor, const ActorAiFrameFacts &fr
     if (actorFacts.runtime.motionState == ActorAiMotionState::Attacking)
     {
         return AI_ActiveCurrentAction(actorFacts, frame, statusContinuation, hasTarget);
+    }
+
+    if (actorFacts.behavior.holdActive)
+    {
+        return AI_ScriptedHold(actorFacts, frame, statusContinuation);
     }
 
     return AI_ActiveBehavior(actorFacts, frame, statusContinuation, hasTarget);
@@ -4051,6 +4179,25 @@ ActorAiUpdate updateActorAfterWorldMovementInternal(const ActorAiFacts &actor)
 ActorAiFrameResult GameplayActorAiSystem::updateActors(const ActorAiFrameFacts &facts) const
 {
     ActorAiFrameResult result = {};
+
+    if (facts.turnBased.mode == ActorTurnBasedMode::Hold)
+    {
+        ActorAiFrameFacts heldFacts = facts;
+
+        for (ActorAiFacts &actor : heldFacts.backgroundActors)
+        {
+            actor.movement.movementAllowed = false;
+        }
+
+        for (ActorAiFacts &actor : heldFacts.activeActors)
+        {
+            actor.movement.movementAllowed = false;
+        }
+
+        updateBackgroundActors(heldFacts, result);
+        updateActiveActors(heldFacts, result);
+        return result;
+    }
 
     updateBackgroundActors(facts, result);
     updateActiveActors(facts, result);

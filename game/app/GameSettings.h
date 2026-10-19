@@ -1,13 +1,13 @@
 #pragma once
 
 #include "engine/AssetScaleTier.h"
-#include "engine/FontAsset.h"
 #include "game/app/KeyboardBindings.h"
 #include "game/gameplay/CharacterAttackTuning.h"
 
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -34,11 +34,43 @@ enum class ControlScheme
     Classic
 };
 
-enum class MonsterProjectileVisuals
+// Slain creatures: Satchel sinks the body after its death and leaves a loot satchel sized by what it holds; Keep leaves
+// the bodies on the ground (each one a creature model or sprite to draw).
+enum class CorpseStyle
 {
-    FxRecipes,
-    Sprites
+    Satchel,
+    Keep
 };
+
+bool parseCorpseStyleValue(const std::string &value, CorpseStyle &result);
+std::string corpseStyleValue(CorpseStyle style);
+
+// Rain and snow particle density; Off hides precipitation (weather, sound and gameplay are unchanged).
+enum class WeatherQuality
+{
+    Off,
+    Low,
+    Medium,
+    High
+};
+
+bool parseWeatherQualityValue(const std::string &value, WeatherQuality &result);
+std::string weatherQualityValue(WeatherQuality quality);
+
+// Size of the clustered light grid (engine/render/LightGrid.h): High 16x9x24 cells of up to 32 lights, Low 8x5x16 of
+// up to 16 (the Android default).
+enum class LightGridQuality
+{
+    Low,
+    High
+};
+
+bool parseLightGridQualityValue(const std::string &value, LightGridQuality &result);
+std::string lightGridQualityValue(LightGridQuality quality);
+
+// Multisample anti-aliasing of the 3D view: "off", "2x" or "4x" as samples 0, 2 or 4.
+bool parseAntialiasingValue(const std::string &value, int &samples);
+std::string antialiasingValue(int samples);
 
 struct GameSettings
 {
@@ -119,6 +151,8 @@ struct GameSettings
     bool shadows = false;
     int modelShadowQuality = 2;
     bool modelLods = true;
+    // Dark contour shell around 3D creatures (ModelRenderer::setCreatureContour).
+    bool creatureOutlines = false;
     int modelLodOverride = -1; // Debug review only; native AI/picking always use the original model.
     bool spriteOutline = false;
     bool textureFiltering = true;
@@ -129,13 +163,28 @@ struct GameSettings
     std::array<float, 3> bakedSunColor = {1.0f, 1.0f, 1.0f};
     std::array<float, 3> bakedSkyColor = {0.8f, 0.9f, 1.0f};
     bool terrainDecorations = false;
-    bool waterShader = true;
     bool waterReflections = true;
     bool waterSpriteReflections = false;
+    // Rendered terrain subdivisions per native cell: 1, 2 or 4.
+    int terrainSubdivision = 4;
+    // A second, rotated sample per ground material hides its repeat (two more texture reads each).
+    bool terrainAntiTiling = true;
+    // Enhanced sky render resolution relative to the view (0.25-1); the Android profile uses 0.5.
+    float skyResolutionScale = 1.0f;
     bool waterMovementRipples = true;
+    WeatherQuality weatherQuality = WeatherQuality::High;
+    LightGridQuality lightGrid = LightGridQuality::High;
+    bool lightGridEnabled = true; // Profiling switch (`render light_grid`); not in the INI.
+    // Rain rings on water (with the water shader) and darker, glossier surfaces while wet.
+    bool rainRipples = true;
+    bool wetSurfaces = true;
+    // Sun and point-light highlights on smooth and wet ground (the materials terrain).
+    bool terrainSpecular = true;
     int waterReflectionSize = 512;
     std::string terrainFiltering = "anisotropic";
-    std::string terrainAnisotropy = "8x";
+    // Level of every anisotropic sampler (terrain when enabled, buildings, models). 4x: at 16x the materials terrain
+    // cost up to 0.2 ms more per frame.
+    std::string terrainAnisotropy = "4x";
     std::string bmodelFiltering = "anisotropic";
     std::string billboardFiltering = "linear";
     std::string uiFiltering = "linear";
@@ -145,7 +194,6 @@ struct GameSettings
     float outdoorBillboardDepthSlice = 256.0f;
     bool skipEventCutscenes = false;
     bool waitForLevelSprites = true;
-    Engine::FontSettings fonts;
     Engine::AssetScaleProfile assetScaleProfile = Engine::createUniformAssetScaleProfile(Engine::AssetScaleTier::X1);
     WindowMode windowMode = WindowMode::Windowed;
     int resolutionWidth = 1600;
@@ -153,15 +201,21 @@ struct GameSettings
     bool verticalSync = false;
     bool ambientOcclusion = false;
     int ambientOcclusionStrength = 35;
+    // Glow around flames, glow cards, emissive surfaces and spell effects (display-space bloom).
+    bool bloom = true;
+    int bloomStrength = 65;
     bool cinematicGrading = true;
     int cinematicStrength = 60;
+    // Contrast-adaptive sharpening of the 3D view, 0 (off) to 100; the interface is unaffected.
+    int sharpening = 0;
+    // Multisample anti-aliasing of the 3D view (samples: 0 off, 2 or 4); off costs nothing.
+    int antialiasing = 0;
 
     bool startInMainMenu = false;
     std::string startupSaveFile;
     bool bolsterMonsters = false;
     bool indoorPathfinding = true;
     bool outdoorPathfinding = false;
-    MonsterProjectileVisuals monsterProjectileVisuals = MonsterProjectileVisuals::FxRecipes;
     BlasterSkillScalingMode blasterSkillScaling = BlasterSkillScalingMode::Default;
     int blasterMinimumRecoveryTicks = 0;
     bool logIndoorVisibility = false;
@@ -200,14 +254,17 @@ struct GameSettings
     bool newGameGodLich = false;
     bool allowIncompleteCharacterCreation = false;
     bool debugConsole = true;
-    // 3D actor models instead of sprites ([debug] actor_models); persisted like the other debug toggles.
-    bool actorModels = false;
+    // 3D actor models instead of sprites ([debug] actor_models); persisted like the other debug toggles. Monsters
+    // with a model ship no sprites, so turning it off leaves them without a presentation.
+    bool actorModels = true;
     // Launch-only directives: never persisted by saveGameSettings.
     std::string actorModelsManifest;
     std::string screenshotPath;
     std::string menuInputTourPath;
     float screenshotDelaySeconds = 0.0f;
     std::string screenshotTourPath;
+    // Game time per real second (slow motion below 1), for capturing fast effects such as projectiles.
+    float timeScale = 1.0f;
     std::string effectSpawnId;
     std::array<float, 3> effectSpawnPosition = {};
     float effectSpawnScale = 1.0f;
@@ -231,6 +288,15 @@ struct GameSettings
     bool enemyHealthBarDamageTrail = true;
     bool questMarkers = true;
     bool meleeHitBloodEffects = false;
+    // Melee hit impact sound by struck material and a brief hitstop on the target (GameplayActorHitFeedback).
+    bool meleeHitFeedback = true;
+    // Slash, thrust or crush effect at the contact point of a landed melee blow.
+    bool meleeHitEffects = true;
+    // Brief flash over the struck creature.
+    bool meleeHitFlash = false;
+    // Small camera turn along the blow on critical hits and kills.
+    bool meleeCameraKick = false;
+    CorpseStyle corpseStyle = CorpseStyle::Keep;
 #if defined(__ANDROID__)
     bool contextActionPopup = true;
 #else
@@ -246,6 +312,8 @@ bool setBakedLightingSetting(
     GameSettings &settings, const std::string &name, const std::string &value, std::string &error);
 bool saveGameSettings(const std::filesystem::path &path, const GameSettings &settings, std::string &error);
 bool migrateLegacyAndroidSettings(GameSettings &settings);
+bool migrateLegacyDesktopSettings(GameSettings &settings);
 CharacterAttackTuning characterAttackTuningFromSettings(const GameSettings &settings);
+uint8_t textureAnisotropyLevel(const GameSettings &settings);
 float resolveViewDistanceSetting(const std::string &value, float defaultDistance);
 }

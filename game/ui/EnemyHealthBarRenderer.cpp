@@ -11,18 +11,24 @@ void EnemyHealthBarRenderer::preload(const GameplayScreenRuntime &context)
 {
     GameplayUiRuntime &ui = context.gameplayUiRuntime();
     ui.ensureHudTextureLoaded("obsidian_enemy_health_frame");
-    const std::optional<GameplayHudFontHandle> font = ui.findHudFont(GameplayUiSkin::CombatFontName);
-    if (font)
+}
+
+void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, const std::vector<Draw> &draws,
+    uint16_t viewId, const bx::Vec3 &cameraPosition, const float *pViewMatrix, const float *pProjectionMatrix,
+    int height)
+{
+    for (const Draw &draw : draws)
     {
-        ui.ensureHudFontMainTextureColor(*font, GameplayUiSkin::Gold);
+        render(context, draw, viewId, cameraPosition, pViewMatrix, pProjectionMatrix, height);
     }
 }
 
-void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t actorIndex,
-    const bx::Vec3 &actorPosition, const bx::Vec3 &anchor,
-    float distanceSquared, bool focused, bool attackingParty, uint16_t viewId,
+void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, const Draw &draw, uint16_t viewId,
     const bx::Vec3 &cameraPosition, const float *pViewMatrix, const float *pProjectionMatrix, int height)
 {
+    const size_t actorIndex = draw.actorIndex;
+    const bx::Vec3 &anchor = draw.anchor;
+    const bool focused = draw.focused;
     GameplayActorInspectState actor;
     if (context.worldRuntime() == nullptr || height <= 0
         || !context.worldRuntime()->actorInspectState(actorIndex, 0, actor)
@@ -33,7 +39,7 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t
     const bx::Vec3 forward = {-pViewMatrix[2], -pViewMatrix[6], -pViewMatrix[10]};
     const bx::Vec3 cameraToAnchor = bx::sub(anchor, cameraPosition);
     const float depth = bx::dot(cameraToAnchor, forward);
-    const float actorDepth = bx::dot(bx::sub(actorPosition, cameraPosition), forward);
+    const float actorDepth = bx::dot(bx::sub(draw.actorPosition, cameraPosition), forward);
     const float depthScale = combatActorHealthBarDepthScale(depth, actorDepth);
     if (depthScale <= 0.0f)
     {
@@ -45,7 +51,7 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t
     const bx::Vec3 right = bx::mul(bx::Vec3{pViewMatrix[0], pViewMatrix[4], pViewMatrix[8]}, worldPerPixel);
     const bx::Vec3 up = bx::mul(bx::Vec3{pViewMatrix[1], pViewMatrix[5], pViewMatrix[9]}, worldPerPixel);
     const float hudScale = height / 480.0f;
-    const float distanceScale = combatActorHealthBarScale(distanceSquared);
+    const float distanceScale = combatActorHealthBarScale(draw.distanceSquared);
     const float scale = hudScale * distanceScale;
     // Uniform meter width: HP and focus affect the fill and rim, never the bar's dimensions.
     const float width = 108.0f * scale;
@@ -59,7 +65,7 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t
         return;
     }
     CombatActorHealthBarRuntime &history = context.enemyHealthBars();
-    history.observe(actorIndex, actor.currentHp, actor.maxHp, attackingParty);
+    history.observe(actorIndex, actor.currentHp, actor.maxHp, draw.attackingParty);
     const float ratio = std::clamp(float(actor.currentHp) / float(actor.maxHp), 0.0f, 1.0f);
     std::array<GameplayHudBatchQuad, 128> quads;
     size_t quadCount = 0;
@@ -71,7 +77,7 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t
         quadCount = 0;
     };
     const auto quad = [&](bgfx::TextureHandle texture, float x, float y, float w, float h,
-                          float u0 = 0, float v0 = 0, float u1 = 1, float v1 = 1)
+                          float u0 = 0, float v0 = 0, float u1 = 1, float v1 = 1, uint32_t tintAbgr = 0xffffffffu)
     {
         if (bgfx::isValid(texture) && w > 0 && h > 0)
         {
@@ -89,6 +95,7 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t
             q.v0 = v0;
             q.u1 = u1;
             q.v1 = v1;
+            q.tintAbgr = tintAbgr;
             quads[quadCount++] = q;
         }
     };
@@ -170,9 +177,10 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t
                 const float textX = -ui.measureHudTextWidth(*font, label) * fontScale * 0.5f;
                 const float textY = -barHeight * 0.5f - pFont->fontHeight * fontScale - 1.5f * textScale;
                 const auto addGlyph = [&](bgfx::TextureHandle texture, float x, float y, float w, float h,
-                                          float u0, float v0, float u1, float v1, TextureFilterProfile)
+                                          float u0, float v0, float u1, float v1, TextureFilterProfile,
+                                          uint32_t tintAbgr)
                 {
-                    quad(texture, x, y, w, h, u0, v0, u1, v1);
+                    quad(texture, x, y, w, h, u0, v0, u1, v1, tintAbgr);
                 };
                 // A thin dark outline keeps the compact gold caption readable against sky and scenery.
                 const bgfx::TextureHandle outline = font->shadowTextureHandle;
@@ -184,8 +192,9 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, size_t
                     GameplayHudCommon::renderHudFontLayer(*pFont, outline, label,
                         textX + offset.x, textY + offset.y, fontScale, addGlyph);
                 }
-                const bgfx::TextureHandle gold = ui.ensureHudFontMainTextureColor(*font, GameplayUiSkin::Gold);
-                GameplayHudCommon::renderHudFontLayer(*pFont, gold, label, textX, textY, fontScale, addGlyph);
+                GameplayHudCommon::renderHudFontLayer(*pFont,
+                    GameplayHudCommon::hudFontMainLayer(*pFont, GameplayUiSkin::Gold), label, textX, textY,
+                    fontScale, addGlyph);
             }
         }
     }

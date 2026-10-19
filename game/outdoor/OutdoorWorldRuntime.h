@@ -1,6 +1,8 @@
 #pragma once
 
+#include "game/gameplay/ActorBehaviorRuntime.h"
 #include "game/gameplay/ActorInspectPreviewAnimation.h"
+#include "game/gameplay/GameplayActorHitFeedback.h"
 
 #include "game/events/ISceneEventContext.h"
 #include "game/events/EventRuntime.h"
@@ -60,6 +62,10 @@ public:
 
     struct AtmosphereState
     {
+        static constexpr int32_t WeatherFoggy = 1;
+        static constexpr int32_t WeatherSnowing = 2;
+        static constexpr int32_t WeatherRaining = 4;
+
         std::string sourceSkyTextureName;
         std::string skyTextureName;
         int32_t weatherFlags = 0;
@@ -80,7 +86,15 @@ public:
         uint8_t authoredFogBlue = 0;
         bool isNight = false;
         float fogDensity = 0.0f;
-        float rainIntensity = 0.0f;
+        // Game-time weather from WeatherModel, refreshed with the clock and not saved; the outdoor view fades it in
+        // real time for display and audio. Intensity is 0-1; wind is in world units per second.
+        PrecipitationKind precipitation = PrecipitationKind::None;
+        float precipitationIntensity = 0.0f;
+        float cloudCover = 0.0f;
+        float windX = 0.0f;
+        float windY = 0.0f;
+        bool storm = false;
+        float wetness = 0.0f;
         float ambientBrightness = 0.69f;
         float visibilityDistance = 200000.0f;
         float darknessOverlayAlpha = 0.0f;
@@ -91,6 +105,11 @@ public:
         float sunDirectionY = 0.0f;
         float sunDirectionZ = 1.0f;
         uint32_t clearColorAbgr = 0x000000ffu;
+        // Derived on every refresh and not saved: the weather sky before the Classic clock swap, and the
+        // merged clear-to-storm ladder position (-1 when the map has no merged weather ladder).
+        std::string weatherSkyTextureName;
+        int mergedWeatherState = -1;
+        int mergedWeatherStateCount = 0;
     };
 
     enum class ActorAiState
@@ -145,13 +164,18 @@ public:
         Reanimated,
     };
 
-    enum class RainIntensityPreset : uint8_t
+    // Runtime-only visual diagnostics for sky and weather captures; never saved.
+    struct DebugSkyOverrides
     {
-        Off = 0,
-        Light = 1,
-        Medium = 2,
-        Heavy = 3,
-        VeryHeavy = 4,
+        std::optional<int> mergedWeatherState;
+        std::optional<std::string> skyTextureName;
+        std::optional<std::pair<int32_t, int32_t>> fogDistances;
+        // Forced precipitation (None clears it) at the given 0-1 intensity.
+        std::optional<PrecipitationKind> precipitation;
+        float precipitationIntensity = 0.5f;
+        // Forced wind, world units per second.
+        std::optional<std::pair<float, float>> wind;
+        std::optional<bool> storm;
     };
 
     struct SpellCastRequest;
@@ -539,12 +563,11 @@ public:
         std::vector<FireSpikeTrapState> fireSpikeTraps;
         std::vector<BloodSplatState> bloodSplats;
         ArmageddonState armageddon = {};
-        bool hasRainIntensityOverride = false;
-        RainIntensityPreset rainIntensityPreset = RainIntensityPreset::Off;
         std::vector<uint8_t> fullyRevealedCells;
         std::vector<uint8_t> partiallyRevealedCells;
         std::vector<uint32_t> faceAttributes;
         std::vector<std::string> searchedLootPropSourceIds;
+        ActorBehaviorRuntime::Snapshot actorBehaviors;
         bool hasOutdoorRuntimeSaveParityFields = false;
     };
 
@@ -584,6 +607,10 @@ public:
     void setPartyCollisionDimensions(float radius, float height);
     void bindInteractionView(OutdoorGameView *pView);
     void bindGlobalEventProgram(const std::optional<ScriptedEventProgram> *pGlobalEventProgram);
+    void bindActorBehaviorCatalog(const ActorBehaviorCatalog *pCatalog);
+    ActorBehaviorRuntime *actorBehaviorRuntime() override;
+    const ActorBehaviorRuntime *actorBehaviorRuntime() const override;
+    bool setMapActorBehavior(size_t actorIndex, const std::string &behaviorId) override;
 
     struct MonsterKilledEvent
     {
@@ -613,9 +640,11 @@ public:
     void setCurrentLocationReputation(int reputation) override;
     const OutdoorMapData *mapData() const;
     const AtmosphereState &atmosphereState() const;
-    RainIntensityPreset cycleRainIntensityPreset();
-    RainIntensityPreset rainIntensityPreset() const;
-    const char *rainIntensityPresetName() const;
+    void setDebugSkyOverrides(const DebugSkyOverrides &overrides);
+    const DebugSkyOverrides &debugSkyOverrides() const;
+    // The weather rules this map uses, and its rolled weather (no event or debug overrides) at a game time.
+    const WeatherRules &weatherRules() const;
+    WeatherSample rolledWeatherAt(double gameMinutes) const;
     void advanceGameMinutes(float minutes) override;
     void updateMapActors(float deltaSeconds, float partyX, float partyY, float partyZ);
     void updateMm9FoundPlayerEvents(float deltaSeconds, float partyX, float partyY, float partyZ);
@@ -637,6 +666,15 @@ public:
     bool isChestOpened(uint32_t chestId) const;
     size_t mapActorCount() const override;
     bool actorRuntimeState(size_t actorIndex, GameplayRuntimeActorState &state) const override;
+    GameplayActorHitFeedback &actorHitFeedback() override
+    {
+        return m_actorHitFeedback;
+    }
+    const GameplayActorHitFeedback &actorHitFeedback() const override
+    {
+        return m_actorHitFeedback;
+    }
+    std::optional<uint32_t> corpseLootValue(size_t actorIndex) const override;
     bool setMapActorPosition(size_t actorIndex, float x, float y, float z) override;
     bool isMapActorHostile(size_t actorIndex) const override;
     bool isMapActorWithinPartyDistance(size_t actorIndex, float distance) const override;
@@ -792,6 +830,11 @@ public:
     CorpseViewState *activeCorpseView() override;
     const CorpseViewState *activeCorpseView() const override;
     void commitActiveCorpseView() override;
+    // Rolls the actor's corpse loot once (at death, before a steal, or after loading) into its corpse view.
+    bool ensureMapActorCorpseView(size_t actorIndex);
+    // After a load: dead actors whose corpse loot was never rolled (older saves, map deltas) get it on the first update,
+    // once the event state that adds guaranteed items is bound.
+    void rollPendingCorpseLoot();
     bool openMapActorCorpseView(size_t actorIndex);
     bool takeActiveCorpseItem(size_t itemIndex, ChestItemState &item) override;
     void closeActiveCorpseView() override;
@@ -815,6 +858,10 @@ public:
         float sourceZ,
         float yawRadians
     );
+    void collectWorldItemPresentationStates(
+        std::vector<GameplayWorldItemPresentationState> &items) const override;
+    void collectFireSpikeTrapPresentationStates(
+        std::vector<GameplayProjectilePresentationState> &traps) const override;
     bool spawnPartyFireSpikeTrap(
         uint32_t casterMemberIndex,
         uint32_t spellId,
@@ -827,8 +874,6 @@ public:
     const ProjectileState *projectileState(size_t projectileIndex) const;
     size_t projectileImpactCount() const;
     const ProjectileImpactState *projectileImpactState(size_t effectIndex) const;
-    size_t fireSpikeTrapCount() const;
-    const FireSpikeTrapState *fireSpikeTrapState(size_t trapIndex) const;
     void startGameplayScreenOverlay(uint32_t colorAbgr, float durationSeconds, float peakAlpha);
     bool tryStartArmageddon(
         size_t casterMemberIndex,
@@ -877,6 +922,7 @@ public:
     float partyX() const override;
     float partyY() const override;
     float partyFootZ() const override;
+    float partyEyeZ() const override;
     float partyEngagementRange() const override;
     float gameplayCameraYawRadians() const override;
     float gameplayCameraPitchRadians() const override;
@@ -898,6 +944,11 @@ public:
     size_t turnBasedPendingWorldActionCount() const override;
     bool turnBasedActorActionInProgress() const override;
     void stopTurnBasedActorMovement() override;
+    void setTurnBasedActorMode(ActorTurnBasedMode mode) override;
+    void grantTurnBasedActorAction(size_t actorIndex) override;
+    bool turnBasedActorActionGrantPending() const override;
+    int turnBasedActorRecoveryTicks(size_t actorIndex) const override;
+    void setActorAttackCooldownSeconds(size_t actorIndex, float seconds) override;
     void updateWorld(float deltaSeconds) override;
     void renderWorld(
         int width,
@@ -993,6 +1044,10 @@ public:
         float y,
         float z
     ) override;
+    bool debugFireActorProjectile(
+        size_t actorIndex,
+        GameplayActorAttackAbility ability,
+        const GameplayWorldPoint &target) override;
     bool summonHostileMonsterById(
         int16_t monsterId,
         uint32_t count,
@@ -1169,6 +1224,10 @@ private:
         SkillMastery skillMastery = SkillMastery::None,
         const std::string &projectileTokenOverride = std::string()
     );
+    // The world point a model actor launches its missile or spell from (its actors.yml release point); empty for
+    // sprite actors and models without one, which launch from the body (mapActorBodyLaunchPoint).
+    std::optional<std::array<float, 3>> mapActorModelLaunchPoint(const MapActorState &actor, bool spell) const;
+    static std::array<float, 3> mapActorBodyLaunchPoint(const MapActorState &actor);
     bool castSpellFromMapActor(
         const MapActorState &actor,
         const MonsterTable::MonsterStatsEntry &stats,
@@ -1321,7 +1380,8 @@ private:
         float y,
         float z,
         bool centerVertically = false,
-        bool preferImpactObject = true);
+        bool preferImpactObject = true,
+        size_t targetActorIndex = static_cast<size_t>(-1));
     bool spawnWaterSplashImpact(float x, float y, float z);
     void addBloodSplat(uint32_t sourceActorId, float x, float y, float z, float radius);
     void bakeBloodSplatGeometry(BloodSplatState &splat) const;
@@ -1354,7 +1414,8 @@ private:
         float y,
         float z,
         bool centerVertically,
-        bool freezeAnimation);
+        bool freezeAnimation,
+        size_t targetActorIndex);
 
     int m_mapId = 0;
     int m_mapTreasureLevel = 0;
@@ -1368,12 +1429,10 @@ private:
     int m_cachedMergedWeatherMapId = 0;
     int m_cachedMergedWeatherHourIndex = 0;
     int m_cachedMergedWeatherState = 0;
-    bool m_mergedPrecipitationCacheValid = false;
-    int m_cachedMergedPrecipitationMapId = 0;
-    int m_cachedMergedPrecipitationDayIndex = 0;
-    bool m_cachedMergedSnow = false;
-    bool m_cachedMergedRain = false;
-    RainIntensityPreset m_cachedMergedRainIntensity = RainIntensityPreset::Off;
+    // Wetness integrates hours of weather, so it is resampled once per game minute.
+    int64_t m_cachedWetnessMinute = -1;
+    int m_cachedWetnessMapId = 0;
+    float m_cachedWetness = 0.0f;
     std::vector<TimerState> m_timers;
     bool m_timerDefinitionsInitialized = false;
     bool m_resetLegacyTimersOnInitialize = false;
@@ -1419,6 +1478,8 @@ private:
     GameplayActorService *m_pGameplayActorService = nullptr;
     GameplayProjectileService *m_pGameplayProjectileService = nullptr;
     GameplayProjectileService m_fallbackGameplayProjectileService;
+    ActorBehaviorRuntime m_actorBehaviors;
+    GameplayActorHitFeedback m_actorHitFeedback;
     GameplayCombatController *m_pGameplayCombatController = nullptr;
     GameplayFxService *m_pGameplayFxService = nullptr;
     const std::optional<ScriptedEventProgram> *m_pGlobalEventProgram = nullptr;
@@ -1471,6 +1532,7 @@ private:
     float m_immolationTickAccumulatorGameMinutes = 0.0f;
     uint32_t m_immolationTickSequence = 0;
     bool m_actorAiUpdateQueued = false;
+    ActorTurnBasedFrameFacts m_turnBasedActorFacts = {};
     float m_queuedActorAiDeltaSeconds = 0.0f;
     float m_queuedActorAiPartyX = 0.0f;
     float m_queuedActorAiPartyY = 0.0f;
@@ -1478,6 +1540,7 @@ private:
     uint32_t m_sessionChestSeed = 0;
     uint32_t m_nextActorId = 0;
     std::vector<std::optional<CorpseViewState>> m_mapActorCorpseViews;
+    bool m_corpseLootPending = false;
     std::optional<CorpseViewState> m_activeCorpseView;
     std::vector<size_t> m_actorCorpsePhysicsActorIndices;
     std::vector<AudioEvent> m_pendingAudioEvents;
@@ -1488,8 +1551,7 @@ private:
     float m_gameplayOverlayDurationSeconds = 0.0f;
     float m_gameplayOverlayPeakAlpha = 0.0f;
     uint32_t m_gameplayOverlayColorAbgr = 0x00000000u;
-    bool m_hasRainIntensityOverride = false;
-    RainIntensityPreset m_rainIntensityPreset = RainIntensityPreset::Off;
+    DebugSkyOverrides m_debugSkyOverrides;
     std::vector<FireSpikeTrapState> m_fireSpikeTraps;
     std::vector<BloodSplatState> m_bloodSplats;
     uint64_t m_bloodSplatRevision = 0;
@@ -1590,6 +1652,12 @@ private:
     );
     void applyInitialWeatherProfile();
     int cachedMergedWeatherState(const OutdoorWeatherProfile &profile);
+    int mergedLadderState(const OutdoorWeatherProfile &profile, const WeatherSample &sample);
+    bool isMergedWeatherMap() const;
+    WeatherMapSettings weatherMapSettings() const;
+    // The weather now, with scene, event and debug overrides applied.
+    WeatherSample currentWeatherSample();
+    void applyPrecipitationState(const WeatherSample &sample);
     bool applyMergedWeatherProfile();
     void applyDailyWeatherRollover(int weatherDayIndex);
     void applyFogDistances(const OutdoorFogDistances &distances, bool foggy);
@@ -1597,6 +1665,7 @@ private:
     int weatherDayIndexForMinutes(float gameMinutes) const;
     void resetDailySpellCounters();
     void updateArmageddon(float deltaSeconds, float partyX, float partyY, float partyZ);
+    void spawnArmageddonStrikes(float elapsedBefore, float elapsedAfter, float partyX, float partyY, float partyZ);
     void resolveArmageddonDetonation(float partyX, float partyY, float partyZ);
     void refreshAtmosphereState();
 };

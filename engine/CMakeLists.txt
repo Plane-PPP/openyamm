@@ -8,17 +8,24 @@ add_library(openyamm_engine
     FontAsset.cpp
     ImageAssetLoader.cpp
     ImageMipmaps.cpp
+    ParallelFor.cpp
     models/CgltfImplementation.cpp
     models/GltfModelLoader.cpp
     models/ModelAnimation.cpp
     models/ModelAsset.cpp
     models/ModelInstance.cpp
+    render/CookedTexture.cpp
     render/ModelRenderer.cpp
+    render/TextureBlockCodec.cpp
     render/ModelEnvironment.cpp
+    render/LightGrid.cpp
     SpriteAtlas.cpp
     EngineApplication.cpp
     scripting/LuaStateOwner.cpp
     TextTable.cpp
+    # meshoptimizer (MIT, shipped with bgfx): vertex cache order of loaded model triangles.
+    ${OPENYAMM_BGFX_SOURCE_DIR}/3rdparty/meshoptimizer/src/allocator.cpp
+    ${OPENYAMM_BGFX_SOURCE_DIR}/3rdparty/meshoptimizer/src/vcacheoptimizer.cpp
 )
 
 target_include_directories(openyamm_engine
@@ -50,4 +57,5 @@ target_link_libraries(openyamm_engine
         ${OPENYAMM_LUA_TARGET}
     PRIVATE
         freetype
+        libzstd_static
 )

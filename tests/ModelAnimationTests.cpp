@@ -84,7 +84,10 @@ TEST_CASE("ModelAnimation blends local poses, interrupts transitions and masks a
     // Interrupt halfway through: the visible intermediate pose is the new source, so there is no pop.
     REQUIRE(instances.sampleBlended(handle, 0, 0, {}, 0, .1f));
     CHECK(instances.pose(handle, false)->localTransforms[0].translation[0] == doctest::Approx(2));
-    REQUIRE(instances.sampleBlended(handle, 0, 0, {}, .05f, .1f));
+    // Eased: a quarter of the way the pose has moved 0.15625 of the distance (smoothstep), half way exactly half.
+    REQUIRE(instances.sampleBlended(handle, 0, 0, {}, .025f, .1f));
+    CHECK(instances.pose(handle, false)->localTransforms[0].translation[0] == doctest::Approx(1.6875));
+    REQUIRE(instances.sampleBlended(handle, 0, 0, {}, .025f, .1f));
     CHECK(instances.pose(handle, false)->localTransforms[0].translation[0] == doctest::Approx(1));
     REQUIRE(instances.sampleBlended(handle, 0, 0, {}, .05f, .1f));
     CHECK(instances.pose(handle, false)->localTransforms[0].translation[0] == doctest::Approx(0));
@@ -114,6 +117,44 @@ TEST_CASE("Actor model yaw wraps smoothly and gait follows travelled distance")
     CHECK(advanceActorModelYaw(1, 2, 0, 540 * Degrees) == 1);
     CHECK(advanceActorModelGait(.9f, 30, 100) == doctest::Approx(.2f));
     CHECK(advanceActorModelGait(.4f, 0, 100) == doctest::Approx(.4f));
+}
+
+TEST_CASE("Loot satchel tiers follow the corpse's loot value, and the satchel appears as the body dissolves")
+{
+    using namespace OpenYAMM::Game;
+    CHECK(corpseSatchelTier(0) == 0);
+    CHECK(corpseSatchelTier(1) == 1);
+    CHECK(corpseSatchelTier(99) == 1);
+    CHECK(corpseSatchelTier(100) == 2);
+    CHECK(corpseSatchelTier(749) == 2);
+    CHECK(corpseSatchelTier(750) == 3);
+    CHECK(corpseSatchelTier(2999) == 3);
+    CHECK(corpseSatchelTier(3000) == 4);
+    CHECK(corpseSatchelTier(7999) == 4);
+    CHECK(corpseSatchelTier(8000) == 5);
+    CHECK(corpseSatchelTier(14999) == 5);
+    CHECK(corpseSatchelTier(15000) == 6);
+    CHECK(corpseSatchelTier(1000000) == 6);
+
+    const CorpseSinkPresentation resting = corpseSinkPresentation(CorpseRestSeconds * 0.5f);
+    CHECK(resting.depthFraction == 0.0f);
+    CHECK(resting.coverage == 1.0f);
+    CHECK(resting.satchelCoverage == 0.0f);
+    CHECK_FALSE(resting.gone);
+    // Body and satchel cross over: the satchel is fully shown while the body is still dissolving.
+    const CorpseSinkPresentation shown = corpseSinkPresentation(CorpseRestSeconds + CorpseSatchelAppearSeconds);
+    CHECK(shown.satchelCoverage == 1.0f);
+    CHECK(shown.satchelScale == doctest::Approx(1.0f));
+    CHECK(shown.coverage > 0.0f);
+    CHECK(shown.coverage < 1.0f);
+    CHECK_FALSE(shown.gone);
+    CHECK(corpseSinkPresentation(CorpseRestSeconds + CorpseSatchelAppearSeconds * 0.75f).satchelScale > 1.0f);
+    const CorpseSinkPresentation sunk = corpseSinkPresentation(CorpseRestSeconds + CorpseSinkSeconds);
+    CHECK(sunk.gone);
+    CHECK(sunk.coverage == 0.0f);
+    CHECK(sunk.depthFraction == 1.0f);
+    CHECK(sunk.satchelCoverage == 1.0f);
+    CHECK(CorpseRestSeconds + CorpseSinkSeconds <= 1.0f);
 }
 
 std::filesystem::path makeTemporaryRoot()
@@ -629,6 +670,7 @@ TEST_CASE("ModelAnimation checked-in fixture covers rendering and animation cont
     CHECK_EQ(loaded.asset->materials[1].alphaMode, ModelAlphaMode::Blend);
     CHECK(loaded.asset->materials[1].doubleSided);
     CHECK(loaded.asset->materials[1].unlit);
+    CHECK_EQ(loaded.asset->materials[0].edgeDarkening, 0.0f);   // unskinned: no creature edge darkening
     REQUIRE_EQ(loaded.asset->images.size(), 1);
     CHECK_EQ(loaded.asset->clips.size(), 2);
     CHECK(loaded.asset->findNode("animated_attachment").has_value());
@@ -655,6 +697,101 @@ TEST_CASE("ModelAnimation checked-in fixture covers rendering and animation cont
     CHECK_EQ(masked.asset->materials[0].metallic, 0.0f);
     CHECK_EQ(masked.asset->materials[0].roughness, 0.25f);
     CHECK(masked.asset->materials[1].unlit);
+}
+
+TEST_CASE("ModelAnimation burnt corpse picking follows visible attachments and invalidates cached bounds")
+{
+    using namespace OpenYAMM::Engine;
+    std::shared_ptr<ModelAsset> asset = makeAnimatedAsset();
+    asset->nodes[1].meshIndex = 0;
+    ModelPrimitive primitive;
+    primitive.vertices = {{{-10, -10, -10}}, {{10, 10, 10}}};
+    ModelMesh mesh;
+    mesh.primitives.push_back(primitive);
+    asset->meshes.push_back(mesh);
+    ModelAnimationChannel visibility;
+    visibility.nodeIndex = 0;
+    visibility.target = ModelAnimationTarget::Scale;
+    visibility.interpolation = ModelAnimationInterpolation::Step;
+    visibility.times = {0, 1};
+    visibility.values = {{1, 1, 1, 0}, {0, 0, 0, 0}};
+    asset->clips[0].channels.push_back(visibility);
+    std::shared_ptr<ModelAsset> remains = std::make_shared<ModelAsset>();
+    remains->staticBounds = {{-1, -2, 0}, {1, 2, 1}, true};
+
+    ModelInstanceSystem instances;
+    const ModelInstanceHandle handle = instances.create(asset);
+    ModelTransform placement;
+    placement.translation = {10, 20, 30};
+    REQUIRE(instances.sample(handle, 0, .5f, placement));
+    REQUIRE(instances.pickingBounds(handle)->valid);
+    CHECK(instances.pickingBounds(handle)->min[0] == doctest::Approx(0));
+    ModelBurn burn;
+    burn.front = 5;
+    REQUIRE(instances.setBurn(handle, &burn));
+    CHECK_FALSE(instances.pickingBounds(handle)->valid);
+    REQUIRE(instances.setAttachments(handle, {{remains, 0, 0}}));
+    const ModelBounds *pBounds = instances.pickingBounds(handle);
+    REQUIRE(pBounds->valid);
+    CHECK(pBounds->min[0] == doctest::Approx(9));
+    CHECK(pBounds->max[0] == doctest::Approx(13));
+    CHECK(pBounds->min[1] == doctest::Approx(19));
+    CHECK(pBounds->max[1] == doctest::Approx(21));
+    CHECK(pBounds->min[2] == doctest::Approx(30));
+    CHECK(pBounds->max[2] == doctest::Approx(31));
+    REQUIRE(instances.setAttachments(handle, {}));
+    CHECK_FALSE(instances.pickingBounds(handle)->valid);
+    REQUIRE(instances.setAttachments(handle, {{remains, 0, 0}}));
+    REQUIRE(instances.pickingBounds(handle)->valid);
+    REQUIRE(instances.sample(handle, 0, 1, placement));
+    CHECK_FALSE(instances.pickingBounds(handle)->valid);
+    REQUIRE(instances.setBurn(handle, nullptr));
+    REQUIRE(instances.pickingBounds(handle)->valid);
+    CHECK(instances.pickingBounds(handle)->min[0] == doctest::Approx(0));
+    CHECK(instances.pickingBounds(handle)->max[2] == doctest::Approx(40));
+}
+
+TEST_CASE("ModelAnimation picking rays meet the coarsest LOD triangles, not their bounds")
+{
+    using namespace OpenYAMM::Engine;
+    std::shared_ptr<ModelAsset> asset = makeAnimatedAsset();
+    asset->nodes[1].meshIndex = 0;
+    // Full detail: one quad across the gap. Coarsest LOD: two quads (x = 0 plane) with a gap at y = 0.
+    ModelPrimitive full;
+    full.vertices = {{{0, -10, -10}}, {{0, 10, -10}}, {{0, 10, 10}}, {{0, -10, 10}}};
+    full.indices = {0, 1, 2, 0, 2, 3};
+    ModelPrimitive coarse;
+    coarse.vertices = {
+        {{0, -10, -10}}, {{0, -5, -10}}, {{0, -5, 10}}, {{0, -10, 10}},
+        {{0, 5, -10}}, {{0, 10, -10}}, {{0, 10, 10}}, {{0, 5, 10}}};
+    coarse.indices = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
+    ModelMesh fullMesh;
+    fullMesh.primitives.push_back(full);
+    fullMesh.lodMeshes = {1};
+    ModelMesh coarseMesh;
+    coarseMesh.primitives.push_back(coarse);
+    asset->meshes = {fullMesh, coarseMesh};
+
+    ModelInstanceSystem instances;
+    const ModelInstanceHandle handle = instances.create(asset);
+    ModelTransform placement;
+    placement.translation = {100, 0, 0};
+    REQUIRE(instances.sample(handle, 0, 0, placement));
+    const ModelBounds *pBounds = instances.pickingBounds(handle);
+    REQUIRE(pBounds->valid);
+    CHECK(pBounds->min[1] == doctest::Approx(-10));
+    CHECK(pBounds->max[1] == doctest::Approx(10));
+
+    // Inside the bounds but through the gap: a miss.
+    CHECK_FALSE(instances.pickRay(handle, {0, 0, 0}, {1, 0, 0}));
+    const std::optional<float> front = instances.pickRay(handle, {0, -7.5f, 0}, {1, 0, 0});
+    REQUIRE(front);
+    CHECK(*front == doctest::Approx(100));
+    // Either face: a thin wing is picked from behind too.
+    const std::optional<float> back = instances.pickRay(handle, {250, 7.5f, 0}, {-1, 0, 0});
+    REQUIRE(back);
+    CHECK(*back == doctest::Approx(150));
+    CHECK_FALSE(instances.pickRay(handle, {0, -7.5f, 0}, {-1, 0, 0}));
 }
 
 TEST_CASE("ModelAnimation skinning applies inverse bind, all influences, morphs and root placement")
@@ -909,10 +1046,13 @@ TEST_CASE("ModelAnimation demon LOD meshes share the rig and retain posed bounds
             indices += primitive.indices.size();
             CHECK(primitive.influences.size() == primitive.vertices.size());
         }
-        CHECK(indices / 3 == triangles[level]);
+        // The shadow mesh keeps the authored triangles; the colour mesh may add reversed copies of the triangles whose
+        // back can be seen (tools/model_backface_split.py, at most a quarter of a primitive).
         const ModelMesh &shadow = asset.meshes[mesh.shadowMeshes[level]];
         REQUIRE(shadow.primitives.size() == 1);
-        CHECK(shadow.primitives[0].indices.size() == indices);
+        CHECK(shadow.primitives[0].indices.size() / 3 == triangles[level]);
+        CHECK(indices / 3 >= triangles[level]);
+        CHECK(indices / 3 <= triangles[level] + triangles[level] / 4);
         ModelAsset lower = asset;
         lower.nodes[nodeIndex].meshIndex = int(meshIndex);
         for (uint32_t clip = 0; clip < asset.clips.size(); ++clip)
@@ -1004,6 +1144,22 @@ TEST_CASE("ModelAnimation loader reads colour region masks and ramps and rejects
     CHECK_EQ(material.regionRamps[0].colors[0][2], doctest::Approx(1.0f));
     CHECK_EQ(material.regionRamps[0].colors[15][0], doctest::Approx(1.0f));
 
+    CHECK_FALSE(material.specularMask);
+
+    // A specular mask reads the metallic-roughness red channel, so it needs that texture.
+    std::string masked = withRegions("\"openyamm_specular_mask\": true");
+    writeFile(root / "assets_dev/engine/models/fixture.gltf", masked);
+    const ModelLoadResult unmasked = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
+    CHECK_FALSE(unmasked);
+    CHECK_MESSAGE(unmasked.error.find("specular mask needs") != std::string::npos, unmasked.error);
+    const size_t factor = masked.find("\"baseColorFactor\"");
+    REQUIRE(factor != std::string::npos);
+    masked.insert(factor, "\"metallicRoughnessTexture\": {\"index\": 0}, ");
+    writeFile(root / "assets_dev/engine/models/fixture.gltf", masked);
+    const ModelLoadResult specularMasked = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
+    REQUIRE_MESSAGE(specularMasked, specularMasked.error);
+    CHECK(specularMasked.asset->materials[0].specularMask);
+
     const std::array<std::pair<std::string, std::string>, 3> invalid = {{
         {mask, "region mask and one to four ramps"},
         {mask + ", \"openyamm_region_ramps\": [" + ramp(15) + "]", "16 colours"},
@@ -1016,6 +1172,45 @@ TEST_CASE("ModelAnimation loader reads colour region masks and ramps and rejects
         CHECK_FALSE(rejected);
         CHECK_MESSAGE(rejected.error.find(message) != std::string::npos, rejected.error);
     }
+    assets.shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("ModelAnimation loader reads the cooked burn order per vertex")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path root = makeTemporaryRoot();
+    std::string json = fixtureGltf();
+    // A float view over the texture coordinates (0, 0, 1) stands in for the cook's normalized byte stream.
+    const size_t attributes = json.find("\"TEXCOORD_0\": 2");
+    REQUIRE(attributes != std::string::npos);
+    json.insert(attributes, "\"_BURN_ORDER\": 7, ");
+    const std::string lastAccessor = "{\"bufferView\": 6, \"componentType\": 5126, \"count\": 2, \"type\": \"VEC3\"}";
+    const size_t accessors = json.find(lastAccessor);
+    REQUIRE(accessors != std::string::npos);
+    const std::string burnOrder =
+        ",\n    {\"bufferView\": 2, \"componentType\": 5126, \"count\": COUNT, \"type\": \"SCALAR\"}";
+    std::string valid = json;
+    valid.insert(accessors + lastAccessor.size(), std::string(burnOrder).replace(burnOrder.find("COUNT"), 5, "3"));
+    writeFile(root / "assets_dev/engine/models/fixture.bin", fixtureBuffer());
+    writeFile(root / "assets_dev/engine/models/fixture.gltf", valid);
+    AssetFileSystem assets;
+    REQUIRE(assets.initialize(root, root / "assets_dev", AssetScaleTier::X1));
+    const ModelLoadResult loaded = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
+    REQUIRE_MESSAGE(loaded, loaded.error);
+    const ModelPrimitive &primitive = loaded.asset->meshes[0].primitives[0];
+    REQUIRE_EQ(primitive.burnOrder.size(), primitive.vertices.size());
+    CHECK_EQ(primitive.burnOrder[0], doctest::Approx(0.0f));
+    CHECK_EQ(primitive.burnOrder[1], doctest::Approx(0.0f));
+    CHECK_EQ(primitive.burnOrder[2], doctest::Approx(1.0f));
+
+    // One scalar per vertex, or the model is rejected (here the VEC2 texture coordinates).
+    std::string mismatched = json;
+    mismatched.replace(mismatched.find("\"_BURN_ORDER\": 7"), 16, "\"_BURN_ORDER\": 2");
+    writeFile(root / "assets_dev/engine/models/fixture.gltf", mismatched);
+    const ModelLoadResult rejected = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
+    CHECK_FALSE(rejected);
+    CHECK_MESSAGE(rejected.error.find("_BURN_ORDER") != std::string::npos, rejected.error);
     assets.shutdown();
     std::filesystem::remove_all(root);
 }
@@ -1034,7 +1229,7 @@ TEST_CASE("ModelAnimation loader reads vertex colours and static decoration mate
     json.insert(material,
         "\"extras\": {\"openyamm_wind\": 0.12, \"openyamm_translucency\": 0.35, \"openyamm_billboard\": true, "
         "\"openyamm_specular\": 0.1, \"openyamm_uv_scroll\": [0.25, -1.5], \"openyamm_flipbook\": [4, 2, 12], "
-        "\"openyamm_flutter\": 0.1}, ");
+        "\"openyamm_flutter\": 0.1, \"openyamm_edge_darkening\": 0.25}, ");
     writeFile(root / "assets_dev/engine/models/fixture.bin", fixtureBuffer());
     writeFile(root / "assets_dev/engine/models/fixture.gltf", json);
     AssetFileSystem assets;
@@ -1062,6 +1257,7 @@ TEST_CASE("ModelAnimation loader reads vertex colours and static decoration mate
     CHECK_EQ(extras.flipbook[1], doctest::Approx(2.0f));
     CHECK_EQ(extras.flipbook[2], doctest::Approx(12.0f));
     CHECK_EQ(extras.flutter, doctest::Approx(0.1f));
+    CHECK_EQ(extras.edgeDarkening, doctest::Approx(0.25f));
     CHECK_EQ(loaded.asset->materials[0].specular, doctest::Approx(0.1f));
     CHECK(extras.billboard);
 
@@ -1078,6 +1274,115 @@ TEST_CASE("ModelAnimation loader reads vertex colours and static decoration mate
     const ModelLoadResult fractionalFlipbook = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
     CHECK_FALSE(fractionalFlipbook);
     CHECK(fractionalFlipbook.error.find("flipbook") != std::string::npos);
+    json.replace(json.find("[2.5, 2, 1]"), 11, "[4, 2, 12]");
+    // Flame cards: a card billboard, additive blending and a random flicker (a pulse with a negative period).
+    json.replace(json.find("\"openyamm_billboard\": true"), 26,
+        "\"openyamm_billboard\": \"card\", \"openyamm_additive\": true, \"openyamm_flicker\": [0.3, 8]");
+    writeFile(root / "assets_dev/engine/models/fixture.gltf", json);
+    const ModelLoadResult flame = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
+    REQUIRE_MESSAGE(flame, flame.error);
+    const ModelMaterial &card = flame.asset->materials[0];
+    CHECK(card.billboard);
+    CHECK(card.billboardCard);
+    CHECK(card.additive);
+    CHECK_EQ(card.pulse[0], doctest::Approx(0.3f));
+    CHECK_EQ(card.pulse[1], doctest::Approx(-0.125f));
+    json.replace(json.find("[0.3, 8]"), 8, "[0.3, 90]");
+    writeFile(root / "assets_dev/engine/models/fixture.gltf", json);
+    const ModelLoadResult fastFlicker = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
+    CHECK_FALSE(fastFlicker);
+    CHECK(fastFlicker.error.find("flicker") != std::string::npos);
+    json.replace(json.find("[0.3, 90]"), 9, "[0.3, 8], \"openyamm_pulse\": [0.2, 2]");
+    writeFile(root / "assets_dev/engine/models/fixture.gltf", json);
+    const ModelLoadResult flickerAndPulse = GltfModelLoader().load(assets, "engine/models/fixture.gltf");
+    CHECK_FALSE(flickerAndPulse);
+    CHECK(flickerAndPulse.error.find("flicker") != std::string::npos);
     assets.shutdown();
     std::filesystem::remove_all(root);
+}
+
+TEST_CASE("ModelAnimation bakes a frozen skinned pose into a static asset that matches CPU skinning")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    AssetFileSystem assets;
+    REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", AssetScaleTier::X1));
+    const ModelLoadResult loaded = GltfModelLoader().load(assets, "worlds/mm6/models/mm6_ckt.glb");
+    REQUIRE_MESSAGE(loaded, loaded.error);
+    const ModelAsset &asset = *loaded.asset;
+    const std::optional<uint32_t> dead = asset.findClip("Dead");
+    REQUIRE(dead);
+    ModelPose pose;
+    resetModelPose(asset, pose);
+    evaluateModelClip(asset, *dead, asset.clips[*dead].durationSeconds, pose);
+    evaluateModelHierarchy(asset, identityModelMatrix(), pose);
+    const std::shared_ptr<ModelAsset> baked = bakeStaticModelPose(asset, pose);
+    deformModelPose(asset, pose);
+    REQUIRE(baked->skins.empty());
+    REQUIRE(baked->clips.empty());
+    // Creature materials default to edge darkening, and the corpse stand-in keeps it.
+    CHECK(std::any_of(asset.materials.begin(), asset.materials.end(), [](const ModelMaterial &material)
+    {
+        return material.edgeDarkening == DefaultCreatureEdgeDarkening;
+    }));
+    for (size_t index = 0; index < asset.materials.size(); ++index)
+    {
+        CHECK_EQ(baked->materials[index].edgeDarkening, asset.materials[index].edgeDarkening);
+    }
+    CHECK(baked->staticBounds.valid);
+    CHECK_EQ(baked->materialVariants, asset.materialVariants);
+    size_t compared = 0;
+    for (size_t nodeIndex = 0; nodeIndex < asset.nodes.size(); ++nodeIndex)
+    {
+        const ModelNode &node = asset.nodes[nodeIndex];
+        if (node.meshIndex < 0 || node.skinIndex < 0)
+        {
+            continue;
+        }
+        const ModelNode &bakedNode = baked->nodes.at(baked->nodeIndicesByName.at(node.name));
+        CHECK_EQ(bakedNode.skinIndex, -1);
+        CHECK_EQ(bakedNode.matrix, identityModelMatrix());
+        const ModelMesh &bakedMesh = baked->meshes.at(size_t(bakedNode.meshIndex));
+        CHECK_EQ(bakedMesh.lodMeshes.size(), asset.meshes[size_t(node.meshIndex)].lodMeshes.size());
+        for (size_t primitive = 0; primitive < bakedMesh.primitives.size(); ++primitive)
+        {
+            const std::vector<ModelVertex> &expected = pose.deformedVertices[nodeIndex][primitive];
+            const std::vector<ModelVertex> &actual = bakedMesh.primitives[primitive].vertices;
+            REQUIRE_EQ(actual.size(), expected.size());
+            for (size_t vertex = 0; vertex < actual.size(); ++vertex)
+            {
+                for (size_t axis = 0; axis < 3; ++axis)
+                {
+                    REQUIRE(std::abs(actual[vertex].position[axis] - expected[vertex].position[axis]) < 1.0e-4f);
+                }
+            }
+            compared += actual.size();
+            CHECK(bakedMesh.primitives[primitive].influences.empty());
+        }
+    }
+    CHECK_GT(compared, 1000u);
+    for (size_t meshIndex = 0; meshIndex < baked->meshes.size(); ++meshIndex)
+    {
+        for (const ModelPrimitive &primitive : baked->meshes[meshIndex].primitives)
+        {
+            for (const uint32_t index : primitive.indices)
+            {
+                REQUIRE_LT(index, primitive.vertices.size());
+            }
+            for (const int material : primitive.materialIndices)
+            {
+                REQUIRE((material >= -1 && material < int(baked->materials.size())));
+            }
+            for (const ModelVertex &vertex : primitive.vertices)
+            {
+                const float length = std::sqrt(vertex.normal[0] * vertex.normal[0] + vertex.normal[1] * vertex.normal[1]
+                    + vertex.normal[2] * vertex.normal[2]);
+                REQUIRE_MESSAGE(std::abs(length - 1.0f) < 1.0e-3f, "mesh " << meshIndex << " normal length " << length);
+                for (size_t axis = 0; axis < 3; ++axis)
+                {
+                    REQUIRE(std::isfinite(vertex.position[axis]));
+                }
+            }
+        }
+    }
 }

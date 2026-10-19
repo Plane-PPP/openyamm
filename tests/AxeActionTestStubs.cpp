@@ -24,7 +24,14 @@ TurnBasedCombatRuntime &GameplayScreenRuntime::turnBasedCombatRuntime() const
     throw std::logic_error("Unexpected presentation runtime in headless action test");
 }
 
-void GameplayFxService::queueMeleeHitBloodEffect(const std::array<float, 3> &, const std::array<float, 3> &)
+void GameplayFxService::queueSurfaceEffect(
+    const std::string &, const std::array<float, 3> &, const std::array<float, 3> &, float)
+{
+    throw std::logic_error("Unexpected FX in headless action test");
+}
+
+void GameplayFxService::queueWorldEffect(
+    const std::string &, const std::array<float, 3> &, const std::array<float, 4> &, float)
 {
     throw std::logic_error("Unexpected FX in headless action test");
 }

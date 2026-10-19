@@ -267,6 +267,7 @@ uint32_t makeChestSeed(uint32_t sessionSeed, int mapId, uint32_t chestId, uint32
         ^ (chestId + 1u) * 2654435761u
         ^ (salt + 1u) * 2246822519u;
 }
+}
 
 int chestItemValue(
     const GameplayChestItemState &item,
@@ -294,6 +295,8 @@ int chestItemValue(
         pSpecialItemEnchantTable) * std::max(1u, item.quantity);
 }
 
+namespace
+{
 int generateGoldAmount(int treasureLevel, std::mt19937 &rng)
 {
     switch (treasureLevel)
@@ -393,7 +396,8 @@ GameplayChestViewState buildMaterializedChestView(
     uint32_t sessionChestSeed,
     const ChestTable *pChestTable,
     const ItemTable *pItemTable,
-    Party *pParty)
+    Party *pParty,
+    const std::string &worldId)
 {
     GameplayChestViewState view = {};
     view.chestId = chestId;
@@ -525,10 +529,12 @@ GameplayChestViewState buildMaterializedChestView(
                         *pStandardItemEnchantTable,
                         *pSpecialItemEnchantTable,
                         ItemGenerationRequest{
-                            SpawnableItemTreasureLevels,
-                            ItemGenerationMode::ChestLoot,
-                            true,
-                            true},
+                            .treasureLevel = SpawnableItemTreasureLevels,
+                            .mode = ItemGenerationMode::ChestLoot,
+                            .allowRareItems = true,
+                            .rareItemsOnly = true,
+                            .worldId = worldId,
+                        },
                         pParty,
                         rng);
 
@@ -586,8 +592,10 @@ GameplayChestViewState buildMaterializedChestView(
                             *pStandardItemEnchantTable,
                             *pSpecialItemEnchantTable,
                             ItemGenerationRequest{
-                                std::min(resolvedTreasureLevel, SpawnableItemTreasureLevels),
-                                ItemGenerationMode::ChestLoot},
+                                .treasureLevel = std::min(resolvedTreasureLevel, SpawnableItemTreasureLevels),
+                                .mode = ItemGenerationMode::ChestLoot,
+                                .worldId = worldId,
+                            },
                             pParty,
                             rng);
 

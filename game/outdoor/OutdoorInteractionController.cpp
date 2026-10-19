@@ -9,6 +9,7 @@
 #include "game/gameplay/CorpseLootRuntime.h"
 #include "game/gameplay/GenericActorDialog.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/GameplayHeldItemController.h"
 #include "game/app/GameSession.h"
 #include "game/mm9/Mm9RudeDialogue.h"
@@ -183,11 +184,6 @@ std::string formatFoundItemStatusText(int goldAmount, const std::string &itemNam
     }
 
     return "You found an item (" + resolvedItemName + ")!";
-}
-
-std::string formatFoundGoldStatusText(int goldAmount)
-{
-    return "You found " + std::to_string(std::max(0, goldAmount)) + " gold!";
 }
 
 uint32_t currentAnimationTicks()
@@ -1183,6 +1179,26 @@ bool OutdoorInteractionController::isInteractiveDecorationHidden(const OutdoorGa
     return pEventRuntimeState->decorVars[pBinding->decorVarIndex] == pBinding->eventCount;
 }
 
+int OutdoorInteractionController::interactiveDecorationState(const OutdoorGameView &view, size_t entityIndex)
+{
+    const OutdoorGameView::InteractiveDecorationBinding *pBinding =
+        findInteractiveDecorationBindingForEntity(view, entityIndex);
+
+    if (pBinding == nullptr || view.m_pOutdoorWorldRuntime == nullptr)
+    {
+        return -1;
+    }
+
+    const EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
+
+    if (pEventRuntimeState == nullptr)
+    {
+        return -1;
+    }
+
+    return pEventRuntimeState->decorVars[pBinding->decorVarIndex];
+}
+
 std::optional<uint16_t> OutdoorInteractionController::resolveInteractiveDecorationEventId(
     const OutdoorGameView &view,
     size_t entityIndex)
@@ -1205,6 +1221,50 @@ std::optional<uint16_t> OutdoorInteractionController::resolveInteractiveDecorati
     return interactiveDecorationEventId(
         pEventRuntimeState->decorVars[pBinding->decorVarIndex],
         pBinding->baseEventId, pBinding->eventCount, pBinding->hideWhenCleared, pBinding->fixedEvent);
+}
+
+std::optional<std::string> OutdoorInteractionController::resolveDecorationHint(
+    const OutdoorGameView &view,
+    size_t entityIndex)
+{
+    if (!view.m_outdoorDecorationBillboardSet)
+    {
+        return std::nullopt;
+    }
+    const DecorationTable &table = view.m_outdoorDecorationBillboardSet->decorationTable;
+    for (const DecorationBillboard &billboard : view.m_outdoorDecorationBillboardSet->billboards)
+    {
+        if (billboard.entityIndex != entityIndex)
+        {
+            continue;
+        }
+        const DecorationEntry *pEntry = nullptr;
+        const EventRuntimeState *pEvents =
+            view.m_pOutdoorWorldRuntime != nullptr ? view.m_pOutdoorWorldRuntime->eventRuntimeState() : nullptr;
+        if (pEvents != nullptr)
+        {
+            const auto overrideIterator = pEvents->spriteOverrides.find(billboard.spriteOverrideKey());
+            if (overrideIterator != pEvents->spriteOverrides.end() && overrideIterator->second.textureName
+                && !overrideIterator->second.textureName->empty())
+            {
+                pEntry = table.findByInternalName(*overrideIterator->second.textureName);
+            }
+        }
+        if (pEntry == nullptr)
+        {
+            pEntry = table.get(billboard.decorationId);
+        }
+        if ((pEntry == nullptr || pEntry->hint.empty()) && !billboard.name.empty())
+        {
+            pEntry = table.findByInternalName(billboard.name);
+        }
+        if (pEntry != nullptr && !pEntry->hint.empty())
+        {
+            return pEntry->hint;
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 std::optional<std::string> OutdoorInteractionController::resolveInteractiveDecorationHoverText(
@@ -1710,6 +1770,35 @@ bool OutdoorInteractionController::inspectEventIsHintOnly(
 
 
 
+std::optional<uint16_t> OutdoorInteractionController::resolveInteractiveDecorationHitEventId(
+    const OutdoorGameView &view,
+    const OutdoorGameView::InspectHit &inspectHit)
+{
+    if (!inspectHit.hasHit)
+    {
+        return std::nullopt;
+    }
+
+    if (inspectHit.kind == "decoration")
+    {
+        if (!view.m_outdoorDecorationBillboardSet
+            || inspectHit.bModelIndex >= view.m_outdoorDecorationBillboardSet->billboards.size())
+        {
+            return std::nullopt;
+        }
+
+        return resolveInteractiveDecorationEventId(
+            view, view.m_outdoorDecorationBillboardSet->billboards[inspectHit.bModelIndex].entityIndex);
+    }
+
+    if (inspectHit.kind == "entity")
+    {
+        return resolveInteractiveDecorationEventId(view, inspectHit.bModelIndex);
+    }
+
+    return std::nullopt;
+}
+
 std::optional<std::string> OutdoorInteractionController::resolveEventTargetHoverStatusText(
     const OutdoorGameView &view,
     const OutdoorGameView::InspectHit &inspectHit)
@@ -1754,21 +1843,7 @@ std::optional<std::string> OutdoorInteractionController::resolveEventTargetHover
             }
         }
 
-        const DecorationEntry *pDecorationEntry =
-            view.m_outdoorDecorationBillboardSet->decorationTable.get(decoration.decorationId);
-
-        if ((pDecorationEntry == nullptr || pDecorationEntry->hint.empty()) && !decoration.name.empty())
-        {
-            pDecorationEntry =
-                view.m_outdoorDecorationBillboardSet->decorationTable.findByInternalName(decoration.name);
-        }
-
-        if (pDecorationEntry != nullptr && !pDecorationEntry->hint.empty())
-        {
-            return pDecorationEntry->hint;
-        }
-
-        return std::nullopt;
+        return resolveDecorationHint(view, decoration.entityIndex);
     }
 
     if (inspectHit.kind == "entity")
@@ -1779,7 +1854,14 @@ std::optional<std::string> OutdoorInteractionController::resolveEventTargetHover
             return interactiveText;
         }
 
-        return resolveEventHoverText(view, resolveOutdoorEntityScriptEventId(inspectHit.eventIdSecondary));
+        // An event without its own hint (the sword in the stone) shows the decoration's hint, as a decoration hit does.
+        const std::optional<std::string> eventText =
+            resolveEventHoverText(view, resolveOutdoorEntityScriptEventId(inspectHit.eventIdSecondary));
+        if (eventText && !eventText->empty())
+        {
+            return eventText;
+        }
+        return resolveDecorationHint(view, inspectHit.bModelIndex);
     }
 
     if (inspectHit.kind == "face")
@@ -1809,7 +1891,7 @@ std::string OutdoorInteractionController::resolveActorInspectDisplayName(
         return inspectHit.name;
     }
 
-    if (pActorState->hostileToParty)
+    if (pActorState->hostileToParty || pActorState->npcId > 0)
     {
         return inspectHit.name;
     }
@@ -1837,16 +1919,10 @@ std::string OutdoorInteractionController::resolveActorInspectDisplayName(
         return inspectHit.name;
     }
 
-    const MergedNpcProfessionEntry *pProfession =
-        view.data().mergedNpcProfessionTable().get(resolution->generatedProfessionId);
-
-    if (pProfession == nullptr || pProfession->profession.empty())
-    {
-        return resolution->generatedName;
-    }
-
     // MMerge assigns NPC_ID to the monster; the original display path then uses NameAndTitle(NPC).
-    return resolution->generatedName + " the " + pProfession->profession;
+    return view.data().mergedNpcProfessionTable().nameAndTitle(
+        resolution->generatedName,
+        resolution->generatedProfessionId);
 }
 
 GameplayWorldHit OutdoorInteractionController::translateInspectHitToGameplayWorldHit(
@@ -1951,6 +2027,7 @@ GameplayWorldHit OutdoorInteractionController::translateInspectHitToGameplayWorl
     const std::optional<std::string> eventTargetStatusText = resolveEventTargetHoverStatusText(view, inspectHit);
     eventTargetHit.name =
         eventTargetStatusText && !eventTargetStatusText->empty() ? *eventTargetStatusText : inspectHit.name;
+    eventTargetHit.nameEventId = resolveInteractiveDecorationHitEventId(view, inspectHit).value_or(0);
     eventTargetHit.hitPoint = hitPoint;
     eventTargetHit.distance = inspectHit.distance;
     eventTargetHit.openedChestIds = resolveOpenedChestIds(view, inspectHit);
@@ -2186,6 +2263,29 @@ std::optional<GameplayWorldPoint> OutdoorInteractionController::resolvePartyAtta
     if (pActor == nullptr || pActor->isInvisible)
     {
         return std::nullopt;
+    }
+
+    // A model presents the actor: where the line from the camera to its bounds' centre enters them.
+    if (view.m_worldFxSystem.hasActorModel(actorIndex))
+    {
+        const Engine::ModelBounds *pBounds = view.m_worldFxSystem.actorModelBounds(actorIndex);
+        if (pBounds == nullptr || !pBounds->valid)
+        {
+            return std::nullopt;
+        }
+        const bx::Vec3 origin = {view.m_cameraTargetX, view.m_cameraTargetY, view.m_cameraTargetZ};
+        const bx::Vec3 minBounds = {pBounds->min[0], pBounds->min[1], pBounds->min[2]};
+        const bx::Vec3 maxBounds = {pBounds->max[0], pBounds->max[1], pBounds->max[2]};
+        const bx::Vec3 toCenter = bx::sub(bx::mul(bx::add(minBounds, maxBounds), 0.5f), origin);
+        const float length = bx::length(toCenter);
+        float distance = 0.0f;
+        if (length <= 0.0f
+            || !intersectRayAabb(origin, bx::mul(toCenter, 1.0f / length), minBounds, maxBounds, distance))
+        {
+            return std::nullopt;
+        }
+        const bx::Vec3 contact = bx::mad(toCenter, distance / length, origin);
+        return GameplayWorldPoint{contact.x, contact.y, contact.z};
     }
 
     const ActorPreviewBillboard *pPreview = findActorPreviewBillboardForRuntimeActorIndex(view, actorIndex);
@@ -2882,11 +2982,12 @@ bool OutdoorInteractionController::hitTestActorBillboard(
     if (pRuntimeActor != nullptr && view.m_pOutdoorWorldRuntime != nullptr)
     {
         const size_t actorIndex = size_t(pRuntimeActor - view.m_pOutdoorWorldRuntime->mapActorState(0));
+        // A model or loot satchel owns picking; an empty one (a sunk corpse without loot) is not picked at all.
         const Engine::ModelBounds *pBounds = view.m_worldFxSystem.actorModelCullingBounds(actorIndex);
-        if (pBounds != nullptr && pBounds->valid)
+        if (pBounds != nullptr)
         {
             usedBillboardHit = true;
-            if (!intersectRayAabb(rayOrigin, rayDirection,
+            if (!pBounds->valid || !intersectRayAabb(rayOrigin, rayDirection,
                 {pBounds->min[0], pBounds->min[1], pBounds->min[2]},
                 {pBounds->max[0], pBounds->max[1], pBounds->max[2]}, distance))
             {
@@ -2899,10 +3000,15 @@ bool OutdoorInteractionController::hitTestActorBillboard(
             {
                 return false;
             }
-            pBounds = view.m_worldFxSystem.actorModelBounds(actorIndex);
-            return intersectRayAabb(rayOrigin, rayDirection,
-                {pBounds->min[0], pBounds->min[1], pBounds->min[2]},
-                {pBounds->max[0], pBounds->max[1], pBounds->max[2]}, distance);
+            // The boxes only gate the triangle test: a click between a wing and the body misses.
+            const std::optional<float> modelDistance = view.m_worldFxSystem.actorModelPickRay(actorIndex,
+                {rayOrigin.x, rayOrigin.y, rayOrigin.z}, {rayDirection.x, rayDirection.y, rayDirection.z});
+            if (!modelDistance)
+            {
+                return false;
+            }
+            distance = *modelDistance;
+            return true;
         }
     }
 
@@ -3524,11 +3630,25 @@ OutdoorGameView::InspectHit OutdoorInteractionController::inspectBModelFace(
         }
     }
 
+    // Event entities that show a decoration pick precisely through it below (alpha-tested sprite or model
+    // triangles, with the same event and hint); the coarse box is only for event entities with nothing visible.
+    std::vector<uint8_t> entityHasDecoration(outdoorMapData.entities.size(), 0);
+    if (view.m_outdoorDecorationBillboardSet)
+    {
+        for (const DecorationBillboard &billboard : view.m_outdoorDecorationBillboardSet->billboards)
+        {
+            if (billboard.entityIndex < entityHasDecoration.size())
+            {
+                entityHasDecoration[billboard.entityIndex] = 1;
+            }
+        }
+    }
+
     for (size_t entityIndex = 0; entityIndex < outdoorMapData.entities.size(); ++entityIndex)
     {
         const OutdoorEntity &entity = outdoorMapData.entities[entityIndex];
 
-        if (isInteractiveDecorationHidden(view, entityIndex))
+        if (isInteractiveDecorationHidden(view, entityIndex) || entityHasDecoration[entityIndex] != 0)
         {
             continue;
         }
@@ -3693,7 +3813,14 @@ OutdoorGameView::InspectHit OutdoorInteractionController::inspectBModelFace(
             float distance = 0.0f;
             bool hasBillboardHit = false;
 
-            if (allowDecorationBillboardHit
+            // A decoration drawn as a 3D model picks against the model, not its sprite's camera-facing card.
+            if (allowDecorationBillboardHit && view.m_decorationModels.drawsBillboard(decorationIndex))
+            {
+                hasBillboardHit = view.m_decorationModels.raycast(decorationIndex,
+                    {rayOrigin.x, rayOrigin.y, rayOrigin.z}, {rayDirection.x, rayDirection.y, rayDirection.z},
+                    distance);
+            }
+            else if (allowDecorationBillboardHit
                 && spriteId != 0
                 && isVisibleInspectDistance(maxDecorationInspectDistance))
             {
@@ -4921,7 +5048,7 @@ bool OutdoorInteractionController::tryActivateActorInspectEvent(OutdoorGameView 
 
             const GameplayDialogController::Result result = view.m_gameSession.gameplayDialogController().openNpcNews(
                 context, resolution->npcId, resolution->newsId, inspectHit.name, *newsText,
-                resolution->portraitPictureId);
+                resolution->portraitPictureId, resolvedRuntimeActorIndex32);
             pEventRuntimeState->lastActivationResult =
                 "npc news group " + std::to_string(inspectHit.actorGroup) + " engaged";
 
@@ -4994,13 +5121,14 @@ bool OutdoorInteractionController::tryActivateWorldItemInspectEvent(
             return false;
         }
 
-        const int goldAmount = static_cast<int>(std::max<uint32_t>(1u, worldItem.goldAmount));
-        view.m_pOutdoorPartyRuntime->party().addGold(goldAmount);
-        view.setStatusBarEvent(formatFoundGoldStatusText(goldAmount));
+        EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
+        const FoundGold foundGold = resolveFoundGold(std::max<uint32_t>(1u, worldItem.goldAmount), pEventRuntimeState);
+        view.m_pOutdoorPartyRuntime->party().addGold(static_cast<int>(foundGold.partyAmount));
+        view.setStatusBarEvent(foundGoldStatusText(foundGold));
 
-        if (EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState())
+        if (pEventRuntimeState != nullptr)
         {
-            pEventRuntimeState->lastActivationResult = "picked up " + std::to_string(goldAmount) + " gold";
+            pEventRuntimeState->lastActivationResult = "picked up " + std::to_string(foundGold.partyAmount) + " gold";
         }
 
         return true;

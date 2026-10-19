@@ -24,6 +24,7 @@
 #include "game/mm9/Mm9RudeDialogue.h"
 #include "game/mm9/Mm9SkillTrainer.h"
 #include "game/mm9/Mm9TransportRoute.h"
+#include "game/outdoor/WeatherModel.h"
 #include "game/tables/MapStats.h"
 #include "game/tables/MonsterProjectileTable.h"
 #include "game/tables/MonsterTable.h"
@@ -64,6 +65,11 @@ class GameDataLoader
 public:
     void setActiveWorldId(const std::string &worldId);
     void setInitialMapFileName(const std::string &fileName);
+    // Actor models (settings `actor_models`): the merged models/actors.yml of every mounted world, or only
+    // overrideManifestPath when it is set. Map loads then skip the sprites of the monsters they bind.
+    void setActorModels(bool enabled, const std::string &overrideManifestPath);
+    // Null while actor models are off or before the first map load.
+    const std::shared_ptr<const ActorModelManifest> &actorModelManifest() const;
     bool load(const Engine::AssetFileSystem &assetFileSystem);
     bool loadCommonForGameplay(const Engine::AssetFileSystem &assetFileSystem);
     bool loadForGameplay(const Engine::AssetFileSystem &assetFileSystem);
@@ -77,6 +83,11 @@ public:
         const std::string &fileName,
         const MapLoadProgressPump &progressPump = {});
     bool loadMapByFileNameForHeadlessGameplay(
+        const Engine::AssetFileSystem &assetFileSystem,
+        const std::string &fileName
+    );
+    // Decoration billboards without baked lighting (MapLoadPurpose::DecorationPlacements).
+    bool loadMapByFileNameForDecorationPlacements(
         const Engine::AssetFileSystem &assetFileSystem,
         const std::string &fileName
     );
@@ -173,6 +184,7 @@ private:
         MapLoadPurpose mapLoadPurpose,
         const MapLoadProgressPump &progressPump = {});
     void applyMergedContinentSettingsToSelectedMap(const Engine::AssetFileSystem &assetFileSystem);
+    const WeatherRules &weatherRules(const Engine::AssetFileSystem &assetFileSystem);
     bool loadMapStats(const Engine::AssetFileSystem &assetFileSystem);
     bool loadMonsterTable(const Engine::AssetFileSystem &assetFileSystem);
     bool loadMonsterProjectileTable(const Engine::AssetFileSystem &assetFileSystem);
@@ -220,11 +232,20 @@ private:
         std::vector<std::vector<std::string>> &rows
     );
 
+    bool ensureActorModelManifest(const Engine::AssetFileSystem &assetFileSystem);
+
     std::vector<LoadedTableSummary> m_loadedTables;
     std::string m_activeWorldId = "mm8";
+    bool m_actorModelsEnabled = false;
+    std::string m_actorModelManifestOverride;
+    std::shared_ptr<const ActorModelManifest> m_pActorModelManifest;
+    // The world and asset content m_pActorModelManifest was read for.
+    std::string m_actorModelManifestWorldId;
+    uint64_t m_actorModelManifestGeneration = 0;
     std::string m_initialMapFileName;
-    std::optional<std::unordered_set<std::string>> m_skyTextureAssetNames;
+    std::optional<std::unordered_set<std::string>> m_knownSkyNames;
     std::unordered_map<std::string, std::string> m_resolvedMergedSkyTextureNameByKey;
+    std::optional<WeatherRules> m_weatherRules;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> m_scriptBitmapDirectoryAssetPathsByPath;
     std::unordered_map<std::string, std::optional<std::string>> m_scriptBitmapPathByKey;
     std::unordered_map<std::string, std::optional<MapAssetBitmapPixelsResult>> m_scriptBitmapPixelsByKey;

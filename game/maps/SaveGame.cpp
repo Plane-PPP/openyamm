@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -20,8 +21,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 85;
-constexpr uint32_t SaveVersionMonsterCombatLevel = 85;
+constexpr uint32_t SaveVersion = 89;
+constexpr uint32_t SaveVersionMonsterCombatLevel = 89;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -89,7 +90,14 @@ constexpr uint32_t SaveVersionMm9Barrels = 82;
 constexpr uint32_t SaveVersionTemporaryEventBonuses = 83;
 constexpr uint32_t SaveVersionConsumedCorpseMarkers = 83;
 constexpr uint32_t SaveVersionIndoorCamera = 84;
-constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
+// Weather comes from the game-time weather model; the outdoor rain-intensity override is no longer saved.
+constexpr uint32_t SaveVersionWeatherModel = 85;
+constexpr uint32_t SaveVersionActorBehaviors = 86;
+constexpr uint32_t SaveVersionActorBehaviorWardVisuals = 87;
+constexpr uint32_t SaveVersionPartyExplosiveMixes = 88;
+// Keep mod saves distinguishable from upstream's independent version sequence.
+constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
+constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
 {
@@ -196,17 +204,30 @@ public:
         return m_version;
     }
 
+    void setLegacyMinotaurV85(bool enabled)
+    {
+        m_legacyMinotaurV85 = enabled;
+    }
+
+    bool legacyMinotaurV85() const
+    {
+        return m_legacyMinotaurV85;
+    }
+
 private:
     const std::vector<uint8_t> &m_bytes;
     size_t m_offset = 0;
     bool m_failed = false;
     uint32_t m_version = SaveVersion;
+    bool m_legacyMinotaurV85 = false;
 };
 
 void writeValue(BinaryWriter &writer, const HiredNpcFollower &value);
 bool readValue(BinaryReader &reader, HiredNpcFollower &value);
 void writeValue(BinaryWriter &writer, const GameplayProjectileService::Snapshot &value);
 bool readValue(BinaryReader &reader, GameplayProjectileService::Snapshot &value);
+void writeValue(BinaryWriter &writer, const ActorBehaviorRuntime::Snapshot &value);
+bool readValue(BinaryReader &reader, ActorBehaviorRuntime::Snapshot &value);
 
 bool canReadSerializedElementCount(const BinaryReader &reader, uint64_t count)
 {
@@ -1034,6 +1055,7 @@ void writeValue(BinaryWriter &writer, const Party::Snapshot &value)
     writeValue(writer, value.npcItemOverrides);
     writeValue(writer, value.unavailableNpcIds);
     writeValue(writer, value.hiredNpcFollowers);
+    writeValue(writer, value.explosiveMixes);
 }
 
 bool readValue(BinaryReader &reader, Party::Snapshot &value)
@@ -1076,7 +1098,8 @@ bool readValue(BinaryReader &reader, Party::Snapshot &value)
         && (reader.version() < SaveVersionGlobalNpcState || readValue(reader, value.npcHouseOverrides))
         && (reader.version() < SaveVersionGlobalNpcState || readValue(reader, value.npcItemOverrides))
         && (reader.version() < SaveVersionGlobalNpcState || readValue(reader, value.unavailableNpcIds))
-        && (reader.version() < SaveVersionPartyHiredNpcFollowers || readValue(reader, value.hiredNpcFollowers));
+        && (reader.version() < SaveVersionPartyHiredNpcFollowers || readValue(reader, value.hiredNpcFollowers))
+        && (reader.version() < SaveVersionPartyExplosiveMixes || readValue(reader, value.explosiveMixes));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorMoveState &value)
@@ -1445,6 +1468,153 @@ bool readValue(BinaryReader &reader, IndoorWorldRuntime::MapActorAiState &value)
         && (reader.version() < SaveVersionOutdoorRuntimeSaveParity || readValue(reader, value.suppressLowHealthFlee));
 }
 
+void writeValue(BinaryWriter &writer, const ActorBehaviorSpell &value)
+{
+    writeValue(writer, value.spellId);
+    writeValue(writer, value.skillLevel);
+    writeValue(writer, value.skillMastery);
+    writeValue(writer, value.useChance);
+}
+
+bool readValue(BinaryReader &reader, ActorBehaviorSpell &value)
+{
+    return readValue(reader, value.spellId)
+        && readValue(reader, value.skillLevel)
+        && readValue(reader, value.skillMastery)
+        && readValue(reader, value.useChance);
+}
+
+void writeValue(BinaryWriter &writer, const ActorBehaviorTimer &value)
+{
+    writeValue(writer, value.name);
+    writeValue(writer, value.remainingSeconds);
+}
+
+bool readValue(BinaryReader &reader, ActorBehaviorTimer &value)
+{
+    return readValue(reader, value.name) && readValue(reader, value.remainingSeconds);
+}
+
+void writeValue(BinaryWriter &writer, const ActorBehaviorWardVisual &value)
+{
+    writeValue(writer, value.dome);
+    writeValue(writer, value.color);
+    writeValue(writer, value.intensity);
+    writeValue(writer, value.rimPower);
+    writeValue(writer, value.noise);
+}
+
+bool readValue(BinaryReader &reader, ActorBehaviorWardVisual &value)
+{
+    return readValue(reader, value.dome)
+        && readValue(reader, value.color)
+        && readValue(reader, value.intensity)
+        && readValue(reader, value.rimPower)
+        && readValue(reader, value.noise);
+}
+
+void writeValue(BinaryWriter &writer, const ActorBehaviorWard &value)
+{
+    writeValue(writer, value.id);
+    writeValue(writer, value.radius);
+    writeValue(writer, value.remainingSeconds);
+    writeValue(writer, value.effectId);
+    writeValue(writer, value.effectScale);
+    writeValue(writer, value.effectIntervalSeconds);
+    writeValue(writer, value.effectCooldownSeconds);
+    writeValue(writer, value.ageSeconds);
+    writeValue(writer, value.visual);
+}
+
+bool readValue(BinaryReader &reader, ActorBehaviorWard &value)
+{
+    return readValue(reader, value.id)
+        && readValue(reader, value.radius)
+        && readValue(reader, value.remainingSeconds)
+        && readValue(reader, value.effectId)
+        && readValue(reader, value.effectScale)
+        && readValue(reader, value.effectIntervalSeconds)
+        && readValue(reader, value.effectCooldownSeconds)
+        && (reader.version() < SaveVersionActorBehaviorWardVisuals
+            || (readValue(reader, value.ageSeconds) && readValue(reader, value.visual)));
+}
+
+void writeValue(BinaryWriter &writer, const ActorBehaviorPerform &value)
+{
+    writeValue(writer, value.clip);
+    writeValue(writer, value.fallbackAnimation);
+    writeValue(writer, value.durationSeconds);
+    writeValue(writer, value.elapsedSeconds);
+    writeValue(writer, value.started);
+}
+
+bool readValue(BinaryReader &reader, ActorBehaviorPerform &value)
+{
+    return readValue(reader, value.clip)
+        && readValue(reader, value.fallbackAnimation)
+        && readValue(reader, value.durationSeconds)
+        && readValue(reader, value.elapsedSeconds)
+        && readValue(reader, value.started);
+}
+
+void writeValue(BinaryWriter &writer, const ActorBehaviorInstanceState &value)
+{
+    writeValue(writer, static_cast<uint64_t>(value.actorIndex));
+    writeValue(writer, value.actorId);
+    writeValue(writer, value.behaviorId);
+    writeValue(writer, value.started);
+    writeValue(writer, value.deathHandled);
+    writeValue(writer, value.lastHp);
+    writeValue(writer, value.ageSeconds);
+    writeValue(writer, value.thinkCooldownSeconds);
+    writeValue(writer, value.randomState);
+    writeValue(writer, value.scriptState);
+    writeValue(writer, value.firedHealthThresholds);
+    writeValue(writer, value.timers);
+    writeValue(writer, value.wards);
+    writeValue(writer, value.perform);
+    writeValue(writer, value.spellOverride);
+    writeValue(writer, value.nextCast);
+    writeValue(writer, value.aiTypeOverride);
+    writeValue(writer, value.suppressFlee);
+}
+
+bool readValue(BinaryReader &reader, ActorBehaviorInstanceState &value)
+{
+    uint64_t actorIndex = 0;
+    const bool loaded = readValue(reader, actorIndex)
+        && readValue(reader, value.actorId)
+        && readValue(reader, value.behaviorId)
+        && readValue(reader, value.started)
+        && readValue(reader, value.deathHandled)
+        && readValue(reader, value.lastHp)
+        && readValue(reader, value.ageSeconds)
+        && readValue(reader, value.thinkCooldownSeconds)
+        && readValue(reader, value.randomState)
+        && readValue(reader, value.scriptState)
+        && readValue(reader, value.firedHealthThresholds)
+        && readValue(reader, value.timers)
+        && readValue(reader, value.wards)
+        && readValue(reader, value.perform)
+        && readValue(reader, value.spellOverride)
+        && readValue(reader, value.nextCast)
+        && readValue(reader, value.aiTypeOverride)
+        && readValue(reader, value.suppressFlee);
+    value.actorIndex = static_cast<size_t>(actorIndex);
+    return loaded;
+}
+
+void writeValue(BinaryWriter &writer, const ActorBehaviorRuntime::Snapshot &value)
+{
+    writeValue(writer, value.instances);
+    writeValue(writer, value.scannedActorCount);
+}
+
+bool readValue(BinaryReader &reader, ActorBehaviorRuntime::Snapshot &value)
+{
+    return readValue(reader, value.instances) && readValue(reader, value.scannedActorCount);
+}
+
 void writeValue(BinaryWriter &writer, const IndoorWorldRuntime::Snapshot &value)
 {
     writeValue(writer, value.gameMinutes);
@@ -1460,6 +1630,7 @@ void writeValue(BinaryWriter &writer, const IndoorWorldRuntime::Snapshot &value)
     writeValue(writer, value.actorUpdateAccumulatorSeconds);
     writeValue(writer, value.projectileState);
     writeValue(writer, value.searchedLootPropSourceIds);
+    writeValue(writer, value.actorBehaviors);
 }
 
 bool readValue(BinaryReader &reader, IndoorWorldRuntime::Snapshot &value)
@@ -1481,7 +1652,8 @@ bool readValue(BinaryReader &reader, IndoorWorldRuntime::Snapshot &value)
             || readValue(reader, value.actorUpdateAccumulatorSeconds))
         && (reader.version() < SaveVersionFullProjectileState || readValue(reader, value.projectileState))
         && (reader.version() < SaveVersionMm9ItemSourceState
-            || readValue(reader, value.searchedLootPropSourceIds));
+            || readValue(reader, value.searchedLootPropSourceIds))
+        && (reader.version() < SaveVersionActorBehaviors || readValue(reader, value.actorBehaviors));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorPartyRuntime::Snapshot &value)
@@ -2842,7 +3014,8 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && readValue(reader, value.currentHp)
         && readValue(reader, value.maxHp)
         && (reader.version() < SaveVersionMonsterBolsterRewards || readValue(reader, value.bolsterRewardMultiplier))
-        && (reader.version() < SaveVersionMonsterCombatLevel || readValue(reader, value.effectiveLevel))
+        && ((reader.version() < SaveVersionMonsterCombatLevel && !reader.legacyMinotaurV85())
+            || readValue(reader, value.effectiveLevel))
         && readValue(reader, value.x)
         && readValue(reader, value.y)
         && readValue(reader, value.z)
@@ -3416,6 +3589,15 @@ bool readValue(BinaryReader &reader, GameplayProjectileService::Snapshot &value)
         && readValue(reader, value.projectileImpacts);
 }
 
+// Saves before SaveVersionWeatherModel stored a debug rain-intensity override (flag and preset byte); the weather
+// model replaces it, so older saves read and drop it.
+bool skipRetiredRainIntensityOverride(BinaryReader &reader)
+{
+    bool hasOverride = false;
+    uint8_t preset = 0;
+    return readValue(reader, hasOverride) && readValue(reader, preset);
+}
+
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::AtmosphereState &value)
 {
     writeValue(writer, value.sourceSkyTextureName);
@@ -3490,11 +3672,10 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::Snapshot &value
     writeValue(writer, value.gameplayOverlayPeakAlpha);
     writeValue(writer, value.gameplayOverlayColorAbgr);
     writeValue(writer, value.armageddon);
-    writeValue(writer, value.hasRainIntensityOverride);
-    writeValue(writer, value.rainIntensityPreset);
     writeValue(writer, value.bloodSplats);
     writeValue(writer, value.faceAttributes);
     writeValue(writer, value.searchedLootPropSourceIds);
+    writeValue(writer, value.actorBehaviors);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::Snapshot &value)
@@ -3534,13 +3715,14 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::Snapshot &value)
                 && readValue(reader, value.gameplayOverlayPeakAlpha)
                 && readValue(reader, value.gameplayOverlayColorAbgr)
                 && readValue(reader, value.armageddon)
-                && readValue(reader, value.hasRainIntensityOverride)
-                && readValue(reader, value.rainIntensityPreset)
+                && ((reader.version() >= SaveVersionWeatherModel && !reader.legacyMinotaurV85())
+                    || skipRetiredRainIntensityOverride(reader))
                 && readValue(reader, value.bloodSplats)))
         && (reader.version() < SaveVersionOutdoorFaceAttributes
             || readValue(reader, value.faceAttributes))
         && (reader.version() < SaveVersionMm9ItemSourceState
-            || readValue(reader, value.searchedLootPropSourceIds));
+            || readValue(reader, value.searchedLootPropSourceIds))
+        && (reader.version() < SaveVersionActorBehaviors || readValue(reader, value.actorBehaviors));
 
     if (loaded && reader.version() >= SaveVersionOutdoorRuntimeSaveParity)
     {
@@ -3858,6 +4040,40 @@ std::vector<uint32_t> persistentSaveItemIds(const GameSaveData &data)
 }
 }
 
+void migrateLegacyNpcRosters(GameSaveData &data)
+{
+    const float gameMinutes = data.savedGameMinutes > 0.0f ? data.savedGameMinutes
+        : (data.currentSceneKind == SceneKind::Outdoor ? data.outdoorWorld.gameMinutes
+                                                     : data.indoorScene.worldRuntime.gameMinutes);
+    const int32_t currentMinute = std::max(0, int32_t(std::floor(gameMinutes)));
+    const auto migrate = [currentMinute](std::optional<EventRuntimeState> &state)
+    {
+        if (!state)
+        {
+            return;
+        }
+        // Legacy map hashes are seed zero; keep the whole saved roster until its next monthly refill.
+        if (state->namedMapVars.try_emplace("MMerge.RandomNPC.Seed", 0).second)
+        {
+            state->namedMapVars["MMerge.RandomNPC.RefillMinutes"] = currentMinute;
+        }
+        if (!state->generatedMercenaryRecruitsByNpcId.empty())
+        {
+            state->namedMapVars.try_emplace("MMerge.Mercenaries.RefillMonth", currentMinute / (28 * 24 * 60));
+        }
+    };
+    migrate(data.outdoorWorld.eventRuntimeState);
+    migrate(data.indoorScene.eventRuntimeState);
+    for (auto &[mapFileName, snapshot] : data.outdoorWorldStates)
+    {
+        migrate(snapshot.eventRuntimeState);
+    }
+    for (auto &[mapFileName, snapshot] : data.indoorSceneStates)
+    {
+        migrate(snapshot.eventRuntimeState);
+    }
+}
+
 void migrateLegacyConsumedCorpseMarkers(GameSaveData &data, uint32_t sourceSaveVersion)
 {
     if (sourceSaveVersion >= SaveVersionConsumedCorpseMarkers)
@@ -4057,42 +4273,70 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     char magic[sizeof(SaveMagic)] = {};
     uint32_t version = 0;
 
-    if (!reader.readBytes(magic, sizeof(magic))
-        || std::memcmp(magic, SaveMagic, sizeof(SaveMagic)) != 0
-        || !reader.read(version))
+    if (!reader.readBytes(magic, sizeof(magic)) || !reader.read(version))
     {
         error = "invalid save header";
         return std::nullopt;
     }
-
-    if (version > SaveVersion)
+    const bool modHeader = std::memcmp(magic, SaveMagic, sizeof(magic)) == 0;
+    const bool legacyHeader = std::memcmp(magic, LegacySaveMagic, sizeof(magic)) == 0;
+    if (!modHeader && !legacyHeader)
+    {
+        error = "invalid save header";
+        return std::nullopt;
+    }
+    if ((modHeader && version != SaveVersion) || (legacyHeader && version > 88))
     {
         error = "unsupported save version";
         return std::nullopt;
     }
 
-    reader.setVersion(version);
-
-    GameSaveData data = {};
-    bool decoded = false;
-
-    try
+    // v0.4 used upstream's magic and v85 before upstream independently assigned v85
+    // to the new weather layout. Decode both known layouts and require exact consumption;
+    // never silently accept a partial or ambiguous interpretation of the user's save.
+    std::optional<GameSaveData> decodedData;
+    const int layouts = legacyHeader && version == 85 ? 2 : 1;
+    for (int layout = 0; layout < layouts; ++layout)
     {
-        decoded = reader.read(data);
+        BinaryReader candidate(bytes);
+        candidate.setVersion(version);
+        candidate.setLegacyMinotaurV85(layout == 1);
+        char candidateMagic[sizeof(SaveMagic)] = {};
+        uint32_t candidateVersion = 0;
+        if (!candidate.readBytes(candidateMagic, sizeof(candidateMagic)) || !candidate.read(candidateVersion))
+        {
+            continue;
+        }
+        GameSaveData candidateData = {};
+        bool decoded = false;
+        try
+        {
+            decoded = candidate.read(candidateData);
+        }
+        catch (const std::exception &)
+        {
+            continue;
+        }
+        if (!decoded || candidate.failed() || candidate.remainingBytes() != 0)
+        {
+            continue;
+        }
+        if (decodedData)
+        {
+            error = "ambiguous legacy v85 save layout";
+            return std::nullopt;
+        }
+        decodedData = std::move(candidateData);
     }
-    catch (const std::exception &exception)
+    if (!decodedData)
     {
-        error = std::string("save data is corrupted: ") + exception.what();
+        error = "save data is corrupted or has an unrecognized layout";
         return std::nullopt;
     }
-
-    if (!decoded || reader.failed())
-    {
-        error = "save data is corrupted";
-        return std::nullopt;
-    }
+    GameSaveData data = std::move(*decodedData);
 
     migrateLegacyConsumedCorpseMarkers(data, version);
+    migrateLegacyNpcRosters(data);
 
     return data;
 }

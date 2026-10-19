@@ -79,13 +79,15 @@ while [ ! -f "$OPENYAMM_TEST_RELEASE" ]; do sleep 0.02; done
         for name in ('CMakeLists.txt', 'LICENSE', 'COPYRIGHT', 'settings_release.ini',
                      'tools/openyamm_shaderc_stubs.cpp', 'tools/cook_sprite_atlases_main.cpp',
                      'tools/SpriteAtlasEncode.cpp', 'tools/SpriteAtlasEncode.h',
+                     'tools/TextureBlockEncode.cpp', 'tools/TextureBlockEncode.h',
+                     'tools/cook_model_textures_main.cpp',
                      'tools/cook_sprite_atlases.py', 'tools/package_runtime_assets.py'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.touch()
         for name in ('cmake', 'engine', 'game', 'packaging/icons', 'packaging/licenses',
                      'assets_dev/engine', 'assets_dev/worlds/mm6', 'assets_dev/worlds/mm7',
-                     'assets_dev/worlds/mm8', 'assets_dev/worlds/mmmerge'):
+                     'assets_dev/worlds/mm8'):
             (self.root / name).mkdir(parents=True, exist_ok=True)
         process = subprocess.Popen(['bash', str(self.wrapper), '--jobs=1', '--no-install'],
                                    env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

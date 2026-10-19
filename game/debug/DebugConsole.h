@@ -92,7 +92,13 @@ public:
 
     void addMessage(MessageKind kind, const std::string &message);
     void clearMessages();
+    const std::vector<Message> &messages() const;
+    // Messages added since construction, including ones already dropped from the bounded history.
+    size_t totalMessageCount() const;
     void executeLine(const std::string &line);
+    // Runs a file of console commands, one line each (';' chains as typed, '#' starts a comment line), all at once and
+    // outside the input history; reports failed lines and a summary.
+    CommandResult executeFile(const std::string &path);
     void render(int width, int height);
     int handleInputTextCallback(ImGuiInputTextCallbackData *pData);
 
@@ -104,6 +110,8 @@ private:
     static int mapOptionSearchScore(const MapOption &map, const std::string &query);
 
     std::string joinedMessageText() const;
+    // Runs one command (no ';'); returns false for an unknown command or a failed callback.
+    bool dispatchCommand(const std::string &commandLine, bool reportSuccess);
 
     void renderConsoleWindow(int width, int height);
     void renderMobileConsoleWindow(int width, int height);
@@ -125,6 +133,7 @@ private:
 
     std::unordered_map<std::string, CommandDefinition> m_commands;
     std::vector<Message> m_messages;
+    size_t m_totalMessageCount = 0;
     std::vector<std::string> m_history;
     std::vector<ItemOption> m_itemOptions;
     std::vector<MapOption> m_mapOptions;

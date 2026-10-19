@@ -57,8 +57,13 @@ LS-001 и LS-002 исправлены отдельными коммитами. �
 Не выполнять merge main. Новый баланс Axe/DR и Identify Monster не входит в задачу.
 Актуальный контракт: [Lethal Strike v0.4](design/death-strike.md).
 
-## Перенос v0.4 на OpenYAMM1.5 — In progress,2026-10-19
+## Перенос v0.4 на OpenYAMM1.5 — implementation tested / packaging pending,2026-10-19
 
 Официальный тег1.5:1414884155362e613977a3444a3c7f81ed4ee047. До объединения
 сохранён fixture старого mod-v85. Обнаружена коллизия номера85 с upstream weather layout;
 совместимость требует отдельного декодирования и проверки. Hotfix LS-001/LS-002 сохраняется.
+
+Интеграция и совместимость проверены:24 focused/30194,3 runtime/58,205 selected/7329.
+[Отчёт](research/openyamm-1.5-compatibility.md). Оба hotfix встроены; отдельный старый overlay
+на новую сборку не переносить. Следующий этап: Windows packaging и пользовательская проверка копии save.
+LS-003 остаётся Planned до текстов пользователя и отдельной реализации, перенос1.5 не блокирует.

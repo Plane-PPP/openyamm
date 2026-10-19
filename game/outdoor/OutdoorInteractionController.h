@@ -64,6 +64,8 @@ public:
         const OutdoorGameView &view,
         const ActorPreviewBillboard &billboard);
     static bool isInteractiveDecorationHidden(const OutdoorGameView &view, size_t entityIndex);
+    // Interactive decoration state (a barrel's contents, 0 = drunk), or -1 for an entity without one.
+    static int interactiveDecorationState(const OutdoorGameView &view, size_t entityIndex);
     static std::optional<uint16_t> resolveInteractiveDecorationEventId(
         const OutdoorGameView &view,
         size_t entityIndex);
@@ -100,10 +102,16 @@ private:
     static const OutdoorGameView::InteractiveDecorationBinding *findInteractiveDecorationBindingForEntity(
         const OutdoorGameView &view,
         size_t entityIndex);
+    // The hint of the decoration an entity shows now (after an event SetSprite, that sprite's decoration).
+    static std::optional<std::string> resolveDecorationHint(const OutdoorGameView &view, size_t entityIndex);
     static std::optional<std::string> resolveInteractiveDecorationHoverText(
         const OutdoorGameView &view,
         size_t entityIndex);
     static std::optional<std::string> resolveEventTargetHoverStatusText(
+        const OutdoorGameView &view,
+        const OutdoorGameView::InspectHit &inspectHit);
+    // The current event of an interactive decoration hit (decoration or entity), whose title the hover shows.
+    static std::optional<uint16_t> resolveInteractiveDecorationHitEventId(
         const OutdoorGameView &view,
         const OutdoorGameView::InspectHit &inspectHit);
     static GameplayWorldHit translateInspectHitToGameplayWorldHit(

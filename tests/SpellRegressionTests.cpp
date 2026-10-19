@@ -17,6 +17,7 @@
 #include <array>
 #include <filesystem>
 #include <optional>
+#include <random>
 
 namespace
 {
@@ -80,6 +81,65 @@ float spellRecoverySecondsFromTicks(int ticks)
 {
     return std::max(0.0f, static_cast<float>(ticks) / 128.0f * 2.133333333333333f);
 }
+
+class LifedrainTestWorldRuntime : public OpenYAMM::Tests::PartySpellTestWorldRuntime
+{
+public:
+    OpenYAMM::Game::GameplayActorService m_actorService;
+    int m_targetHp = 200;
+    int m_resistance = 0;
+
+    bool actorInspectState(
+        size_t actorIndex,
+        uint32_t animationTicks,
+        OpenYAMM::Game::GameplayActorInspectState &state) const override
+    {
+        (void)animationTicks;
+        OpenYAMM::Game::GameplayRuntimeActorState actor = {};
+
+        if (!actorRuntimeState(actorIndex, actor))
+        {
+            return false;
+        }
+
+        state = {};
+        state.currentHp = m_targetHp;
+        return true;
+    }
+
+    bool applyPartySpellToActor(
+        size_t actorIndex,
+        uint32_t spellId,
+        uint32_t skillLevel,
+        OpenYAMM::Game::SkillMastery skillMastery,
+        int damage,
+        float partyX,
+        float partyY,
+        float partyZ,
+        uint32_t sourcePartyMemberIndex) override
+    {
+        if (!PartySpellTestWorldRuntime::applyPartySpellToActor(
+                actorIndex, spellId, skillLevel, skillMastery, damage,
+                partyX, partyY, partyZ, sourcePartyMemberIndex))
+        {
+            return false;
+        }
+
+        const OpenYAMM::Game::GameplayActorService::DirectSpellImpactResult impact =
+            m_actorService.resolveDirectSpellImpact(spellId, skillLevel, damage, m_targetHp, false);
+
+        if (impact.disposition != OpenYAMM::Game::GameplayActorService::DirectSpellImpactDisposition::ApplyDamage)
+        {
+            return false;
+        }
+
+        std::mt19937 rng(1);
+        const int appliedDamage = OpenYAMM::Game::GameMechanics::resolveMonsterIncomingDamage(
+            impact.damage, OpenYAMM::Game::CombatDamageType::Dark, m_resistance, 0, rng);
+        m_targetHp = std::max(0, m_targetHp - appliedDamage);
+        return true;
+    }
+};
 }
 
 TEST_CASE("party spell backend rejects cast without spell points")
@@ -112,6 +172,44 @@ TEST_CASE("party spell backend rejects cast without spell points")
     CHECK(worldRuntime.projectileRequests().empty());
 }
 
+TEST_CASE("party spell mana cost query matches the cost a cast spends")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Game::Party party = OpenYAMM::Tests::makeSpellRegressionParty(gameData);
+    OpenYAMM::Tests::PartySpellTestWorldRuntime worldRuntime = {};
+    worldRuntime.bindParty(&party);
+    const size_t targetActorIndex = seedDefaultSpellTarget(worldRuntime);
+
+    OpenYAMM::Game::Character *pCaster = party.member(0);
+    REQUIRE(pCaster != nullptr);
+
+    const uint32_t fireBoltId = OpenYAMM::Game::spellIdValue(OpenYAMM::Game::SpellId::FireBolt);
+    pCaster->skills.erase("FireMagic");
+    CHECK_FALSE(OpenYAMM::Game::PartySpellSystem::manaCost(*pCaster, gameData.spellTable, fireBoltId).has_value());
+
+    pCaster->skills["FireMagic"] = {"FireMagic", 5, OpenYAMM::Game::SkillMastery::Normal};
+    pCaster->spellPoints = 100;
+    const std::optional<uint32_t> manaCost =
+        OpenYAMM::Game::PartySpellSystem::manaCost(*pCaster, gameData.spellTable, fireBoltId);
+    REQUIRE(manaCost.has_value());
+    CHECK(*manaCost > 0);
+
+    OpenYAMM::Game::PartySpellCastRequest request = {};
+    request.casterMemberIndex = 0;
+    request.spellId = fireBoltId;
+    request.targetActorIndex = targetActorIndex;
+
+    const OpenYAMM::Game::PartySpellCastResult result = OpenYAMM::Game::PartySpellSystem::castSpell(
+        party,
+        worldRuntime,
+        gameData.spellTable,
+        request);
+
+    REQUIRE(result.succeeded());
+    CHECK(result.manaCost == *manaCost);
+    CHECK(pCaster->spellPoints == 100 - int(*manaCost));
+}
+
 TEST_CASE("dark magic dragon breath spell uses fire damage so monster fire immunity can resist it")
 {
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
@@ -121,6 +219,91 @@ TEST_CASE("dark magic dragon breath spell uses fire damage so monster fire immun
             OpenYAMM::Game::spellIdValue(OpenYAMM::Game::SpellId::DragonBreath),
             &gameData.spellTable)
         == OpenYAMM::Game::CombatDamageType::Fire);
+}
+
+TEST_CASE("Lifedrain damages enemies at full or reduced caster health at every mastery")
+{
+    using namespace OpenYAMM::Game;
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+
+    for (const SkillMastery mastery : {SkillMastery::Normal, SkillMastery::Expert,
+             SkillMastery::Master, SkillMastery::Grandmaster})
+    {
+        for (const bool fullHealth : {false, true})
+        {
+            CAPTURE(mastery);
+            CAPTURE(fullHealth);
+            Party party = OpenYAMM::Tests::makeSpellRegressionParty(gameData);
+            LifedrainTestWorldRuntime worldRuntime;
+            worldRuntime.bindParty(&party);
+            worldRuntime.m_actorService.bindTables(&gameData.monsterTable, &gameData.spellTable);
+            Character *pCaster = party.member(0);
+            REQUIRE(pCaster != nullptr);
+            pCaster->skills["VampireAbility"] = {"VampireAbility", 1, mastery};
+            const int maximumHealth = party.effectiveMaximumHealth(*pCaster);
+            pCaster->health = fullHealth ? maximumHealth : 1;
+            const int initialHealth = pCaster->health;
+            const int initialMana = pCaster->spellPoints;
+
+            PartySpellCastRequest request = {};
+            request.spellId = spellIdValue(SpellId::Lifedrain);
+            request.targetActorIndex = seedDefaultSpellTarget(worldRuntime);
+            const PartySpellCastResult result = PartySpellSystem::castSpell(
+                party, worldRuntime, gameData.spellTable, request);
+
+            REQUIRE(result.succeeded());
+            REQUIRE_EQ(worldRuntime.appliedSpellRequests().size(), 1u);
+            const int damage = worldRuntime.appliedSpellRequests().front().damage;
+            const int diceSides = mastery == SkillMastery::Grandmaster ? 7 : mastery == SkillMastery::Master ? 5 : 3;
+            CHECK(damage >= diceSides + 1);
+            CHECK(damage <= diceSides * 2);
+            CHECK_EQ(worldRuntime.m_targetHp, 200 - damage);
+            CHECK_EQ(pCaster->health, std::min(maximumHealth, initialHealth + std::max(1, damage / 3)));
+            CHECK_EQ(pCaster->spellPoints, initialMana - 5);
+            CHECK_EQ(result.affectedCharacterIndices.size(), fullHealth ? 0u : 1u);
+        }
+    }
+}
+
+TEST_CASE("Lifedrain heals only the health drained after resistance and overkill")
+{
+    using namespace OpenYAMM::Game;
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+
+    for (const int targetHp : {1, 2, 200})
+    {
+        for (const int resistance : {0, 100, 200})
+        {
+            CAPTURE(targetHp);
+            CAPTURE(resistance);
+            Party party = OpenYAMM::Tests::makeSpellRegressionParty(gameData);
+            LifedrainTestWorldRuntime worldRuntime;
+            worldRuntime.bindParty(&party);
+            worldRuntime.m_actorService.bindTables(&gameData.monsterTable, &gameData.spellTable);
+            worldRuntime.m_targetHp = targetHp;
+            worldRuntime.m_resistance = resistance;
+            Character *pCaster = party.member(0);
+            REQUIRE(pCaster != nullptr);
+            pCaster->health = 1;
+            pCaster->skills["VampireAbility"] = {"VampireAbility", 1, SkillMastery::Normal};
+
+            PartySpellCastRequest request = {};
+            request.spellId = spellIdValue(SpellId::Lifedrain);
+            request.targetActorIndex = seedDefaultSpellTarget(worldRuntime);
+            const PartySpellCastResult result = PartySpellSystem::castSpell(
+                party, worldRuntime, gameData.spellTable, request);
+
+            REQUIRE(result.succeeded());
+            const int drainedHealth = targetHp - worldRuntime.m_targetHp;
+            CHECK_EQ(pCaster->health, 1 + (drainedHealth > 0 ? std::max(1, drainedHealth / 3) : 0));
+            CHECK_EQ(result.affectedCharacterIndices.size(), drainedHealth > 0 ? 1u : 0u);
+
+            if (resistance >= 200)
+            {
+                CHECK_EQ(drainedHealth, 0);
+            }
+        }
+    }
 }
 
 TEST_CASE("Mistform is a personal buff that permits spellcasting and expires cleanly")
@@ -220,6 +403,37 @@ TEST_CASE("shared actor mind spell effects are rejected by mind immunity")
         result.disposition
         == OpenYAMM::Game::GameplayActorService::SharedSpellDisposition::Rejected);
     CHECK_EQ(state.fearRemainingSeconds, 0.0f);
+}
+
+TEST_CASE("shared actor slow doubles recovery at every mastery")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Game::GameplayActorService service = {};
+    service.bindTables(&gameData.monsterTable, &gameData.spellTable);
+
+    const std::array<std::pair<OpenYAMM::Game::SkillMastery, float>, 3> masteries = {{
+        {OpenYAMM::Game::SkillMastery::Normal, 0.5f},
+        {OpenYAMM::Game::SkillMastery::Master, 0.25f},
+        {OpenYAMM::Game::SkillMastery::Grandmaster, 0.125f},
+    }};
+
+    for (const auto &[mastery, moveMultiplier] : masteries)
+    {
+        OpenYAMM::Game::GameplayActorSpellEffectState state = {};
+        const OpenYAMM::Game::GameplayActorService::SharedSpellEffectResult result =
+            service.tryApplySharedSpellEffect(
+                OpenYAMM::Game::spellIdValue(OpenYAMM::Game::SpellId::Slow),
+                10,
+                mastery,
+                false,
+                true,
+                0,
+                state);
+
+        REQUIRE(result.disposition == OpenYAMM::Game::GameplayActorService::SharedSpellDisposition::Applied);
+        CHECK_EQ(state.slowMoveMultiplier, moveMultiplier);
+        CHECK_EQ(service.effectiveRecoveryProgressMultiplier(state), doctest::Approx(0.5f));
+    }
 }
 
 TEST_CASE("party spell backend applies half recovery on real cast failure")

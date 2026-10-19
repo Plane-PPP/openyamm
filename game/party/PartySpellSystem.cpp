@@ -636,6 +636,19 @@ int manaCostForRule(const BackendSpellRule &rule, SkillMastery mastery)
     return index >= 0 ? rule.manaByMastery[static_cast<size_t>(index)] : 0;
 }
 
+uint32_t resolveManaCost(
+    const BackendSpellRule &rule,
+    const SpellEntry &spellEntry,
+    SkillMastery mastery,
+    uint32_t spellId)
+{
+    return static_cast<uint32_t>(std::max(
+        0,
+        ruleHasExplicitManaCost(rule)
+            ? manaCostForRule(rule, mastery)
+            : std::max(manaCostForSpellEntry(spellEntry, mastery), defaultManaCostForSpellId(spellId))));
+}
+
 int recoveryTicksForRule(const BackendSpellRule &rule, SkillMastery mastery)
 {
     const int index = masteryIndex(mastery);
@@ -952,7 +965,20 @@ std::optional<BackendSpellRule> resolveBackendSpellRule(uint32_t spellId, SkillM
         case SpellId::DarkfireBolt:
             return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Grandmaster, {30, 30, 30, 30}, {90, 90, 90, 90}, PartyBuffId::TorchLight, 0, 17, false);
         case SpellId::Lifedrain:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {5, 5, 5, 5}, {100, 80, 80, 80}, PartyBuffId::TorchLight, 3, 3, false);
+        {
+            const int damage = mastery == SkillMastery::Grandmaster ? 7 : mastery == SkillMastery::Master ? 5 : 3;
+            return makeBackendSpellRule(
+                spellId,
+                PartySpellCastTargetKind::Actor,
+                PartySpellCastEffectKind::ActorEffect,
+                SkillMastery::Normal,
+                {5, 5, 5, 5},
+                {100, 80, 80, 80},
+                PartyBuffId::TorchLight,
+                damage,
+                damage,
+                false);
+        }
         case SpellId::Levitate:
             return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {10, 10, 10, 10}, {110, 110, 110, 110}, PartyBuffId::Levitate);
         case SpellId::VampireCharm:
@@ -1547,11 +1573,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             "Not skilled enough");
     }
 
-    result.manaCost = static_cast<uint32_t>(std::max(
-        0,
-        ruleHasExplicitManaCost(*rule)
-            ? manaCostForRule(*rule, skillMastery)
-            : std::max(manaCostForSpellEntry(*pSpellEntry, skillMastery), defaultManaCostForSpellId(request.spellId))));
+    result.manaCost = resolveManaCost(*rule, *pSpellEntry, skillMastery, request.spellId);
     const int baseSpellRecoveryTicks =
         ruleHasExplicitRecovery(*rule)
             ? recoveryTicksForRule(*rule, skillMastery)
@@ -2541,11 +2563,6 @@ PartySpellCastResult PartySpellSystem::castSpell(
             + (targetPoint.y - sourceY) * (targetPoint.y - sourceY));
         const float baseTargetZ = targetPoint.z;
         const float spreadArcRadians = Pi / 3.0f;
-        const float spreadStartRadians = rule->multiProjectileCount > 1 ? -spreadArcRadians * 0.5f : 0.0f;
-        const float spreadStepRadians =
-            rule->multiProjectileCount > 1
-                ? spreadArcRadians / static_cast<float>(rule->multiProjectileCount - 1)
-                : 0.0f;
         const SpellSourcePoint projectileSource = offsetPartyProjectileSourceForMember(
             request,
             SpellSourcePoint{.x = sourceX, .y = sourceY, .z = sourceZ},
@@ -2554,8 +2571,10 @@ PartySpellCastResult PartySpellSystem::castSpell(
 
         for (uint32_t projectileIndex = 0; projectileIndex < rule->multiProjectileCount; ++projectileIndex)
         {
-            const float yawRadians =
-                targetAngleRadians + spreadStartRadians + spreadStepRadians * static_cast<float>(projectileIndex);
+            const float yawRadians = targetAngleRadians + GameMechanics::projectileFanYawOffsetRadians(
+                rule->multiProjectileCount,
+                projectileIndex,
+                spreadArcRadians);
             GameplayPartySpellProjectileRequest worldRequest = {};
             worldRequest.casterMemberIndex = static_cast<uint32_t>(request.casterMemberIndex);
             worldRequest.spellId = request.spellId;
@@ -2586,6 +2605,10 @@ PartySpellCastResult PartySpellSystem::castSpell(
 
         if (request.targetActorIndex)
         {
+            GameplayActorInspectState targetBefore = {};
+            const bool hasDrainTarget = spellId == SpellId::Lifedrain
+                && worldRuntime.actorInspectState(*request.targetActorIndex, 0, targetBefore);
+
             castSucceeded = worldRuntime.applyPartySpellToActor(
                 *request.targetActorIndex,
                 request.spellId,
@@ -2597,15 +2620,20 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 footZ,
                 static_cast<uint32_t>(request.casterMemberIndex));
 
-            if (castSucceeded && spellId == SpellId::Lifedrain)
+            if (castSucceeded && hasDrainTarget)
             {
-                const int healAmount =
-                    skillMastery == SkillMastery::Grandmaster
-                        ? 7 + static_cast<int>(7 * skillLevel)
-                        : skillMastery == SkillMastery::Master
-                        ? 5 + static_cast<int>(5 * skillLevel)
-                        : 3 + static_cast<int>(3 * skillLevel);
-                party.healMember(request.casterMemberIndex, std::max(1, healAmount / 3));
+                GameplayActorInspectState targetAfter = {};
+
+                if (worldRuntime.actorInspectState(*request.targetActorIndex, 0, targetAfter))
+                {
+                    const int drainedHealth = targetBefore.currentHp - targetAfter.currentHp;
+
+                    if (drainedHealth > 0
+                        && party.healMember(request.casterMemberIndex, std::max(1, drainedHealth / 3)))
+                    {
+                        appendAffectedCharacterIndex(result.affectedCharacterIndices, request.casterMemberIndex);
+                    }
+                }
             }
 
             if (castSucceeded && spellId == SpellId::Fear && skillMastery >= SkillMastery::Master)
@@ -2949,6 +2977,30 @@ PartySpellCastResult PartySpellSystem::castSpell(
 
     result.status = PartySpellCastStatus::Succeeded;
     return result;
+}
+
+std::optional<uint32_t> PartySpellSystem::manaCost(
+    const Character &caster,
+    const SpellTable &spellTable,
+    uint32_t spellId)
+{
+    const SpellEntry *pSpellEntry = spellTable.findById(static_cast<int>(spellId));
+    uint32_t skillLevel = 0;
+    SkillMastery skillMastery = SkillMastery::None;
+
+    if (pSpellEntry == nullptr || !resolveSpellSkill(caster, spellId, {}, skillLevel, skillMastery))
+    {
+        return std::nullopt;
+    }
+
+    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(spellId, skillMastery);
+
+    if (!rule)
+    {
+        return std::nullopt;
+    }
+
+    return resolveManaCost(*rule, *pSpellEntry, skillMastery, spellId);
 }
 
 std::optional<PartySpellDescriptor> PartySpellSystem::describeSpell(uint32_t spellId)

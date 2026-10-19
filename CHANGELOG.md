@@ -9,6 +9,17 @@
 
 ## [Unreleased]
 
+### Мод v0.4 на OpenYAMM1.5 — Implemented / Automatically tested
+
+- Интегрирован точный upstream tag1.5,1414884; формулы Lethal Strike/Axe/DR сохранены.
+- Hotfix Stats и учителей включён в основные ресурсы.
+- Добавлено явное чтение обоих старых форматов85; новый mod-format89 имеет отдельную сигнатуру.
+  Старый mod-v85 загружается/пересохраняется; проверены также оригинальные upstream85/88 fixtures.
+- Прошли24 focused tests/30194 assertions,3 runtime/58,205 selected/7329; прогоны пересекаются.
+  Конкретный пользовательский save не проверен. Windows packaging ожидает фактического результата.
+- LS-003 (тексты/подсказки учителей) пока Planned; Identify Monster/бестиарий Deferred.
+
+
 ### Ручная проверка hotfix 1 — 2026-10-16
 
 - Пользователь подтвердил исправленную вёрстку Stats и появление Lethal Strike у учителей.

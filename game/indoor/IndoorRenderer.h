@@ -9,6 +9,7 @@
 #include "engine/AssetScaleTier.h"
 #include "engine/render/ModelRenderer.h"
 #include "game/indoor/IndoorMapData.h"
+#include "game/maps/DecorationModelSet.h"
 #include "game/indoor/IndoorLightingRuntime.h"
 #include "game/render/IndoorStaticLighting.h"
 #include "game/indoor/IndoorPortalGraph.h"
@@ -24,11 +25,13 @@
 #include "game/fx/WorldFxRenderResources.h"
 #include "game/fx/WorldFxSystem.h"
 #include "game/fx/EffectRenderer.h"
+#include "game/render/ShieldDomeRenderer.h"
 #include "game/tables/MapStats.h"
 #include "game/tables/MonsterTable.h"
 #include "game/events/EventRuntime.h"
 #include "game/gameplay/GameplayWorldInteraction.h"
 #include "game/tables/HouseTable.h"
+#include "game/ui/EnemyHealthBarRenderer.h"
 #include "game/ui/GameplayHudCommon.h"
 
 #include <bgfx/bgfx.h>
@@ -107,6 +110,8 @@ public:
     bool hasHudRenderResources() const;
     bgfx::ProgramHandle hudTexturedProgramHandle() const;
     bgfx::UniformHandle hudTextureSamplerHandle() const;
+    bgfx::ProgramHandle hudTintedProgramHandle() const;
+    bgfx::UniformHandle hudTintUniformHandle() const;
     void prepareHudView(int width, int height) const;
     void submitHudTextureQuad(
         bgfx::TextureHandle textureHandle,
@@ -123,6 +128,8 @@ public:
     bool isWaterSupportFace(size_t faceIndex) const;
     WorldFxSystem &worldFxSystem();
     const WorldFxSystem &worldFxSystem() const;
+    Engine::ModelRenderer &modelRenderer() { return m_modelRenderer; }
+    EffectRenderer &effectRenderer() { return m_effectRenderer; }
     const EffectRenderer::Diagnostics &effectRenderDiagnostics() const;
     std::optional<GameplayActorPick> gameplayActorPickAtCursor(
         int viewWidth,
@@ -159,6 +166,10 @@ public:
     void shutdown();
 
 private:
+    // The camera as drawn and picked: the party's view plus the melee camera kick (GameplayActorHitFeedback).
+    float viewYawRadians() const;
+    float viewPitchRadians() const;
+    void setBillboardFogColor(const float *pFogColor);
     struct TerrainVertex
     {
         float x;
@@ -200,6 +211,8 @@ private:
         float u;
         float v;
         uint32_t abgr;
+        // Actor hit flash (GameplayActorHitFeedback): fraction of the flash colour mixed over the lit texel.
+        float hitFlash = 0.0f;
 
         static void init();
         static bgfx::VertexLayout ms_layout;
@@ -213,6 +226,16 @@ private:
         uint64_t lightRevision = 0;
         int16_t sectorId = -1;
         bool coloredLights = true;
+        bool valid = false;
+    };
+
+    // A 3D model's sector (its room ambient and grid light reach), kept while the model's centre stays near the
+    // sampled point.
+    struct ModelSectorCacheEntry
+    {
+        uint32_t generation = 0;
+        bx::Vec3 center = {0.0f, 0.0f, 0.0f};
+        int16_t sectorId = -1;
         bool valid = false;
     };
 
@@ -237,7 +260,6 @@ private:
         std::string textureName;
         int16_t sectorId = -1;
         int16_t backSectorId = -1;
-        uint32_t stableId = 0;
         std::vector<bgfx::TextureHandle> frameTextureHandles;
         std::vector<uint32_t> frameLengthTicks;
         uint32_t animationLengthTicks = 0;
@@ -250,14 +272,9 @@ private:
         bx::Vec3 boundsMax = {0.0f, 0.0f, 0.0f};
         bool hasBounds = false;
         uint32_t waterColorAbgr = 0;
+        LiquidKind liquid = LiquidKind::None;
         std::vector<TexturedVertex> vertices;
         std::vector<uint32_t> indices;
-    };
-
-    struct CachedIndoorLightSelection
-    {
-        IndoorLightSelectionHistory history = {};
-        uint32_t lastSeenFrame = 0;
     };
 
     struct IndoorTextureHandle
@@ -363,12 +380,15 @@ private:
         const std::vector<BakedStaticLightSource> *pBakedStaticLightSubdivisionSources = nullptr,
         bool useBaseSubdivisionGeometry = false,
         std::span<const TexturedVertex> subdivisionTemplate = {},
-        std::span<const TexturedFaceTriangle> triangleTemplate = {}
+        std::span<const TexturedFaceTriangle> triangleTemplate = {},
+        std::span<const IndoorLightReachList> sourceReach = {}
     );
     static TexturedVertex interpolateTexturedVertex(const TexturedVertex &first, const TexturedVertex &second);
+    // The vertex's baked light: the receiving room's ambient plus its static lights.
     static void refreshBakedStaticLight(
         const std::vector<BakedStaticLightSource> &bakedStaticLightSources,
         bool coloredLights,
+        float ambient,
         TexturedVertex &vertex
     );
     static void appendBakedStaticLightSubdividedTriangle(
@@ -377,6 +397,7 @@ private:
         const std::vector<BakedStaticLightSource> &bakedStaticLightSources,
         const std::vector<BakedStaticLightSource> &bakedStaticLightSubdivisionSources,
         bool coloredLights,
+        float ambient,
         const TexturedVertex (&triangleVertices)[3],
         const std::array<bx::Vec3, 3> &subdivisionPositions,
         int depth
@@ -419,7 +440,15 @@ private:
     uint16_t inspectHitEventId(const InspectHit &inspectHit) const;
     std::optional<std::string> resolveEntityDecorationHoverStatusText(const InspectHit &inspectHit) const;
     std::optional<std::string> resolveEventTargetHoverStatusText(const InspectHit &inspectHit) const;
+    // The current event of an interactive decoration hit, whose title the hover shows.
+    std::optional<uint16_t> resolveInteractiveDecorationHitEventId(const InspectHit &inspectHit) const;
     void updateCameraFromInput(const GameplayInputFrame &input, float deltaSeconds, bool allowWorldInput);
+    // The sprite a decoration shows now (event SetSprite), and whether it is hidden (cleared or event-hidden).
+    uint16_t resolveDecorationBillboardSpriteId(const DecorationBillboard &billboard, bool &hidden) const;
+    // Places, hides and lights the 3D decoration models for this frame: visible in the rendered sectors, as bright
+    // as the sprite each replaces, outlined when the context action highlights its decoration.
+    void updateDecorationModels(const std::vector<uint8_t> &visibleSectorMask, const IndoorLightingFrame &lightingFrame,
+        const GameplayContextActionState *pContextActionState, LightingStats *pLightingStats);
     void renderDecorationBillboards(
         uint16_t viewId,
         const float *pViewMatrix,
@@ -498,12 +527,15 @@ private:
     void rebuildMechanismBindings();
     bool rebuildAllTexturedBatches(uint64_t &texturedBuildNanoseconds);
     bool updateWaterGeometry();
+    // pLightGrid: the main view's grid for the batch's dynamic lights; without it the batch takes `lights`.
     bool submitTexturedBatch(const TexturedBatch &batch, uint16_t viewId, const IndoorDrawLightSet &lights,
-        const bx::Vec3 &eye, float yaw, float pitch, int width, int height, bool secretFacesDetected,
-        const std::array<float, 4> &clipPlane, float projectionScale = 1.0f);
+        const Engine::LightGridTextures *pLightGrid, const bx::Vec3 &eye, float yaw, float pitch, int width,
+        int height, bool secretFacesDetected, const std::array<float, 4> &clipPlane, float projectionScale = 1.0f);
     void renderWaterReflections(const bx::Vec3 &forward,
         const IndoorLightingFrameInput &lightingInput, int width, int height, bool billboards);
 
+    // Recomputes m_bakedStaticLightReach for the map's lights and decoration billboards.
+    void rebuildBakedStaticLightReach();
     bool refreshBakedStaticLighting(
         bool refreshAllVertices,
         size_t &refreshedVertexCount,
@@ -666,6 +698,8 @@ private:
     std::vector<uint8_t> m_indoorInteractiveDecorationHideWhenClearedByEntity;
     std::vector<uint8_t> m_indoorInteractiveDecorationFixedEventByEntity;
     std::vector<std::vector<size_t>> m_decorationBillboardIndicesBySector;
+    // Decorations drawn as static 3D models (engine/models/indoor_decorations.yml and the world's own).
+    DecorationModelSet m_decorationModels;
     std::vector<std::vector<size_t>> m_staticSpriteObjectBillboardIndicesBySector;
     std::optional<HouseTable> m_houseTable;
     std::optional<ChestTable> m_chestTable;
@@ -679,14 +713,17 @@ private:
     bgfx::DynamicVertexBufferHandle m_doorMarkerVertexBufferHandle;
     bgfx::ProgramHandle m_programHandle;
     bgfx::ProgramHandle m_texturedProgramHandle;
+    bgfx::ProgramHandle m_hudTintedProgramHandle;
     bgfx::ProgramHandle m_indoorLitProgramHandle;
     bgfx::ProgramHandle m_billboardProgramHandle;
     bgfx::VertexBufferHandle m_bloodSplatVertexBufferHandle;
     bgfx::TextureHandle m_bloodSplatTextureHandle;
     bgfx::UniformHandle m_textureSamplerHandle;
+    bgfx::UniformHandle m_hudTintUniformHandle;
     bgfx::UniformHandle m_indoorLightPositionsUniformHandle;
     bgfx::UniformHandle m_indoorLightColorsUniformHandle;
     bgfx::UniformHandle m_indoorLightParamsUniformHandle;
+    bgfx::UniformHandle m_indoorFaceGridUniformHandle = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_secretPulseParamsUniformHandle;
     bgfx::UniformHandle m_indoorSkyParamsUniformHandle;
     bgfx::UniformHandle m_indoorSkyProjectionParamsUniformHandle;
@@ -694,6 +731,8 @@ private:
     bgfx::UniformHandle m_billboardOverrideColorUniformHandle;
     bgfx::UniformHandle m_billboardOutlineParamsUniformHandle;
     bgfx::UniformHandle m_billboardFogColorUniformHandle;
+    // Shared outdoor sky-fog uniform; indoors it stays zero so billboards keep their flat fog colour.
+    bgfx::UniformHandle m_skyFogUniformHandle = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_billboardFogDensitiesUniformHandle;
     bgfx::UniformHandle m_billboardFogDistancesUniformHandle;
     float m_elapsedTime;
@@ -714,7 +753,6 @@ private:
     bool m_waterGeometryDirty = true;
     bool m_waterResourcesInitialized = false;
     bgfx::UniformHandle m_worldClipPlaneUniform = BGFX_INVALID_HANDLE;
-    std::unordered_map<uint32_t, CachedIndoorLightSelection> m_indoorLightingSelectionCache;
     std::vector<IndoorTextureHandle> m_indoorTextureHandles;
     SpriteAtlasCache &m_spriteAtlasCache;
     NativeSpriteTextureCache &m_nativeSpriteCache;
@@ -726,12 +764,20 @@ private:
     uint64_t m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
     uint64_t m_bakedStaticLightRevision = std::numeric_limits<uint64_t>::max();
     std::vector<uint8_t> m_bakedStaticLightEnabledStates;
+    // Per baked source (BakedStaticLightSource::sourceId): the sectors it reaches through portals, at its larger toggle
+    // radius. Faces bake only the lights that reach their sectors.
+    std::vector<IndoorLightReachList> m_bakedStaticLightReach;
     bool m_bakedStaticColoredLights = true;
-    uint32_t m_indoorLightingSelectionFrame = 0;
     std::unordered_map<uint64_t, BillboardLightingCacheEntry> m_billboardLightingCache;
+    std::vector<ModelSectorCacheEntry> m_modelSectorCache;
     WorldFxRenderResources m_worldFxRenderResources;
     EffectRenderer m_effectRenderer;
+    ShieldDomeRenderer m_shieldDomeRenderer;
     Engine::ModelRenderer m_modelRenderer;
+    // The main view's clustered light grid: every light of the frame, for 3D models (creatures, decorations) and
+    // the dynamic lights of BLV faces.
+    Engine::LightGridTextures m_lightGrid;
+    Engine::LightGridBinding m_lightGridBinding;
     CinematicGrading *m_pPostProcessing = nullptr;
     WorldFxSystem m_worldFxSystem;
     IndoorLightingRuntime m_indoorLightingRuntime;
@@ -750,6 +796,7 @@ private:
     float m_lastMouseY;
     int m_lastRenderWidth = 0;
     int m_lastRenderHeight = 0;
+    std::vector<EnemyHealthBarRenderer::Draw> m_pendingEnemyHealthBars;
     mutable PortalVisibilityCache m_renderPortalVisibilityCache;
     bool m_logIndoorVisibilityDiagnostics = false;
     bool m_logIndoorPerformanceDiagnostics = false;

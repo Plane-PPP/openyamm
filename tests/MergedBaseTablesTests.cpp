@@ -5,6 +5,7 @@
 #include "engine/TextTable.h"
 #include "game/audio/SoundCatalog.h"
 #include "game/party/SpeechIds.h"
+#include "game/render/SkyPresets.h"
 #include "game/tables/CharacterInspectTable.h"
 #include "game/tables/FaceAnimationTable.h"
 #include "game/tables/PortraitEnums.h"
@@ -20,6 +21,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -596,51 +598,33 @@ TEST_CASE("race granted skills become creation choices but not default skills")
         defaultSkills.end());
 }
 
-TEST_CASE("continent weather skies resolve from their native world assets")
+TEST_CASE("continent weather skies resolve to enhanced sky presets")
 {
     OpenYAMM::Game::MergedContinentSettingTable continentSettingTable;
     REQUIRE(continentSettingTable.loadFromRows(loadRows("continent_settings.txt")));
 
-    OpenYAMM::Engine::AssetFileSystem assetFileSystem;
-    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
-    const std::filesystem::path assetsRoot = sourceRoot / "assets_dev";
-    REQUIRE(assetFileSystem.initialize(sourceRoot, assetsRoot, OpenYAMM::Engine::AssetScaleTier::X1));
-    const std::array<std::string, 3> worldIds = {"mm8", "mm7", "mm6"};
-    for (size_t index = 0; index < worldIds.size(); ++index)
+    const std::filesystem::path skyLibraryPath =
+        std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/engine/rendering/sky/sky.yml";
+    std::ifstream skyLibraryStream(skyLibraryPath);
+    REQUIRE(skyLibraryStream);
+    const std::string skyLibraryText(
+        (std::istreambuf_iterator<char>(skyLibraryStream)), std::istreambuf_iterator<char>());
+    OpenYAMM::Game::SkyPresetLibrary skyLibrary;
+    std::string error;
+    REQUIRE_MESSAGE(skyLibrary.loadFromYaml(skyLibraryText, error), error);
+
+    for (uint32_t continentId = 1; continentId <= 3; ++continentId)
     {
-        const std::string &worldId = worldIds[index];
-        CAPTURE(worldId);
-        const OpenYAMM::Game::MergedContinentSettingEntry *pContinent =
-            continentSettingTable.findById(static_cast<uint32_t>(index + 1));
+        CAPTURE(continentId);
+        const OpenYAMM::Game::MergedContinentSettingEntry *pContinent = continentSettingTable.findById(continentId);
         REQUIRE(pContinent != nullptr);
         // Repeated native equivalents retain all seven weather states and their weighting.
         REQUIRE_EQ(pContinent->skies.size(), 7u);
-        REQUIRE(assetFileSystem.switchActiveWorld(worldId));
-
-        std::unordered_set<std::string> nativeTextureFiles;
-        for (const std::filesystem::directory_entry &entry :
-             std::filesystem::directory_iterator(assetsRoot / "worlds" / worldId / "textures"))
-        {
-            if (!entry.is_regular_file())
-            {
-                continue;
-            }
-            std::string name = entry.path().filename().string();
-            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char character)
-            {
-                return std::tolower(character);
-            });
-            nativeTextureFiles.insert(name);
-        }
 
         for (const std::string &skyTextureName : pContinent->skies)
         {
             CAPTURE(skyTextureName);
-            // Merged availability alone would allow an unintended other-world texture to pass.
-            CHECK((nativeTextureFiles.contains(skyTextureName + ".bmp")
-                || nativeTextureFiles.contains(skyTextureName + ".png")));
-            CHECK((assetFileSystem.exists("sky_textures/" + skyTextureName + ".bmp")
-                || assetFileSystem.exists("sky_textures/" + skyTextureName + ".png")));
+            CHECK_FALSE(skyLibrary.presetForSkyName(skyTextureName).empty());
         }
     }
 }
@@ -787,7 +771,9 @@ TEST_CASE("merged character presentation-only reactions have no speech sounds")
     OpenYAMM::Game::SpeechReactionTable speechReactionTable;
     REQUIRE(speechReactionTable.loadFromRows(loadRows("character_speech_events.txt")));
 
-    const std::array<OpenYAMM::Game::SpeechId, 8> portraitOnlySpeechIds = {{
+    // The merged voice table's "Thanks" slot holds "no" for most MM7/MM8 voices, and the original games play
+    // no voice for these service and progress reactions.
+    const std::array<OpenYAMM::Game::SpeechId, 23> portraitOnlySpeechIds = {{
         OpenYAMM::Game::SpeechId::Shoot,
         OpenYAMM::Game::SpeechId::AttackHit,
         OpenYAMM::Game::SpeechId::AttackMiss,
@@ -796,6 +782,21 @@ TEST_CASE("merged character presentation-only reactions have no speech sounds")
         OpenYAMM::Game::SpeechId::StatBaseIncreased,
         OpenYAMM::Game::SpeechId::QuestGot,
         OpenYAMM::Game::SpeechId::AwardGot,
+        OpenYAMM::Game::SpeechId::ThankYou,
+        OpenYAMM::Game::SpeechId::SkillIncreased,
+        OpenYAMM::Game::SpeechId::TempleHeal,
+        OpenYAMM::Game::SpeechId::TempleDonate,
+        OpenYAMM::Game::SpeechId::TravelBoat,
+        OpenYAMM::Game::SpeechId::TravelHorse,
+        OpenYAMM::Game::SpeechId::ItemSold,
+        OpenYAMM::Game::SpeechId::BankDeposit,
+        OpenYAMM::Game::SpeechId::Bribe,
+        OpenYAMM::Game::SpeechId::HireNpc,
+        OpenYAMM::Game::SpeechId::TavernTip,
+        OpenYAMM::Game::SpeechId::ShopItemBought,
+        OpenYAMM::Game::SpeechId::SkillLearned,
+        OpenYAMM::Game::SpeechId::SkillMasteryIncreased,
+        OpenYAMM::Game::SpeechId::JoinedGuild,
     }};
 
     for (OpenYAMM::Game::SpeechId speechId : portraitOnlySpeechIds)

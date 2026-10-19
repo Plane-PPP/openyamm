@@ -2,10 +2,13 @@
 
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayActionController.h"
+#include "game/gameplay/GameplayActorHitFeedback.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayInteractionController.h"
 #include "game/gameplay/GameplayScreenController.h"
+#include "game/gameplay/GenericActorDialog.h"
+#include "game/gameplay/MercenaryRecruitmentRuntime.h"
 #include "game/maps/MapIdentity.h"
 #include "game/ui/GameplaySpellTargetingOverlayRenderer.h"
 
@@ -473,11 +476,43 @@ void GameSession::bindActiveWorldRuntime(IGameplayWorldRuntime *pWorldRuntime)
 {
     if (m_pActiveWorldRuntime != pWorldRuntime)
     {
-        m_turnBasedCombatRuntime.end(m_pActiveWorldRuntime != nullptr ? m_pActiveWorldRuntime->party() : nullptr);
+        m_turnBasedCombatRuntime.end(
+            m_pActiveWorldRuntime != nullptr ? m_pActiveWorldRuntime->party() : nullptr,
+            m_pActiveWorldRuntime);
         m_turnBasedFrameTraceState = {};
     }
 
     m_pActiveWorldRuntime = pWorldRuntime;
+
+    if (pWorldRuntime != nullptr && data().isBound())
+    {
+        const MapStatsEntry *pMap = data().mapStats().findByFileName(m_currentMapFileName);
+        EventRuntimeState *pState = pWorldRuntime->eventRuntimeState();
+        Party *pParty = pWorldRuntime->party();
+        if (pMap != nullptr && pState != nullptr && pParty != nullptr)
+        {
+            const MergedBolsterMapEntry *pBolsterMap = data().mergedBolsterMapTable().findById(pMap->id);
+            if (pBolsterMap != nullptr && pBolsterMap->professionMaxRarity.value_or(0) > 0)
+            {
+                refreshGenericActorNpcRoster(*pState, pWorldRuntime->gameMinutes());
+            }
+            refreshMercenaryRecruitmentForCurrentMap(
+                *pMap, *pParty, *pState, pWorldRuntime->gameMinutes(),
+                MercenaryRecruitmentTables{
+                    .pHouseTable = &data().houseTable(),
+                    .pNpcNameTable = &data().mergedNpcNameTable(),
+                    .pCharacterSelectionTable = &data().mergedCharacterSelectionTable(),
+                    .pCharacterDollTable = &data().characterDollTable(),
+                    .pClassSkillTable = &data().classSkillTable(),
+                    .pClassMultiplierTable = &data().classMultiplierTable(),
+                    .pRaceStartingStatsTable = &data().raceStartingStatsTable(),
+                    .pItemTable = &data().itemTable(),
+                    .pStandardItemEnchantTable = &data().standardItemEnchantTable(),
+                    .pSpecialItemEnchantTable = &data().specialItemEnchantTable(),
+                    .pSpellTable = &data().spellTable(),
+                });
+        }
+    }
     m_mm9QuestMarkerCache.clear();
     ++m_mm9QuestMarkerMapRevision;
 }
@@ -838,7 +873,7 @@ void GameSession::updateGameplay(
         bool turnBasedMovementStep = false;
         if (m_turnBasedCombatRuntime.active() && !rightMouseInspectPauseActive)
         {
-            turnBasedMovementStep = m_turnBasedCombatRuntime.noteMovementInput(worldInput);
+            turnBasedMovementStep = m_turnBasedCombatRuntime.noteMovementInput(worldInput, deltaSeconds);
             worldMovementDeltaSeconds = m_turnBasedCombatRuntime.movementDeltaSecondsForFrame(deltaSeconds);
             if (!turnBasedMovementStep && pWorldRuntime->partyNeedsTurnBasedPhysicsUpdate())
             {
@@ -875,6 +910,7 @@ void GameSession::updateGameplay(
         const bool turnBasedWorldPaused =
             m_turnBasedCombatRuntime.active()
             && !m_turnBasedCombatRuntime.shouldUpdateActorAi(pTurnBasedParty);
+        pWorldRuntime->setTurnBasedActorMode(m_turnBasedCombatRuntime.actorMode());
 
         synchronizeTurnBasedPendingWorldActions(
             m_turnBasedCombatRuntime,
@@ -910,6 +946,11 @@ void GameSession::updateGameplay(
         else if (turnBasedWorldPaused)
         {
             pWorldRuntime->updateTurnBasedPausedActorAnimations(deltaSeconds);
+        }
+
+        if (!gameplayWorldPaused)
+        {
+            pWorldRuntime->actorHitFeedback().update(deltaSeconds);
         }
 
         synchronizeTurnBasedPendingWorldActions(

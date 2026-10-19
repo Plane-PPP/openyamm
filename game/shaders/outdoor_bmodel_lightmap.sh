@@ -1,8 +1,14 @@
 
 #include "common.sh"
+#include "sky_common.sh"
 #include "world_clip.sh"
 
+#if BMODEL_TEXTURE_ARRAY
+// Static materials of one texture size share an array; the layer arrives per vertex (v_texcoord1.y).
+SAMPLER2DARRAY(s_texColor, 0);
+#else
 SAMPLER2D(s_texColor, 0);
+#endif
 SAMPLER2D(s_texLightmap, 1);
 #if BAKED_SOURCES
 #include "outdoor_baked_lighting.sh"
@@ -16,6 +22,9 @@ uniform vec4 u_fxLightPositions[8];
 uniform vec4 u_fxLightColors[8];
 uniform vec4 u_fxLightParams;
 uniform vec4 u_secretPulseParams;
+
+#include "weather_wetness.sh"
+#include "light_grid.sh"
 
 float safeSmoothstep(float edge0, float edge1, float value)
 {
@@ -59,11 +68,17 @@ vec3 getFxLighting(vec3 worldPosition)
     vec3 lighting = vec3(u_fxLightParams.y, u_fxLightParams.y, u_fxLightParams.y);
 #endif
 
+    // Dynamic lights from the view's light grid (scaled like the list below), else the draw's own list (water
+    // reflections); the active lights come first: stop at the count.
+    if (lightGridMode() > 0.5)
+    {
+        lighting += lightGridDynamicLighting(worldPosition);
+    }
     for (int i = 0; i < 8; ++i)
     {
-        if (float(i) >= u_fxLightParams.x)
+        if (float(i) >= u_fxLightParams.x || lightGridMode() > 0.5)
         {
-            continue;
+            break;
         }
 
         vec3 toLight = u_fxLightPositions[i].xyz - worldPosition;
@@ -90,7 +105,11 @@ void main()
         texcoord.y += lavaPhase;
     }
 
+#if BMODEL_TEXTURE_ARRAY
+    vec4 textureColor = texture2DArray(s_texColor, vec3(texcoord, v_texcoord1.y));
+#else
     vec4 textureColor = texture2D(s_texColor, texcoord);
+#endif
     if (textureColor.a <= 0.1)
     {
         discard;
@@ -109,6 +128,7 @@ void main()
         textureColor.rgb * staticLighting * getFxLighting(v_worldPosition),
         textureColor.a);
 #endif
+    litTextureColor.rgb = applyWetness(litTextureColor.rgb, v_worldPosition);
 
     bool classicSecret = v_texcoord1.x > 0.5 && v_texcoord1.x < 1.5;
     bool authoredPerception = v_texcoord1.x >= 1.5;
@@ -129,8 +149,8 @@ void main()
     }
 
     float fogDistance = length(v_worldPosition - u_cameraPosition.xyz);
-    float fogRatio = getFogRatio(fogDistance);
+    float fogRatio = skyFogRatio(getFogRatio(fogDistance), v_worldPosition, fogDistance, u_fogDistances.z);
     float fogAlpha = getFogAlpha(fogDistance);
-    vec4 fogColor = vec4(u_fogColor.rgb, fogAlpha);
+    vec4 fogColor = vec4(skyFogDisplayColor(fogRatio, u_fogColor.rgb, v_worldPosition), fogAlpha);
     gl_FragColor = mix(litTextureColor, fogColor, fogRatio);
 }

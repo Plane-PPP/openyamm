@@ -1,3 +1,28 @@
+# Minotaur Rebalance v0.4 на OpenYAMM1.5 — текущая сборка
+
+Upstream tag1.5:1414884155362e613977a3444a3c7f81ed4ee047 (release2026-10-17).
+Предыдущий Windows executable:385a1e447aadb17cdf3b0db36691a92889f23786,
+[run38784738765](https://github.com/Plane-PPP/openyamm/actions/runs/38784738765).
+Последующий hotfix1 (79b01d3/c259af9/4fcdbb0) уже встроен в engine resources.
+Баланс Lethal Strike v0.4/Axe/DR не меняется. LS-003 не реализован, тексты ожидаются.
+
+Implemented / Automatically tested: Linux executable и оба test targets собраны;
+24 focused/30194 assertions;3 runtime/58;205 selected/7329 passed (пересекаются).
+[Save compatibility review](docs/research/openyamm-1.5-compatibility.md): старый mod85
+загружается и пересохраняется; upstream85/88 различаются; новый header OYMINO1/version89.
+Конкретный save пользователя и новая Windows-сборка ещё не Manually tested.
+
+Windows packaging: pending — run/SHA/artifact будут записаны после фактического завершения.
+Техническая правка workflow: весь tools/ для новых1.5 texture cooker sources,
+cook-on-build OFF для committed cooked assets. CI job/публикация прежние.
+Локальная sparse проверка stale lighting:0; полной проверки всех lighting assets не заявляется.
+
+Установка: новая отдельная папка, резервная копия старых saves; переносить только копии saves,
+после загрузки сохранить в новый слот. Не копировать старые assets/assets.zip/engine.zip/settings:
+старый overlay скроет ресурсы1.5. Старые executable не читают новый mod-format.
+
+## История предыдущих пакетов и hotfix (до переноса1.5)
+
 # Lethal Strike v0.4 — Windows test build
 
 > **LS-002 исправлен ресурсным hotfix:** четыре строки HP/SP/AC/DR помещены внутри

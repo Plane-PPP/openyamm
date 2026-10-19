@@ -83,6 +83,16 @@ settings:
   name: Skip event cutscenes
   type: toggle
   desc: Skip event movies. Leave off for a first adventure.
+- id: graphics_quality
+  section: video
+  group: Display
+  name: Graphics quality
+  type: steps
+  options:
+  - [low, Low]
+  - [medium, Medium]
+  - [high, High]
+  desc: Set the detail options below at once; changing one of them shows Custom.
 - id: window_mode
   section: video
   group: Display
@@ -108,6 +118,18 @@ settings:
   name: Vertical sync
   type: toggle
   desc: Reduce screen tearing by syncing frames to the display.
+- id: antialiasing
+  section: video
+  group: Display
+  name: Anti-aliasing
+  type: select
+  options:
+  - ['off', 'Off']
+  - [2x, 2x MSAA]
+  - [4x, 4x MSAA]
+  desc: Smooth jagged edges and shimmering foliage.
+  # Android renders without multisampling (game/render/CinematicGrading.cpp).
+  desktop_only: true
 - id: view_distance
   section: video
   group: World detail
@@ -172,18 +194,49 @@ settings:
   name: Terrain details
   type: toggle
   desc: Draw extra terrain decorations where available.
-- id: water_shader
+- id: weather_quality
   section: video
-  group: Water
-  name: Enhanced water
+  group: World detail
+  name: Weather
+  type: select
+  options:
+  - - high
+    - High
+  - - medium
+    - Medium
+  - - low
+    - Low
+  - - 'off'
+    - 'Off'
+  desc: Density of falling rain and snow; Off hides them while the weather itself goes on.
+- id: light_grid
+  section: video
+  group: World detail
+  name: Light detail
+  type: select
+  options:
+  - - high
+    - High
+  - - low
+    - Low
+  desc: How finely torches, spells and other lights are sorted across the view; Low is lighter on phones.
+- id: wet_surfaces
+  section: video
+  group: World detail
+  name: Wet surfaces
   type: toggle
-  desc: Animate water waves with sunlight highlights and angle-dependent reflections.
+  desc: Rain darkens the ground and buildings, which dry slowly after it stops.
+- id: terrain_specular
+  section: video
+  group: World detail
+  name: Ground highlights
+  type: toggle
+  desc: Smooth rock and rain-wet ground catch the sun and nearby lights.
 - id: water_reflections
   section: video
   group: Water
   name: Scenery reflections
   type: toggle
-  depends: water_shader
   desc: Reflect the sky, ground and buildings in visible water. Requires extra rendering.
 - id: water_reflection_size
   section: video
@@ -215,14 +268,21 @@ settings:
   group: Water
   name: Movement ripples
   type: toggle
-  depends: water_shader
   desc: Small ripples from creatures moving on water.
+- id: rain_ripples
+  section: video
+  group: Water
+  name: Rain ripples
+  type: toggle
+  desc: Raindrop rings on still water while it rains.
 - id: ambient_occlusion
   section: video
   group: Colour & effects
   name: Ambient occlusion
   type: toggle
   desc: Add soft shading where solid surfaces meet.
+  # Android renders without ambient occlusion (game/render/CinematicGrading.cpp).
+  desktop_only: true
 - id: ambient_occlusion_strength
   section: video
   group: Colour & effects
@@ -233,6 +293,24 @@ settings:
   unit: '%'
   depends: ambient_occlusion
   desc: Adjust the strength of contact shading.
+  # Android renders without ambient occlusion (game/render/CinematicGrading.cpp).
+  desktop_only: true
+- id: bloom
+  section: video
+  group: Colour & effects
+  name: Glow
+  type: toggle
+  desc: Flames, glowing crystals and spell light bloom softly into their surroundings.
+- id: bloom_strength
+  section: video
+  group: Colour & effects
+  name: Glow intensity
+  type: range
+  min: 0
+  max: 100
+  unit: '%'
+  depends: bloom
+  desc: Adjust how far and how brightly the glow spreads.
 - id: cinematic_grading
   section: video
   group: Colour & effects
@@ -249,6 +327,15 @@ settings:
   unit: '%'
   depends: cinematic_grading
   desc: Adjust the strength of cinematic colour.
+- id: sharpening
+  section: video
+  group: Colour & effects
+  name: Sharpening
+  type: range
+  min: 0
+  max: 100
+  unit: '%'
+  desc: Sharpen the 3D view; the interface is unaffected. Zero turns it off.
 - id: colored_lights
   section: video
   group: Colour & effects
@@ -273,6 +360,41 @@ settings:
   name: Melee blood effects
   type: toggle
   desc: Add blood effects when melee attacks connect.
+- id: melee_hit_effects
+  section: video
+  group: Colour & effects
+  name: Melee hit effects
+  type: toggle
+  desc: Show a slash, thrust or crush where melee attacks connect.
+- id: melee_hit_feedback
+  section: video
+  group: Colour & effects
+  name: Melee impact feedback
+  type: toggle
+  desc: Play impact sounds by what was struck and briefly hold the struck creature.
+- id: melee_hit_flash
+  section: video
+  group: Colour & effects
+  name: Melee hit flash
+  type: toggle
+  desc: Briefly brighten a creature struck in melee.
+- id: melee_camera_kick
+  section: video
+  group: Colour & effects
+  name: Melee camera kick
+  type: toggle
+  desc: Nudge the view along the blow on critical hits and kills.
+- id: corpses
+  section: video
+  group: Colour & effects
+  name: Slain creatures
+  type: select
+  options:
+  - - satchel
+    - Loot satchel
+  - - keep
+    - Keep bodies
+  desc: A satchel replaces each body once it sinks away; keeping bodies costs more GPU time.
 - id: sound_volume
   section: audio
   group: Volume
@@ -384,6 +506,9 @@ bindings:
   group: Interaction
 - id: cast
   name: Open spellbook
+  group: Combat
+- id: pass
+  name: Pass turn (turn-based)
   group: Combat
 - id: char_cycle
   name: Next character

@@ -2,6 +2,7 @@
 
 #include "game/indoor/IndoorMapData.h"
 #include "game/events/EventRuntime.h"
+#include "game/maps/DecorationModelPlacement.h"
 #include "game/maps/MapDeltaData.h"
 
 #include <bx/math.h>
@@ -132,6 +133,7 @@ std::vector<std::vector<uint16_t>> buildNeighboringIndoorSectorIds(
     const MapDeltaData *pMapDeltaData = nullptr);
 float fixedIndoorDoorDirectionComponentToFloat(int value);
 bool indoorDoorCarriesPartySupport(const MapDeltaDoor &door);
+bool mechanismDoorContainsFace(const MapDeltaDoor &door, size_t faceIndex);
 bx::Vec3 indoorVertexToWorld(const IndoorVertex &vertex);
 bool buildIndoorFaceGeometry(
     const IndoorMapData &indoorMapData,
@@ -247,5 +249,23 @@ std::optional<int16_t> findIndoorSectorForPoint(
     const bx::Vec3 &point,
     IndoorFaceGeometryCache *pGeometryCache = nullptr,
     bool allowBoundingSectorFallback = true
+);
+// The wall face nearest to a point among the solid (non-portal) faces as steep as walls (cave walls are often
+// classed as ceilings or floors), within reach: the nearest point of the face and its horizontal normal turned
+// toward the point.
+std::optional<DecorationWallContact> findIndoorWallContact(
+    const IndoorMapData &indoorMapData,
+    const std::vector<IndoorVertex> &vertices,
+    const bx::Vec3 &point,
+    float reach
+);
+// Where a wall-mounted decoration standing at (x, y, z) hangs: the nearest wall within a few dozen units, measured
+// at half its height.
+std::optional<DecorationWallContact> findIndoorDecorationWall(
+    const IndoorMapData &indoorMapData,
+    int x,
+    int y,
+    int z,
+    float height
 );
 }

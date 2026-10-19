@@ -12,6 +12,7 @@
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/ui/KeyboardScreenLayout.h"
 #include "game/ui/GameplayJournalMapUi.h"
+#include "game/ui/HouseShopLayout.h"
 
 #include <SDL3/SDL.h>
 
@@ -22,6 +23,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace OpenYAMM::Game
@@ -340,54 +342,6 @@ struct InventoryItemScreenRect
     float height = 0.0f;
 };
 
-std::string formatFoundGoldStatusText(int goldAmount)
-{
-    return "You found " + std::to_string(std::max(0, goldAmount)) + " gold!";
-}
-
-int followerAdjustedGoldAmount(int goldAmount, const EventRuntimeState *pEventRuntimeState)
-{
-    if (pEventRuntimeState == nullptr || goldAmount <= 0)
-    {
-        return std::max(0, goldAmount);
-    }
-
-    return static_cast<int>(hiredNpcGoldAfterBonusAndFees(static_cast<uint32_t>(goldAmount), *pEventRuntimeState));
-}
-
-enum class HouseShopVerticalAlign
-{
-    Center,
-    Top,
-    Bottom,
-    Baseline
-};
-
-struct HouseShopSlotLayout
-{
-    float x = 0.0f;
-    float y = 0.0f;
-    float width = 0.0f;
-    float height = 0.0f;
-    float baselineY = 0.0f;
-    HouseShopVerticalAlign verticalAlign = HouseShopVerticalAlign::Center;
-};
-
-struct HouseShopVisualLayout
-{
-    std::string backgroundAsset;
-    std::vector<HouseShopSlotLayout> slots;
-};
-
-struct HouseShopItemDrawRect
-{
-    size_t slotIndex = std::numeric_limits<size_t>::max();
-    float x = 0.0f;
-    float y = 0.0f;
-    float width = 0.0f;
-    float height = 0.0f;
-};
-
 template <typename Target, typename ResolveTargetFn, typename ActivateTargetFn>
 void handlePointerClickRelease(
     const HudPointerState &pointerState,
@@ -461,11 +415,6 @@ float snappedHudFontScale(float scale)
     }
 
     return std::max(1.0f, scale);
-}
-
-bool isHouseType(const HouseEntry &houseEntry, const char *pTypeName)
-{
-    return houseEntry.type == pTypeName;
 }
 
 GameplayMenuPointerTarget resolveMenuPointerTarget(
@@ -608,214 +557,116 @@ std::optional<std::pair<int, int>> computeHeldInventoryPlacement(
     return std::pair<int, int>{gridX, gridY};
 }
 
-HouseShopVisualLayout buildHouseShopVisualLayout(const HouseEntry &houseEntry, bool spellbookMode)
+InventoryItem chestItemAsInventoryItem(const GameplayChestItemState &chestItem)
 {
-    HouseShopVisualLayout layout = {};
+    InventoryItem item = chestItem.item;
+    item.objectDescriptionId = item.objectDescriptionId != 0 ? item.objectDescriptionId : chestItem.itemId;
+    item.quantity = chestItem.quantity;
+    item.width = chestItem.width;
+    item.height = chestItem.height;
+    return item;
+}
 
-    if (spellbookMode || houseEntry.vendorStockProfile == VendorStockProfile::Mm9Library)
+// Takes all gold, then every item that fits somewhere in the party (largest first); the rest stays in the chest.
+void takeAllActiveChestItems(GameplayScreenRuntime &view)
+{
+    IGameplayWorldRuntime *pWorldRuntime = view.worldRuntime();
+    Party *pParty = view.party();
+
+    if (pWorldRuntime == nullptr || pParty == nullptr || pWorldRuntime->activeChestView() == nullptr)
     {
-        layout.backgroundAsset = "MAGSHELF";
-
-        for (size_t index = 0; index < 6; ++index)
-        {
-            HouseShopSlotLayout topRowSlot = {};
-            topRowSlot.x = 6.0f + static_cast<float>(index) * 75.0f;
-            topRowSlot.y = 56.0f;
-            topRowSlot.width = 74.0f;
-            topRowSlot.height = 132.0f;
-            topRowSlot.verticalAlign = HouseShopVerticalAlign::Bottom;
-            layout.slots.push_back(topRowSlot);
-        }
-
-        for (size_t index = 0; index < 6; ++index)
-        {
-            HouseShopSlotLayout bottomRowSlot = {};
-            bottomRowSlot.x = 6.0f + static_cast<float>(index) * 75.0f;
-            bottomRowSlot.y = 199.0f;
-            bottomRowSlot.width = 74.0f;
-            bottomRowSlot.height = 128.0f;
-            bottomRowSlot.verticalAlign = HouseShopVerticalAlign::Bottom;
-            layout.slots.push_back(bottomRowSlot);
-        }
-
-        return layout;
+        return;
     }
 
-    if (houseEntry.vendorStockProfile == VendorStockProfile::Weapon
-        || isHouseType(houseEntry, "Weapon Shop"))
+    FoundGold totalGold = {};
+    std::vector<std::pair<uint8_t, uint8_t>> leftBehindCells;
+    const auto isLeftBehind =
+        [&leftBehindCells](const GameplayChestItemState &item)
+        {
+            return std::find(leftBehindCells.begin(), leftBehindCells.end(), std::pair(item.gridX, item.gridY))
+                != leftBehindCells.end();
+        };
+    const auto takeOrderKey =
+        [](const GameplayChestItemState &item)
+        {
+            return std::tuple(!item.isGold, -int(item.width) * int(item.height), -int(item.height));
+        };
+
+    while (const GameplayChestViewState *pChestView = pWorldRuntime->activeChestView())
     {
-        layout.backgroundAsset = "WEPNTABL";
-        constexpr std::array<float, 6> weaponTopOffsets = {88.0f, 34.0f, 112.0f, 58.0f, 128.0f, 46.0f};
+        std::optional<size_t> nextIndex;
 
-        for (size_t index = 0; index < weaponTopOffsets.size(); ++index)
+        for (size_t itemIndex = 0; itemIndex < pChestView->items.size(); ++itemIndex)
         {
-            HouseShopSlotLayout slot = {};
-            slot.x = 25.0f + static_cast<float>(index) * 70.0f;
-            slot.y = weaponTopOffsets[index];
-            slot.width = 70.0f;
-            slot.height = 334.0f - weaponTopOffsets[index];
-            slot.verticalAlign = HouseShopVerticalAlign::Top;
-            layout.slots.push_back(slot);
-        }
+            const GameplayChestItemState &candidate = pChestView->items[itemIndex];
 
-        return layout;
-    }
-
-    if (houseEntry.vendorStockProfile == VendorStockProfile::Armor
-        || isHouseType(houseEntry, "Armor Shop"))
-    {
-        layout.backgroundAsset = "ARMORY";
-
-        for (size_t index = 0; index < 4; ++index)
-        {
-            HouseShopSlotLayout topRowSlot = {};
-            topRowSlot.x = 34.0f + static_cast<float>(index) * 105.0f;
-            topRowSlot.y = 8.0f;
-            topRowSlot.width = 105.0f;
-            topRowSlot.height = 90.0f;
-            topRowSlot.verticalAlign = HouseShopVerticalAlign::Bottom;
-            layout.slots.push_back(topRowSlot);
-        }
-
-        for (size_t index = 0; index < 4; ++index)
-        {
-            HouseShopSlotLayout bottomRowSlot = {};
-            bottomRowSlot.x = 34.0f + static_cast<float>(index) * 105.0f;
-            bottomRowSlot.y = 126.0f;
-            bottomRowSlot.width = 105.0f;
-            bottomRowSlot.height = 190.0f;
-            bottomRowSlot.verticalAlign = HouseShopVerticalAlign::Top;
-            layout.slots.push_back(bottomRowSlot);
-        }
-
-        return layout;
-    }
-
-    if (houseEntry.vendorStockProfile == VendorStockProfile::Mm9Apothecary
-        || houseEntry.vendorStockProfile == VendorStockProfile::Mm9GeneralStore
-        || isHouseType(houseEntry, "Magic Shop")
-        || isHouseType(houseEntry, "Alchemist"))
-    {
-        layout.backgroundAsset = "GENSHELF";
-        const size_t columnCount = houseEntry.vendorStockProfile == VendorStockProfile::Mm9GeneralStore ? 4 : 6;
-        const float columnWidth = 450.0f / static_cast<float>(columnCount);
-
-        for (size_t index = 0; index < columnCount; ++index)
-        {
-            HouseShopSlotLayout topRowSlot = {};
-            topRowSlot.x = 6.0f + static_cast<float>(index) * columnWidth;
-            topRowSlot.y = 63.0f;
-            topRowSlot.width = columnWidth - 1.0f;
-            topRowSlot.height = 132.0f;
-            topRowSlot.baselineY = 201.0f;
-            topRowSlot.verticalAlign = HouseShopVerticalAlign::Baseline;
-            layout.slots.push_back(topRowSlot);
-        }
-
-        for (size_t index = 0; index < columnCount; ++index)
-        {
-            HouseShopSlotLayout bottomRowSlot = {};
-            bottomRowSlot.x = 6.0f + static_cast<float>(index) * columnWidth;
-            bottomRowSlot.y = 192.0f;
-            bottomRowSlot.width = columnWidth - 1.0f;
-            bottomRowSlot.height = 128.0f;
-            bottomRowSlot.baselineY = 324.0f;
-            bottomRowSlot.verticalAlign = HouseShopVerticalAlign::Baseline;
-            layout.slots.push_back(bottomRowSlot);
-        }
-
-        return layout;
-    }
-
-    if (isHouseType(houseEntry, "Elemental Guild")
-        || isHouseType(houseEntry, "Self Guild")
-        || isHouseType(houseEntry, "Light Guild")
-        || isHouseType(houseEntry, "Dark Guild")
-        || houseEntry.type.find(" Guild") != std::string::npos
-        || isHouseType(houseEntry, "Spell Shop"))
-    {
-        layout.backgroundAsset = "MAGSHELF";
-
-        for (size_t row = 0; row < 2; ++row)
-        {
-            for (size_t column = 0; column < 8; ++column)
+            if (isLeftBehind(candidate))
             {
-                HouseShopSlotLayout slot = {};
-                slot.x = 14.0f + static_cast<float>(column) * 54.0f;
-                slot.y = row == 0 ? 74.0f : 214.0f;
-                slot.width = 48.0f;
-                slot.height = 92.0f;
-                slot.verticalAlign = HouseShopVerticalAlign::Top;
-                layout.slots.push_back(slot);
+                continue;
+            }
+
+            if (!nextIndex)
+            {
+                nextIndex = itemIndex;
+                continue;
+            }
+
+            if (takeOrderKey(candidate) < takeOrderKey(pChestView->items[*nextIndex]))
+            {
+                nextIndex = itemIndex;
             }
         }
 
-        return layout;
+        if (!nextIndex)
+        {
+            break;
+        }
+
+        const GameplayChestItemState chestItem = pChestView->items[*nextIndex];
+        size_t recipientMemberIndex = 0;
+
+        if (!chestItem.isGold
+            && !pParty->tryGrantInventoryItem(chestItemAsInventoryItem(chestItem), &recipientMemberIndex))
+        {
+            leftBehindCells.emplace_back(chestItem.gridX, chestItem.gridY);
+            continue;
+        }
+
+        GameplayChestItemState removedItem = {};
+
+        if (!pWorldRuntime->takeActiveChestItem(*nextIndex, removedItem))
+        {
+            break;
+        }
+
+        if (removedItem.isGold)
+        {
+            const FoundGold foundGold = resolveFoundGold(removedItem.goldAmount, pWorldRuntime->eventRuntimeState());
+            pParty->addGold(static_cast<int>(foundGold.partyAmount));
+            totalGold.amount += foundGold.amount;
+            totalGold.followerShare += foundGold.followerShare;
+            totalGold.partyAmount += foundGold.partyAmount;
+            continue;
+        }
+
+        GAMEPLAY_DEBUG_TRACE(
+            "item_received destination=inventory source=chest_take_all item_id="
+            + std::to_string(removedItem.item.objectDescriptionId)
+            + gameplayDebugTraceItemSummary(removedItem.item.objectDescriptionId, view.itemTable())
+            + " member_index=" + std::to_string(recipientMemberIndex));
     }
 
-    return layout;
-}
+    std::string status = totalGold.amount > 0 ? foundGoldStatusText(totalGold) : std::string();
 
-HouseShopItemDrawRect resolveHouseShopItemDrawRect(
-    float frameX,
-    float frameY,
-    float frameWidth,
-    float frameHeight,
-    float frameScale,
-    const HouseShopSlotLayout &slot,
-    size_t slotIndex,
-    int textureWidth,
-    int textureHeight,
-    int opaqueMinY,
-    int opaqueMaxY)
-{
-    HouseShopItemDrawRect result = {};
-    result.slotIndex = slotIndex;
-
-    if (textureWidth <= 0 || textureHeight <= 0)
+    if (!leftBehindCells.empty())
     {
-        return result;
+        status += status.empty() ? "Inventory full." : " Inventory full.";
     }
 
-    const float scaleX = frameWidth / 460.0f;
-    const float scaleY = frameHeight / 344.0f;
-    const float slotX = frameX + slot.x * scaleX;
-    const float slotY = frameY + slot.y * scaleY;
-    const float slotWidth = slot.width * scaleX;
-    const float slotHeight = slot.height * scaleY;
-    const float fitScale = std::min(
-        slotWidth / static_cast<float>(textureWidth),
-        slotHeight / static_cast<float>(textureHeight));
-    const float itemScale = std::min(frameScale, fitScale);
-    const float itemWidth = static_cast<float>(textureWidth) * itemScale;
-    const float itemHeight = static_cast<float>(textureHeight) * itemScale;
-    const float opaqueTop = static_cast<float>(std::max(0, opaqueMinY)) * itemScale;
-    const float opaqueBottom = static_cast<float>(std::max(0, opaqueMaxY + 1)) * itemScale;
-
-    result.width = itemWidth;
-    result.height = itemHeight;
-    result.x = std::round(slotX + (slotWidth - itemWidth) * 0.5f);
-
-    switch (slot.verticalAlign)
+    if (!status.empty())
     {
-        case HouseShopVerticalAlign::Top:
-            result.y = std::round(slotY - opaqueTop);
-            break;
-
-        case HouseShopVerticalAlign::Bottom:
-            result.y = std::round(slotY + slotHeight - opaqueBottom);
-            break;
-
-        case HouseShopVerticalAlign::Baseline:
-            result.y = std::round(frameY + slot.baselineY * scaleY - opaqueBottom);
-            break;
-
-        case HouseShopVerticalAlign::Center:
-            result.y = std::round(slotY + (slotHeight - itemHeight) * 0.5f);
-            break;
+        view.setStatusBarEvent(status);
     }
-
-    return result;
 }
 } // namespace
 
@@ -3843,14 +3694,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
 
                     for (size_t actionIndex = 0; actionIndex < visibleActionCount; ++actionIndex)
                     {
-                        std::string label = view.activeEventDialog().actions[actionIndex].label;
-
-                        if (!view.activeEventDialog().actions[actionIndex].enabled
-                            && !view.activeEventDialog().actions[actionIndex].disabledReason.empty())
-                        {
-                            label += " [disabled]";
-                        }
-
+                        const std::string &label = view.activeEventDialog().actions[actionIndex].label;
                         std::vector<std::string> wrappedLines = topicFont
                             ? view.wrapHudTextToWidth(*topicFont, label, topicTextWidth)
                             : std::vector<std::string>{label};
@@ -4025,6 +3869,29 @@ void GameplayOverlayInputController::handleLootOverlayInput(
             {
                 const GameplayScreenRuntime::HudLayoutElement *pCloseLayout =
                     view.findHudLayoutElement("ChestCloseButton");
+
+                const GameplayScreenRuntime::HudLayoutElement *pTakeAllLayout =
+                    view.findHudLayoutElement("ChestTakeAllButton");
+
+                if (pTakeAllLayout != nullptr)
+                {
+                    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedTakeAll =
+                        view.resolveHudLayoutElement(
+                            "ChestTakeAllButton",
+                            screenWidth,
+                            screenHeight,
+                            pTakeAllLayout->width,
+                            pTakeAllLayout->height);
+
+                    if (resolvedTakeAll
+                        && mouseX >= resolvedTakeAll->x
+                        && mouseX < resolvedTakeAll->x + resolvedTakeAll->width
+                        && mouseY >= resolvedTakeAll->y
+                        && mouseY < resolvedTakeAll->y + resolvedTakeAll->height)
+                    {
+                        return {GameplayChestPointerTargetType::TakeAllButton};
+                    }
+                }
 
                 if (pCloseLayout == nullptr)
                 {
@@ -4211,6 +4078,12 @@ void GameplayOverlayInputController::handleLootOverlayInput(
             findChestPointerTarget,
             [&view](const GameplayChestPointerTarget &target)
             {
+                if (target.type == GameplayChestPointerTargetType::TakeAllButton)
+                {
+                    takeAllActiveChestItems(view);
+                    return;
+                }
+
                 if (target.type != GameplayChestPointerTargetType::CloseButton)
                 {
                     return;
@@ -4328,11 +4201,11 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                 {
                     if (takenItem.isGold)
                     {
-                        const int goldAmount = followerAdjustedGoldAmount(
-                            static_cast<int>(takenItem.goldAmount),
+                        const FoundGold foundGold = resolveFoundGold(
+                            takenItem.goldAmount,
                             view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
-                        view.party()->addGold(goldAmount);
-                        view.setStatusBarEvent(formatFoundGoldStatusText(goldAmount));
+                        view.party()->addGold(static_cast<int>(foundGold.partyAmount));
+                        view.setStatusBarEvent(foundGoldStatusText(foundGold));
                     }
                     else
                     {
@@ -4484,11 +4357,11 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                     {
                         if (removedItem.isGold)
                         {
-                            const int goldAmount = followerAdjustedGoldAmount(
-                                static_cast<int>(removedItem.goldAmount),
+                            const FoundGold foundGold = resolveFoundGold(
+                                removedItem.goldAmount,
                                 view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
-                            view.party()->addGold(goldAmount);
-                            view.setStatusBarEvent(formatFoundGoldStatusText(goldAmount));
+                            view.party()->addGold(static_cast<int>(foundGold.partyAmount));
+                            view.setStatusBarEvent(foundGoldStatusText(foundGold));
                         }
                         else
                         {
