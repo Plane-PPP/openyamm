@@ -9,14 +9,17 @@
 
 ## [Unreleased]
 
-### Мод v0.4 на OpenYAMM1.5 — Implemented / Automatically tested
+### Мод v0.4 на OpenYAMM1.5 — Implemented / Automatically tested / Windows packaged
 
 - Интегрирован точный upstream tag1.5,1414884; формулы Lethal Strike/Axe/DR сохранены.
 - Hotfix Stats и учителей включён в основные ресурсы.
 - Добавлено явное чтение обоих старых форматов85; новый mod-format89 имеет отдельную сигнатуру.
   Старый mod-v85 загружается/пересохраняется; проверены также оригинальные upstream85/88 fixtures.
 - Прошли25 focused tests/30294 assertions,3 runtime/58,205 selected/7329; прогоны пересекаются.
-  Конкретный пользовательский save не проверен. Windows packaging ожидает фактического результата.
+  Конкретный пользовательский save не проверен.
+- Windows packaging завершён успешно: [run39297183309](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309),
+  source SHAbad9c2798b3320f16a108661c588d536b98770da, `OpenYAMM-windows-Release.zip`.
+  Hotfix встроен и проверен в engine.zip; новая Windows-сборка ещё не Manually tested.
 - LS-003 (тексты/подсказки учителей) пока Planned; Identify Monster/бестиарий Deferred.
 
 

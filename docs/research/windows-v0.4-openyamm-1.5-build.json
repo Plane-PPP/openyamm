@@ -1,0 +1,36 @@
+{
+  "run": "https://github.com/Plane-PPP/openyamm/actions/runs/39297183309",
+  "source_sha": "bad9c2798b3320f16a108661c588d536b98770da",
+  "upstream_tag": "1.5",
+  "upstream_sha": "1414884155362e613977a3444a3c7f81ed4ee047",
+  "previous_build_sha": "385a1e447aadb17cdf3b0db36691a92889f23786",
+  "status": "completed",
+  "conclusion": "success",
+  "job_id": 118212631503,
+  "started_at": "2026-10-19T17:47:56Z",
+  "completed_at": "2026-10-19T18:21:03Z",
+  "artifact_id": 12211627532,
+  "artifact_name": "OpenYAMM-windows-Release.zip",
+  "artifact_bytes": 4764095432,
+  "ci_validation": {
+    "windows_x64_pe": true,
+    "required_files": true,
+    "hotfix_bytes_match_checkout": [
+      "data_tables/npc.txt",
+      "data_tables/npc_topic.txt",
+      "ui/gameplay/character.yml"
+    ]
+  },
+  "validation_scope": "Successful Windows CI package/PE/staged resource checks and GitHub artifact metadata; no full independent archive download",
+  "automatic_tests": {
+    "focused_cases": 25,
+    "focused_assertions": 30294,
+    "runtime_cases": 3,
+    "runtime_assertions": 58,
+    "selected_regression_cases": 205,
+    "selected_regression_assertions": 7329,
+    "groups_overlap": true
+  },
+  "manual_test_new_windows_build": false,
+  "user_actual_save_tested": false
+}

@@ -17,7 +17,16 @@ source SHAcbaea4b. Компиляция и упаковка прошли; Verify
 mmmerge.zip. Тег1.5 содержит только миры MM6/MM7/MM8. Upload не выполнялся.
 Проверка исправлена: точный состав1.5, x64 PE, побайтовая сверка трёх hotfix-ресурсов
 в staged engine.zip с checkout. Python regression подтверждает отсутствие требования
-mmmerge и отказ при отсутствии MM8. Повторный Windows packaging ожидает результата.
+mmmerge и отказ при отсутствии MM8. Повторный Windows packaging: [run39297183309](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309),
+source SHA`bad9c2798b3320f16a108661c588d536b98770da`; **completed/success**.
+Job Windows x64 release:2026-10-19T17:47:56Z →18:21:03Z,33m7s.
+[OpenYAMM-windows-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309/artifacts/12211627532),
+artifact ID12211627532,4 764 095 432 байта. Compile/Verify/Upload успешно завершены.
+Проверка staged engine.zip подтвердила побайтовое совпадение Stats/NPC hotfix-ресурсов
+с checkout; PE x64 и обязательные пакеты/шейдеры/документы проверены.
+Новый полный пакет готов к ручному тестированию, но не считается Manually tested.
+[Метаданные run и проверок](docs/research/windows-v0.4-openyamm-1.5-build.json),
+подтверждены2026-10-20. Независимая полная загрузка ZIP не заявляется.
 Техническая правка workflow: весь tools/ для новых1.5 texture cooker sources,
 cook-on-build OFF для committed cooked assets. CI job/публикация прежние.
 Локальная sparse проверка stale lighting:0; полной проверки всех lighting assets не заявляется.

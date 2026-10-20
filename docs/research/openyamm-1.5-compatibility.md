@@ -66,3 +66,12 @@ global gameplay tables (these remain in engine). The package validator now follo
 checks PE x64 and compares embedded Stats/NPC resources against the source checkout.
 The synthetic MM8 progress fixture also passes content-package/item validation without mmmerge.
 This does not claim compatibility with removed experimental maps or unprovided custom content.
+
+## Published Windows result
+
+[Run39297183309](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309) completed successfully on2026-10-19,
+18:21:03UTC (33m7s). Source SHA`bad9c2798b3320f16a108661c588d536b98770da`.
+[Artifact12211627532](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309/artifacts/12211627532):OpenYAMM-windows-Release.zip,
+4,764,095,432 bytes. Compile, exact staged hotfix resource comparison, PE/package validation
+and upload passed. The new full package needs no old overlay. Manual testing of the new
+Windows binary and the user's actual campaign save remains pending.

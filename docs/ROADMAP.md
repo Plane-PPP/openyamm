@@ -25,7 +25,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
 | Skills/Stats | LS-002 fixed / layout manually confirmed | Четыре resource rows внутри рамки, исходные Condition/Quick Spell, раздельные Earth/Mind/Body; [детали](research/damage-resistance-layout-bug.md) |
 | Автоматические проверки | Automatically tested on1.5 | 25 focused /30294 assertions;3 runtime /58;205 selected /7329. Ограничения suite в BUILD-NOTES |
-| Windows packaging on1.5 | Retry pending | Первый run39287322676 скомпилирован/упакован; исправлена проверка удалённого mmmerge.zip, повторный run ожидает результата |
+| Windows packaging on1.5 | Packaged / success | [Run39297183309](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309); SHAbad9c27; OpenYAMM-windows-Release.zip |
 | Ручной тест v0.4 | In progress / hotfix retest pending | Исправление Stats и появление тем подтверждены; LS-003 и боевой прогон остаются |
 | Identify Monster | Deferred | Caps/UI/поведение не меняются; knowledge, AC/damage/aura/GM magic отложены |
 | Бестиарий/лор | Deferred | Исследования сохранены, парсинг и расширенный интерфейс отложены |
@@ -57,7 +57,7 @@ LS-001 и LS-002 исправлены отдельными коммитами. �
 Не выполнять merge main. Новый баланс Axe/DR и Identify Monster не входит в задачу.
 Актуальный контракт: [Lethal Strike v0.4](design/death-strike.md).
 
-## Перенос v0.4 на OpenYAMM1.5 — implementation tested / packaging pending,2026-10-19
+## Перенос v0.4 на OpenYAMM1.5 — Packaged / user save retest pending,2026-10-19
 
 Официальный тег1.5:1414884155362e613977a3444a3c7f81ed4ee047. До объединения
 сохранён fixture старого mod-v85. Обнаружена коллизия номера85 с upstream weather layout;
@@ -65,7 +65,7 @@ LS-001 и LS-002 исправлены отдельными коммитами. �
 
 Интеграция и совместимость проверены:25 focused/30294,3 runtime/58,205 selected/7329.
 [Отчёт](research/openyamm-1.5-compatibility.md). Оба hotfix встроены; отдельный старый overlay
-на новую сборку не переносить. Следующий этап: Windows packaging и пользовательская проверка копии save.
+на новую сборку не переносить. Windows packaging успешно завершён (run39297183309). Следующий этап: пользовательская проверка копии save.
 LS-003 остаётся Planned до текстов пользователя и отдельной реализации, перенос1.5 не блокирует.
 
 Дополнительно проверены3 цикла миграции fixture реального по структуре прогресса v0.4:
@@ -74,4 +74,7 @@ inventory/XP/skill points/quest bits/NPC overrides/банк/резерв/пос�
 
 Проверка пакета приведена к составу1.5 (engine+MM6/MM7/MM8); сверяет x64 PE и актуальные
 ресурсы hotfix в engine.zip. Первый run39287322676 завершился на устаревшем Verify,
-не на компиляции. Результат повторного run фиксировать после завершения.
+не на компиляции. Повторный run39297183309 успешно завершён; hotfix-ресурсы внутри пакета сверены с checkout.
+
+Windows artifact: [OpenYAMM-windows-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309/artifacts/12211627532).
+Новая сборка ещё не проверена пользователем; переносить копии saves в отдельную установку.
