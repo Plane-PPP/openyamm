@@ -39,3 +39,10 @@ are unchanged. No user save or personal data is included. Covers inventory grid/
 XP/level/skill points, bank/gold/food, quest bits, NPC overrides, reserve character,
 visited outdoor and indoor map state. The test verifies three new-format roundtrips.
 SHA256: `0f8556439aa8e79020d1a9279a57d708ef6e459a9df75994edcfdf5c05a28c4e`.
+
+## Minotaur on OpenYAMM 1.5 (OYMINO1 version 89)
+
+`minotaur-1.5-v89.oysav` was written by the production serializer at
+`8434ba7feacf0696953200bcef3d84287702dd89`, before integrating v1.7.
+It contains the synthetic campaign-progress fixture after three successful
+load/save cycles (100 assertions). No personal save data is included.
