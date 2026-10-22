@@ -84,6 +84,7 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-yaml
 
       - name: Configure release build
         run: >-
@@ -118,7 +119,7 @@ jobs:
       - name: Build Windows package
         run: >-
           cmake --build build-windows
-          --target openyamm_windows_release_zip
+          --target openyamm_release_package
           --parallel 4
 
       - name: Verify Windows package

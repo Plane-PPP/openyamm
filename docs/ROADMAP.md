@@ -91,3 +91,6 @@ Next: Luck bonus requested 2026-10-22, final regressions, Windows packaging and 
 
 Автоматически проверено на1.7+Luck:26 focused/30530,3 runtime/58,223 selected/7506.
 Windows packaging следующий этап; пользовательский save пока не предоставлен.
+
+CI adapted to upstream1.7 release target/launcher/indexed content and Python YAML dependency.
+Результат Windows job будет зафиксирован после фактического завершения.
