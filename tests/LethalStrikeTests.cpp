@@ -623,7 +623,10 @@ TEST_CASE("Lethal Strike imports official upstream v85 and v88 saves without mod
 TEST_CASE("Lethal Strike v0.4 campaign progress inventory quests and visited maps survive migration")
 {
     std::string error;
-    const auto oldPath = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-v04-progress-v85.oysav";
+    const char *fixture = "minotaur-v04-progress-v85.oysav";
+    SUBCASE("production mod on OpenYAMM 1.5") { fixture = "minotaur-1.5-v89.oysav"; }
+    SUBCASE("original v0.4 progress") {}
+    const auto oldPath = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures" / fixture;
     auto save = loadGameDataFromPath(oldPath, error);
     REQUIRE_MESSAGE(save, error);
     const auto target = std::filesystem::temp_directory_path() / "minotaur-progress-1.5.oysav";

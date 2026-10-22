@@ -11,6 +11,7 @@
 #include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/MasteryTeacherDialog.h"
 #include "game/gameplay/MercenaryRecruitmentRuntime.h"
+#include "game/gameplay/PartyHostileAlert.h"
 #include "game/gameplay/TravelRuntime.h"
 #include "game/mm9/Mm9RudeDialogue.h"
 #include "game/mm9/Mm9MapTransition.h"
@@ -49,7 +50,6 @@ constexpr uint32_t DefaultAdventurersInnHouseId = 185;
 constexpr uint32_t ArcomageRulesTextId = 136;
 constexpr uint32_t AutoNoteVariableTag = 0x00E1u;
 constexpr uint32_t HeroismEffectSoundId = 14060;
-constexpr float OeYellowAlertDistance = 5120.0f;
 constexpr int OutdoorMapTravelFoodCost = 5;
 constexpr size_t MaxNpcFollowerCount = 4;
 constexpr uint32_t MaxNpcFollowerFeePercent = 100;
@@ -507,41 +507,7 @@ void logMapTransitionConfirmed(
 
 bool partyHasIndoorExitAlert(const GameplayDialogController::Context &context)
 {
-    if (context.pWorldRuntime == nullptr)
-    {
-        return false;
-    }
-
-    const float partyX = context.pWorldRuntime->partyX();
-    const float partyY = context.pWorldRuntime->partyY();
-    const float partyFootZ = context.pWorldRuntime->partyFootZ();
-
-    for (size_t actorIndex = 0; actorIndex < context.pWorldRuntime->mapActorCount(); ++actorIndex)
-    {
-        GameplayRuntimeActorState actorState = {};
-
-        if (!context.pWorldRuntime->actorRuntimeState(actorIndex, actorState)
-            || actorState.isDead
-            || actorState.isInvisible
-            || !actorState.hostileToParty
-            || !actorState.hasDetectedParty)
-        {
-            continue;
-        }
-
-        const float deltaX = actorState.preciseX - partyX;
-        const float deltaY = actorState.preciseY - partyY;
-        const float deltaZ = actorState.preciseZ - partyFootZ;
-        const float centerDistance = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-        const float edgeDistance = std::max(0.0f, centerDistance - static_cast<float>(actorState.radius));
-
-        if (edgeDistance < OeYellowAlertDistance)
-        {
-            return true;
-        }
-    }
-
-    return false;
+    return context.pWorldRuntime != nullptr && partyHasYellowAlert(*context.pWorldRuntime);
 }
 
 void playSpeechReaction(
@@ -724,6 +690,7 @@ bool samePendingDialogueContext(
         && left->participantPictureId == right->participantPictureId
         && left->titleOverride == right->titleOverride
         && samePendingMapMove(left->transitionMapMove, right->transitionMapMove)
+        && left->boundaryTravel == right->boundaryTravel
         && left->transitionTextId == right->transitionTextId
         && left->transitionImageId == right->transitionImageId;
 }
@@ -817,16 +784,18 @@ uint32_t continentForMap(
     return 0;
 }
 
+// Pins the teacher on the journal map. A teacher with an autonote already shows in the trainer notes and has
+// queued the note effect, so its pin is only drawn on the map.
 bool tryAddRuntimeMapNote(
     EventRuntimeState &eventRuntimeState,
     const MasteryTeacherTopicDefinition &teacherTopic,
     uint32_t continent,
     const MapStatsEntry *pCurrentMap,
     const IGameplayWorldRuntime *pWorldRuntime,
-    const Party *pParty,
-    bool queueAutonoteFx = true)
+    Party *pParty,
+    bool teacherHasAutonote = false)
 {
-    if (pCurrentMap == nullptr || pCurrentMap->fileName.empty() || continent == 0)
+    if (pParty == nullptr || pCurrentMap == nullptr || pCurrentMap->fileName.empty() || continent == 0)
     {
         return false;
     }
@@ -837,26 +806,27 @@ bool tryAddRuntimeMapNote(
         eventRuntimeState.pendingDialogueContext
             ? eventRuntimeState.pendingDialogueContext->mapNoteSourcePoint
             : std::nullopt;
-    const auto noteIt = eventRuntimeState.runtimeMapNotes.find(noteId);
 
-    if (noteIt != eventRuntimeState.runtimeMapNotes.end()
-        && noteIt->second.active
-        && toLowerCopy(noteIt->second.mapFileName) == noteMapFileName)
+    if (const JournalMapNote *pExisting = pParty->findJournalMapNote(noteMapFileName, noteId))
     {
+        JournalMapNote note = *pExisting;
+        note.listedWithTrainerNotes = !teacherHasAutonote;
+
         if (mapNoteSourcePoint)
         {
-            noteIt->second.x = mapNoteSourcePoint->x;
-            noteIt->second.y = mapNoteSourcePoint->y;
+            note.x = mapNoteSourcePoint->x;
+            note.y = mapNoteSourcePoint->y;
         }
 
+        pParty->setJournalMapNote(note);
         return false;
     }
 
-    EventRuntimeState::RuntimeMapNote note = {};
+    JournalMapNote note = {};
     note.id = noteId;
     note.text = displaySkillName(teacherTopic.skillName) + " - " + masteryDisplayName(teacherTopic.targetMastery);
-    note.active = true;
     note.mapFileName = noteMapFileName;
+    note.listedWithTrainerNotes = !teacherHasAutonote;
 
     if (mapNoteSourcePoint)
     {
@@ -869,8 +839,9 @@ bool tryAddRuntimeMapNote(
         note.y = static_cast<int32_t>(std::lround(pWorldRuntime->partyY()));
     }
 
-    eventRuntimeState.runtimeMapNotes[noteId] = std::move(note);
-    if (queueAutonoteFx)
+    pParty->setJournalMapNote(note);
+
+    if (!teacherHasAutonote)
     {
         queuePortraitFxRequest(eventRuntimeState, PortraitFxEventKind::AutoNote, pParty);
     }
@@ -887,7 +858,7 @@ bool tryRegisterTrainerNote(
     const MapStatsEntry *pCurrentMap,
     const MergedBolsterMapTable *pBolsterMapTable,
     const IGameplayWorldRuntime *pWorldRuntime,
-    const Party *pParty)
+    Party *pParty)
 {
     const std::optional<MasteryTeacherTopicDefinition> teacherTopic =
         resolveMasteryTeacherTopic(topicId, pTeacherTopicTable);
@@ -912,14 +883,23 @@ bool tryRegisterTrainerNote(
             pParty);
     }
 
-    const uint32_t rawId = (*autonoteId << 16) | AutoNoteVariableTag;
-    const auto variableIt = eventRuntimeState.variables.find(rawId);
     bool changed = false;
 
-    if (variableIt == eventRuntimeState.variables.end() || variableIt->second == 0)
+    if (pParty != nullptr)
     {
-        eventRuntimeState.variables[rawId] = 1;
-        changed = true;
+        changed = !pParty->hasAutonote(*autonoteId);
+        pParty->setAutonote(*autonoteId, true);
+    }
+    else
+    {
+        const uint32_t rawId = (*autonoteId << 16) | AutoNoteVariableTag;
+        const auto variableIt = eventRuntimeState.variables.find(rawId);
+
+        if (variableIt == eventRuntimeState.variables.end() || variableIt->second == 0)
+        {
+            eventRuntimeState.variables[rawId] = 1;
+            changed = true;
+        }
     }
 
     if (teacherTopic.has_value())
@@ -932,7 +912,7 @@ bool tryRegisterTrainerNote(
                 pCurrentMap,
                 pWorldRuntime,
                 pParty,
-                false)
+                true)
             || changed;
     }
 
@@ -1165,7 +1145,7 @@ void registerTrainerNotesForNpc(
     const MapStatsEntry *pCurrentMap,
     const MergedBolsterMapTable *pBolsterMapTable,
     const IGameplayWorldRuntime *pWorldRuntime,
-    const Party *pParty)
+    Party *pParty)
 {
     EventRuntimeState npcRuntimeState = eventRuntimeState;
 
@@ -1254,7 +1234,7 @@ int boundaryTravelHeadingDegrees(MapBoundaryEdge edge)
     return 0;
 }
 
-void applyMapTransitionTravelSideEffects(
+bool applyMapTransitionTravelSideEffects(
     GameplayDialogController::Context &context,
     const MapEdgeTransition &transition)
 {
@@ -1264,17 +1244,15 @@ void applyMapTransitionTravelSideEffects(
     }
 
     const int foodRequired = mapTransitionTravelFoodRequired(context, transition);
-    if (context.pParty != nullptr)
-    {
-        applyTravelDaysSideEffects(
+    return context.pParty != nullptr
+        && applyTravelDaysSideEffects(
             *context.pParty,
             context.pWorldRuntime,
             hiredNpcWalkingTravelDays(transition.travelDays, context.eventRuntimeState),
             foodRequired);
-    }
 }
 
-void applyPendingMapMoveTravelSideEffects(
+bool applyPendingMapMoveTravelSideEffects(
     GameplayDialogController::Context &context,
     const EventRuntimeState::PendingMapMove &move)
 {
@@ -1283,7 +1261,7 @@ void applyPendingMapMoveTravelSideEffects(
 
     if (travelDays <= 0)
     {
-        return;
+        return false;
     }
 
     if (context.pScreenRuntime != nullptr)
@@ -1291,14 +1269,12 @@ void applyPendingMapMoveTravelSideEffects(
         context.pScreenRuntime->stopAllAudioPlayback();
     }
 
-    if (context.pParty != nullptr)
-    {
-        applyTravelDaysSideEffects(
+    return context.pParty != nullptr
+        && applyTravelDaysSideEffects(
             *context.pParty,
             context.pWorldRuntime,
             travelDays,
             OutdoorMapTravelFoodCost);
-    }
 }
 
 bool executeMapTransitionHook(
@@ -1803,8 +1779,9 @@ NpcProfessionActionExecution executeNpcFollowerProfessionAction(
                     casterMemberIndex);
                 GameplayUiController::UtilitySpellOverlayState &overlay =
                     context.uiController.utilitySpellOverlay();
+                // MMerge's Gate Master casts at Grandmaster, which ignores hostiles that wander in later.
                 overlay.skillLevelOverride = 10;
-                overlay.skillMasteryOverride = SkillMastery::Master;
+                overlay.skillMasteryOverride = SkillMastery::Grandmaster;
                 overlay.spendMana = false;
                 overlay.applyRecovery = false;
                 overlay.bypassGameplayCasterValidation = true;
@@ -1882,7 +1859,14 @@ void grantGuildMembership(
 
     if (offer.autonoteId != 0)
     {
-        runtimeState.variables[autonoteVariableKey(offer.autonoteId)] = 1;
+        if (pParty != nullptr)
+        {
+            pParty->setAutonote(offer.autonoteId, true);
+        }
+        else
+        {
+            runtimeState.variables[autonoteVariableKey(offer.autonoteId)] = 1;
+        }
     }
 }
 
@@ -2203,6 +2187,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             0);
 
         EventRuntimeState::PendingMapMove pendingMove = {};
+        pendingMove.travelTimeApplied = true;
         pendingMove.mapName = pRoute->destinationMapFileName;
         pendingMove.x = pRoute->arrivalX;
         pendingMove.y = pRoute->arrivalY;
@@ -2539,7 +2524,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             return result;
         }
 
-        if (context.eventRuntimeState.pendingDialogueContext->transitionMapMove.has_value())
+        if (context.eventRuntimeState.pendingDialogueContext->transitionMapMove.has_value()
+            && !context.eventRuntimeState.pendingDialogueContext->boundaryTravel)
         {
             const Mm9MapTransition *pMm9Transition = pendingMm9PositionedTransition(
                 context,
@@ -2563,9 +2549,11 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 context.pScreenRuntime->stopAllAudioPlayback();
             }
 
+            bool travelTimeApplied = false;
+
             if (pMm9Transition != nullptr && context.pParty != nullptr)
             {
-                applyTravelDaysSideEffects(
+                travelTimeApplied = applyTravelDaysSideEffects(
                     *context.pParty,
                     context.pWorldRuntime,
                     pMm9Transition->travelDays,
@@ -2573,12 +2561,13 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             }
             else
             {
-                applyPendingMapMoveTravelSideEffects(
+                travelTimeApplied = applyPendingMapMoveTravelSideEffects(
                     context,
                     *context.eventRuntimeState.pendingDialogueContext->transitionMapMove);
             }
             context.eventRuntimeState.pendingMapMove =
                 *context.eventRuntimeState.pendingDialogueContext->transitionMapMove;
+            context.eventRuntimeState.pendingMapMove->travelTimeApplied = travelTimeApplied;
             result.shouldCloseActiveDialog = true;
             return result;
         }
@@ -2599,35 +2588,46 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             return result;
         }
 
-        applyMapTransitionTravelSideEffects(context, **pTransition);
+        const bool travelTimeApplied = applyMapTransitionTravelSideEffects(context, **pTransition);
 
         EventRuntimeState::PendingMapMove pendingMapMove = {};
-        pendingMapMove.mapName = (*pTransition)->destinationMapFileName;
-        pendingMapMove.directionDegrees = (*pTransition)->directionDegrees;
-        pendingMapMove.useMapStartPosition = (*pTransition)->useMapStartPosition;
-        assignMapMoveTraceSource(
-            pendingMapMove,
-            dialogueContextKindName(context.eventRuntimeState.pendingDialogueContext->kind),
-            context.eventRuntimeState.pendingDialogueContext->sourceId,
-            action.id,
-            0,
-            (*pTransition)->destinationMapFileName);
 
-        if (context.eventRuntimeState.pendingDialogueContext->kind == DialogueContextKind::MapTransition)
+        if (context.eventRuntimeState.pendingDialogueContext->transitionMapMove.has_value())
         {
-            pendingMapMove.directionDegrees = boundaryTravelHeadingDegrees(
-                static_cast<MapBoundaryEdge>(context.eventRuntimeState.pendingDialogueContext->sourceId));
+            // Edge travel: the arrival was taken from where the party reached the edge.
+            pendingMapMove = *context.eventRuntimeState.pendingDialogueContext->transitionMapMove;
+        }
+        else
+        {
+            pendingMapMove.mapName = (*pTransition)->destinationMapFileName;
+            pendingMapMove.directionDegrees = (*pTransition)->directionDegrees;
+            pendingMapMove.useMapStartPosition = (*pTransition)->useMapStartPosition;
+            assignMapMoveTraceSource(
+                pendingMapMove,
+                dialogueContextKindName(context.eventRuntimeState.pendingDialogueContext->kind),
+                context.eventRuntimeState.pendingDialogueContext->sourceId,
+                action.id,
+                0,
+                (*pTransition)->destinationMapFileName);
+
+            if (context.eventRuntimeState.pendingDialogueContext->kind == DialogueContextKind::MapTransition)
+            {
+                pendingMapMove.directionDegrees = boundaryTravelHeadingDegrees(
+                    static_cast<MapBoundaryEdge>(context.eventRuntimeState.pendingDialogueContext->sourceId));
+            }
+
+            if (!(*pTransition)->useMapStartPosition
+                && (*pTransition)->arrivalX.has_value()
+                && (*pTransition)->arrivalY.has_value()
+                && (*pTransition)->arrivalZ.has_value())
+            {
+                pendingMapMove.x = *(*pTransition)->arrivalX;
+                pendingMapMove.y = *(*pTransition)->arrivalY;
+                pendingMapMove.z = *(*pTransition)->arrivalZ;
+            }
         }
 
-        if (!(*pTransition)->useMapStartPosition
-            && (*pTransition)->arrivalX.has_value()
-            && (*pTransition)->arrivalY.has_value()
-            && (*pTransition)->arrivalZ.has_value())
-        {
-            pendingMapMove.x = *(*pTransition)->arrivalX;
-            pendingMapMove.y = *(*pTransition)->arrivalY;
-            pendingMapMove.z = *(*pTransition)->arrivalZ;
-        }
+        pendingMapMove.travelTimeApplied = travelTimeApplied;
 
         logMapTransitionConfirmed(
             context.eventRuntimeState,

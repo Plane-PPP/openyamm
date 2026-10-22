@@ -78,3 +78,9 @@ inventory/XP/skill points/quest bits/NPC overrides/банк/резерв/пос�
 
 Windows artifact: [OpenYAMM-windows-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309/artifacts/12211627532).
 Новая сборка ещё не проверена пользователем; переносить копии saves в отдельную установку.
+
+## OpenYAMM 1.7 integration — 2026-10-22
+
+Exact v1.7 merged; explicit production 1.5 save migration and embedded hotfixes retained.
+25 focused tests /30394 assertions passed. [Compatibility](research/openyamm-1.7-compatibility.md).
+Next: Luck bonus requested 2026-10-22, final regressions, Windows packaging and user save retest.
