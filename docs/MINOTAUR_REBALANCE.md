@@ -1,6 +1,14 @@
 # Minotaur Rebalance — описание мода
 
-## Текущая база — OpenYAMM1.5 / мод v0.4
+## Текущая база — OpenYAMM1.7 / мод v0.4 + Luck
+
+Тег v1.7:069df4a3f63c2dcaeed7b70694529154e7ccc205. Оба исправления встроены.
+Все ранги Lethal Strike получают `B=0.5*floor(max(0,Luck)/10)` п.п. к P0.
+Текущая Удача90 даёт +4.5 п.п.; затем применяются KL/GIANT и потолок30%.
+Axe/DR и остальные коэффициенты сохраняются. [Миграция saves1.5](research/openyamm-1.7-compatibility.md).
+Новая Windows-сборка и ручная проверка пока ожидаются.
+
+## История — OpenYAMM1.5 / мод v0.4
 
 Перенос на точный тег1.5:1414884155362e613977a3444a3c7f81ed4ee047.
 Hotfix LS-001/LS-002 встроен в ресурсы; коэффициенты мода не меняются.
@@ -261,11 +269,12 @@ Minotaur может обучиться до Master, Lord — до GM. Продв
 
 | Ранг | P0 в процентах |
 | --- | --- |
-| N | 0.60×S |
-| E | 0.90×S + 0.56×V |
-| M | 1.10×S + 0.64×V |
-| GM | 1.30×S + 0.72×V |
+| N | 0.60×S + B |
+| E | 0.90×S + 0.56×V + B |
+| M | 1.10×S + 0.64×V + B |
+| GM | 1.30×S + 0.72×V + B |
 
+B=`0.5*floor(max(0,currentLuck)/10)` п.п.; Luck90 даёт +4.5 п.п.
 S/V — базовые Lethal Strike / Perception, без предметов. Ранг Perception значения не имеет;
 нет Perception — V=0. Identify Monster не участвует. `delta=PL-ML`;
 KL=`min(1.4,1+delta/60)` при delta≥0, иначе `30/(30+1.5*abs(delta))`.
@@ -370,7 +379,7 @@ config set axe_damage_trace true
 Пример формата (числа/ID условны, не запись измеренного боя):
 
 ```text
-[CombatTrace] lethal_strike action_id=17 member_name="LethalTester" member_class="MinotaurLord" member_level=50 skill=10 mastery=4 perception=10 actor_index=9 monster_id=70 monster_name="Green Dragon" monster_level=70 category=GIANT unknown_template=0 hp_before=430 hp_after=410 max_hp=700 P0=20.2 KL=0.5 KG=1 chance=10.1 roll=3.25 success=1 death_processed=1 skip=""
+[CombatTrace] lethal_strike action_id=17 member_name="LethalTester" member_class="MinotaurLord" member_level=50 skill=10 mastery=4 perception=10 actor_index=9 monster_id=70 monster_name="Green Dragon" monster_level=70 category=GIANT unknown_template=0 hp_before=430 hp_after=410 max_hp=700 luck=0 luck_bonus=0 P0=20.2 KL=0.5 KG=1 chance=10.1 roll=3.25 success=1 death_processed=1 skip=""
 ```
 
 Miss/ordinary_kill/no_actor_target/no_skill/giant_hp_threshold/death_rejected объясняют пропуск;

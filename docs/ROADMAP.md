@@ -19,7 +19,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Этап | Статус | Результат |
 | --- | --- | --- |
 | Исследования таблиц/карт | Research completed | 658 общих шаблонов,198 исходных MM8,184 с кампанийными свидетельствами; [ревизия](research/final-review.md) |
-| Контракт v0.4 | Approved | P0 от S/V, потолок30%, GIANT строго ниже60%, Identify Monster не участвует |
+| Контракт v0.4 | Approved | P0 от S/V и бонуса текущей Удачи (2026-10-22), потолок30%, GIANT строго ниже60%, Identify Monster не участвует |
 | Реестр категорий | Implemented | 48 GIANT /610 NORMAL; MM8 21/177; явные ID, unknown NORMAL + trace warning |
 | Навык и обучение | LS-001 fixed / topics manually confirmed | Корректная схема тем; Expert Perception / Master Mace / GM Axe; [детали](research/lethal-strike-teacher-bug.md) |
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
@@ -84,3 +84,10 @@ Windows artifact: [OpenYAMM-windows-Release.zip](https://github.com/Plane-PPP/op
 Exact v1.7 merged; explicit production 1.5 save migration and embedded hotfixes retained.
 25 focused tests /30394 assertions passed. [Compatibility](research/openyamm-1.7-compatibility.md).
 Next: Luck bonus requested 2026-10-22, final regressions, Windows packaging and user save retest.
+
+Бонус Удачи реализован: +0.5 п.п. за полные10 единиц на всех рангах до KL/cap.
+Динамический tooltip и trace используют общий расчёт. CSV включает Luck0/90.
+Проверки и упаковка новой версии выполняются; ручной прогон ожидается.
+
+Автоматически проверено на1.7+Luck:26 focused/30530,3 runtime/58,223 selected/7506.
+Windows packaging следующий этап; пользовательский save пока не предоставлен.

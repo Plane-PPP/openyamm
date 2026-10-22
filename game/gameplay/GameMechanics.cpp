@@ -3110,6 +3110,16 @@ uint32_t GameMechanics::lethalStrikePlayerLevel(const Character &character)
     return levelWithModifier(character.level, character.levelModifier);
 }
 
+int GameMechanics::lethalStrikeLuck(const Character &character)
+{
+    return std::max(0, resolveCharacterDisplayedActualPrimaryStat(character, 0x2D, nullptr));
+}
+
+double GameMechanics::lethalStrikeLuckBonus(const Character &character)
+{
+    return 0.5 * (lethalStrikeLuck(character) / 10);
+}
+
 double GameMechanics::lethalStrikeBaseChance(const Character &character)
 {
     const std::string className = canonicalClassName(character.className);
@@ -3121,12 +3131,13 @@ double GameMechanics::lethalStrikeBaseChance(const Character &character)
     const CharacterSkill *pPerception = character.findSkill("Perception");
     const double s = pSkill->level;
     const double v = pPerception != nullptr ? pPerception->level : 0;
+    const double luck = lethalStrikeLuckBonus(character);
     switch (pSkill->mastery)
     {
-        case SkillMastery::Normal: return 0.60 * s;
-        case SkillMastery::Expert: return 0.90 * s + 0.56 * v;
-        case SkillMastery::Master: return 1.10 * s + 0.64 * v;
-        case SkillMastery::Grandmaster: return 1.30 * s + 0.72 * v;
+        case SkillMastery::Normal: return 0.60 * s + luck;
+        case SkillMastery::Expert: return 0.90 * s + 0.56 * v + luck;
+        case SkillMastery::Master: return 1.10 * s + 0.64 * v + luck;
+        case SkillMastery::Grandmaster: return 1.30 * s + 0.72 * v + luck;
         case SkillMastery::None: return 0.0;
     }
     return 0.0;

@@ -1166,6 +1166,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     << " skill=" << (pSkill != nullptr ? pSkill->level : 0)
                     << " mastery=" << (pSkill != nullptr ? static_cast<int>(pSkill->mastery) : 0)
                     << " perception=" << (pPerception != nullptr ? pPerception->level : 0)
+                    << " luck=" << GameMechanics::lethalStrikeLuck(*pAttacker)
+                    << " luck_bonus=" << GameMechanics::lethalStrikeLuckBonus(*pAttacker)
                     << " actor_index=" << (after ? after->actorIndex : 0)
                     << " monster_id=" << (after ? after->monsterId : 0)
                     << " monster_name=" << std::quoted(after ? after->displayName : "")

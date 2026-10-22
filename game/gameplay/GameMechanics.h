@@ -317,6 +317,8 @@ public:
     static CombatDamageType parseCombatDamageType(const std::string &value);
     static CombatDamageType spellCombatDamageType(uint32_t spellId, const SpellTable *pSpellTable);
     static uint32_t lethalStrikePlayerLevel(const Character &character);
+    static int lethalStrikeLuck(const Character &character);
+    static double lethalStrikeLuckBonus(const Character &character);
     static double lethalStrikeBaseChance(const Character &character);
     static double lethalStrikeLevelFactor(uint32_t playerLevel, int monsterLevel);
     static bool lethalStrikeHealthEligible(bool giant, int currentHp, int maxHp);

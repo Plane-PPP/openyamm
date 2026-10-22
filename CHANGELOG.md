@@ -1,3 +1,14 @@
+# Minotaur — OpenYAMM1.7 (2026-10-22)
+
+Implemented, Windows packaging/manual test pending:
+- Перенос v0.4 на точный тег v1.7; сохранены исправления учителей и Stats.
+- Явная миграция сохранений мода на базе1.5 (OYMINO1/v89) в новую схему v94.
+- Lethal Strike: +0.5 п.п. к P0 за каждые полные10 текущей Удачи на всех рангах;
+  при90 +4.5 п.п. Затем KL/GIANT и общий потолок30%. Tooltip/trace обновляются.
+- Версионный Windows package/launcher и проверка indexed content packs.
+- Автообновление на stock OpenYAMM по умолчанию выключено для сохранения мода.
+- Axe/DR неизменны. LS-003 Planned; Identify Monster/bestiary Deferred.
+
 # Minotaur Rebalance — Changelog
 
 > **LS-002 исправлен ресурсным hotfix:** четыре строки HP/SP/AC/DR помещены внутри

@@ -811,6 +811,9 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                         masterDescription = "1,10% за уровень + 0,64% за уровень Perception";
                         grandmasterDescription = "1,30% за уровень + 0,72% за уровень Perception";
                     }
+                    overlay.body += russian
+                        ? " Все ранги: +0,5 процентного пункта за каждые полные 10 единиц текущей Удачи."
+                        : " All ranks: +0.5 percentage points per complete 10 points of current Luck.";
                     overlay.body += "\n\n" + GameMechanics::lethalStrikeBaseChanceText(*pCharacter, russian);
                 }
 

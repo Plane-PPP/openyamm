@@ -1,3 +1,28 @@
+# Minotaur v0.4 + Luck на OpenYAMM1.7 — подготовка Windows
+
+Официальный v1.7:069df4a3f63c2dcaeed7b70694529154e7ccc205.
+Предыдущая подтверждённая сборка на1.5:bad9c2798b3320f16a108661c588d536b98770da, run39297183309.
+LS-001/LS-002 встроены; LS-003 Planned, Identify Monster/bestiary Deferred.
+Изменение баланса по запросу2026-10-22: `B=0.5*floor(max(0,currentLuck)/10)`
+добавляется к P0 всех рангов до KL и предела30%. Удача90: +4.5 п.п.
+Axe и Damage Resistance не изменены.
+
+Сохранения OYMINO1/v89 (мод1.5) читаются как upstream88+combatLevel;
+новая запись OYMINO1/v94 включает upstream93. [Подробности](docs/research/openyamm-1.7-compatibility.md).
+Распаковать отдельно, сохранить резервную копию прежней установки, перенести только saves.
+Запустить OpenYAMM.exe, загрузить копию и сохранить в новый слот. Не переносить старые
+assets/settings/hotfix. Новые saves не предназначены для старого executable.
+Автообновление на официальный OpenYAMM по умолчанию отключено, чтобы не заменить мод.
+Automatically tested:26 focused/30530 assertions,3 runtime/58,223 selected/7506.
+Выборка неполная; sparse MM6/MM9/model cases и старый positional recovery-enchant
+test исключены (его поле enchant сдвинул upstream hardened, игровой баланс не меняли).
+Package verifier и model-profile packaging passed; stale-bake checker0 на sparse assets.
+Windows build/manual verification pending; результаты будут обновлены после CI.
+
+---
+
+## Историческая сборка1.5
+
 # Minotaur Rebalance v0.4 на OpenYAMM1.5 — текущая сборка
 
 Upstream tag1.5:1414884155362e613977a3444a3c7f81ed4ee047 (release2026-10-17).

@@ -36,6 +36,9 @@ Character minotaur(const std::string &className = "MinotaurLord")
 {
     Character c = OpenYAMM::Tests::makeSpellRegressionPartyMember("Lethal Tester", className, "PC01-01", 1);
     c.level = 50;
+    c.luck = 0;
+    c.permanentBonuses.luck = 0;
+    c.magicalBonuses.luck = 0;
     c.skills["LethalStrike"] = {"LethalStrike", 10, SkillMastery::Grandmaster};
     c.skills["Perception"] = {"Perception", 10, SkillMastery::Normal};
     return c;
@@ -670,4 +673,34 @@ TEST_CASE("Lethal Strike v0.4 campaign progress inventory quests and visited map
         REQUIRE_MESSAGE(save, error);
     }
     std::filesystem::remove(target);
+}
+
+TEST_CASE("Lethal Strike Luck adds half a percentage point per complete ten at every rank")
+{
+    Character c = minotaur();
+    for (SkillMastery rank : {SkillMastery::Normal, SkillMastery::Expert, SkillMastery::Master, SkillMastery::Grandmaster})
+    {
+        c.skills["LethalStrike"].mastery = rank;
+        c.luck = 0;
+        const double base = GameMechanics::lethalStrikeBaseChance(c);
+        for (uint32_t luck : {0, 1, 9, 10, 19, 20, 89, 90, 99, 100, 1000})
+        {
+            c.luck = luck;
+            CHECK(GameMechanics::lethalStrikeBaseChance(c) == doctest::Approx(base + 0.5 * (luck / 10)));
+            CHECK(GameMechanics::lethalStrikeChance(c, 50, false, 1, 100)
+                == doctest::Approx(std::min(30.0, base + 0.5 * (luck / 10))));
+            CHECK(GameMechanics::lethalStrikeChance(c, 50, true, 60, 100) == 0);
+        }
+    }
+    c.skills["LethalStrike"].mastery = SkillMastery::Expert;
+    c.luck = 80;
+    c.permanentBonuses.luck = 5;
+    c.magicalBonuses.luck = 5;
+    CHECK(GameMechanics::lethalStrikeLuck(c) == 90);
+    CHECK(GameMechanics::lethalStrikeBaseChanceText(c) == "Base Lethal Strike Chance: 19.10%");
+    c.magicalBonuses.luck = -100;
+    CHECK(GameMechanics::lethalStrikeLuckBonus(c) == 0);
+    c.luck = 1000;
+    c.skills.clear();
+    CHECK(GameMechanics::lethalStrikeBaseChance(c) == 0);
 }

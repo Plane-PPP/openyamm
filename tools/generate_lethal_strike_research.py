@@ -63,14 +63,16 @@ result = []
 for rank, a, b in [('Normal', .60, 0), ('Expert', .90, .56), ('Master', 1.10, .64), ('Grandmaster', 1.30, .72)]:
     for s in (1, 5, 10, 15, 20):
         for v in (0, 1, 5, 10, 15, 20):
-            for pl, ml in [(100, 100-d) for d in (-60, -40, -20, 0, 20, 24, 60)] + [(50, m) for m in (30, 50, 70, 90, 110)]:
-                delta = pl - ml
-                kl = min(1.4, 1 + delta / 60) if delta >= 0 else 30 / (30 + 1.5 * abs(delta))
-                p0 = a*s + b*v
-                for category, hp in [('NORMAL', 100), ('GIANT', 61), ('GIANT', 60), ('GIANT', 59)]:
-                    kg = int(category == 'NORMAL' or 5*hp < 3*100)
-                    result.append(dict(version='0.4',S=s,V=v,mastery=rank,player_level=pl,monster_level=ml,
-                                       category=category,current_hp=hp,max_hp=100,P0_percent=p0,KL=kl,KG=kg,
-                                       P_percent=min(30, p0*kl*kg)))
+            for luck in (0, 90):
+                for pl, ml in [(100, 100-d) for d in (-60, -40, -20, 0, 20, 24, 60)] + [(50, m) for m in (30, 50, 70, 90, 110)]:
+                    delta = pl - ml
+                    kl = min(1.4, 1 + delta / 60) if delta >= 0 else 30 / (30 + 1.5 * abs(delta))
+                    luck_bonus = .5 * (luck // 10)
+                    p0 = a*s + b*v + luck_bonus
+                    for category, hp in [('NORMAL', 100), ('GIANT', 61), ('GIANT', 60), ('GIANT', 59)]:
+                        kg = int(category == 'NORMAL' or 5*hp < 3*100)
+                        result.append(dict(version='0.4+Luck',S=s,V=v,luck=luck,luck_bonus_percent=luck_bonus,mastery=rank,player_level=pl,monster_level=ml,
+                                           category=category,current_hp=hp,max_hp=100,P0_percent=p0,KL=kl,KG=kg,
+                                           P_percent=min(30, p0*kl*kg)))
 write('lethal-strike-probabilities-v0.4.csv', result)
 print(f'Approved: {len(ids)} templates, {len(giant_ids)} GIANT, {len(result)} probability scenarios')
