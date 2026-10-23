@@ -94,3 +94,7 @@ Windows packaging следующий этап; пользовательский 
 
 CI adapted to upstream1.7 release target/launcher/indexed content and Python YAML dependency.
 Результат Windows job будет зафиксирован после фактического завершения.
+
+Windows run39830857374: native compile/link passed, packaging failed because CMake
+selected hosted Python without PyYAML despite MSYS2 Python YAML being installed.
+Retry pins Python3_EXECUTABLE to UCRT64 and checks import before configure.

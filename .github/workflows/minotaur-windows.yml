@@ -86,10 +86,14 @@ jobs:
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-python-yaml
 
+      - name: Check packaging Python
+        run: /ucrt64/bin/python.exe -c "import sys, yaml; print(sys.executable); print(yaml.__version__)"
+
       - name: Configure release build
         run: >-
           cmake -S . -B build-windows -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DPython3_EXECUTABLE="$(cygpath -m /ucrt64/bin/python.exe)"
           -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=ON
           -DOPENYAMM_BUILD_TESTS=OFF
           -DOPENYAMM_COOK_ON_BUILD=OFF
@@ -126,7 +130,7 @@ jobs:
         run: |
           archive="build-windows/release/OpenYAMM-windows-x64-Release.zip"
           test -s "$archive"
-          python3 tools/verify_minotaur_windows_package.py "$archive" \
+          /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py "$archive" \
             --stage build-windows/release/Release/OpenYAMM
 
       - name: Upload Windows package

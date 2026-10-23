@@ -46,3 +46,5 @@ SHA256: `0f8556439aa8e79020d1a9279a57d708ef6e459a9df75994edcfdf5c05a28c4e`.
 `8434ba7feacf0696953200bcef3d84287702dd89`, before integrating v1.7.
 It contains the synthetic campaign-progress fixture after three successful
 load/save cycles (100 assertions). No personal save data is included.
+
+Production mod1.5 fixture SHA256: `3432846fcbec1b49aed25b07615be43331b90159f675c5555be4a7a250308b59`.
