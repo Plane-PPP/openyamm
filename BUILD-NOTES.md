@@ -1,3 +1,14 @@
+# Minotaur incremental Windows updates — first patch pending
+
+Release workflow now defaults to incremental ZIPs. Initial base is the existing1.10
+package source13d2cf3, run39941527807 (131 content packs). No gameplay code or balance changed.
+The small app bundle is always delivered; only changed logical resource packs accompany it.
+Full installation remains available through package_mode=full/both.
+[Player installation](packaging/minotaur/README-RU.txt), [maintainer guide](packaging/minotaur/README.md).
+Python generation tests7 passed locally; actual Windows installer8 cases pending CI.
+A new package must not be called successful or manually played before actual results.
+The previous full packages below remain historical installation bases.
+
 # Minotaur v0.4 + Luck на OpenYAMM1.10 — Windows packaged
 
 Official latest v1.10:3f06332001c7a841cc2c2d161f192a1252b25713.

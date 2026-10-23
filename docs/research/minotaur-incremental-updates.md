@@ -52,3 +52,11 @@
 варианты компрессии, цепочка патчей, правильная база, повреждённые файлы, безопасные пути,
 повторный запуск и сохранность пользовательских данных. Установщик проверяется именно
 Windows PowerShell5.1 на GitHub Actions. Статусы результатов обновляются после выполнения.
+
+## Реализация
+
+[Генератор](../../tools/minotaur_updates.py), [bootstrap индекса](../../tools/fetch_minotaur_baseline.py),
+[установщик](../../packaging/minotaur/Apply-MinotaurUpdate.ps1),
+[workflow](../../.github/workflows/minotaur-windows.yml). Локальные7 Python-тестов passed;
+8 Windows PowerShell5.1 сценариев пока ожидают GitHub Actions.
+Отдельный tests_only прогон проверяет установщик без дорогостоящей пересборки игры.

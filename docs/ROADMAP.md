@@ -149,3 +149,8 @@ Use a separate install, copy only saves, keep originals and save in a new slot.
 Пользователь выбрал ZIP-патчи. [Оригинальная архитектура и план](research/minotaur-incremental-updates.md).
 База1.10 сохранена из опубликованного ZIP HTTP-диапазонами (221884 байта вместо5.75ГБ).
 Следующий этап: генератор патчей, Windows-установщик, CI и проверки; игровая механика не меняется.
+
+Инкрементальный выпуск реализован: генератор по content_id, SHA-проверки, Windows PowerShell5.1
+установщик с атомарным переключением, версия на каждый build, update/full/both в CI.
+Локально7 Python-тестов passed;8 Windows-сценариев ожидают CI.
+Далее: Windows-проверка установщика, первый реальный ZIP-патч и публикация новой базы.
