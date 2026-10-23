@@ -102,3 +102,6 @@ Retry pins Python3_EXECUTABLE to UCRT64 and checks import before configure.
 Native MinGW launcher now links its C++ runtime statically: root launcher must not depend
 on runtime DLLs located only beside the game in app/<version>. Retry39894785306 stopped early
 to include this packaging fix before compilation; gameplay code unchanged.
+
+Final tooltip review removed duplicate English Luck prose (already supplied by skill_des.txt);
+Russian custom description retains the same rule. Formula/save code unchanged.
