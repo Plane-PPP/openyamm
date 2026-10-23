@@ -160,10 +160,14 @@ class WindowsInstallerTests(Fixture):
         self.assertIsNotNone(self.shell)
 
     def apply(self, directory, success=True, check_only=False):
-        args = [self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        args = [self.shell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
                 str(directory / 'Apply-MinotaurUpdate.ps1'), '-InstallationRoot', str(self.install)]
         if check_only: args.append('-CheckOnly')
-        result = subprocess.run(args, capture_output=True, timeout=120)
+        environment = os.environ.copy()
+        # The parent CI shell is PowerShell7. Give the Windows5.1 child its own built-in modules,
+        # as it has when started normally by the player's CMD wrapper; do not change the machine.
+        environment['PSModulePath'] = str(Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/Modules')
+        result = subprocess.run(args, capture_output=True, timeout=120, env=environment)
         self.assertEqual(result.returncode == 0, success, result.stdout.decode(errors='replace') +
                          result.stderr.decode(errors='replace'))
         self.assertEqual((self.install / 'settings.ini').read_bytes(), b'player-settings')

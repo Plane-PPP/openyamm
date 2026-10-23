@@ -120,9 +120,13 @@ function Assert-File([string]$Path, $Record) {
 
 function Atomic-Text([string]$Path, [string]$Text) {
     $temporary = $Path + '.new-' + [guid]::NewGuid().ToString('N')
+    $backup = $Path + '.replaced-' + [guid]::NewGuid().ToString('N')
     try {
         [IO.File]::WriteAllText($temporary, $Text, [Text.UTF8Encoding]::new($false))
-        if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temporary, $Path, $null) }
+        if (Test-Path -LiteralPath $Path) {
+            [IO.File]::Replace($temporary, $Path, $backup)
+            Remove-Item -LiteralPath $backup -Force
+        }
         else { [IO.File]::Move($temporary, $Path) }
     } finally {
         if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
