@@ -1,0 +1,41 @@
+{
+  "run": "https://github.com/Plane-PPP/openyamm/actions/runs/39941527807",
+  "source_sha": "13d2cf3bc1e1b0c005a15f4a253bc0dba875522b",
+  "upstream_tag": "v1.10",
+  "upstream_sha": "3f06332001c7a841cc2c2d161f192a1252b25713",
+  "previous_build_sha": "a1b8debf0198779d1ea418555c50bb50c21e8028",
+  "status": "completed",
+  "conclusion": "success",
+  "job_id": 120373866553,
+  "started_at": "2026-10-23T10:47:08Z",
+  "completed_at": "2026-10-23T11:18:35Z",
+  "artifact_id": 12498430051,
+  "artifact_name": "OpenYAMM-windows-x64-Release.zip",
+  "artifact_bytes": 5751530172,
+  "artifact_digest": "sha256:13f88c48987f668f324567e81bc79774663c581266c9690b23aab33b29fddb87",
+  "artifact_url": "https://github.com/Plane-PPP/openyamm/actions/runs/39941527807/artifacts/12498430051",
+  "automatic_tests": {
+    "focused_cases": 27,
+    "focused_assertions": 30639,
+    "runtime_cases": 3,
+    "runtime_assertions": 58,
+    "selected_regression_cases": 227,
+    "selected_regression_assertions": 7540,
+    "groups_overlap": true
+  },
+  "ci_validation": {
+    "windows_x64_launcher_and_game": true,
+    "all_content_pack_hashes": true,
+    "required_worlds": [
+      "mm6",
+      "mm7",
+      "mm8"
+    ],
+    "embedded_hotfix_matches_checkout": true,
+    "model_emissive_shader_present": true
+  },
+  "manual_test_new_windows_build": false,
+  "user_actual_save_tested": false,
+  "validation_scope": "Successful Windows CI package/PE/staged content hash and resource checks plus GitHub artifact metadata; no full independent archive download",
+  "local_validation_method": "Existing 1.10 object/library cache; changed LethalStrikeTests.cpp compiled using generated CMake flags and unit executable relinked. No fresh complete Linux game rebuild claimed. Clean Windows release build verified separately."
+}

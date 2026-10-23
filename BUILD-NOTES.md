@@ -1,4 +1,4 @@
-# Minotaur v0.4 + Luck на OpenYAMM1.10 — Windows pending
+# Minotaur v0.4 + Luck на OpenYAMM1.10 — Windows packaged
 
 Official latest v1.10:3f06332001c7a841cc2c2d161f192a1252b25713.
 Previous confirmed Windows source:a1b8debf0198779d1ea418555c50bb50c21e8028, run39898467800.
@@ -6,7 +6,9 @@ Full rebuild requested; previous fixes and balance retained, including Luck bonu
 Save reader supports production mod1.5/v89 and1.7/v94; writes OYMINO1/v95.
 [Compatibility and installation](docs/research/openyamm-1.10-compatibility.md).
 Use a separate folder, copy only saves, save into a new slot; do not copy old assets/settings.
-Windows build/automatic checks pending; manual verification pending.
+Automatically tested:27 focused/30639,3 runtime/58,227 selected/7540 passed (groups overlap).
+Final changed test was compiled/relinked incrementally after the host dependency cache loss;
+no fresh full Linux executable rebuild is claimed. Windows build succeeded; manual verification pending.
 LS-003 Planned, Identify Monster/bestiary Deferred. No merge into main.
 
 ## Historical builds
@@ -354,3 +356,13 @@ Source `a1b8debf0198779d1ea418555c50bb50c21e8028`; previous confirmed1.5 `bad9c2
 Windows compile/link, versioned package, x64 launcher/game PE, all indexed content hashes,
 MM6/MM7/MM8 presence and exact embedded teacher/Stats resources passed; artifact uploaded.
 No old hotfix overlay is required. User manual playthrough and actual save remain untested.
+
+## Windows1.10 — Packaged / manual retest pending
+
+[Run39941527807](https://github.com/Plane-PPP/openyamm/actions/runs/39941527807) completed successfully at 2026-10-23T11:18:35Z.
+Source `13d2cf3bc1e1b0c005a15f4a253bc0dba875522b`; previous confirmed package was1.7/a1b8deb.
+[Download OpenYAMM-windows-x64-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39941527807/artifacts/12498430051), 5,751,530,172 bytes.
+Compile/link, launcher/game x64 PE, new model-emissive shader, indexed content hashes,
+MM6/MM7/MM8 presence and exact embedded teacher/Stats resource comparison passed.
+Artifact uploaded. Manual Windows gameplay and the user's actual save remain untested.
+Use a separate install, copy only saves, keep originals and save in a new slot.

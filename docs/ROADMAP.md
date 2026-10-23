@@ -128,4 +128,18 @@ No old hotfix overlay is required. User manual playthrough and actual save remai
 
 Preflight1.10:26 focused/30630,3 runtime/58,226 selected/7531 passed.
 Temporary Linux dependency cache is being restored after the host restart.
-Windows CI uses a clean checkout; final additional save test remains to run locally.
+Windows CI uses a clean checkout; the additional local save test subsequently passed.
+
+Все финальные локальные проверки1.10 passed:27 focused/30639,3 runtime/58,227 selected/7540.
+Тестовый executable инкрементально пересобран/перелинкован; полный Linux rebuild не заявляется.
+Windows run39941527807 source13d2cf3 успешно завершён; артефакт проверен. Далее ручной прогон.
+
+## Windows1.10 — Packaged / manual retest pending
+
+[Run39941527807](https://github.com/Plane-PPP/openyamm/actions/runs/39941527807) completed successfully at 2026-10-23T11:18:35Z.
+Source `13d2cf3bc1e1b0c005a15f4a253bc0dba875522b`; previous confirmed package was1.7/a1b8deb.
+[Download OpenYAMM-windows-x64-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39941527807/artifacts/12498430051), 5,751,530,172 bytes.
+Compile/link, launcher/game x64 PE, new model-emissive shader, indexed content hashes,
+MM6/MM7/MM8 presence and exact embedded teacher/Stats resource comparison passed.
+Artifact uploaded. Manual Windows gameplay and the user's actual save remain untested.
+Use a separate install, copy only saves, keep originals and save in a new slot.

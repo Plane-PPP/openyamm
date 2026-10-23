@@ -1,6 +1,6 @@
 # Minotaur — OpenYAMM1.10 (2026-10-23)
 
-Implemented integration; automatic checks/Windows packaging pending, manual retest pending.
+Implemented / automatically tested / Windows packaged ([run39941527807](https://github.com/Plane-PPP/openyamm/actions/runs/39941527807)); manual retest pending.
 - Exact official v1.10, including author fixes from1.8/1.9/1.10.
 - Explicit save schema mapping preserves mod1.5/v89 and1.7/v94; new writer mod95.
 - Lethal Strike + Luck, teachers, Stats, Axe and Damage Resistance retained unchanged.
