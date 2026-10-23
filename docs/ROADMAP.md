@@ -143,3 +143,9 @@ Compile/link, launcher/game x64 PE, new model-emissive shader, indexed content h
 MM6/MM7/MM8 presence and exact embedded teacher/Stats resource comparison passed.
 Artifact uploaded. Manual Windows gameplay and the user's actual save remain untested.
 Use a separate install, copy only saves, keep originals and save in a new slot.
+
+## Инкрементальные ZIP-обновления — исследовано2026-10-23
+
+Пользователь выбрал ZIP-патчи. [Оригинальная архитектура и план](research/minotaur-incremental-updates.md).
+База1.10 сохранена из опубликованного ZIP HTTP-диапазонами (221884 байта вместо5.75ГБ).
+Следующий этап: генератор патчей, Windows-установщик, CI и проверки; игровая механика не меняется.

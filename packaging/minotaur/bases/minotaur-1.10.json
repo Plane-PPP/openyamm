@@ -1,0 +1,1202 @@
+{
+  "schema": 1,
+  "channel": "minotaur",
+  "version": "minotaur-1.10",
+  "source_sha": "13d2cf3bc1e1b0c005a15f4a253bc0dba875522b",
+  "index_identity": "17b7b32c7172c311345c8b5721c54b43c461fe947d62b684a9b122215b174807",
+  "index": {
+    "build": "dev",
+    "content_format": 1,
+    "packs": [
+      {
+        "content_id": "acefd3de39eff20601a3bef531822677bfbb5add4e53b668fc36c3bae100e5cf",
+        "file": "engine.audio.0-acefd3de39eff206.zip",
+        "id": "engine.audio.0",
+        "mount": "/engine/audio",
+        "package": "engine",
+        "sha256": "7a4f8ba3f68dfddd5b9bcbe110d58eb95aeb28a552d500d580c96cb1f9b33f76",
+        "size": 50823187
+      },
+      {
+        "content_id": "4ee2668c47599b3dc7e62672c1327d598847cecd57a6ae7e30d9dbc1bf4b7474",
+        "file": "engine.audio.1-4ee2668c47599b3d.zip",
+        "id": "engine.audio.1",
+        "mount": "/engine/audio",
+        "package": "engine",
+        "sha256": "086ee303b90fe2267833af4b8a05fd04366b9c072e31b5cc2930ce62fed8fcf6",
+        "size": 51606019
+      },
+      {
+        "content_id": "d09c197ce56339b76f2088579b21521f4c8b90739f7a6695d76afb54e641e625",
+        "file": "engine.core-d09c197ce56339b7.zip",
+        "id": "engine.core",
+        "mount": "/engine",
+        "package": "engine",
+        "sha256": "3eb922f5c35793f58c1c1e83fa2822a3d33e07b85ec4c185f36135d10e1b993e",
+        "size": 10170599
+      },
+      {
+        "content_id": "df8b2bf92272caed5564c43c86be07b1d859e564d96cccb9358b83e983929056",
+        "file": "engine.effects-df8b2bf92272caed.zip",
+        "id": "engine.effects",
+        "mount": "/engine/effects",
+        "package": "engine",
+        "sha256": "aa29ba45281366202106831d608b1b2e2969b78fc4dd5a3af1253ceb8b644737",
+        "size": 7414528
+      },
+      {
+        "content_id": "9de725fae2963368e559b5ff5a7ad06873a398027cb73d96d583e4a1bb6a0777",
+        "file": "engine.icons_x2.0-9de725fae2963368.zip",
+        "id": "engine.icons_x2.0",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "b52692a29eb6f2a4291f08cba1733eaf971db6d6d484d48137da0f48a19cb207",
+        "size": 53034853
+      },
+      {
+        "content_id": "912242a96995bac8d20b05d673df099c23d84b69a05c195630a17db4de3b8671",
+        "file": "engine.icons_x2.1-912242a96995bac8.zip",
+        "id": "engine.icons_x2.1",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "69f882e63a12e6862d9c0d6b86b67d4d002e89bfc809755cbb62d19043420f7f",
+        "size": 64238782
+      },
+      {
+        "content_id": "10f45d9904bad4650cabe138740c574a221d3876ac56a79ffb4f4f74620d6a62",
+        "file": "engine.icons_x2.2-10f45d9904bad465.zip",
+        "id": "engine.icons_x2.2",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "bf1271015ecde1bdcac479fb8e3e01f38cfaa6ebb4b2fba8f58a88268b281e6a",
+        "size": 57767948
+      },
+      {
+        "content_id": "c3226ceaa99a61c9484dcec915ebd7e9bcf9c1bbfe1525f59e630963717016c0",
+        "file": "engine.icons_x2.3-c3226ceaa99a61c9.zip",
+        "id": "engine.icons_x2.3",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "1a4bd1b08762f91419ae7a4069b2573b147c11007cd006a1bd79ac3de68696a8",
+        "size": 59608299
+      },
+      {
+        "content_id": "eed9d046d08c3e077a1801e04c61092d7212cc79aa1e89579ac6b84e38475564",
+        "file": "engine.icons_x2.4-eed9d046d08c3e07.zip",
+        "id": "engine.icons_x2.4",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "2f95da138721738a2c53ccd49bea60b1b674e31ea1b02c1559f7029b4d2881a3",
+        "size": 55237910
+      },
+      {
+        "content_id": "69eb344a1f7fecd48754301cdd1389d1646ebd03736b003fa340d2c02f694945",
+        "file": "engine.icons_x2.5-69eb344a1f7fecd4.zip",
+        "id": "engine.icons_x2.5",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "44ef52ec72d21f9686fc3265d23f00166f63352ccdf5ccb497af36257369884c",
+        "size": 55054272
+      },
+      {
+        "content_id": "e56393bf0ecbd92592eb78b4b3d579f58a43f2356b1305c004ad884ff769dc61",
+        "file": "engine.icons_x2.6-e56393bf0ecbd925.zip",
+        "id": "engine.icons_x2.6",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "8b9484195e4fb13306aef4b2347f16499dbdf5155a9102b34441d3383c12b2a5",
+        "size": 49407854
+      },
+      {
+        "content_id": "b9acdc2fff813e5412f8295c98212adb67dc25040483061f5e6b72e5fa3efbad",
+        "file": "engine.icons_x2.7-b9acdc2fff813e54.zip",
+        "id": "engine.icons_x2.7",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "61693e738d4ece43c3485d72ab26cfbf9b44591a5126e31dd3105e76e311cd58",
+        "size": 65923033
+      },
+      {
+        "content_id": "429371ea2255db8cedec3f3641c154bb70dc077a9995dacb18fce93397a81caa",
+        "file": "engine.icons_x2.8-429371ea2255db8c.zip",
+        "id": "engine.icons_x2.8",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "e6b0cf5803c085e1477d8b879888c692d41cb8d32be4ed7126fb2407d134320f",
+        "size": 51463749
+      },
+      {
+        "content_id": "d155ee652147006e0d4e47a066b0dfffd661c2307f424ee9b3c06b37b92df92d",
+        "file": "engine.icons_x2.9-d155ee652147006e.zip",
+        "id": "engine.icons_x2.9",
+        "mount": "/engine/icons_x2",
+        "package": "engine",
+        "sha256": "d729452b7ebf729b168c46fa221d54032d883eba03093d8d78f95fb46d619c0e",
+        "size": 61713160
+      },
+      {
+        "content_id": "94441afc2a951f97b8141efc71f1b69ee518be4a707f0263cc8e40654f03fb93",
+        "file": "engine.models.0-94441afc2a951f97.zip",
+        "id": "engine.models.0",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "9bd282a8af636940f3c06ba948c21ce9f3bce1a18dc970634a32a8c4da0b83bb",
+        "size": 44270300
+      },
+      {
+        "content_id": "63de70b7420b6f3e42346c02e6baccf4108fd1ebea7865e95f7299c53f3a84fc",
+        "file": "engine.models.1-63de70b7420b6f3e.zip",
+        "id": "engine.models.1",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "537b2ffcfb4cc205ed94552c76394d5d1b078f7edb2dd44efe619086d6ebbb24",
+        "size": 46284392
+      },
+      {
+        "content_id": "1eb5639f02bcec9e6b0c8ddc6c0b560bb62cc574ff0104d5f6ac582800596b7f",
+        "file": "engine.models.2-1eb5639f02bcec9e.zip",
+        "id": "engine.models.2",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "7592198fedbf9e0d9085243ffacff8435ab5fa3d61eb2fa597d8f1411df57e37",
+        "size": 43175975
+      },
+      {
+        "content_id": "c73c65147d2b8030f809b68c6cf97e55b6ec0d7bf34fb188a3dda2f8aadd4af0",
+        "file": "engine.models.3-c73c65147d2b8030.zip",
+        "id": "engine.models.3",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "306e87537c04a7d99f5590dda1aee226d00d6e76dd3dc086fc3d40e332ae41ac",
+        "size": 44931024
+      },
+      {
+        "content_id": "84c9cfe3c4027aedd3a034089021d9ed90ae874c76c894467daec157f65e49d4",
+        "file": "engine.models.4-84c9cfe3c4027aed.zip",
+        "id": "engine.models.4",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "37420c4a5b5772279ae115c56d1ce72e4c90028a131445c5df597716b5cbc069",
+        "size": 47675529
+      },
+      {
+        "content_id": "67b7435e083cb97ccc65d23822fc0504ce88f51af6a89acdebeda56592171b4e",
+        "file": "engine.models.5-67b7435e083cb97c.zip",
+        "id": "engine.models.5",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "a5ee337ee2b0618e93f86dc176bfa52855253142ffc6665d01079bf6385f8e44",
+        "size": 36741492
+      },
+      {
+        "content_id": "47913902dc6211c3d2135ded88e5cafce9ee42cb3f6f340248e8d851f42423dd",
+        "file": "engine.models.6-47913902dc6211c3.zip",
+        "id": "engine.models.6",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "85a4d44cf5b2b3fa4c6171d79b386089109f3d154c24e1c8485675ee535c3edc",
+        "size": 43388733
+      },
+      {
+        "content_id": "1245718d6ad41d93aeda22cd7bfb159f82da5f78b6715dbfb6cc026f13311f34",
+        "file": "engine.models.7-1245718d6ad41d93.zip",
+        "id": "engine.models.7",
+        "mount": "/engine/models",
+        "package": "engine",
+        "sha256": "f2e1f986acbe95cf94bb5e327c2d42526813d738e0008d3402721b8b9380b46c",
+        "size": 53768034
+      },
+      {
+        "content_id": "4b76f5e2b978e6ba4a5b1991a0009f521205204bc6f914421abb244e89786f60",
+        "file": "engine.rendering-4b76f5e2b978e6ba.zip",
+        "id": "engine.rendering",
+        "mount": "/engine/rendering",
+        "package": "engine",
+        "sha256": "5c3a2a33f473ac19dade8be2711a785a0ce592571571bbf03e0925e44c3bd1bb",
+        "size": 31757562
+      },
+      {
+        "content_id": "feb9c67012fe059eeeb6d9b9a915d7dfdf5c0491f1d5bc2d840057123a78e6b7",
+        "file": "engine.sprites.0-feb9c67012fe059e.zip",
+        "id": "engine.sprites.0",
+        "mount": "/engine/sprites",
+        "package": "engine",
+        "sha256": "df36e5ea475e251f68a51cb23dda2bbe662e14744bc3440a1f0c89cce3d96379",
+        "size": 293060
+      },
+      {
+        "content_id": "2e0a995f061e1bef9e069c9367a721cb34bd52a8a03caed6e6c16c10a32d36aa",
+        "file": "engine.sprites.1-2e0a995f061e1bef.zip",
+        "id": "engine.sprites.1",
+        "mount": "/engine/sprites",
+        "package": "engine",
+        "sha256": "7f5f60ebc3ee8b3a1678fe292f7197b7d810fc064c480e05a1f609be06ed1105",
+        "size": 287007
+      },
+      {
+        "content_id": "35b2b056f28b9413bb644bebf1641f35cf1af3e12d458aa8dfb1ebabcd9af22a",
+        "file": "engine.sprites.2-35b2b056f28b9413.zip",
+        "id": "engine.sprites.2",
+        "mount": "/engine/sprites",
+        "package": "engine",
+        "sha256": "0d0c7e10d26bc72b1a81f9d54fbacf34d5fb2ddaec2a849745070c8a86e6bfb2",
+        "size": 329676
+      },
+      {
+        "content_id": "2f752c7528d00b7a5e0955419016184900427ebe894511b1e362f1d816f33d48",
+        "file": "engine.terrain_materials.0-2f752c7528d00b7a.zip",
+        "id": "engine.terrain_materials.0",
+        "mount": "/engine/terrain_materials",
+        "package": "engine",
+        "sha256": "5e7ae9de4a4b7ef88addf8fd13a22353328cbd496500ef3478c85878e0967ed5",
+        "size": 30592615
+      },
+      {
+        "content_id": "3a48476484b6b85ab17d11b609f9764ba94f659f522bde79e3700dd1c5bc2d1b",
+        "file": "engine.terrain_materials.1-3a48476484b6b85a.zip",
+        "id": "engine.terrain_materials.1",
+        "mount": "/engine/terrain_materials",
+        "package": "engine",
+        "sha256": "5680b09932f2401c77f123364aeeed8740d0ea90129e6606754c655ee9dbc6c4",
+        "size": 30394466
+      },
+      {
+        "content_id": "4e31bf0926c448bdb4c115d77f064eb467c3bef1668031b1a50705811581abc9",
+        "file": "engine.terrain_materials.2-4e31bf0926c448bd.zip",
+        "id": "engine.terrain_materials.2",
+        "mount": "/engine/terrain_materials",
+        "package": "engine",
+        "sha256": "d816e39fc29506b23ac9537946a76fcebc600affabcc2688cd71646c076b781b",
+        "size": 50505749
+      },
+      {
+        "content_id": "df415033a46d320988ce93b4cd562d03325257ecc1dadd328f218a524df915fa",
+        "file": "engine.terrain_materials.3-df415033a46d3209.zip",
+        "id": "engine.terrain_materials.3",
+        "mount": "/engine/terrain_materials",
+        "package": "engine",
+        "sha256": "3a9ca9ea7d840b2408b3a7015f843cc486bd8d33558e57973c67570a9316ebb7",
+        "size": 65439785
+      },
+      {
+        "content_id": "6557ddf2e4be2db00d13fda93f25c14d2499b7a8f89a04ee7563e4dd3b797a7c",
+        "file": "engine.world_items.0-6557ddf2e4be2db0.zip",
+        "id": "engine.world_items.0",
+        "mount": "/engine/world_items",
+        "package": "engine",
+        "sha256": "4dd0c4abe2412cdaa22c9aaa6ebdff0c486538304705d1e233f53ff7cef53a2f",
+        "size": 49543760
+      },
+      {
+        "content_id": "7c22c376cf9f294337e2312f17bb50043df07f4e90ad12a9802630d3bb774386",
+        "file": "engine.world_items.1-7c22c376cf9f2943.zip",
+        "id": "engine.world_items.1",
+        "mount": "/engine/world_items",
+        "package": "engine",
+        "sha256": "b2eb87901bdfb5635fa631ec9467b8c0269eb8699d1efc7d852eb0989c2c36a8",
+        "size": 51969042
+      },
+      {
+        "content_id": "e7fefdc7db128ea5cb730d2644de0340453a15dc4719ab7df6ae3eeafb1b4d9d",
+        "file": "engine.world_items.2-e7fefdc7db128ea5.zip",
+        "id": "engine.world_items.2",
+        "mount": "/engine/world_items",
+        "package": "engine",
+        "sha256": "4aa3ac389068b2e7682eae2bb490d5f7f7b3ac3b3934b3f1e1de6f5ae332c27c",
+        "size": 46620388
+      },
+      {
+        "content_id": "097cf02e0389f5bbb478f553646adcde53b919fdcc0ecab94d81c166366a4193",
+        "file": "mm6.core-097cf02e0389f5bb.zip",
+        "id": "mm6.core",
+        "mount": "/worlds/mm6",
+        "package": "mm6",
+        "sha256": "1c7c43344b5d60b104057ad4a6c72b2678c2183089a953db9545cd411e3e3895",
+        "size": 13642089
+      },
+      {
+        "content_id": "fa96826d2c2ef02bb8c7ff412e8d199e58b10536c5cb3a55aa99332ce86ee3d1",
+        "file": "mm6.icons_x2-fa96826d2c2ef02b.zip",
+        "id": "mm6.icons_x2",
+        "mount": "/worlds/mm6/icons_x2",
+        "package": "mm6",
+        "sha256": "738b457c2ccb37ff6d1d6e23b0fe01aad87749f981c1fd361f892da7c80d958a",
+        "size": 60109405
+      },
+      {
+        "content_id": "93b3605533bdd7c0216effcb69a16642cde97e4023f34a01e47f788db37a9b80",
+        "file": "mm6.maps.0-93b3605533bdd7c0.zip",
+        "id": "mm6.maps.0",
+        "mount": "/worlds/mm6/maps",
+        "package": "mm6",
+        "sha256": "7d524e965c0ec383ec3f245d059aada4aab75e2a2ae19c7ec5e50dbe65ca7347",
+        "size": 5552123
+      },
+      {
+        "content_id": "8d4a5772c18cd8115156d36f4ca22eda4b663ad021ad45e105941f3f833e1552",
+        "file": "mm6.maps.1-8d4a5772c18cd811.zip",
+        "id": "mm6.maps.1",
+        "mount": "/worlds/mm6/maps",
+        "package": "mm6",
+        "sha256": "51d70e5fe3706a29898d2331b87ab683d58c2c6a2458f929e34dbb5a2b1b6980",
+        "size": 6489820
+      },
+      {
+        "content_id": "8bcfe09d57f0c18a60de56ad6beca049e8ece815cd6973cbd6cada172adc3134",
+        "file": "mm6.maps.lighting.0-8bcfe09d57f0c18a.zip",
+        "id": "mm6.maps.lighting.0",
+        "mount": "/worlds/mm6/maps",
+        "package": "mm6",
+        "sha256": "36d786bcbd81fedb5985d3dd57bfbeacd4009d4d0024bc9e15e7e042cc24b7b0",
+        "size": 22062807
+      },
+      {
+        "content_id": "49177ae33bc8386ab5cffc534ceabaeb677eb2cacf4cdd3a0af7b4b82625972d",
+        "file": "mm6.maps.lighting.1-49177ae33bc8386a.zip",
+        "id": "mm6.maps.lighting.1",
+        "mount": "/worlds/mm6/maps",
+        "package": "mm6",
+        "sha256": "55c916f3019bce2e2f93257888e29a557f95734b8974474e69f7b790cc1ce68f",
+        "size": 21210243
+      },
+      {
+        "content_id": "0ef715d7bf61467b41cd80345417aff2018ced35df04718d271d88b07b49c4a0",
+        "file": "mm6.maps.lighting.2-0ef715d7bf61467b.zip",
+        "id": "mm6.maps.lighting.2",
+        "mount": "/worlds/mm6/maps",
+        "package": "mm6",
+        "sha256": "83e5a1949994a4b3fec2785b3c4030e64cb243e1dd68fe2e03377b932dcc0674",
+        "size": 25129582
+      },
+      {
+        "content_id": "b16e699da93984d6068d8daf58225d05cda1698bd6d9936885bff7ab7e8a95ee",
+        "file": "mm6.maps.lighting.3-b16e699da93984d6.zip",
+        "id": "mm6.maps.lighting.3",
+        "mount": "/worlds/mm6/maps",
+        "package": "mm6",
+        "sha256": "e6b93a53cb461a2819055c3ce41a597faaf063225d806988f9c3b38fbe9d684a",
+        "size": 26456002
+      },
+      {
+        "content_id": "f14230186d556dfd8296145758c54cab89f47ca6dfdf2f664eb79bc1c0c3fc6b",
+        "file": "mm6.models.0-f14230186d556dfd.zip",
+        "id": "mm6.models.0",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "08f6681c5069c551e6a2878ef586d4ff39c4350d62847cee0130a2d71da6d292",
+        "size": 88140942
+      },
+      {
+        "content_id": "75af1a54aa410386da6a789ca53fe21a6a6b3b9bb54a78970057b44b5f18b5dc",
+        "file": "mm6.models.1-75af1a54aa410386.zip",
+        "id": "mm6.models.1",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "d15ef5d8412c64ae20902294bd4fb92d73d45ec7b47542f05d24ff9129c0e452",
+        "size": 50736819
+      },
+      {
+        "content_id": "49d3bf25bcfc93efab431454613a28370bdee2f58b1e575a4d4a908e8b307992",
+        "file": "mm6.models.2-49d3bf25bcfc93ef.zip",
+        "id": "mm6.models.2",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "073d5c8917fed8fa93181cf70926f147d6ffdad5430e75bc8e93170185db01af",
+        "size": 52351882
+      },
+      {
+        "content_id": "3ec3535f50a82935f99dc466be1409c4f02a6469d6e97d7f3313975777a523f6",
+        "file": "mm6.models.3-3ec3535f50a82935.zip",
+        "id": "mm6.models.3",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "39dfc32942d8eea925d061a7f03ca37094b9b26f3c41e1ee978d9f21610f7636",
+        "size": 26260727
+      },
+      {
+        "content_id": "ef0058142a9e506f90a9c7d9e921a1a7004bb61b979cc77389225fa34cbf6acc",
+        "file": "mm6.models.4-ef0058142a9e506f.zip",
+        "id": "mm6.models.4",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "eb8335dee837de8ccebe3c78ef828dceebace0fc134426acaeba6ac51271d4ad",
+        "size": 34183239
+      },
+      {
+        "content_id": "3383a5447cd643fd8ddb6c2f7ebdecc35a119f13b3aea5dd9230264366e10a4b",
+        "file": "mm6.models.5-3383a5447cd643fd.zip",
+        "id": "mm6.models.5",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "115ded089721b9507181b1e68145abb309fbd25cf97c4026157fcf4e860f73d4",
+        "size": 15921282
+      },
+      {
+        "content_id": "62a16cec7e2a2616b53cd53476fde943c13530da7ded89b683174d84a4dae284",
+        "file": "mm6.models.6-62a16cec7e2a2616.zip",
+        "id": "mm6.models.6",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "c7a8eec31f056c7eed4d82c0b69d698e1b427173ef5dd6aebf7e057d7919df25",
+        "size": 54598677
+      },
+      {
+        "content_id": "d7f3a62369a8e0045620848fea591467b5c9b57594bda0bea57144c5ab498127",
+        "file": "mm6.models.7-d7f3a62369a8e004.zip",
+        "id": "mm6.models.7",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "00ebe26774306d7d0f601ec1ba102462e3d747c6d04d008317cf6bbd3bf34d27",
+        "size": 32869627
+      },
+      {
+        "content_id": "5f3abf86cb797039c2a9fc237e3b174d7de09963755c66ee6c576a6351b0c376",
+        "file": "mm6.models.8-5f3abf86cb797039.zip",
+        "id": "mm6.models.8",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "da236d131adf72784f7461749e46c2f8c4052286fe24eed52d0eb3a635d0c4ce",
+        "size": 43735814
+      },
+      {
+        "content_id": "bd9c0bc4cc0d39e77b608e92d28b694e8cace8c62adef8fa01a02a12da4cb17a",
+        "file": "mm6.models.9-bd9c0bc4cc0d39e7.zip",
+        "id": "mm6.models.9",
+        "mount": "/worlds/mm6/models",
+        "package": "mm6",
+        "sha256": "4ff821d0c8c4fff3d6453efcf9fb96fc0a8771ef62cf13909ae92df089466871",
+        "size": 78129696
+      },
+      {
+        "content_id": "98227b20e3ec2d728a99a613c6ebfaa0b319ba8abfb8512299bd8d431691a989",
+        "file": "mm6.music.0-98227b20e3ec2d72.zip",
+        "id": "mm6.music.0",
+        "mount": "/worlds/mm6/music",
+        "package": "mm6",
+        "sha256": "7c462aac6b7b3a1a5a63bb5b4f8b9816221e53e64540644da4c4bf99429d7869",
+        "size": 62400445
+      },
+      {
+        "content_id": "67dab162077f11c60561f53c9e4758b5fa59bb09c77ee8921f2637c54af4b382",
+        "file": "mm6.music.1-67dab162077f11c6.zip",
+        "id": "mm6.music.1",
+        "mount": "/worlds/mm6/music",
+        "package": "mm6",
+        "sha256": "8fe83be31133c27ef2fb3abb928afb7f84a888cd998624f3853133e1e996aab5",
+        "size": 60143490
+      },
+      {
+        "content_id": "42f62e99678db9dd738126c0fafbb213aad64611db85d24513e86ecc152e5d43",
+        "file": "mm6.textures_x4.0-42f62e99678db9dd.zip",
+        "id": "mm6.textures_x4.0",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "1b603e5518a6a5283fca18fb93be9df6eddaf93ff0d403a65a6caeecd78321e1",
+        "size": 59769000
+      },
+      {
+        "content_id": "d2fc77c166e458a59e75d43994c4ce745b8932fe2b8f61a6dd0c8fb6296a5a43",
+        "file": "mm6.textures_x4.1-d2fc77c166e458a5.zip",
+        "id": "mm6.textures_x4.1",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "26e6ba43184fd085fb6a776d16c330c2dc203977f9567616a2fe52b61886ddb6",
+        "size": 67149267
+      },
+      {
+        "content_id": "1e9bf66703a61b0cb6517f5b352aeca655b910fa021e02ce7dc7aff370329632",
+        "file": "mm6.textures_x4.10-1e9bf66703a61b0c.zip",
+        "id": "mm6.textures_x4.10",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "d5b8dfecf2643010b9a8433eed6b76bce132d4c8e8a2fe478aa6f64f3c71c71a",
+        "size": 59902052
+      },
+      {
+        "content_id": "77552e4cd52b48d78a7e0feb572b3959fd617f5355dfacc778c2e29fe8854174",
+        "file": "mm6.textures_x4.11-77552e4cd52b48d7.zip",
+        "id": "mm6.textures_x4.11",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "993833711207abe3db035c76158c5df88a49f3f9c100af54879c79c59c8c6040",
+        "size": 59093271
+      },
+      {
+        "content_id": "13dd712db47fc4a52a1cfea6047708f4c9bfdbab227bca38bf7b756bd918b479",
+        "file": "mm6.textures_x4.12-13dd712db47fc4a5.zip",
+        "id": "mm6.textures_x4.12",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "a30c65dfdfcad3700b2385d6ce695e2033321fc124368086f28c037a864cd980",
+        "size": 62349132
+      },
+      {
+        "content_id": "b227013ddecafa19409fddf4bb5e57dbee2b2a10de3f46e6667dec9b4cb3e918",
+        "file": "mm6.textures_x4.13-b227013ddecafa19.zip",
+        "id": "mm6.textures_x4.13",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "65b6051b0593068e2d486093b6929279c30368b45d11b3e84984ec13648372f2",
+        "size": 58896275
+      },
+      {
+        "content_id": "86708075a0543ca6d0d39aa9db2e3f2d291be36bea26b595e3b4ccbcd5907391",
+        "file": "mm6.textures_x4.2-86708075a0543ca6.zip",
+        "id": "mm6.textures_x4.2",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "088b901f4c76786d995d868fc6fbb1a1850dee3ffb0a351224c20bbb6a03f1b6",
+        "size": 63582749
+      },
+      {
+        "content_id": "8614bd5007fe0300d3dfc1a1dd4d23cc4a5dcd488a5f8a86a271b654cf673c41",
+        "file": "mm6.textures_x4.3-8614bd5007fe0300.zip",
+        "id": "mm6.textures_x4.3",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "f021def42bcd29392ccc1e75eb747c796776e932ae0b1f67a83dcaea66692aac",
+        "size": 57194386
+      },
+      {
+        "content_id": "1a3b14909fd1653d11c2376ee71904d49c47d07e52216a0db2524491a3c35c34",
+        "file": "mm6.textures_x4.4-1a3b14909fd1653d.zip",
+        "id": "mm6.textures_x4.4",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "ee1356107269ad4fb87384391701d22b080bd7e702afd602cdc2fedc2a2d0fb0",
+        "size": 57687747
+      },
+      {
+        "content_id": "d6d9e0ce28ac25755bdd5633ac74c3568a0c535ce95dde6232745435b9d09ccb",
+        "file": "mm6.textures_x4.5-d6d9e0ce28ac2575.zip",
+        "id": "mm6.textures_x4.5",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "e3a94fd55109e71f69581d5cd0c7b5aebd51157b4b4b8f7696ab380d23780fe6",
+        "size": 58937315
+      },
+      {
+        "content_id": "2984daa44ba4954cbdc12e3e5f558f087914e8d3fbccfc4616da6b242f05027e",
+        "file": "mm6.textures_x4.6-2984daa44ba4954c.zip",
+        "id": "mm6.textures_x4.6",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "2861d201475a16281c5d5223e62b1e7ccf3b30f3f955c0be88a39d3a6d5a179d",
+        "size": 63992307
+      },
+      {
+        "content_id": "091d634236898252e6aeeee0ddd81a14d9378f633be90005b5824490c142071c",
+        "file": "mm6.textures_x4.7-091d634236898252.zip",
+        "id": "mm6.textures_x4.7",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "e4c676fc22435206b8ee4d44178a8669830d6e50cd0121f4d61e10b9e2588229",
+        "size": 65775533
+      },
+      {
+        "content_id": "822cd42da5031c48a494178e6e8a2d5a88a0308129a97577efe340891185fc8c",
+        "file": "mm6.textures_x4.8-822cd42da5031c48.zip",
+        "id": "mm6.textures_x4.8",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "699918cc9bee52a5e694f44783f195b8bd2a043219500a012301dc0896ab1874",
+        "size": 67678521
+      },
+      {
+        "content_id": "228698859397bcc6646b491af69f119a86f5c1ee6d0c8a2136fd228157b431db",
+        "file": "mm6.textures_x4.9-228698859397bcc6.zip",
+        "id": "mm6.textures_x4.9",
+        "mount": "/worlds/mm6/textures_x4",
+        "package": "mm6",
+        "sha256": "1b6fc66122f2edcd4017d5236be30c3e2343197c52b7ec66c646c3f776d57960",
+        "size": 58051771
+      },
+      {
+        "content_id": "b7e4cb8ae00b36572130470508d9bcfd95868157117a0379e6c69caf080d80f4",
+        "file": "mm6.videos.0-b7e4cb8ae00b3657.zip",
+        "id": "mm6.videos.0",
+        "mount": "/worlds/mm6/videos",
+        "package": "mm6",
+        "sha256": "b7bac241a4bc71581770d68b0c6457554edcda39e28516d6f30ab8651ad3a278",
+        "size": 19429796
+      },
+      {
+        "content_id": "b6eb6901b933e40619c596ed184a9c5a0fac3712654aa9a9ca0eb7cf5cae3f33",
+        "file": "mm6.videos.1-b6eb6901b933e406.zip",
+        "id": "mm6.videos.1",
+        "mount": "/worlds/mm6/videos",
+        "package": "mm6",
+        "sha256": "52497b2d25afb4e8b4219b628574369ac6f54165c770e15c16019736c7a57583",
+        "size": 52847559
+      },
+      {
+        "content_id": "322ce8253dc2c93fe8613acd30c7c7d4c84dc3ac81fa607c06509c10605302a8",
+        "file": "mm7.core-322ce8253dc2c93f.zip",
+        "id": "mm7.core",
+        "mount": "/worlds/mm7",
+        "package": "mm7",
+        "sha256": "2e100cfae933871508182ac8d0a2fd0c803565e70ec2661923aec897c6d39c44",
+        "size": 10586339
+      },
+      {
+        "content_id": "63b4ecd5f401f3cce5ed77e46e5c20ebd3e92b34632c6dc69788b70dc14e3724",
+        "file": "mm7.icons_x2-63b4ecd5f401f3cc.zip",
+        "id": "mm7.icons_x2",
+        "mount": "/worlds/mm7/icons_x2",
+        "package": "mm7",
+        "sha256": "2009926342705182b607238d11b39e8e6f8ab7ac3b3ab3fa9831bad443df21c9",
+        "size": 37004638
+      },
+      {
+        "content_id": "fb9f6afde9dc9e41148bb59602269a30b7f45fc4741318945a03367b762da83b",
+        "file": "mm7.maps.0-fb9f6afde9dc9e41.zip",
+        "id": "mm7.maps.0",
+        "mount": "/worlds/mm7/maps",
+        "package": "mm7",
+        "sha256": "4190727217817a46f04e21ab1d5ea758b19c31206d529e8ddb93e7c2d82838bf",
+        "size": 10162661
+      },
+      {
+        "content_id": "9482e31dc479ab5cd5042f53447f4e4d1e190d6532876e83a66d9697d062621e",
+        "file": "mm7.maps.1-9482e31dc479ab5c.zip",
+        "id": "mm7.maps.1",
+        "mount": "/worlds/mm7/maps",
+        "package": "mm7",
+        "sha256": "9e011713328c47f4884221025d31251f783409e70c1e5a26f95d6f264856726e",
+        "size": 7695063
+      },
+      {
+        "content_id": "778ed5a0c0a4aaa905700c25459127fa72ffe73eaca860680ada607f1cf9dccf",
+        "file": "mm7.maps.lighting.0-778ed5a0c0a4aaa9.zip",
+        "id": "mm7.maps.lighting.0",
+        "mount": "/worlds/mm7/maps",
+        "package": "mm7",
+        "sha256": "d18a9530e7cd5f9bf32e77685796b817a99e29ac4c1b52765de7be5b4256ae02",
+        "size": 35524423
+      },
+      {
+        "content_id": "3c55769a11b1833a468c3ae6d49cfa4d5d09fe65105999ca8f3b8439daf3f266",
+        "file": "mm7.maps.lighting.1-3c55769a11b1833a.zip",
+        "id": "mm7.maps.lighting.1",
+        "mount": "/worlds/mm7/maps",
+        "package": "mm7",
+        "sha256": "4518edf74295dd31fd1d1122c24aad67c77eef064b1f394206439569731fba60",
+        "size": 23392144
+      },
+      {
+        "content_id": "39b22b67b829d7db5245f36ad4c260a22ec1d9ef83ee558e509ea289f64046a1",
+        "file": "mm7.maps.lighting.2-39b22b67b829d7db.zip",
+        "id": "mm7.maps.lighting.2",
+        "mount": "/worlds/mm7/maps",
+        "package": "mm7",
+        "sha256": "36942e4de40c9f9f9cdde0131a1ceee0bff5bd2e11ae5dd3bb552a671d883d75",
+        "size": 42760363
+      },
+      {
+        "content_id": "b68ee7aa3d18e0163f92f443a70a27c7d1a2de1a33f547cbd80f2b8a9dcad448",
+        "file": "mm7.maps.lighting.3-b68ee7aa3d18e016.zip",
+        "id": "mm7.maps.lighting.3",
+        "mount": "/worlds/mm7/maps",
+        "package": "mm7",
+        "sha256": "8243e7fe96a567bad23458381b1805296c3e898770cbb338569644649ee63a4e",
+        "size": 11725820
+      },
+      {
+        "content_id": "60086bf67bd91227b7758f168a069c799b542858389dd4837dfbddfce7d5b290",
+        "file": "mm7.models.0-60086bf67bd91227.zip",
+        "id": "mm7.models.0",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "a9b83e83d1c1b2fd6ef6f00e2e6855481040a26973766ec562bcc28e5c5c94c2",
+        "size": 62947941
+      },
+      {
+        "content_id": "ec8c49e53e802db670df99cc98c81bace06385a8ce0407ecd53556bae1df12a6",
+        "file": "mm7.models.1-ec8c49e53e802db6.zip",
+        "id": "mm7.models.1",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "69ced3b482a59984158ecd9a02b32515a62b7147bf536ec15a55c99af03b3ceb",
+        "size": 33064673
+      },
+      {
+        "content_id": "e17b104af7d1cc7cc7ca86e24f22ae8f5a4e2f7dbf90bcb01fd38810930599c6",
+        "file": "mm7.models.2-e17b104af7d1cc7c.zip",
+        "id": "mm7.models.2",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "49c60bfbf336ab65e175216975c6b375816f2c19ef8486d6ccce5919d518635b",
+        "size": 54363480
+      },
+      {
+        "content_id": "a01ecbc0bf46f007a5430b7c669158612ff6f4002b3a677a4fdc4d17cd0fb257",
+        "file": "mm7.models.3-a01ecbc0bf46f007.zip",
+        "id": "mm7.models.3",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "8cc9f42cd5a289850b95de37b341b056d508dd5256d9234770d02963d1741024",
+        "size": 61689387
+      },
+      {
+        "content_id": "26f91ef19ba0d4c8bb8d89a78742a0c7a447b6b9086816a71f910cdcf3bcdb7e",
+        "file": "mm7.models.4-26f91ef19ba0d4c8.zip",
+        "id": "mm7.models.4",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "9a65dbd765ee5b162dde9859f22fa4f724536f9bd35cb920af916e38042610f3",
+        "size": 57200882
+      },
+      {
+        "content_id": "37bc0310398975bc7f1671c79c62fd1aacbbec95209e01cff22ecc989c16d30d",
+        "file": "mm7.models.5-37bc0310398975bc.zip",
+        "id": "mm7.models.5",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "74cc935f26ef26ae7a1890abc4f73cb124358a1bfb6219e7c85b472dc5dabd8b",
+        "size": 44401349
+      },
+      {
+        "content_id": "e2722255a9d90e77b014ad7eda9d76912bcc3160d22fc7eb1eeaa65f47a6233a",
+        "file": "mm7.models.6-e2722255a9d90e77.zip",
+        "id": "mm7.models.6",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "06f63a40ef36638f1ed2522c444956c618536045f16f29ec6723c21bf9713468",
+        "size": 19285768
+      },
+      {
+        "content_id": "ed52fbdb4064d1c0aa39e643eba11616df4da223881636197a1dad496a3fbc4c",
+        "file": "mm7.models.7-ed52fbdb4064d1c0.zip",
+        "id": "mm7.models.7",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "d12854a5e74aa74a98d84b14b4d7dba087cc729f29edeb95ac1b997921a61ba2",
+        "size": 40177668
+      },
+      {
+        "content_id": "d068b20da95a4a3142ad358defdc70f56eba53f372b80e1ed0b226fec105bd21",
+        "file": "mm7.models.8-d068b20da95a4a31.zip",
+        "id": "mm7.models.8",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "cb47a11d26074187dc3263340da3701c29a582711db8bb6d04ea69771cbde930",
+        "size": 40001464
+      },
+      {
+        "content_id": "19accc08545aa9acbd2757acd613aacd2aa9115f452a5f7cb2e095d83ceb5c6f",
+        "file": "mm7.models.9-19accc08545aa9ac.zip",
+        "id": "mm7.models.9",
+        "mount": "/worlds/mm7/models",
+        "package": "mm7",
+        "sha256": "f4b5352611c263701bb1f05f6b3c8659bf2d5e5f12323d1a91e9530109d141d1",
+        "size": 46843528
+      },
+      {
+        "content_id": "615169c7ef8801ed984afc8e15bab567353ebf58a88cfa1a672c1c19925ba55c",
+        "file": "mm7.music.0-615169c7ef8801ed.zip",
+        "id": "mm7.music.0",
+        "mount": "/worlds/mm7/music",
+        "package": "mm7",
+        "sha256": "004ca648f16043e28c0ca8cbc2ddfac566d34825fe56ceb589489bb841a1bce3",
+        "size": 39923460
+      },
+      {
+        "content_id": "50769f65b69416af8e0a043f017c56b74afe079224b7b5aa147884d727939a29",
+        "file": "mm7.music.1-50769f65b69416af.zip",
+        "id": "mm7.music.1",
+        "mount": "/worlds/mm7/music",
+        "package": "mm7",
+        "sha256": "60e5bbdf71a99e462e6adfbe51e15e7bb1c6c51b741336bd4fe575f4933f3c77",
+        "size": 45227116
+      },
+      {
+        "content_id": "21784a77dcf0d65c10ca4db7c8016b9f5e95c06003f4c3a257d45d0fda75f265",
+        "file": "mm7.textures_x4.0-21784a77dcf0d65c.zip",
+        "id": "mm7.textures_x4.0",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "182b5bf6421658abb9dcbf0206d1fd7ca72dfc3b4292629631edd506cd861c74",
+        "size": 48353707
+      },
+      {
+        "content_id": "2ae1fe99e5a5d596a46fddf802ac72f533b06d075c8741200b140da0ab21cf0b",
+        "file": "mm7.textures_x4.1-2ae1fe99e5a5d596.zip",
+        "id": "mm7.textures_x4.1",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "cb2dfae6688b38509b1f09e497fdad86b5825cc4336d79b5cca8099eba504ebf",
+        "size": 63528258
+      },
+      {
+        "content_id": "1149de1fa23f43d40a39a78ef5e34724f0c6af20de7c3c7db70201d94e2a0070",
+        "file": "mm7.textures_x4.2-1149de1fa23f43d4.zip",
+        "id": "mm7.textures_x4.2",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "bfcb8f1edc700bf27f8c1c625d1cb496564966467a1f76d8c3276a6cb5aa2154",
+        "size": 53279270
+      },
+      {
+        "content_id": "221c0d8df03d9da53423394a26f82aca69326b769c9c7a2967d7d4c8735573bc",
+        "file": "mm7.textures_x4.3-221c0d8df03d9da5.zip",
+        "id": "mm7.textures_x4.3",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "405e811876df43a4447c929d3fb7b265a01290bba4a401e235c24e6650061f28",
+        "size": 57614971
+      },
+      {
+        "content_id": "c43bf19a0fd707ae0852724b7efe63dcdc0ab97ba1cd3fe684c442cef0bcf0e0",
+        "file": "mm7.textures_x4.4-c43bf19a0fd707ae.zip",
+        "id": "mm7.textures_x4.4",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "03b36c143055c7a964a6951fc2a1246f96e95f3a8bf57753611e0091a2a774bc",
+        "size": 53368217
+      },
+      {
+        "content_id": "5164548913cff7f8002655e47b97567eaee2cc6b1588451360990b66146748f3",
+        "file": "mm7.textures_x4.5-5164548913cff7f8.zip",
+        "id": "mm7.textures_x4.5",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "4137ba63d20a30f3ba01730fe33adb54a3e029294bbee0a4d864a3744ce8d177",
+        "size": 58887550
+      },
+      {
+        "content_id": "187f3bf296fc37a04d5a965f5d2ee4aeb9bd34433490b1818ce56b8606328fd9",
+        "file": "mm7.textures_x4.6-187f3bf296fc37a0.zip",
+        "id": "mm7.textures_x4.6",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "a79e5cfaa69e6c12ac900c5e54e04da1b4fc723ad1808f6ae3af1fd49b7b2809",
+        "size": 57815632
+      },
+      {
+        "content_id": "cccf3eb4a07e28f58c0cb5fbc69386dc922ac6baf8fc99e0f2d8d96739ce3fcf",
+        "file": "mm7.textures_x4.7-cccf3eb4a07e28f5.zip",
+        "id": "mm7.textures_x4.7",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "994b62ad2130d3d29966c71fd3adeefe7aa04ea7407c2979bffe4495231a0fb9",
+        "size": 50768564
+      },
+      {
+        "content_id": "09dc9645a24ed3183984d363bfa8be879617ef8ba5d2d0787119c0d22a4eb013",
+        "file": "mm7.textures_x4.8-09dc9645a24ed318.zip",
+        "id": "mm7.textures_x4.8",
+        "mount": "/worlds/mm7/textures_x4",
+        "package": "mm7",
+        "sha256": "5d6b0081e263a7fbfb6d8307e805d6bc77dad641ef7392b85f3b56d70a022ad4",
+        "size": 65370629
+      },
+      {
+        "content_id": "4e8477f6474acc5e7fc3f53c1f5ce669a2ec6bfb5dbe9a4840a067414491012c",
+        "file": "mm7.videos.0-4e8477f6474acc5e.zip",
+        "id": "mm7.videos.0",
+        "mount": "/worlds/mm7/videos",
+        "package": "mm7",
+        "sha256": "a6d87f0007ca322988935c40a5bfbd608100608d4b2a4790b95a8fe5a05c7ed8",
+        "size": 44855448
+      },
+      {
+        "content_id": "cbef206f278daaca18740f3129931d3f4f7c433afde6b1c7afba7b33f8531a40",
+        "file": "mm7.videos.1-cbef206f278daaca.zip",
+        "id": "mm7.videos.1",
+        "mount": "/worlds/mm7/videos",
+        "package": "mm7",
+        "sha256": "0c7e443611b0f11cc2890b6cec5826e0c63204c854916e29f11186c56391ce10",
+        "size": 30922991
+      },
+      {
+        "content_id": "1af31f4dc704dbc9771348bf1c7da10614d2dfae95dd53c852a40ca865e39b1c",
+        "file": "mm8.core-1af31f4dc704dbc9.zip",
+        "id": "mm8.core",
+        "mount": "/worlds/mm8",
+        "package": "mm8",
+        "sha256": "b4cfc6f99e1cb9cc485592eace8657a8dfc81adc8fe1ff3166b64e77b5aa353e",
+        "size": 9331235
+      },
+      {
+        "content_id": "dedf5919df6123bb0bfaa0630289469149ce171c47c921489d71a1aa0ddf765e",
+        "file": "mm8.icons_x2-dedf5919df6123bb.zip",
+        "id": "mm8.icons_x2",
+        "mount": "/worlds/mm8/icons_x2",
+        "package": "mm8",
+        "sha256": "84e8ef7ecec3c0d37d6619851e1f4c486c1dda5b7cb1e0f55d041e23901471ac",
+        "size": 37188484
+      },
+      {
+        "content_id": "d8a6f7809039f92ee43064ea80bd477543539752e3e59d823991850c957baa77",
+        "file": "mm8.maps.0-d8a6f7809039f92e.zip",
+        "id": "mm8.maps.0",
+        "mount": "/worlds/mm8/maps",
+        "package": "mm8",
+        "sha256": "3b5d33445c94ba2a6f0c626bb3a8708550962a5aac29de8dafc7baa1d7d45ec1",
+        "size": 5687680
+      },
+      {
+        "content_id": "ecbb6af8ebb33bad4c457933be3702d7a34fc9e9bd0ee6b36e15d0fe22eb11b0",
+        "file": "mm8.maps.1-ecbb6af8ebb33bad.zip",
+        "id": "mm8.maps.1",
+        "mount": "/worlds/mm8/maps",
+        "package": "mm8",
+        "sha256": "42cfc7337b8eb73434e29e83db6acfcc6eb705dbd0d01c549964685c4954bf90",
+        "size": 7304417
+      },
+      {
+        "content_id": "0b8728862e2338674d203e3c61e01285aaff1361322112c3e647c0d6f8e08dd8",
+        "file": "mm8.maps.lighting.0-0b8728862e233867.zip",
+        "id": "mm8.maps.lighting.0",
+        "mount": "/worlds/mm8/maps",
+        "package": "mm8",
+        "sha256": "f16c956056460f665754588174ea02c448d02f79bb9ab7f4b06604b78d572468",
+        "size": 22643626
+      },
+      {
+        "content_id": "6f68b16428c08abc7f9c80af30fd9fa637b84015acf331868b8d4352ab8a3ee5",
+        "file": "mm8.maps.lighting.1-6f68b16428c08abc.zip",
+        "id": "mm8.maps.lighting.1",
+        "mount": "/worlds/mm8/maps",
+        "package": "mm8",
+        "sha256": "faac26f7c1539be2a73b0f40f0ba88151fa3cc6c7eaba8d8047f3468d3df39f2",
+        "size": 40110621
+      },
+      {
+        "content_id": "2dc0d3d81aefc1774274a41d73f07135c8ab9118d7ce943c86ca46529ad97c21",
+        "file": "mm8.maps.lighting.2-2dc0d3d81aefc177.zip",
+        "id": "mm8.maps.lighting.2",
+        "mount": "/worlds/mm8/maps",
+        "package": "mm8",
+        "sha256": "93b2644bdaeb59e0769642513a414baf89d95b555ae05aa27ee50d8db2bafd03",
+        "size": 14826868
+      },
+      {
+        "content_id": "b3d7dd03b1c5ac10bd5578f583ced0aa3654a8869110704f90c336d290fb98d3",
+        "file": "mm8.maps.lighting.3-b3d7dd03b1c5ac10.zip",
+        "id": "mm8.maps.lighting.3",
+        "mount": "/worlds/mm8/maps",
+        "package": "mm8",
+        "sha256": "5a0627cb31096252df89c8a9f68f0ae7160dc39bb8697d18a3702017119960d4",
+        "size": 31513513
+      },
+      {
+        "content_id": "800edd0813455c4310f1797ad3fe25163c2c0e438a293e43a99756f2b734f65b",
+        "file": "mm8.models.0-800edd0813455c43.zip",
+        "id": "mm8.models.0",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "ce8b16d2e52e4cba98d363ac3689cdabe8028babee1c28c542c329e563b23937",
+        "size": 63707623
+      },
+      {
+        "content_id": "2e161393ff79f7af2606b4a502b743e6fa65d2b2448fa3526ffe31cdadfdbc9b",
+        "file": "mm8.models.1-2e161393ff79f7af.zip",
+        "id": "mm8.models.1",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "dcef9f7e95896cb06fef09106b8e80429bda17ccc2d44422d20a2a94fca26367",
+        "size": 38414186
+      },
+      {
+        "content_id": "25c36182d2af6df4d837642a01fa69c9df03543435ff7c03ec4617ddcaa839b6",
+        "file": "mm8.models.2-25c36182d2af6df4.zip",
+        "id": "mm8.models.2",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "9fbed78373be33d88cfe7471a1ffdac07b988bc9a95c29c2912e7ae34dc5f5c6",
+        "size": 37930575
+      },
+      {
+        "content_id": "675e4a78d64f1158b23364546604b73092baa5c2d721e14c929db5200c0cb4f7",
+        "file": "mm8.models.3-675e4a78d64f1158.zip",
+        "id": "mm8.models.3",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "616799532f0d85c670e1fa7dbca08148979e9333fcef35cc6240fea5a30da246",
+        "size": 8996432
+      },
+      {
+        "content_id": "95902a8af94c8cc4eb82fddbcb4ba26bbccd676f14ac6f8a79d74e157b7c42c5",
+        "file": "mm8.models.4-95902a8af94c8cc4.zip",
+        "id": "mm8.models.4",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "7c169d951271eeae028fc5afd2107c36e0bf2f49965f327cf54b05d96d4284e0",
+        "size": 49201401
+      },
+      {
+        "content_id": "71db3303db29912ae254aef085ce3f7d47388cb984118562eb8a6fcf20e86ba1",
+        "file": "mm8.models.5-71db3303db29912a.zip",
+        "id": "mm8.models.5",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "50a68e080d0a74d7b7ca90dce1c82fe38d6884d5e627e7b588d3a9e6ddc4e3c6",
+        "size": 48648834
+      },
+      {
+        "content_id": "84eb343a1ac21be34cd7906aaafb6b3dcafe75cff737c8c7ee75228af1a887c6",
+        "file": "mm8.models.6-84eb343a1ac21be3.zip",
+        "id": "mm8.models.6",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "840c93eb4f346f8c557cfd5fc2b14a463a3eff4f8c18981c96f78129744f7c1c",
+        "size": 33381671
+      },
+      {
+        "content_id": "a0a6d0020cdde6c6b458f9a5f5715fcf1a3b359fdad73ab285b84004b28304b9",
+        "file": "mm8.models.7-a0a6d0020cdde6c6.zip",
+        "id": "mm8.models.7",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "6053bc581d142cdeaade75136460e398c9c1fbfdb80f47b3fe637025c60211f9",
+        "size": 38736805
+      },
+      {
+        "content_id": "584bfbf590a12f5e8a0c2e1cf916430eb229e6d78bac5236addc8a11552011b3",
+        "file": "mm8.models.8-584bfbf590a12f5e.zip",
+        "id": "mm8.models.8",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "36bf668e0b5bc1ac169b0ba14d7bb71e95901344ca8e62c8794d9e7a4aedc01f",
+        "size": 19365361
+      },
+      {
+        "content_id": "8b0f18d754a39e38fdeb2bc8a096b1d0ef60941366092e9c0127637b93239969",
+        "file": "mm8.models.9-8b0f18d754a39e38.zip",
+        "id": "mm8.models.9",
+        "mount": "/worlds/mm8/models",
+        "package": "mm8",
+        "sha256": "ea1532177703686990629faf9a60e7f3d57d61265c369b64fa852557904031a7",
+        "size": 66531760
+      },
+      {
+        "content_id": "025e5bf0553a101b2a0a5bb0a5d06d699f4a777402f769f50f8e8ec5885eb7b1",
+        "file": "mm8.music.0-025e5bf0553a101b.zip",
+        "id": "mm8.music.0",
+        "mount": "/worlds/mm8/music",
+        "package": "mm8",
+        "sha256": "32bba3584322478852db70d4ac4742eb6cf4846ee80437ccc0943c486658cd65",
+        "size": 44977787
+      },
+      {
+        "content_id": "81e4964ce7ac195b7fff2036cbaaf1b0a904e29a788558ae52a7c5e60b4b408f",
+        "file": "mm8.music.1-81e4964ce7ac195b.zip",
+        "id": "mm8.music.1",
+        "mount": "/worlds/mm8/music",
+        "package": "mm8",
+        "sha256": "fe2ac5d9e6e650151963776df0b5e74f713278928bca7d80a6410589366b86d4",
+        "size": 42066639
+      },
+      {
+        "content_id": "2a14a52c622d8c095ebbe56e99c8f505a6879e9a713caa3ee5d9eb838d4857f0",
+        "file": "mm8.textures_x4.0-2a14a52c622d8c09.zip",
+        "id": "mm8.textures_x4.0",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "2eac721a6f86471c9f22b84dfb5a822ab7767fa511fb686d977e92911c3c3c62",
+        "size": 67140596
+      },
+      {
+        "content_id": "363bc6e8da3281833b6becdcadbfdae0ffa5ae92db2f2e42a47656fa45b92f71",
+        "file": "mm8.textures_x4.1-363bc6e8da328183.zip",
+        "id": "mm8.textures_x4.1",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "85766670f8554ab145d1c224047266f4d59bccd0fb141113e8d6796d1c5d0a37",
+        "size": 73463379
+      },
+      {
+        "content_id": "1f1c9466f52448d0a68f85fb4dd01089b1eeec50b967846cd75c9899cd9f3dfc",
+        "file": "mm8.textures_x4.2-1f1c9466f52448d0.zip",
+        "id": "mm8.textures_x4.2",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "9ed50a871ebc34ae6f3eafb57591cb3ffa50eaa14b98c02c4ddfdcea60709d7f",
+        "size": 63893942
+      },
+      {
+        "content_id": "1b0e3483a6c3fe78362c9b305e830b66d17c73d638efb86f7d9a02261fe311a9",
+        "file": "mm8.textures_x4.3-1b0e3483a6c3fe78.zip",
+        "id": "mm8.textures_x4.3",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "b8eb6ea0a0ff1884d2eab4334dc53e2da63d8119d6e502b18d750aa38cf6417c",
+        "size": 62578133
+      },
+      {
+        "content_id": "d4529ed91b600e502dfb326cbf3785907cc13797ba26a37f3830b41e4e74518e",
+        "file": "mm8.textures_x4.4-d4529ed91b600e50.zip",
+        "id": "mm8.textures_x4.4",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "3f84006dd06f9054fee3e2915f6b9e0291793b03fc09b6c81bd56e2a5728d0cd",
+        "size": 65422120
+      },
+      {
+        "content_id": "a4d38457a203da5ade019b9aeea51b1af90b62c670a79aa57f852fcb18448973",
+        "file": "mm8.textures_x4.5-a4d38457a203da5a.zip",
+        "id": "mm8.textures_x4.5",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "272c2fbfe56763622fb1564bc24bc1279ad1fe87c8e9a8a66eba2c81ff1700f4",
+        "size": 60134503
+      },
+      {
+        "content_id": "a8eb8521ea7506660fec5a099dd69a474adcc7410847f4c49d65acf415231cc7",
+        "file": "mm8.textures_x4.6-a8eb8521ea750666.zip",
+        "id": "mm8.textures_x4.6",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "26b80c1ea1226f511d45e051cee2639e0a09bb1483b840f5a1c2d6f9f67573ec",
+        "size": 55534935
+      },
+      {
+        "content_id": "83ae9e27e61f05a445e2afbbe601a3d3ac229757134da508389f2c5124867e9a",
+        "file": "mm8.textures_x4.7-83ae9e27e61f05a4.zip",
+        "id": "mm8.textures_x4.7",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "672bc5978618ab515cf1ccb937f28d50dcc6253b7b463b6773470b514647247a",
+        "size": 70290608
+      },
+      {
+        "content_id": "57ce86e33ceb3a450cdb42ac0a64c4c95194a87af87585cdc323ec497559041d",
+        "file": "mm8.textures_x4.8-57ce86e33ceb3a45.zip",
+        "id": "mm8.textures_x4.8",
+        "mount": "/worlds/mm8/textures_x4",
+        "package": "mm8",
+        "sha256": "dcc0f5b0284a1e1244cfd6bc1b31a0d68c654da833f38e485f7e0461567c0a4a",
+        "size": 67293723
+      },
+      {
+        "content_id": "d0c360fcee49acbbd9887a4b451d93c97e32f64497a79c8e0627d637dda3bc64",
+        "file": "mm8.videos.0-d0c360fcee49acbb.zip",
+        "id": "mm8.videos.0",
+        "mount": "/worlds/mm8/videos",
+        "package": "mm8",
+        "sha256": "aa8d08f25b0adfd702e595953b6cba3718c25cb0038673603984485e8c2257d6",
+        "size": 44455641
+      },
+      {
+        "content_id": "c646de0a97c80e8dd8e4d9c9b5bfec503dbd076606dcf033dd0f120c1125e87c",
+        "file": "mm8.videos.1-c646de0a97c80e8d.zip",
+        "id": "mm8.videos.1",
+        "mount": "/worlds/mm8/videos",
+        "package": "mm8",
+        "sha256": "d9f1de5ec127af93466935029a41625a99272d71e39ba5e229ba115e668abc48",
+        "size": 43232347
+      }
+    ],
+    "profile": "desktop",
+    "release": "dev",
+    "schema": 1,
+    "store": "../../assets/packs"
+  },
+  "provenance": {
+    "run": "https://github.com/Plane-PPP/openyamm/actions/runs/39941527807",
+    "artifact_id": 12498430051,
+    "artifact_bytes": 5751530172,
+    "metadata_bytes_downloaded": 221884
+  }
+}
