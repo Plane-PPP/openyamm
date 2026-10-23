@@ -627,6 +627,7 @@ TEST_CASE("Lethal Strike v0.4 campaign progress inventory quests and visited map
 {
     std::string error;
     const char *fixture = "minotaur-v04-progress-v85.oysav";
+    SUBCASE("production mod on OpenYAMM 1.7") { fixture = "minotaur-1.7-v94.oysav"; }
     SUBCASE("production mod on OpenYAMM 1.5") { fixture = "minotaur-1.5-v89.oysav"; }
     SUBCASE("original v0.4 progress") {}
     const auto oldPath = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures" / fixture;
@@ -703,4 +704,30 @@ TEST_CASE("Lethal Strike Luck adds half a percentage point per complete ten at e
     c.luck = 1000;
     c.skills.clear();
     CHECK(GameMechanics::lethalStrikeBaseChance(c) == 0);
+}
+
+TEST_CASE("Lethal Strike latest save preserves the upstream named map start point")
+{
+    std::string error;
+    auto save = loadGameDataFromPath(std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "tests/fixtures/minotaur-1.7-v94.oysav", error);
+    REQUIRE_MESSAGE(save, error);
+    auto &state = save->indoorSceneStates.at("d05.blv").eventRuntimeState;
+    REQUIRE(state);
+    EventRuntimeState::PendingMapMove move;
+    move.mapName = "out05.odm";
+    move.useMapStartPosition = true;
+    move.startPointName = "north start";
+    state->pendingMapMove = move;
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-1.10-map-start.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
+    save = loadGameDataFromPath(path, error);
+    REQUIRE_MESSAGE(save, error);
+    const auto &loaded = save->indoorSceneStates.at("d05.blv").eventRuntimeState->pendingMapMove;
+    REQUIRE(loaded);
+    CHECK(loaded->mapName == "out05.odm");
+    CHECK(loaded->useMapStartPosition);
+    CHECK(loaded->startPointName == "north start");
+    CHECK(save->party.members[0].findSkill("LethalStrike")->mastery == SkillMastery::Master);
+    std::filesystem::remove(path);
 }

@@ -21,8 +21,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 94;
-constexpr uint32_t UpstreamSaveVersion = 93;
+constexpr uint32_t SaveVersion = 95;
+constexpr uint32_t UpstreamSaveVersion = 94;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -104,6 +104,7 @@ constexpr uint32_t SaveVersionPartyDaysWithoutRest = 90;
 constexpr uint32_t SaveVersionActorRevealedLoot = 91;
 constexpr uint32_t SaveVersionHardenedItems = 92;
 constexpr uint32_t SaveVersionPotionCharacterBuffs = 93;
+constexpr uint32_t SaveVersionMapMoveStartPoint = 94;
 constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
 constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
@@ -1812,6 +1813,7 @@ void writeValue(BinaryWriter &writer, const EventRuntimeState::PendingMapMove &v
     writeValue(writer, value.mapName);
     writeValue(writer, value.directionDegrees);
     writeValue(writer, value.useMapStartPosition);
+    writeValue(writer, value.startPointName);
 }
 
 bool readValue(BinaryReader &reader, EventRuntimeState::PendingMapMove &value)
@@ -1821,7 +1823,8 @@ bool readValue(BinaryReader &reader, EventRuntimeState::PendingMapMove &value)
         && readValue(reader, value.z)
         && readValue(reader, value.mapName)
         && readValue(reader, value.directionDegrees)
-        && readValue(reader, value.useMapStartPosition);
+        && readValue(reader, value.useMapStartPosition)
+        && (reader.version() < SaveVersionMapMoveStartPoint || readValue(reader, value.startPointName));
 }
 
 void writeValue(BinaryWriter &writer, const EventRuntimeState::PendingDialogueContext &value)
@@ -4507,12 +4510,16 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
         error = "invalid save header";
         return std::nullopt;
     }
-    if ((modHeader && version != 89 && version != SaveVersion)
+    if ((modHeader && version != 89 && version != 94 && version != SaveVersion)
         || (legacyHeader && version > UpstreamSaveVersion))
     {
         error = SaveFromNewerVersionError;
         return std::nullopt;
     }
+
+    // Mod versions carry a combat-level field beyond their corresponding upstream schema.
+    const uint32_t sourceVersion = !modHeader ? version
+        : version == 89 ? 88 : version == 94 ? 93 : UpstreamSaveVersion;
 
     // v0.4 used upstream's magic and v85 before upstream independently assigned v85
     // to the new weather layout. Decode both known layouts and require exact consumption;
@@ -4522,8 +4529,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     for (int layout = 0; layout < layouts; ++layout)
     {
         BinaryReader candidate(bytes);
-        // Mod 1.5 v89 contains upstream v88 fields plus the cached combat level.
-        candidate.setVersion(modHeader ? (version == 89 ? 88 : UpstreamSaveVersion) : version);
+        candidate.setVersion(sourceVersion);
         candidate.setModCombatLevel(modHeader);
         candidate.setLegacyMinotaurV85(layout == 1);
         char candidateMagic[sizeof(SaveMagic)] = {};
@@ -4560,7 +4566,6 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     }
     GameSaveData data = std::move(*decodedData);
 
-    const uint32_t sourceVersion = modHeader ? (version == 89 ? 88 : UpstreamSaveVersion) : version;
     migrateLegacyConsumedCorpseMarkers(data, sourceVersion);
     migrateLegacyNpcRosters(data);
     migrateLegacyMapAutonotes(data, sourceVersion);

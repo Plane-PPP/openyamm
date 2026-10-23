@@ -1,3 +1,16 @@
+# Minotaur v0.4 + Luck на OpenYAMM1.10 — Windows pending
+
+Official latest v1.10:3f06332001c7a841cc2c2d161f192a1252b25713.
+Previous confirmed Windows source:a1b8debf0198779d1ea418555c50bb50c21e8028, run39898467800.
+Full rebuild requested; previous fixes and balance retained, including Luck bonus.
+Save reader supports production mod1.5/v89 and1.7/v94; writes OYMINO1/v95.
+[Compatibility and installation](docs/research/openyamm-1.10-compatibility.md).
+Use a separate folder, copy only saves, save into a new slot; do not copy old assets/settings.
+Windows build/automatic checks pending; manual verification pending.
+LS-003 Planned, Identify Monster/bestiary Deferred. No merge into main.
+
+## Historical builds
+
 # Minotaur v0.4 + Luck на OpenYAMM1.7 — Windows packaged
 
 Официальный v1.7:069df4a3f63c2dcaeed7b70694529154e7ccc205.

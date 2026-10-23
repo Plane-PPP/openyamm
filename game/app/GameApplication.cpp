@@ -3942,8 +3942,8 @@ void GameApplication::registerDebugConsoleCommands()
 
     m_debugConsole.registerCommand({
         .name = "weather",
-        .description = "Show, force or forecast outdoor rain, snow, wind and storms (not saved).",
-        .usage = "weather [status | rain|snow <0-1|light|medium|heavy|very_heavy> | clear | auto"
+        .description = "Show, force or forecast outdoor rain, snow, ash, wind and storms (not saved).",
+        .usage = "weather [status | rain|snow|ash <0-1|light|medium|heavy|very_heavy> | clear | auto"
             " | wind <degrees> <speed>|auto | storm <on|off|auto> | strike [near|middle|far] | forecast [hours]]",
         .callback = [this, commandResult](const DebugConsole::CommandContext &context)
         {
@@ -3959,7 +3959,7 @@ void GameApplication::registerDebugConsoleCommands()
             const std::string value = context.args.size() >= 2 ? toLowerCopy(context.args[1]) : "";
             bool changed = true;
 
-            if ((action == "rain" || action == "snow") && !value.empty())
+            if ((action == "rain" || action == "snow" || action == "ash") && !value.empty())
             {
                 std::optional<float> intensity = rules.namedIntensity(value);
                 intensity = intensity ? intensity : parseFloatArgument(value);
@@ -3969,7 +3969,8 @@ void GameApplication::registerDebugConsoleCommands()
                     return commandResult(false, "Usage: weather " + action + " <0-1|light|medium|heavy|very_heavy>");
                 }
 
-                overrides.precipitation = action == "rain" ? PrecipitationKind::Rain : PrecipitationKind::Snow;
+                overrides.precipitation = action == "rain" ? PrecipitationKind::Rain
+                    : action == "ash" ? PrecipitationKind::Ash : PrecipitationKind::Snow;
                 overrides.precipitationIntensity = *intensity;
             }
             else if (action == "clear")
@@ -4032,7 +4033,8 @@ void GameApplication::registerDebugConsoleCommands()
                     out << (hour > 0 ? "\n" : "") << "day " << static_cast<int>(minutes / 1440.0) << ' '
                         << (hourOfDay < 10 ? "0" : "") << hourOfDay << ":00 "
                         << (sample.precipitation == PrecipitationKind::Rain ? "rain"
-                            : sample.precipitation == PrecipitationKind::Snow ? "snow" : "dry")
+                            : sample.precipitation == PrecipitationKind::Snow ? "snow"
+                            : sample.precipitation == PrecipitationKind::Ash ? "ash" : "dry")
                         << ' ' << sample.intensity << " cloud=" << sample.cloudCover
                         << (sample.storm ? " storm" : "");
                 }
@@ -4063,9 +4065,11 @@ void GameApplication::registerDebugConsoleCommands()
             std::ostringstream out;
             out << "precipitation="
                 << (atmosphere.precipitation == PrecipitationKind::Rain ? "rain"
-                    : atmosphere.precipitation == PrecipitationKind::Snow ? "snow" : "none")
+                    : atmosphere.precipitation == PrecipitationKind::Snow ? "snow"
+                    : atmosphere.precipitation == PrecipitationKind::Ash ? "ash" : "none")
                 << " intensity=" << atmosphere.precipitationIntensity
                 << " shown_rain=" << shown.rainLevel() << " shown_snow=" << shown.snowLevel()
+                << " shown_ash=" << shown.ashLevel()
                 << " cloud_cover=" << atmosphere.cloudCover << " storm=" << (atmosphere.storm ? 1 : 0)
                 << " wetness=" << atmosphere.wetness << " wind=" << windSpeed << "@" << windDegrees << "deg"
                 << " quality=" << weatherQualityValue(m_settings.weatherQuality)
@@ -11475,6 +11479,14 @@ bool GameApplication::processPendingMapMove()
             static_cast<float>(pendingMapMove->y),
             static_cast<float>(pendingMapMove->z)
         );
+    }
+    else if (m_pMapSceneRuntime != nullptr
+             && m_pMapSceneRuntime->kind() == SceneKind::Outdoor
+             && !pendingMapMove->startPointName.empty()
+             && !m_outdoorGameView.movePartyToStartPoint(pendingMapMove->startPointName))
+    {
+        std::cerr << "GameApplication: map " << targetMapName << " has no start point '"
+                  << pendingMapMove->startPointName << "'; using its party start\n";
     }
     else if (m_pMapSceneRuntime != nullptr
              && m_pMapSceneRuntime->kind() == SceneKind::Indoor

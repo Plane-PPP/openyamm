@@ -16,7 +16,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 
 ## Этапы разработки
 
-Текущий Windows-пакет:1.7+Luck, source a1b8deb; успешный run39898467800.
+Предыдущий подтверждённый Windows-пакет:1.7+Luck, source a1b8deb; успешный run39898467800.
 Сборки1.5 и исходная v0.4 ниже сохранены как история.
 
 | Этап | Статус | Результат |
@@ -122,3 +122,10 @@ No old hotfix overlay is required. User manual playthrough and actual save remai
 
 Перед интеграцией сохранён production fixture формата мода1.7/v94.
 Далее: объединить точный v1.10, проверить сейвы1.5/1.7, прежние механики и собрать Windows.
+
+Точный v1.10 интегрирован; новая schema95 сохраняет поддержку mod89/94.
+[Отчёт](research/openyamm-1.10-compatibility.md). Далее — проверки и Windows CI.
+
+Preflight1.10:26 focused/30630,3 runtime/58,226 selected/7531 passed.
+Temporary Linux dependency cache is being restored after the host restart.
+Windows CI uses a clean checkout; final additional save test remains to run locally.

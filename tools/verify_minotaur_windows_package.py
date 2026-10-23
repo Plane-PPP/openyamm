@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the versioned Windows mod package and its content packs on OpenYAMM 1.7."""
+"""Validate the versioned Windows mod package and its content packs on OpenYAMM 1.10."""
 import argparse
 import hashlib
 import json
@@ -7,13 +7,14 @@ from pathlib import Path
 import struct
 import zipfile
 
-APP = "app/minotaur-1.7/"
+APP = "app/minotaur-1.10/"
 REQUIRED = (
     "OpenYAMM.exe", "app/current", APP + "openyamm.exe", APP + "index.json",
     "README.md", "CHANGELOG.md", "BUILD-NOTES.md", "BUILD-REVISION.txt",
     "docs/MINOTAUR_REBALANCE.md", "docs/ROADMAP.md",
     APP + "runtime/shaders/glsl/vs_outdoor_billboard_lit.bin",
     APP + "runtime/shaders/glsl/fs_sprite_atlas.bin",
+    APP + "runtime/shaders/glsl/fs_model_emissive.bin",
 )
 HOTFIX_FILES = ("data_tables/npc.txt", "data_tables/npc_topic.txt", "ui/gameplay/character.yml")
 
