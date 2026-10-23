@@ -154,3 +154,6 @@ Use a separate install, copy only saves, keep originals and save in a new slot.
 установщик с атомарным переключением, версия на каждый build, update/full/both в CI.
 Локально7 Python-тестов passed;8 Windows-сценариев ожидают CI.
 Далее: Windows-проверка установщика, первый реальный ZIP-патч и публикация новой базы.
+
+Windows tests39960808276 обнаружили недоступный Get-FileHash в дочернем PowerShell5.1.
+Установщик переведён на стандартный .NET SHA256 без зависимости от модуля PowerShell. Повторный CI ожидается.

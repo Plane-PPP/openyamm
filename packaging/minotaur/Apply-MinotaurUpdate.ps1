@@ -103,7 +103,15 @@ function Assert-SameIndex($Expected, $Actual) {
 function File-Matches([string]$Path, $Record) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
     if ((Get-Item -LiteralPath $Path).Length -ne $Record.size) { return $false }
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $Record.sha256
+    $stream = [IO.File]::OpenRead($Path)
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-','').ToLowerInvariant()
+        return $digest -ceq $Record.sha256
+    } finally {
+        $stream.Dispose()
+        $hasher.Dispose()
+    }
 }
 
 function Assert-File([string]$Path, $Record) {
