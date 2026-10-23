@@ -125,7 +125,7 @@ function Atomic-Text([string]$Path, [string]$Text) {
         [IO.File]::WriteAllText($temporary, $Text, [Text.UTF8Encoding]::new($false))
         if (Test-Path -LiteralPath $Path) {
             [IO.File]::Replace($temporary, $Path, $backup)
-            Remove-Item -LiteralPath $backup -Force
+            Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
         }
         else { [IO.File]::Move($temporary, $Path) }
     } finally {
