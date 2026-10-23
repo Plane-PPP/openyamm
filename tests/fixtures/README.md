@@ -48,3 +48,9 @@ It contains the synthetic campaign-progress fixture after three successful
 load/save cycles (100 assertions). No personal save data is included.
 
 Production mod1.5 fixture SHA256: `3432846fcbec1b49aed25b07615be43331b90159f675c5555be4a7a250308b59`.
+
+## Production mod on OpenYAMM1.7
+
+`minotaur-1.7-v94.oysav` was written before the1.10 merge by the production
+OYMINO1/v94 serializer at0b828dc (same writer as Windows source a1b8deb).
+Synthetic campaign-progress fixture after3 roundtrips; no personal data.

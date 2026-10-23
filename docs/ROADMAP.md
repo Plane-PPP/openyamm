@@ -117,3 +117,8 @@ Source `a1b8debf0198779d1ea418555c50bb50c21e8028`; previous confirmed1.5 `bad9c2
 Windows compile/link, versioned package, x64 launcher/game PE, all indexed content hashes,
 MM6/MM7/MM8 presence and exact embedded teacher/Stats resources passed; artifact uploaded.
 No old hotfix overlay is required. User manual playthrough and actual save remain untested.
+
+## Перенос на последнюю официальную версию —1.10
+
+Перед интеграцией сохранён production fixture формата мода1.7/v94.
+Далее: объединить точный v1.10, проверить сейвы1.5/1.7, прежние механики и собрать Windows.
