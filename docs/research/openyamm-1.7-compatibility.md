@@ -23,7 +23,7 @@ Do not copy old settings/assets or the obsolete hotfix overlay. New saves do not
 1.7 requires the versioned launcher/app and indexed content packs rather than engine.zip
 and per-world ZIPs. The mod verifier checks launcher/game x64 PE, complete packs/hashes
 and exact embedded teacher/Stats resources. Stock auto-updates default to never, to avoid
-replacing the mod with an official binary. Windows build/manual testing are pending.
+replacing the mod with an official binary. Windows packaging is complete; manual testing is pending.
 
 ## Validation during integration
 
@@ -45,8 +45,20 @@ to P0 before KL/cap at every rank. CSV includes Luck0/90 (11520 scenarios).
 
 First Windows run39830857374 compiled and linked the game/launcher but failed packaging:
 CMake selected hosted Python3.15 without yaml. The workflow now explicitly uses UCRT64
-Python (with installed PyYAML) for both CMake packaging and validation. Retry pending.
+Python (with installed PyYAML) for both CMake packaging and validation. That retry was superseded by the successful packages recorded below.
 
 Native MinGW launcher is explicitly static-linked, matching the cross-release packaging
 contract: the root launcher cannot rely on game DLLs collected only under app/<version>.
 This was found by package review; no user launcher failure is claimed.
+
+## Windows 1.7 + Luck — Packaged / manual retest pending
+
+[Run 39898467800](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800) completed successfully: 2026-10-23T04:35:10Z.
+Source `a1b8debf0198779d1ea418555c50bb50c21e8028`; previous confirmed1.5 `bad9c2798b3320f16a108661c588d536b98770da`.
+[Download OpenYAMM-windows-x64-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800/artifacts/12478309627), 5,750,960,934 bytes.
+Windows compile/link, versioned package, x64 launcher/game PE, all indexed content hashes,
+MM6/MM7/MM8 presence and exact embedded teacher/Stats resources passed; artifact uploaded.
+No old hotfix overlay is required. User manual playthrough and actual save remain untested.
+
+Packaging review build91c5a30 also succeeded in run39895314883 before the final tooltip correction.
+The download linked above is the final a1b8deb package, with no duplicate English Luck sentence.

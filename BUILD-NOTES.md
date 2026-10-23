@@ -1,4 +1,4 @@
-# Minotaur v0.4 + Luck на OpenYAMM1.7 — подготовка Windows
+# Minotaur v0.4 + Luck на OpenYAMM1.7 — Windows packaged
 
 Официальный v1.7:069df4a3f63c2dcaeed7b70694529154e7ccc205.
 Предыдущая подтверждённая сборка на1.5:bad9c2798b3320f16a108661c588d536b98770da, run39297183309.
@@ -17,13 +17,13 @@ Automatically tested:26 focused/30530 assertions,3 runtime/58,223 selected/7506.
 Выборка неполная; sparse MM6/MM9/model cases и старый positional recovery-enchant
 test исключены (его поле enchant сдвинул upstream hardened, игровой баланс не меняли).
 Package verifier и model-profile packaging passed; stale-bake checker0 на sparse assets.
-Windows build/manual verification pending; результаты будут обновлены после CI.
+Windows packaged successfully; manual verification pending. See published result below.
 
 ---
 
 ## Историческая сборка1.5
 
-# Minotaur Rebalance v0.4 на OpenYAMM1.5 — текущая сборка
+### Minotaur Rebalance v0.4 на OpenYAMM1.5 — историческая сборка
 
 Upstream tag1.5:1414884155362e613977a3444a3c7f81ed4ee047 (release2026-10-17).
 Предыдущий Windows executable:385a1e447aadb17cdf3b0db36691a92889f23786,
@@ -332,3 +332,12 @@ Commit, push и запуск packaging разрешены пользовател
 и местом следующего специалиста — [LS-003](docs/research/lethal-strike-teacher-dialogue-followup.md). Пока Planned, не Implemented.
 Исправления hotfix1 уже в исходных ресурсах и войдут в engine.zip следующего полного пакета
 из feature/minotaur-rebalance; отдельно ставить старый hotfix на новый пакет не потребуется.
+
+## Windows 1.7 + Luck — Packaged / manual retest pending
+
+[Run 39898467800](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800) completed successfully: 2026-10-23T04:35:10Z.
+Source `a1b8debf0198779d1ea418555c50bb50c21e8028`; previous confirmed1.5 `bad9c2798b3320f16a108661c588d536b98770da`.
+[Download OpenYAMM-windows-x64-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800/artifacts/12478309627), 5,750,960,934 bytes.
+Windows compile/link, versioned package, x64 launcher/game PE, all indexed content hashes,
+MM6/MM7/MM8 presence and exact embedded teacher/Stats resources passed; artifact uploaded.
+No old hotfix overlay is required. User manual playthrough and actual save remain untested.

@@ -1,0 +1,39 @@
+{
+  "run": "https://github.com/Plane-PPP/openyamm/actions/runs/39898467800",
+  "source_sha": "a1b8debf0198779d1ea418555c50bb50c21e8028",
+  "upstream_tag": "v1.7",
+  "upstream_sha": "069df4a3f63c2dcaeed7b70694529154e7ccc205",
+  "previous_build_sha": "bad9c2798b3320f16a108661c588d536b98770da",
+  "status": "completed",
+  "conclusion": "success",
+  "job_id": 120234271357,
+  "started_at": "2026-10-23T04:05:46Z",
+  "completed_at": "2026-10-23T04:35:10Z",
+  "artifact_id": 12478309627,
+  "artifact_name": "OpenYAMM-windows-x64-Release.zip",
+  "artifact_bytes": 5750960934,
+  "artifact_url": "https://github.com/Plane-PPP/openyamm/actions/runs/39898467800/artifacts/12478309627",
+  "ci_validation": {
+    "windows_x64_launcher_and_game": true,
+    "all_content_pack_hashes": true,
+    "required_worlds": [
+      "mm6",
+      "mm7",
+      "mm8"
+    ],
+    "embedded_hotfix_matches_checkout": true
+  },
+  "automatic_tests": {
+    "focused_cases": 26,
+    "focused_assertions": 30530,
+    "runtime_cases": 3,
+    "runtime_assertions": 58,
+    "selected_regression_cases": 223,
+    "selected_regression_assertions": 7506,
+    "groups_overlap": true
+  },
+  "manual_test_new_windows_build": false,
+  "user_actual_save_tested": false,
+  "validation_scope": "Successful Windows CI package/PE/content-pack hashes/staged hotfix checks and GitHub artifact metadata; no independent full archive download",
+  "artifact_digest": "sha256:87ca4bd2ca8174a6e959cd1e055288af0d594bdbac8b74f46cdbe522cc315abd"
+}

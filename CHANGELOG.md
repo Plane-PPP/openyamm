@@ -1,6 +1,6 @@
 # Minotaur — OpenYAMM1.7 (2026-10-22)
 
-Implemented, Windows packaging/manual test pending:
+Implemented / Windows packaged ([run 39898467800](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800)); manual test pending:
 - Перенос v0.4 на точный тег v1.7; сохранены исправления учителей и Stats.
 - Явная миграция сохранений мода на базе1.5 (OYMINO1/v89) в новую схему v94.
 - Lethal Strike: +0.5 п.п. к P0 за каждые полные10 текущей Удачи на всех рангах;

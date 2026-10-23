@@ -1,6 +1,6 @@
 # Minotaur Rebalance — Roadmap
 
-Действующее ТЗ: **Lethal Strike v0.4**, 2026-10-15. Оно заменило Death Strike v0.2.
+Действующее ТЗ: **Lethal Strike v0.4 + Luck**, 2026-10-15 с дополнением2026-10-22. Оно заменило Death Strike v0.2.
 Identify Monster и бестиарий — Deferred. Исследование69bed40 сохранено; оно не ограничивает
 прямо утверждённые в v0.4 формулы/категории/учителей.
 
@@ -16,6 +16,9 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 
 ## Этапы разработки
 
+Текущий Windows-пакет:1.7+Luck, source a1b8deb; успешный run39898467800.
+Сборки1.5 и исходная v0.4 ниже сохранены как история.
+
 | Этап | Статус | Результат |
 | --- | --- | --- |
 | Исследования таблиц/карт | Research completed | 658 общих шаблонов,198 исходных MM8,184 с кампанийными свидетельствами; [ревизия](research/final-review.md) |
@@ -24,7 +27,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 | Навык и обучение | LS-001 fixed / topics manually confirmed | Корректная схема тем; Expert Perception / Master Mace / GM Axe; [детали](research/lethal-strike-teacher-bug.md) |
 | Бой и диагностика | Implemented | Один trial после melee, штатная смерть, заметное сообщение, отдельный trace |
 | Skills/Stats | LS-002 fixed / layout manually confirmed | Четыре resource rows внутри рамки, исходные Condition/Quick Spell, раздельные Earth/Mind/Body; [детали](research/damage-resistance-layout-bug.md) |
-| Автоматические проверки | Automatically tested on1.5 | 25 focused /30294 assertions;3 runtime /58;205 selected /7329. Ограничения suite в BUILD-NOTES |
+| Автоматические проверки | Automatically tested on1.7+Luck | 26 focused /30530 assertions;3 runtime /58;223 selected /7506. Ограничения suite в BUILD-NOTES |
 | Windows packaging on1.5 | Packaged / success | [Run39297183309](https://github.com/Plane-PPP/openyamm/actions/runs/39297183309); SHAbad9c27; OpenYAMM-windows-Release.zip |
 | Ручной тест v0.4 | In progress / hotfix retest pending | Исправление Stats и появление тем подтверждены; LS-003 и боевой прогон остаются |
 | Identify Monster | Deferred | Caps/UI/поведение не меняются; knowledge, AC/damage/aura/GM magic отложены |
@@ -35,7 +38,7 @@ Axe, Armsmaster и формула пассивной защиты в v0.4 сох
 LS-001 и LS-002 исправлены отдельными коммитами. Подготовлен [малый патч](patches/Minotaur-v0.4-hotfix-1.zip)
 для executable385a1e4, [установка и тест](patches/README.md). Автоматический прогон22 tests/30155 assertions
 успешен; пользователь подтвердил вёрстку и появление тем.
-Следующая полная сборка из этой ветки включит исправления в engine.zip без отдельного hotfix.
+Сборка1.5 включала исправления в engine.zip;1.7 включает их в indexed content packs без отдельного hotfix.
 
 ## Следующие этапы
 
@@ -48,7 +51,7 @@ LS-001 и LS-002 исправлены отдельными коммитами. �
 3. Зафиксировать результаты пользователя отдельно от автоматически проверенного.
 4. По результатам отдельным этапом корректировать экспериментальный баланс.
 
-Автоматические проверки и Windows packaging завершены; артефакт существует. Production source —
+Историческая исходная v0.4: автоматические проверки и Windows packaging завершены. Production source —
 385a1e4. Hotfix меняет три ресурса поверх этой сборки, не executable;
 предшествовавшие hotfix тестовые/документальные коммиты игровой код не меняли.
 Подробности и ограничения — [BUILD-NOTES](../BUILD-NOTES.md).
@@ -70,7 +73,7 @@ LS-003 остаётся Planned до текстов пользователя и 
 
 Дополнительно проверены3 цикла миграции fixture реального по структуре прогресса v0.4:
 inventory/XP/skill points/quest bits/NPC overrides/банк/резерв/посещённые карты сохраняются.
-Новый test-only commit не меняет executable запущенной Windows-сборки cbaea4b.
+Тестовый commit не менял executable первого run cbaea4b; успешный последующий пакет1.5 — bad9c27.
 
 Проверка пакета приведена к составу1.5 (engine+MM6/MM7/MM8); сверяет x64 PE и актуальные
 ресурсы hotfix в engine.zip. Первый run39287322676 завершился на устаревшем Verify,
@@ -83,17 +86,17 @@ Windows artifact: [OpenYAMM-windows-Release.zip](https://github.com/Plane-PPP/op
 
 Exact v1.7 merged; explicit production 1.5 save migration and embedded hotfixes retained.
 25 focused tests /30394 assertions passed. [Compatibility](research/openyamm-1.7-compatibility.md).
-Next: Luck bonus requested 2026-10-22, final regressions, Windows packaging and user save retest.
+Luck implementation, final regressions and Windows packaging completed; next is user save retest.
 
 Бонус Удачи реализован: +0.5 п.п. за полные10 единиц на всех рангах до KL/cap.
 Динамический tooltip и trace используют общий расчёт. CSV включает Luck0/90.
-Проверки и упаковка новой версии выполняются; ручной прогон ожидается.
+Проверки и упаковка1.7 завершены; ручной прогон ожидается.
 
 Автоматически проверено на1.7+Luck:26 focused/30530,3 runtime/58,223 selected/7506.
-Windows packaging следующий этап; пользовательский save пока не предоставлен.
+Windows packaging завершён; пользовательский save пока не предоставлен.
 
 CI adapted to upstream1.7 release target/launcher/indexed content and Python YAML dependency.
-Результат Windows job будет зафиксирован после фактического завершения.
+Результат Windows job зафиксирован ниже после фактического завершения.
 
 Windows run39830857374: native compile/link passed, packaging failed because CMake
 selected hosted Python without PyYAML despite MSYS2 Python YAML being installed.
@@ -105,3 +108,12 @@ to include this packaging fix before compilation; gameplay code unchanged.
 
 Final tooltip review removed duplicate English Luck prose (already supplied by skill_des.txt);
 Russian custom description retains the same rule. Formula/save code unchanged.
+
+## Windows 1.7 + Luck — Packaged / manual retest pending
+
+[Run 39898467800](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800) completed successfully: 2026-10-23T04:35:10Z.
+Source `a1b8debf0198779d1ea418555c50bb50c21e8028`; previous confirmed1.5 `bad9c2798b3320f16a108661c588d536b98770da`.
+[Download OpenYAMM-windows-x64-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800/artifacts/12478309627), 5,750,960,934 bytes.
+Windows compile/link, versioned package, x64 launcher/game PE, all indexed content hashes,
+MM6/MM7/MM8 presence and exact embedded teacher/Stats resources passed; artifact uploaded.
+No old hotfix overlay is required. User manual playthrough and actual save remain untested.

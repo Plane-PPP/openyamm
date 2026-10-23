@@ -6,7 +6,7 @@
 Все ранги Lethal Strike получают `B=0.5*floor(max(0,Luck)/10)` п.п. к P0.
 Текущая Удача90 даёт +4.5 п.п.; затем применяются KL/GIANT и потолок30%.
 Axe/DR и остальные коэффициенты сохраняются. [Миграция saves1.5](research/openyamm-1.7-compatibility.md).
-Новая Windows-сборка и ручная проверка пока ожидаются.
+[Windows1.7+Luck — скачать](https://github.com/Plane-PPP/openyamm/actions/runs/39898467800/artifacts/12478309627). CI успешен; ручная проверка ожидается.
 
 ## История — OpenYAMM1.5 / мод v0.4
 
