@@ -388,7 +388,9 @@ if (OPENYAMM_BUILD_DESKTOP_EXECUTABLE)
         target_include_directories(openyamm_launcher PRIVATE ${CMAKE_SOURCE_DIR})
         target_compile_features(openyamm_launcher PRIVATE cxx_std_20)
         if (MINGW)
-            target_link_options(openyamm_launcher PRIVATE -municode)
+            # The launcher lives at the installation root, while the game's collected DLLs live in app/<version>.
+            # Keep native MSYS2 packages as self-contained as the cross-compiled release launcher.
+            target_link_options(openyamm_launcher PRIVATE -municode -static -static-libgcc -static-libstdc++)
         endif()
         set_target_properties(openyamm_launcher
             PROPERTIES

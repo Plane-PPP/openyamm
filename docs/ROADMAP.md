@@ -98,3 +98,7 @@ CI adapted to upstream1.7 release target/launcher/indexed content and Python YAM
 Windows run39830857374: native compile/link passed, packaging failed because CMake
 selected hosted Python without PyYAML despite MSYS2 Python YAML being installed.
 Retry pins Python3_EXECUTABLE to UCRT64 and checks import before configure.
+
+Native MinGW launcher now links its C++ runtime statically: root launcher must not depend
+on runtime DLLs located only beside the game in app/<version>. Retry39894785306 stopped early
+to include this packaging fix before compilation; gameplay code unchanged.

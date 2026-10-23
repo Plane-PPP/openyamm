@@ -46,3 +46,7 @@ to P0 before KL/cap at every rank. CSV includes Luck0/90 (11520 scenarios).
 First Windows run39830857374 compiled and linked the game/launcher but failed packaging:
 CMake selected hosted Python3.15 without yaml. The workflow now explicitly uses UCRT64
 Python (with installed PyYAML) for both CMake packaging and validation. Retry pending.
+
+Native MinGW launcher is explicitly static-linked, matching the cross-release packaging
+contract: the root launcher cannot rely on game DLLs collected only under app/<version>.
+This was found by package review; no user launcher failure is claimed.
