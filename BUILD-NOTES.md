@@ -1,11 +1,11 @@
-# Minotaur incremental Windows updates — first patch pending
+# Minotaur incremental Windows updates — first patch packaged
 
 Release workflow now defaults to incremental ZIPs. Initial base is the existing1.10
 package source13d2cf3, run39941527807 (131 content packs). No gameplay code or balance changed.
 The small app bundle is always delivered; only changed logical resource packs accompany it.
 Full installation remains available through package_mode=full/both.
 [Player installation](packaging/minotaur/README-RU.txt), [maintainer guide](packaging/minotaur/README.md).
-Python generation tests7 passed locally; actual Windows installer8 cases pending CI.
+15 tests passed on Windows, including8 real Windows PowerShell5.1 installation scenarios.
 A new package must not be called successful or manually played before actual results.
 The previous full packages below remain historical installation bases.
 
@@ -377,3 +377,18 @@ Compile/link, launcher/game x64 PE, new model-emissive shader, indexed content h
 MM6/MM7/MM8 presence and exact embedded teacher/Stats resource comparison passed.
 Artifact uploaded. Manual Windows gameplay and the user's actual save remain untested.
 Use a separate install, copy only saves, keep originals and save in a new slot.
+
+## Первый ZIP-патч — Packaged / manual retest pending
+
+[Run40000571371](https://github.com/Plane-PPP/openyamm/actions/runs/40000571371) успешно завершён2026-10-23. Source `b7e80f0583df4e594718cb3de63f87c4a0793fc7`.
+[Скачать первый патч](https://github.com/Plane-PPP/openyamm/actions/runs/40000571371/artifacts/12522948534): 20,316,780 байт (20.3МБ) вместо
+5,751,530,172 байт полной1.10, сокращение загрузки99.65%.
+База `minotaur-1.10` → `minotaur-1.10-b7e80f0583df-14-1`.
+Переиспользован 131 пакет (5,766,643,023 байт на диске),
+изменённых ресурсных пакетов0. Поставляется программа и установщик.
+Windows: 15 тестов passed, включая 8 сценариев Windows PowerShell 5.1.
+Отдельно прошли проверки validator full/thin.
+Compile/PE/шейдеры/хеши/встроенные исправления учителей и Stats проверены.
+API размер/SHA256 артефакта совпадают с отчётом сборщика. Полный ZIP независимо не скачивался.
+Ручной запуск игры и установка на реальную пользовательскую папку ещё не проверены.
+Новая база сохранена в репозитории; следующая сборка по умолчанию использует её.

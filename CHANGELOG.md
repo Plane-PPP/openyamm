@@ -1,6 +1,6 @@
 # Minotaur — incremental ZIP packaging (2026-10-23)
 
-Implemented tooling; Windows validation/first patch packaging pending:
+Implemented / Windows tested / first ZIP packaged ([run40000571371](https://github.com/Plane-PPP/openyamm/actions/runs/40000571371)); manual gameplay pending:
 - Small app bundle plus changed logical resource packs; unchanged heavy files reused locally.
 - Offline PowerShell installer verifies base/files and atomically activates a new app directory.
 - Save/settings preservation, compression-drift reuse and interrupted-install retry checks.

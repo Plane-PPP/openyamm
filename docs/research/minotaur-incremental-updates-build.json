@@ -1,0 +1,45 @@
+{
+  "run": "https://github.com/Plane-PPP/openyamm/actions/runs/40000571371",
+  "source_sha": "b7e80f0583df4e594718cb3de63f87c4a0793fc7",
+  "status": "completed",
+  "conclusion": "success",
+  "base_version": "minotaur-1.10",
+  "target_version": "minotaur-1.10-b7e80f0583df-14-1",
+  "artifact_id": 12522948534,
+  "artifact_name": "Minotaur-Update-minotaur-1.10-b7e80f0583df-14-1.zip",
+  "artifact_url": "https://github.com/Plane-PPP/openyamm/actions/runs/40000571371/artifacts/12522948534",
+  "artifact_bytes": 20316780,
+  "artifact_sha256": "8ddd5ee9e7c249c2c24962227c3073c0e2aee2cc68067fe7340b8468abb58743",
+  "metadata_artifact_id": 12522878761,
+  "changed_resource_packs": 0,
+  "reused_resource_packs": 131,
+  "changed_pack_bytes": 0,
+  "reused_pack_bytes": 5766643023,
+  "compression_only_digest_changes": 0,
+  "previous_full_archive_bytes": 5751530172,
+  "download_reduction_percent": 99.65,
+  "windows_tests": {
+    "total": 15,
+    "powershell_5_1_installation_cases": 8,
+    "passed": true,
+    "full_and_thin_validator_regression_passed": true
+  },
+  "jobs": [
+    {
+      "name": "Offline updater tests (Windows PowerShell 5.1)",
+      "id": 120575270033,
+      "completed_at": "2026-10-23T18:06:50Z"
+    },
+    {
+      "name": "Windows x64 release",
+      "id": 120575468018,
+      "completed_at": "2026-10-23T18:36:19Z"
+    }
+  ],
+  "gameplay_changes": false,
+  "save_format_changes": false,
+  "manual_gameplay_tested": false,
+  "user_installation_tested": false,
+  "full_independent_zip_downloaded": false,
+  "validation_scope": "Clean Windows build, native5.1 filesystem installer tests, staged app/PE/shader/content/hash verification, incremental builder report and GitHub artifact size/digest; no user save or manual game run."
+}
