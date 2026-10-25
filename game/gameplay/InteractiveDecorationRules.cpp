@@ -731,9 +731,9 @@ std::vector<bool> hiddenIndoorDecorationEntities(
     return hiddenIndoorDecorationEntities(entities, indoorDecorationClearRules(entities, table), state);
 }
 
-std::vector<int> partyBaseStatSnapshot(const Party &party)
+std::vector<int64_t> partyBaseStatSnapshot(const Party &party)
 {
-    std::vector<int> stats;
+    std::vector<int64_t> stats;
 
     for (const Character &member : party.members())
     {
@@ -747,7 +747,7 @@ std::vector<int> partyBaseStatSnapshot(const Party &party)
 }
 
 void reportDecorationStatGain(const Party &party, const EventRuntimeState &state, uint8_t decorVarIndex,
-    const std::vector<int> &statsBefore)
+    const std::vector<int64_t> &statsBefore)
 {
     if (decorVarIndex < state.decorVars.size() && partyBaseStatSnapshot(party) != statsBefore)
     {

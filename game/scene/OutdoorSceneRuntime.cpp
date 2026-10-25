@@ -595,8 +595,8 @@ bool OutdoorSceneRuntime::executeEventById(
     const std::optional<ScriptedEventProgram> emptyLocalProgram;
     const std::optional<ScriptedEventProgram> &effectiveLocalEventProgram =
         activeDecorationContext.has_value() && allowGlobalFallback ? emptyLocalProgram : localEventProgram;
-    const std::vector<int> statsBefore =
-        activeDecorationContext ? partyBaseStatSnapshot(m_pPartyRuntime->party()) : std::vector<int>{};
+    const std::vector<int64_t> statsBefore =
+        activeDecorationContext ? partyBaseStatSnapshot(m_pPartyRuntime->party()) : std::vector<int64_t>{};
 
     const bool executed = m_eventRuntime.executeEventById(
         effectiveLocalEventProgram,

@@ -6,7 +6,9 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
+#include <type_traits>
 
 namespace OpenYAMM::Game
 {
@@ -326,8 +328,22 @@ std::string mawFillText(
         const auto parsed = [&wellFormed](const std::string &number, auto &result)
         {
             const char *pEnd = number.data() + number.size();
-            const std::from_chars_result read = std::from_chars(number.data(), pEnd, result);
-            wellFormed = wellFormed && !number.empty() && read.ec == std::errc() && read.ptr == pEnd;
+            bool read = false;
+
+            // Android's libc++ has no floating-point std::from_chars.
+            if constexpr (std::is_floating_point_v<std::remove_reference_t<decltype(result)>>)
+            {
+                char *pParsedEnd = nullptr;
+                result = std::strtod(number.c_str(), &pParsedEnd);
+                read = pParsedEnd == pEnd;
+            }
+            else
+            {
+                const std::from_chars_result parsedNumber = std::from_chars(number.data(), pEnd, result);
+                read = parsedNumber.ec == std::errc() && parsedNumber.ptr == pEnd;
+            }
+
+            wellFormed = wellFormed && !number.empty() && read;
         };
 
         if (const size_t colon = token.find(':'); colon != std::string::npos)

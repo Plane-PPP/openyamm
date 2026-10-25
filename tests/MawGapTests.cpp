@@ -3184,7 +3184,7 @@ TEST_CASE("MAW's used stat barrels stay empty through refills (L8.1, zzMaw-Maps.
     state.decorVars[4] = 0;
 
     // A barrel that raised a stat is remembered with the state its event left it in; one that raised nothing is not.
-    const std::vector<int> before = partyBaseStatSnapshot(party);
+    const std::vector<int64_t> before = partyBaseStatSnapshot(party);
     reportDecorationStatGain(party, state, 4, before);
     party.member(0)->might += 2;
     reportDecorationStatGain(party, state, 3, before);

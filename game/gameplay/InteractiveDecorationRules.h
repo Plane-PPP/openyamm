@@ -113,10 +113,10 @@ std::vector<bool> hiddenIndoorDecorationEntities(
 
 // Every member's base stats and base resistances, to tell whether a decoration's event (a barrel, a cauldron) raised
 // one: compare a snapshot before the event with one after.
-std::vector<int> partyBaseStatSnapshot(const Party &party);
+std::vector<int64_t> partyBaseStatSnapshot(const Party &party);
 
 // After a decoration's event ran: if it raised a base stat, tells the party's rules which decoration it was and the
 // state the event left it in.
 void reportDecorationStatGain(const Party &party, const EventRuntimeState &state, uint8_t decorVarIndex,
-    const std::vector<int> &statsBefore);
+    const std::vector<int64_t> &statsBefore);
 }
