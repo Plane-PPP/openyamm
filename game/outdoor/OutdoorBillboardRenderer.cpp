@@ -1152,11 +1152,6 @@ void OutdoorBillboardRenderer::prepareKeyboardInteractionBillboardCache(
         {
             const DecorationBillboard &billboard = view.m_outdoorDecorationBillboardSet->billboards[decorationIndex];
 
-            if (OutdoorInteractionController::isInteractiveDecorationHidden(view, billboard.entityIndex))
-            {
-                continue;
-            }
-
             bool hidden = false;
             const uint16_t spriteId =
                 OutdoorInteractionController::resolveDecorationBillboardSpriteId(view, billboard, hidden);
@@ -2087,61 +2082,6 @@ void OutdoorBillboardRenderer::renderDecorationBillboards(
         float distanceSquared = 0.0f;
         uint32_t lightContributionAbgr = 0xff000000u;
     };
-    const auto resolveBillboardVisual = [&view](const DecorationBillboard &billboard, bool &hidden)
-    {
-        hidden = false;
-        uint16_t spriteId = billboard.spriteId;
-
-        if (!view.m_outdoorDecorationBillboardSet || view.m_pOutdoorWorldRuntime == nullptr)
-        {
-            return spriteId;
-        }
-
-        const EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
-
-        if (pEventRuntimeState == nullptr)
-        {
-            return spriteId;
-        }
-
-        if (pEventRuntimeState->spriteOverrides.empty())
-        {
-            return spriteId;
-        }
-
-        const uint32_t overrideKey = billboard.spriteOverrideKey();
-
-        const auto overrideIterator = pEventRuntimeState->spriteOverrides.find(overrideKey);
-
-        if (overrideIterator == pEventRuntimeState->spriteOverrides.end())
-        {
-            return spriteId;
-        }
-
-        hidden = overrideIterator->second.hidden;
-
-        if (!overrideIterator->second.textureName.has_value() || overrideIterator->second.textureName->empty())
-        {
-            return spriteId;
-        }
-
-        if (const DecorationEntry *pDecoration =
-                view.m_outdoorDecorationBillboardSet->decorationTable.findByInternalName(
-                    *overrideIterator->second.textureName))
-        {
-            return pDecoration->spriteId;
-        }
-
-        if (const std::optional<uint16_t> overrideSpriteId =
-                view.m_outdoorDecorationBillboardSet->spriteFrameTable.findFrameIndexBySpriteName(
-                    *overrideIterator->second.textureName))
-        {
-            return *overrideSpriteId;
-        }
-
-        return spriteId;
-    };
-
     std::vector<size_t> candidateBillboardIndices;
     OutdoorInteractionController::collectDecorationBillboardCandidates(view, 
         cameraPosition.x - decorationRenderDistance,
@@ -2162,10 +2102,10 @@ void OutdoorBillboardRenderer::renderDecorationBillboards(
     {
         const DecorationBillboard &billboard = view.m_outdoorDecorationBillboardSet->billboards[billboardIndex];
         bool hidden = false;
-        const uint16_t spriteId = resolveBillboardVisual(billboard, hidden);
+        const uint16_t spriteId =
+            OutdoorInteractionController::resolveDecorationBillboardSpriteId(view, billboard, hidden);
 
-        if (OutdoorInteractionController::isInteractiveDecorationHidden(view, billboard.entityIndex)
-            || hidden
+        if (hidden
             || spriteId == 0
             || view.m_decorationModels.modelsSprite(spriteId))
         {
@@ -2465,61 +2405,6 @@ void OutdoorBillboardRenderer::renderActorPreviewBillboards(
     }
 
     drawItems.reserve(drawItemReserveCount);
-    const auto resolveDecorationBillboardSpriteId = [&view](const DecorationBillboard &billboard, bool &hidden)
-    {
-        hidden = false;
-        uint16_t spriteId = billboard.spriteId;
-
-        if (!view.m_outdoorDecorationBillboardSet || view.m_pOutdoorWorldRuntime == nullptr)
-        {
-            return spriteId;
-        }
-
-        const EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
-
-        if (pEventRuntimeState == nullptr)
-        {
-            return spriteId;
-        }
-
-        if (pEventRuntimeState->spriteOverrides.empty())
-        {
-            return spriteId;
-        }
-
-        const uint32_t overrideKey = billboard.spriteOverrideKey();
-
-        const auto overrideIterator = pEventRuntimeState->spriteOverrides.find(overrideKey);
-
-        if (overrideIterator == pEventRuntimeState->spriteOverrides.end())
-        {
-            return spriteId;
-        }
-
-        hidden = overrideIterator->second.hidden;
-
-        if (!overrideIterator->second.textureName.has_value() || overrideIterator->second.textureName->empty())
-        {
-            return spriteId;
-        }
-
-        if (const DecorationEntry *pDecoration =
-                view.m_outdoorDecorationBillboardSet->decorationTable.findByInternalName(
-                    *overrideIterator->second.textureName))
-        {
-            return pDecoration->spriteId;
-        }
-
-        if (const std::optional<uint16_t> overrideSpriteId =
-                view.m_outdoorDecorationBillboardSet->spriteFrameTable.findFrameIndexBySpriteName(
-                    *overrideIterator->second.textureName))
-        {
-            return *overrideSpriteId;
-        }
-
-        return spriteId;
-    };
-
     thread_local std::vector<OutdoorGameView::TerrainVertex> placeholderVertices;
     placeholderVertices.clear();
 
@@ -2843,8 +2728,7 @@ void OutdoorBillboardRenderer::renderActorPreviewBillboards(
 
             // A 3D model stands in for every sprite that has a model binding, including one switched in by an event
             // (SetSprite). Water reflections omit it too, as they do for model actors.
-            if (OutdoorInteractionController::isInteractiveDecorationHidden(view, billboard.entityIndex)
-                || hidden
+            if (hidden
                 || spriteId == 0
                 || view.m_decorationModels.modelsSprite(spriteId))
             {

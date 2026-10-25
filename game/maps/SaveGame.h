@@ -67,6 +67,9 @@ void migrateLegacyNpcRosters(GameSaveData &data);
 void migrateLegacyMapAutonotes(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapHistory(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapJournalNotes(GameSaveData &data, uint32_t sourceSaveVersion);
+// Saves before version 129 numbered the decoration states with the legacy campfire keys: marks every saved map state
+// (EventRuntimeState::legacyCampFireDecorVars) for the map to renumber when it is next entered.
+void markLegacyCampFireDecorVars(GameSaveData &data, uint32_t sourceSaveVersion);
 bool saveGameDataToPath(const std::filesystem::path &path, const GameSaveData &data, std::string &error);
 
 // The load error for a save written by a newer build; the Load screen counts such saves instead of listing them.

@@ -859,7 +859,6 @@ constexpr float IndoorActorVsActorMovementRadius = 24.0f;
 constexpr float PartyCollisionRadius = 37.0f;
 constexpr float PartyCollisionHeight = 192.0f;
 constexpr uint16_t LevelDecorationVisibleOnMap = 0x0008;
-constexpr uint16_t LevelDecorationInvisible = 0x0020;
 constexpr float PartyTargetHeightOffset = 96.0f;
 constexpr float ActorDirectionHeightFactor = 0.75f;
 constexpr float ChestTrapForwardDepth = 96.0f;
@@ -3934,6 +3933,7 @@ void IndoorWorldRuntime::initialize(
     m_pParty = pParty;
     if (m_pParty != nullptr)
     {
+        m_pParty->setGameMinutes(gameMinutes());
         m_pParty->setPersonalShieldRules(&monsterTable.shields().partyRules());
     }
     m_pPartyRuntime = pPartyRuntime;
@@ -3952,8 +3952,8 @@ void IndoorWorldRuntime::initialize(
     m_pIndoorMapData = pIndoorMapData;
     m_pIndoorDecorationBillboardSet = pIndoorDecorationBillboardSet;
     m_decorationClearRules = m_pIndoorMapData != nullptr && m_pIndoorDecorationBillboardSet != nullptr
-        ? indoorDecorationClearRules(m_pIndoorMapData->entities, m_pIndoorDecorationBillboardSet->decorationTable)
-        : std::vector<IndoorDecorationClearRule>{};
+        ? decorationClearRules(m_pIndoorMapData->entities, m_pIndoorDecorationBillboardSet->decorationTable)
+        : std::vector<DecorationClearRule>{};
     if (m_pGameplayProjectileService != nullptr)
     {
         m_pGameplayProjectileService->clear();
@@ -4060,6 +4060,7 @@ void IndoorWorldRuntime::initialize(
     m_pParty = pParty;
     if (m_pParty != nullptr)
     {
+        m_pParty->setGameMinutes(gameMinutes());
         m_pParty->setPersonalShieldRules(&monsterTable.shields().partyRules());
     }
     m_pPartyRuntime = pPartyRuntime;
@@ -4077,8 +4078,8 @@ void IndoorWorldRuntime::initialize(
     m_pIndoorMapData = pIndoorMapData;
     m_pIndoorDecorationBillboardSet = pIndoorDecorationBillboardSet;
     m_decorationClearRules = m_pIndoorMapData != nullptr && m_pIndoorDecorationBillboardSet != nullptr
-        ? indoorDecorationClearRules(m_pIndoorMapData->entities, m_pIndoorDecorationBillboardSet->decorationTable)
-        : std::vector<IndoorDecorationClearRule>{};
+        ? decorationClearRules(m_pIndoorMapData->entities, m_pIndoorDecorationBillboardSet->decorationTable)
+        : std::vector<DecorationClearRule>{};
     std::random_device randomDevice;
     const uint64_t timeSeed = uint64_t(std::chrono::steady_clock::now().time_since_epoch().count());
     m_sessionChestSeed = randomDevice() ^ uint32_t(timeSeed) ^ uint32_t(timeSeed >> 32);
@@ -10301,6 +10302,7 @@ void IndoorWorldRuntime::advanceGameMinutes(float minutes)
 
     if (m_pParty != nullptr)
     {
+        m_pParty->setGameMinutes(gameMinutes());
         m_pParty->updateDaysWithoutRest(m_gameMinutes);
     }
 }
@@ -10891,7 +10893,25 @@ std::string IndoorWorldRuntime::mapWorldId() const
 
 void IndoorWorldRuntime::setTurnBasedActorMode(ActorTurnBasedMode mode)
 {
+    const bool enteringWait =
+        mode == ActorTurnBasedMode::MoveOnly && m_turnBasedActorFacts.mode != ActorTurnBasedMode::MoveOnly;
     m_turnBasedActorFacts.mode = mode;
+
+    // Like the original, standing actors decide afresh when the wait stage starts instead of finishing a stand
+    // timer chosen while they were held.
+    if (enteringWait)
+    {
+        for (MapActorAiState &aiState : m_mapActorAiStates)
+        {
+            if (aiState.motionState == ActorAiMotionState::Standing
+                && aiState.spellEffects.stunRemainingSeconds <= 0.0f
+                && aiState.spellEffects.paralyzeRemainingSeconds <= 0.0f)
+            {
+                aiState.actionSeconds = 0.0f;
+                aiState.idleDecisionSeconds = 0.0f;
+            }
+        }
+    }
 
     if (mode == ActorTurnBasedMode::RealTime)
     {
@@ -18871,10 +18891,11 @@ std::vector<IndoorCylinderCollision> IndoorWorldRuntime::decorationMovementColli
     colliders.reserve(m_pIndoorDecorationBillboardSet->billboards.size());
 
     const EventRuntimeState *pState = eventRuntimeState();
-    const std::vector<bool> hidden = pState != nullptr
-        ? hiddenIndoorDecorationEntities(m_pIndoorMapData->entities, m_decorationClearRules, *pState)
-        : std::vector<bool>{};
     const MapDeltaData *pDelta = mapDeltaData();
+    const std::vector<bool> hidden = pState != nullptr
+        ? hiddenDecorationEntities(m_pIndoorMapData->entities, m_decorationClearRules,
+            pDelta != nullptr ? &pDelta->decorationFlags : nullptr, *pState)
+        : std::vector<bool>{};
 
     for (const DecorationBillboard &billboard : m_pIndoorDecorationBillboardSet->billboards)
     {
@@ -18889,17 +18910,9 @@ std::vector<IndoorCylinderCollision> IndoorWorldRuntime::decorationMovementColli
             continue;
         }
 
-        if (billboard.entityIndex < m_pIndoorMapData->entities.size())
+        if (billboard.entityIndex < hidden.size() && hidden[billboard.entityIndex])
         {
-            const IndoorEntity &entity = m_pIndoorMapData->entities[billboard.entityIndex];
-            const uint16_t flags = pDelta != nullptr && billboard.entityIndex < pDelta->decorationFlags.size()
-                ? pDelta->decorationFlags[billboard.entityIndex] : entity.aiAttributes;
-
-            if ((flags & LevelDecorationInvisible) != 0
-                || (billboard.entityIndex < hidden.size() && hidden[billboard.entityIndex]))
-            {
-                continue;
-            }
+            continue;
         }
 
         colliders.push_back(IndoorCylinderCollision{
@@ -19028,6 +19041,12 @@ void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_actorModifiers.clear();
     m_appliedRelationRevision = UINT64_MAX;
     m_gameMinutes = snapshot.gameMinutes;
+
+    if (m_pParty != nullptr)
+    {
+        m_pParty->setGameMinutes(gameMinutes());
+    }
+
     m_currentLocationReputation = snapshot.currentLocationReputation;
     m_sessionChestSeed = snapshot.sessionChestSeed;
     m_materializedChestViews = snapshot.materializedChestViews;

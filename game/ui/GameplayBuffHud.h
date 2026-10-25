@@ -110,10 +110,12 @@ struct GameplayBuffHudDefinition
     const GameplayBuffHudLayer *pLayer = nullptr;
     float badgeX = 0;
     float badgeY = 0;
+    bool cornerBadge = true;
 };
 
 // Preserve the desktop skull mapping; the old Android YAML incorrectly assigned these layers to other spells.
 // The far eye extends that mapping for Detect Life; badges cover effects without a legacy desktop layer.
+// Invisibility draws no badge: the party portraits show it.
 // Flight and Water Walk retain separate animated indicators. Special is reserved for future modifiers.
 inline constexpr std::array<GameplayBuffHudDefinition, PartyBuffCount> GameplayBuffHudDefinitions = {{
     {"Torch Light", "obsidian_buff_sbf01a", GameplayBuffPresentation::Skull, &GameplayBuffHudTorch},
@@ -122,7 +124,7 @@ inline constexpr std::array<GameplayBuffHudDefinition, PartyBuffCount> GameplayB
     {"Detect Life", "obsidian_buff_sbs01a", GameplayBuffPresentation::Skull, &GameplayBuffHudFarEye},
     {"Water Walk", "obsidian_buff_sbw05a", GameplayBuffPresentation::Movement},
     {"Fly", "obsidian_buff_sba10a", GameplayBuffPresentation::Movement},
-    {"Invisibility", "obsidian_buff_sba08a", GameplayBuffPresentation::Skull, nullptr, 46, 2},
+    {"Invisibility", "obsidian_buff_sba08a", GameplayBuffPresentation::Skull, nullptr, 0, 0, false},
     {"Stoneskin", "obsidian_buff_sbe05a", GameplayBuffPresentation::Skull, &GameplayBuffHudStone},
     {"Day of the Gods", "obsidian_buff_sbl06a", GameplayBuffPresentation::Skull, &GameplayBuffHudHalo},
     {"Protection from Magic", "obsidian_buff_sbb09a", GameplayBuffPresentation::Skull, &GameplayBuffHudGarland},

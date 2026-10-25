@@ -23,6 +23,8 @@ public:
         float cursorY = 0.0f;
         float screenWidth = 0.0f;
         float screenHeight = 0.0f;
+        // The actor the attack that casts the spell was aimed at; an actor-targeted quick cast prefers it.
+        std::optional<size_t> preferredActorIndex;
     };
 
     enum class QuickSpellStartDisposition
@@ -41,6 +43,8 @@ public:
     {
         bool castStarted = false;
         bool followupUiActive = false;
+        // A quick cast found no target; the caller says so or does something else (an attack swings the weapon).
+        bool noTarget = false;
     };
 
     enum class SpellRequestDisposition

@@ -683,10 +683,20 @@ bool IndoorSceneRuntime::advanceSimulation(float deltaMilliseconds)
         }
     }
 
+    return advanceMechanisms(deltaMilliseconds) || stateChanged;
+}
+
+bool IndoorSceneRuntime::advanceMechanisms(float deltaMilliseconds)
+{
+    if (!m_eventRuntimeState || !m_mapDeltaData || deltaMilliseconds <= 0.0f)
+    {
+        return false;
+    }
+
     if (!hasMovingMechanism(*m_eventRuntimeState))
     {
         m_mechanismAccumulatorMilliseconds = 0.0f;
-        return stateChanged;
+        return false;
     }
 
     int mechanismSteps = 0;
@@ -733,7 +743,7 @@ bool IndoorSceneRuntime::advanceSimulation(float deltaMilliseconds)
         m_mechanismAccumulatorMilliseconds = MechanismStepMilliseconds;
     }
 
-    return stateChanged || mechanismSteps > 0;
+    return mechanismSteps > 0;
 }
 
 void IndoorSceneRuntime::updateMechanismAudio(

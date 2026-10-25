@@ -41,7 +41,9 @@ int masteryMerchantMultiplier(SkillMastery mastery)
     }
 }
 
-int conditionDaysPassed(const Character &member, CharacterCondition condition, float gameMinutes)
+// MM6 0x49e910, MM7 0x4b7fa3, MM8 0x4b65cf: the weekday on which the condition was inflicted, plus one (1-7), not
+// the days since then; 0 when the member does not have it.
+int conditionWeekdayMultiplier(const Character &member, CharacterCondition condition)
 {
     const size_t conditionIndex = static_cast<size_t>(condition);
 
@@ -50,31 +52,22 @@ int conditionDaysPassed(const Character &member, CharacterCondition condition, f
         return 0;
     }
 
-    const float startGameMinutes = member.conditionStartGameMinutes[conditionIndex];
-
-    if (startGameMinutes <= 0.0f || gameMinutes < startGameMinutes)
-    {
-        return 1;
-    }
-
-    return static_cast<int>(std::floor((gameMinutes - startGameMinutes) / MinutesPerDay)) + 1;
+    const float startGameMinutes = std::max(0.0f, member.conditionStartGameMinutes[conditionIndex]);
+    return static_cast<int>(std::floor(startGameMinutes / MinutesPerDay)) % 7 + 1;
 }
 
-int highestMinorConditionDaysPassed(const Character &member, float gameMinutes)
+int highestMinorConditionWeekdayMultiplier(const Character &member)
 {
-    int highestDaysPassed = 1;
+    int highestMultiplier = 1;
 
     for (size_t conditionIndex = 0; conditionIndex <= static_cast<size_t>(CharacterCondition::Unconscious);
         ++conditionIndex)
     {
-        const int daysPassed = conditionDaysPassed(
-            member,
-            static_cast<CharacterCondition>(conditionIndex),
-            gameMinutes);
-        highestDaysPassed = std::max(highestDaysPassed, daysPassed);
+        const int multiplier = conditionWeekdayMultiplier(member, static_cast<CharacterCondition>(conditionIndex));
+        highestMultiplier = std::max(highestMultiplier, multiplier);
     }
 
-    return highestDaysPassed;
+    return highestMultiplier;
 }
 
 int classTierForClassName(const std::string &className)
@@ -334,7 +327,7 @@ int PriceCalculator::tavernFoodPrice(
     return std::max(minimumPrice, applyMerchantDiscount(pCharacter, basePrice, effectiveReputation));
 }
 
-int PriceCalculator::templeHealPrice(const Character *pCharacter, const HouseEntry &houseEntry, float gameMinutes)
+int PriceCalculator::templeHealPrice(const Character *pCharacter, const HouseEntry &houseEntry)
 {
     const Character dummy = {};
     const Character &member = pCharacter != nullptr ? *pCharacter : dummy;
@@ -343,29 +336,30 @@ int PriceCalculator::templeHealPrice(const Character *pCharacter, const HouseEnt
 
     if (member.conditions.test(static_cast<size_t>(CharacterCondition::Eradicated)))
     {
-        conditionTimeMultiplier = conditionDaysPassed(member, CharacterCondition::Eradicated, gameMinutes);
+        conditionTimeMultiplier = conditionWeekdayMultiplier(member, CharacterCondition::Eradicated);
         baseConditionMultiplier = 10;
     }
     else if (member.conditions.test(static_cast<size_t>(CharacterCondition::Petrified)))
     {
-        conditionTimeMultiplier = conditionDaysPassed(member, CharacterCondition::Petrified, gameMinutes);
+        conditionTimeMultiplier = conditionWeekdayMultiplier(member, CharacterCondition::Petrified);
         baseConditionMultiplier = 5;
     }
     else if (member.conditions.test(static_cast<size_t>(CharacterCondition::Dead)))
     {
-        conditionTimeMultiplier = conditionDaysPassed(member, CharacterCondition::Dead, gameMinutes);
+        conditionTimeMultiplier = conditionWeekdayMultiplier(member, CharacterCondition::Dead);
         baseConditionMultiplier = 5;
     }
     else if (member.conditions.any())
     {
-        conditionTimeMultiplier = highestMinorConditionDaysPassed(member, gameMinutes);
+        conditionTimeMultiplier = highestMinorConditionWeekdayMultiplier(member);
     }
 
     const int result = static_cast<int>(
         static_cast<double>(conditionTimeMultiplier)
         * static_cast<double>(baseConditionMultiplier)
         * static_cast<double>(houseEntry.priceMultiplier));
-    return std::clamp(result, 1, 10000);
+    // The originals have no upper cap.
+    return std::max(result, 1);
 }
 
 int PriceCalculator::trainingPrice(

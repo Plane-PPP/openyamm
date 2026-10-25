@@ -91,6 +91,10 @@ void MonsterRules::decorationRaisedStats(const std::string &, uint8_t, uint8_t) 
 {
 }
 
+void MonsterRules::decorationsRenumbered(const std::string &, std::span<const int16_t>) const
+{
+}
+
 uint32_t MonsterRules::bountyReward(const MonsterTable::MonsterStatsEntry &stats) const
 {
     return uint32_t(std::max(0, stats.level) * 100);

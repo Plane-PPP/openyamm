@@ -1400,15 +1400,21 @@ void renderCharacterAwardsList(
 
 struct RestDateText
 {
+    int weekday = 0;
     int day = 1;
     int month = 1;
     int year = RestStartingYear;
 };
 
+// Day 1 is a Monday, as on the save and load screens.
+constexpr std::array<const char *, 7> RestWeekdayNames = {
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+
 RestDateText formatRestDateText(float gameMinutes)
 {
     const int totalDays = std::max(0, static_cast<int>(std::floor(gameMinutes / 1440.0f)));
     RestDateText result = {};
+    result.weekday = totalDays % 7;
     result.year = RestStartingYear + totalDays / (RestDaysPerMonth * RestMonthsPerYear);
     result.month = 1 + (totalDays / RestDaysPerMonth) % RestMonthsPerYear;
     result.day = 1 + totalDays % RestDaysPerMonth;
@@ -3119,6 +3125,7 @@ void GameplayPartyOverlayRenderer::renderRestOverlay(GameplayScreenRuntime &cont
         {
             std::string label = pLayout->labelText;
             label = replaceAllText(label, "{time}", timeText);
+            label = replaceAllText(label, "{weekday}", RestWeekdayNames[dateText.weekday]);
             label = replaceAllText(label, "{day_num}", std::to_string(dateText.day));
             label = replaceAllText(label, "{month_num}", std::to_string(dateText.month));
             label = replaceAllText(label, "{year_num}", std::to_string(dateText.year));

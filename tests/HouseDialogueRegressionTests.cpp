@@ -10,6 +10,7 @@
 #include "game/gameplay/MasteryTeacherDialog.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/TravelRuntime.h"
+#include "game/items/AlchemyBenchRuntime.h"
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
 #include "game/items/PriceCalculator.h"
@@ -57,6 +58,7 @@ constexpr uint32_t BankHouseId = 281;
 constexpr uint32_t AdventurersInnHouseId = 756;
 constexpr uint32_t ServiceTavernWithResidentHouseId = 260;
 constexpr uint32_t DaggerWoundTavernHouseId = 228;
+constexpr uint32_t GroggsGrogTavernHouseId = 252;
 constexpr uint32_t BullsEyeInnHouseId = 235;
 constexpr uint32_t HarmondaleTavernHouseId = 240;
 constexpr uint32_t HarmondaleTownHallHouseId = 203;
@@ -2187,8 +2189,6 @@ TEST_CASE("merged in-house plain NPC followers can be hired and leave their hous
     CHECK(std::find(residentIds.begin(), residentIds.end(), WilmaCookGateMasterNpcId) == residentIds.end());
 }
 
-TEST_CASE("Naomi Wind in-house hire requires start gold and leaves house after hire")
-{
 TEST_CASE("a map's saved unavailable flag does not hide a resident the party has let go")
 {
     // Sir Charles Quixote: Erathia's saved state kept him unavailable from the Crusader quest after the promotion in
@@ -2211,6 +2211,8 @@ TEST_CASE("a map's saved unavailable flag does not hide a resident the party has
     CHECK(std::find(residentIds.begin(), residentIds.end(), QuixoteNpcId) != residentIds.end());
 }
 
+TEST_CASE("Naomi Wind in-house hire requires start gold and leaves house after hire")
+{
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
 
     const OpenYAMM::Game::HouseEntry *pHouse = gameData.houseTable.get(NaomiWindHouseId);
@@ -3198,6 +3200,86 @@ TEST_CASE("house service guild spellbook stock generates and buys")
     CHECK_GT(harness.party().inventoryItemCount(), initialInventoryCount);
 }
 
+TEST_CASE("alchemist standard stock puts empty bottles in the top row")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
+    constexpr uint32_t StoneCityAlchemistHouseId = 124;
+    const OpenYAMM::Game::HouseEntry *pHouseEntry = gameData.houseTable.get(StoneCityAlchemistHouseId);
+    REQUIRE(pHouseEntry != nullptr);
+    REQUIRE_EQ(pHouseEntry->type, "Alchemist");
+
+    const std::vector<OpenYAMM::Game::InventoryItem> &stock = OpenYAMM::Game::HouseServiceRuntime::ensureStock(
+        harness.party(),
+        gameData.itemTable,
+        gameData.standardItemEnchantTable,
+        gameData.specialItemEnchantTable,
+        *pHouseEntry,
+        harness.worldRuntime().gameMinutes(),
+        OpenYAMM::Game::HouseStockMode::ShopStandard);
+    REQUIRE_EQ(stock.size(), 12u);
+
+    for (size_t slotIndex = 0; slotIndex < stock.size(); ++slotIndex)
+    {
+        CAPTURE(slotIndex);
+
+        if (slotIndex < 6)
+        {
+            CHECK_EQ(stock[slotIndex].objectDescriptionId, 220u);
+            continue;
+        }
+
+        const OpenYAMM::Game::ItemDefinition *pItem = gameData.itemTable.get(stock[slotIndex].objectDescriptionId);
+        REQUIRE(pItem != nullptr);
+        CHECK((pItem->equipStat == "Reagent" || pItem->equipStat == "Herb"));
+    }
+}
+
+TEST_CASE("alchemist special stock offers recipe scrolls over potions")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
+    constexpr uint32_t StoneCityAlchemistHouseId = 124;
+    const OpenYAMM::Game::HouseEntry *pHouseEntry = gameData.houseTable.get(StoneCityAlchemistHouseId);
+    REQUIRE(pHouseEntry != nullptr);
+
+    const OpenYAMM::Game::AlchemyBenchTables benchTables = {
+        gameData.itemTable,
+        gameData.potionMixingTable,
+        gameData.potionNoteTable,
+        gameData.mergedPotionSettingTable,
+        gameData.mergedReagentSettingTable};
+    const std::vector<OpenYAMM::Game::InventoryItem> &stock = OpenYAMM::Game::HouseServiceRuntime::ensureStock(
+        harness.party(),
+        gameData.itemTable,
+        gameData.standardItemEnchantTable,
+        gameData.specialItemEnchantTable,
+        *pHouseEntry,
+        harness.worldRuntime().gameMinutes(),
+        OpenYAMM::Game::HouseStockMode::ShopSpecial);
+    REQUIRE_EQ(stock.size(), 12u);
+
+    for (size_t slotIndex = 0; slotIndex < stock.size(); ++slotIndex)
+    {
+        CAPTURE(slotIndex);
+        const uint32_t itemId = stock[slotIndex].objectDescriptionId;
+        const OpenYAMM::Game::ItemDefinition *pItem = gameData.itemTable.get(itemId);
+        REQUIRE(pItem != nullptr);
+
+        if (slotIndex < 6)
+        {
+            CHECK(OpenYAMM::Game::AlchemyBenchRuntime::recipeScrollPotionItemId(itemId, benchTables).has_value());
+            // The merged table repeats the recipe set (700-731 and 1542-1573); only the first copy is sold.
+            CHECK_GE(itemId, 700u);
+            CHECK_LE(itemId, 731u);
+            continue;
+        }
+
+        CHECK_EQ(pItem->equipStat, "Bottle");
+        CHECK_NE(itemId, 220u);
+    }
+}
+
 TEST_CASE("house service guild spellbook stock offers its world's books up to the guild spell level")
 {
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
@@ -4010,7 +4092,7 @@ TEST_CASE("temple healing restores active member to effective resource maximums"
     CHECK_EQ(pMember->spellPoints, 75);
 }
 
-TEST_CASE("temple healing price uses condition age and house multiplier")
+TEST_CASE("temple healing price uses the weekday of infliction and house multiplier")
 {
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
     OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
@@ -4054,8 +4136,84 @@ TEST_CASE("temple healing price uses condition age and house multiplier")
         OpenYAMM::Game::DialogueMenuId::None);
     healAction = findHouseActionById(actions, OpenYAMM::Game::HouseActionId::TempleHeal);
 
+    // Inflicted on day 8 (the harness starts at noon of day 0): weekday 8 % 7 + 1 = 2, times 5 for Dead.
     REQUIRE(healAction.has_value());
-    CHECK_EQ(healAction->label, "Heal 150 gold");
+    CHECK_EQ(healAction->label, "Heal 100 gold");
+}
+
+TEST_CASE("temple healing price follows the original weekday multiplier without an upper cap")
+{
+    OpenYAMM::Game::HouseEntry houseEntry = {};
+    houseEntry.priceMultiplier = 10.0f;
+    constexpr float MinutesPerDay = 24.0f * 60.0f;
+    const size_t unconsciousIndex = static_cast<size_t>(OpenYAMM::Game::CharacterCondition::Unconscious);
+    const size_t eradicatedIndex = static_cast<size_t>(OpenYAMM::Game::CharacterCondition::Eradicated);
+
+    OpenYAMM::Game::Character wounded = {};
+    CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(&wounded, houseEntry), 10);
+
+    OpenYAMM::Game::Character unconscious = {};
+    unconscious.conditions.set(unconsciousIndex);
+    unconscious.conditionStartGameMinutes[unconsciousIndex] = 540.0f;
+    CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(&unconscious, houseEntry), 10);
+    unconscious.conditionStartGameMinutes[unconsciousIndex] = 6.0f * MinutesPerDay + 540.0f;
+    CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(&unconscious, houseEntry), 70);
+    unconscious.conditionStartGameMinutes[unconsciousIndex] = 7.0f * MinutesPerDay + 540.0f;
+    CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(&unconscious, houseEntry), 10);
+
+    OpenYAMM::Game::Character eradicated = {};
+    eradicated.conditions.set(eradicatedIndex);
+    eradicated.conditionStartGameMinutes[eradicatedIndex] = 6.0f * MinutesPerDay;
+    houseEntry.priceMultiplier = 500.0f;
+    CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(&eradicated, houseEntry), 35000);
+}
+
+TEST_CASE("knockouts from damage record their start time for the temple healing price")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
+    const OpenYAMM::Game::HouseEntry *pTempleHouse = gameData.houseTable.get(TempleHouseId);
+
+    REQUIRE(pTempleHouse != nullptr);
+    REQUIRE_EQ(pTempleHouse->priceMultiplier, doctest::Approx(10.0f));
+
+    harness.worldRuntime().advanceGameMinutes(3.0f * 24.0f * 60.0f);
+    const float knockoutGameMinutes = harness.worldRuntime().gameMinutes();
+    const size_t memberIndex = harness.party().activeMemberIndex();
+    const size_t unconsciousIndex = static_cast<size_t>(OpenYAMM::Game::CharacterCondition::Unconscious);
+    const size_t deadIndex = static_cast<size_t>(OpenYAMM::Game::CharacterCondition::Dead);
+
+    OpenYAMM::Game::Character *pMember = harness.party().member(memberIndex);
+    REQUIRE(pMember != nullptr);
+    pMember->health = std::max(1, pMember->maxHealth - 5);
+    CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(pMember, *pTempleHouse), 10);
+
+    SUBCASE("unconscious")
+    {
+        pMember->endurance = 50;
+        pMember->health = 5;
+        REQUIRE(harness.party().applyDamageToMember(memberIndex, 10, ""));
+
+        pMember = harness.party().member(memberIndex);
+        REQUIRE(pMember != nullptr);
+        REQUIRE(pMember->conditions.test(unconsciousIndex));
+        CHECK_EQ(pMember->conditionStartGameMinutes[unconsciousIndex], doctest::Approx(knockoutGameMinutes));
+        // Day 3: weekday multiplier 3 % 7 + 1 = 4.
+        CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(pMember, *pTempleHouse), 40);
+    }
+
+    SUBCASE("dead")
+    {
+        pMember->endurance = 1;
+        pMember->health = 5;
+        REQUIRE(harness.party().applyDamageToMember(memberIndex, 100, ""));
+
+        pMember = harness.party().member(memberIndex);
+        REQUIRE(pMember != nullptr);
+        REQUIRE(pMember->conditions.test(deadIndex));
+        CHECK_EQ(pMember->conditionStartGameMinutes[deadIndex], doctest::Approx(knockoutGameMinutes));
+        CHECK_EQ(OpenYAMM::Game::PriceCalculator::templeHealPrice(pMember, *pTempleHouse), 200);
+    }
 }
 
 TEST_CASE("event-applied conditions use absolute game time for temple healing price")
@@ -4223,8 +4381,12 @@ TEST_CASE("dwi guild skill learning")
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
     OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
 
+    // House 139 is Free Haven's Adept Guild of Air (MM6), which teaches members only.
+    constexpr uint16_t AirGuildMembershipVariable = 0x8006u;
+
     REQUIRE(harness.party().setActiveMemberIndex(3));
     harness.party().addGold(2000);
+    harness.party().setEventVariableValue(AirGuildMembershipVariable, 1);
 
     const OpenYAMM::Game::EventDialogContent &rootDialog = harness.openHouseDialog(ElementalGuildHouseId);
 
@@ -4243,6 +4405,75 @@ TEST_CASE("dwi guild skill learning")
     const OpenYAMM::Game::Character *pSorcerer = harness.party().member(3);
     REQUIRE(pSorcerer != nullptr);
     CHECK(pSorcerer->hasSkill("AirMagic"));
+}
+
+TEST_CASE("mm6 and mm7 magic guilds require membership; mm8 and mm7 light/dark do not")
+{
+    constexpr uint32_t NewSorpigalElementalGuildHouseId = 1214;
+    constexpr uint32_t EmeraldIslandFireGuildHouseId = 128;
+    constexpr uint32_t DaggerWoundElementalGuildHouseId = 182;
+    constexpr uint32_t BracadaLightGuildHouseId = 171;
+    constexpr uint32_t DeyjaDarkGuildHouseId = 176;
+    constexpr uint32_t SilverCoveLightGuildHouseId = 173;
+    constexpr uint16_t ElementalGuildMembershipVariable = 0x800Eu;
+
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
+
+    const auto isGated = [&](uint32_t houseId)
+    {
+        const OpenYAMM::Game::HouseEntry *pHouseEntry = gameData.houseTable.get(houseId);
+        REQUIRE(pHouseEntry != nullptr);
+        const std::vector<OpenYAMM::Game::HouseActionOption> actions = OpenYAMM::Game::buildHouseActionOptions(
+            *pHouseEntry,
+            &harness.party(),
+            &gameData.classSkillTable,
+            &harness.worldRuntime(),
+            12.0f * 60.0f,
+            OpenYAMM::Game::DialogueMenuId::None);
+        const std::optional<OpenYAMM::Game::HouseActionOption> learn =
+            findHouseActionById(actions, OpenYAMM::Game::HouseActionId::OpenLearnSkillsMenu);
+        const bool canBuy =
+            findHouseActionById(actions, OpenYAMM::Game::HouseActionId::GuildBuySpellbooks).has_value();
+        REQUIRE(learn.has_value());
+        const bool gated = !learn->enabled
+            && learn->disabledReason == "You must be a member of this guild to study here.";
+        CHECK_NE(canBuy, gated);
+        return gated;
+    };
+    const auto soundType = [&](uint32_t houseId)
+    {
+        const OpenYAMM::Game::HouseEntry *pHouseEntry = gameData.houseTable.get(houseId);
+        REQUIRE(pHouseEntry != nullptr);
+        return OpenYAMM::Game::houseEntrySoundType(*pHouseEntry, &harness.party(), &harness.worldRuntime());
+    };
+
+    CHECK(isGated(NewSorpigalElementalGuildHouseId));
+    CHECK(isGated(EmeraldIslandFireGuildHouseId));
+    CHECK(isGated(SilverCoveLightGuildHouseId));
+    CHECK_FALSE(isGated(DaggerWoundElementalGuildHouseId));
+    CHECK_FALSE(isGated(BracadaLightGuildHouseId));
+    CHECK_FALSE(isGated(DeyjaDarkGuildHouseId));
+
+    const OpenYAMM::Game::HouseEntry *pNewSorpigalGuild = gameData.houseTable.get(NewSorpigalElementalGuildHouseId);
+    REQUIRE(pNewSorpigalGuild != nullptr);
+    const std::vector<std::string> nonMemberLines = OpenYAMM::Game::buildHouseServiceInfoLines(
+        *pNewSorpigalGuild,
+        &harness.party(),
+        &gameData.classSkillTable,
+        OpenYAMM::Game::DialogueMenuId::None);
+    CHECK(std::find(
+        nonMemberLines.begin(),
+        nonMemberLines.end(),
+        "You must be a member of this guild to study here.") != nonMemberLines.end());
+    CHECK_EQ(soundType(NewSorpigalElementalGuildHouseId), OpenYAMM::Game::HouseSoundType::MagicGuildMembersOnly);
+    CHECK_EQ(soundType(DaggerWoundElementalGuildHouseId), OpenYAMM::Game::HouseSoundType::GeneralGreeting);
+    CHECK_EQ(soundType(BuccaneersLairHouseId), OpenYAMM::Game::HouseSoundType::GeneralGreeting);
+
+    harness.party().setEventVariableValue(ElementalGuildMembershipVariable, 1);
+    CHECK_FALSE(isGated(NewSorpigalElementalGuildHouseId));
+    CHECK_EQ(soundType(NewSorpigalElementalGuildHouseId), OpenYAMM::Game::HouseSoundType::GeneralGreeting);
+    CHECK(isGated(EmeraldIslandFireGuildHouseId));
 }
 
 TEST_CASE("mm6 skill guilds require membership and expose their original skills")
@@ -6589,6 +6820,29 @@ TEST_CASE("merged house movie sound bases drive mm8 house speech")
     }
 }
 
+TEST_CASE("stone city house entry resolves a greeting sound")
+{
+    // Indoor houses now share the outdoor entry audio, which needs a house video and a greeting sound.
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    constexpr uint32_t StoneCityHouseIds[] = {17, 57, 124, 252, 321};
+
+    for (const uint32_t houseId : StoneCityHouseIds)
+    {
+        CAPTURE(houseId);
+        const OpenYAMM::Game::HouseEntry *pHouseEntry = gameData.houseTable.get(houseId);
+
+        REQUIRE(pHouseEntry != nullptr);
+        CHECK_FALSE(pHouseEntry->videoName.empty());
+        REQUIRE_NE(pHouseEntry->houseSoundBaseId, 0u);
+
+        const std::optional<uint32_t> greetingSoundId =
+            OpenYAMM::Game::deriveHouseSoundId(*pHouseEntry, OpenYAMM::Game::HouseSoundType::GeneralGreeting);
+
+        REQUIRE(greetingSoundId.has_value());
+        CHECK_EQ(*greetingSoundId, pHouseEntry->houseSoundBaseId + 1);
+    }
+}
+
 TEST_CASE("weapon shop keeps native item size and raises tall weapons onto the table")
 {
     OpenYAMM::Game::HouseEntry weaponShop = {};
@@ -6937,6 +7191,96 @@ TEST_CASE("tavern rent room defers recovery until rest screen")
     CHECK(harness.party().hasPartyBuff(OpenYAMM::Game::PartyBuffId::WizardEye));
 }
 
+TEST_CASE("inn rest lasts until an hour after dawn, twelve hours longer in Deyja, the Pit and Mount Nighon")
+{
+    constexpr float MinutesPerDay = 24.0f * 60.0f;
+    constexpr float TenPm = 22.0f * 60.0f;
+    constexpr float FiveAm = 5.0f * 60.0f;
+    constexpr uint32_t SnobbishGoblinHouseId = 243;
+    constexpr uint32_t VampyreLoungeHouseId = 246;
+    constexpr uint32_t FortunesFollyHouseId = 248;
+    constexpr uint32_t GroggsGrogHouseId = 252;
+
+    CHECK_EQ(OpenYAMM::Game::innRestDurationMinutes(DaggerWoundTavernHouseId, TenPm), doctest::Approx(480.0f));
+    CHECK_EQ(
+        OpenYAMM::Game::innRestDurationMinutes(DaggerWoundTavernHouseId, 3.0f * MinutesPerDay + TenPm),
+        doctest::Approx(480.0f));
+    CHECK_EQ(
+        OpenYAMM::Game::innRestDurationMinutes(DaggerWoundTavernHouseId, FiveAm),
+        doctest::Approx(MinutesPerDay + 60.0f));
+    CHECK_EQ(OpenYAMM::Game::innRestDurationMinutes(GroggsGrogHouseId, TenPm), doctest::Approx(480.0f));
+
+    for (const uint32_t houseId : {SnobbishGoblinHouseId, VampyreLoungeHouseId, FortunesFollyHouseId})
+    {
+        CHECK_EQ(OpenYAMM::Game::innRestDurationMinutes(houseId, TenPm), doctest::Approx(480.0f + 720.0f));
+    }
+}
+
+TEST_CASE("tavern fill packs uses the house food value")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
+    const OpenYAMM::Game::HouseEntry *pDaggerWound = gameData.houseTable.get(DaggerWoundTavernHouseId);
+    const OpenYAMM::Game::HouseEntry *pGroggsGrog = gameData.houseTable.get(GroggsGrogTavernHouseId);
+
+    REQUIRE(pDaggerWound != nullptr);
+    REQUIRE(pGroggsGrog != nullptr);
+
+    const OpenYAMM::Game::HouseActionOption buyFood{
+        OpenYAMM::Game::HouseActionId::TavernBuyFood,
+        "Buy food",
+        "",
+        true,
+        ""};
+
+    harness.party().addGold(10000);
+    harness.party().addFood(-harness.party().food());
+    const OpenYAMM::Game::HouseActionResult firstBuy = OpenYAMM::Game::performHouseAction(
+        buyFood,
+        *pDaggerWound,
+        harness.party(),
+        &gameData.classSkillTable,
+        &harness.worldRuntime());
+
+    CHECK(firstBuy.succeeded);
+    CHECK_EQ(harness.party().food(), 6);
+
+    const OpenYAMM::Game::HouseActionResult secondBuy = OpenYAMM::Game::performHouseAction(
+        buyFood,
+        *pDaggerWound,
+        harness.party(),
+        &gameData.classSkillTable,
+        &harness.worldRuntime());
+
+    CHECK_FALSE(secondBuy.succeeded);
+    CHECK_EQ(secondBuy.speechId, OpenYAMM::Game::SpeechId::TavernPacksFull);
+
+    harness.party().addFood(-harness.party().food());
+    const std::vector<OpenYAMM::Game::HouseActionOption> options =
+        OpenYAMM::Game::buildHouseActionOptions(
+            *pGroggsGrog,
+            &harness.party(),
+            &gameData.classSkillTable,
+            &harness.worldRuntime(),
+            18.0f * 60.0f,
+            OpenYAMM::Game::DialogueMenuId::None);
+    const std::optional<OpenYAMM::Game::HouseActionOption> foodOption =
+        findHouseActionById(options, OpenYAMM::Game::HouseActionId::TavernBuyFood);
+
+    REQUIRE(foodOption.has_value());
+    CHECK(foodOption->label.starts_with("Fill packs to 20 days for "));
+
+    const OpenYAMM::Game::HouseActionResult groggBuy = OpenYAMM::Game::performHouseAction(
+        buyFood,
+        *pGroggsGrog,
+        harness.party(),
+        &gameData.classSkillTable,
+        &harness.worldRuntime());
+
+    CHECK(groggBuy.succeeded);
+    CHECK_EQ(harness.party().food(), 20);
+}
+
 TEST_CASE("house actions expose mmmerge speech reactions for service outcomes")
 {
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
@@ -7120,7 +7464,9 @@ TEST_CASE("empty house after departure")
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
     OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
 
+    // As a departure does: the party's set is the one the map's state is rebuilt from.
     harness.eventRuntimeState().unavailableNpcIds.insert(FredrickNpcId);
+    harness.party().setNpcUnavailable(FredrickNpcId, true);
 
     REQUIRE(harness.executeOut01LocalEvent(37));
 
@@ -7464,9 +7810,7 @@ TEST_CASE("repeat promotion events include first member")
             }
         }
 
-    // As a departure does: the party's set is the one the map's state is rebuilt from.
         CHECK(harness.party().hasQuestBit(testCase.completionQBit));
-    harness.party().setNpcUnavailable(FredrickNpcId, true);
         CHECK(portraitFxContainsMember(
             harness.eventRuntimeState(),
             OpenYAMM::Game::PortraitFxEventKind::AwardGain,

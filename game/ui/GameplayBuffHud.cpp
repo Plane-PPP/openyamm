@@ -170,7 +170,7 @@ void renderBuffPanel(GameplayScreenRuntime &context, const Party &party, Gamepla
     for (size_t i = 0; i < PartyBuffCount; ++i)
     {
         const GameplayBuffHudDefinition &definition = GameplayBuffHudDefinitions[i];
-        if (definition.presentation == presentation && definition.pLayer == nullptr
+        if (definition.presentation == presentation && definition.pLayer == nullptr && definition.cornerBadge
             && party.hasPartyBuff(static_cast<PartyBuffId>(i)))
         {
             const GameplayResolvedHudLayoutElement badge = {rect->x + definition.badgeX * rect->scale,

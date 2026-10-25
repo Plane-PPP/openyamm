@@ -587,13 +587,8 @@ std::optional<size_t> OutdoorInteractionController::resolveSpellActionHoveredAct
         return std::nullopt;
     }
 
-    const OutdoorWorldRuntime::MapActorState *pActor = view.m_pOutdoorWorldRuntime->mapActorState(*actorIndex);
-
-    if (pActor == nullptr
-        || pActor->isDead
-        || pActor->isInvisible
-        || !pActor->hostileToParty
-        || !pActor->hasDetectedParty)
+    // Any picked actor, as indoors; the spell service decides which of them a cast may take.
+    if (view.m_pOutdoorWorldRuntime->mapActorState(*actorIndex) == nullptr)
     {
         return std::nullopt;
     }
@@ -656,8 +651,7 @@ std::vector<size_t> OutdoorInteractionController::resolveVisibleHostileActorIndi
         if (pActor == nullptr
             || pActor->isDead
             || pActor->isInvisible
-            || !pActor->hostileToParty
-            || !pActor->hasDetectedParty)
+            || !pActor->hostileToParty)
         {
             continue;
         }
@@ -1048,7 +1042,7 @@ uint16_t OutdoorInteractionController::resolveDecorationBillboardSpriteId(
     const DecorationBillboard &billboard,
     bool &hidden)
 {
-    hidden = false;
+    hidden = isDecorationEntityHidden(view, billboard.entityIndex);
     uint16_t spriteId = billboard.spriteId;
 
     if (!view.m_outdoorDecorationBillboardSet || view.m_pOutdoorWorldRuntime == nullptr)
@@ -1058,26 +1052,17 @@ uint16_t OutdoorInteractionController::resolveDecorationBillboardSpriteId(
 
     const EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
 
-    if (pEventRuntimeState == nullptr)
+    if (pEventRuntimeState == nullptr || pEventRuntimeState->spriteOverrides.empty())
     {
         return spriteId;
     }
 
-    if (pEventRuntimeState->spriteOverrides.empty())
-    {
-        return spriteId;
-    }
-
-    const uint32_t overrideKey = billboard.spriteOverrideKey();
-
-    const auto overrideIterator = pEventRuntimeState->spriteOverrides.find(overrideKey);
+    const auto overrideIterator = pEventRuntimeState->spriteOverrides.find(billboard.spriteOverrideKey());
 
     if (overrideIterator == pEventRuntimeState->spriteOverrides.end())
     {
         return spriteId;
     }
-
-    hidden = overrideIterator->second.hidden;
 
     if (!overrideIterator->second.textureName.has_value() || overrideIterator->second.textureName->empty())
     {
@@ -1099,6 +1084,35 @@ uint16_t OutdoorInteractionController::resolveDecorationBillboardSpriteId(
     }
 
     return spriteId;
+}
+
+bool OutdoorInteractionController::isDecorationEntityHidden(const OutdoorGameView &view, size_t entityIndex)
+{
+    if (!view.m_pOutdoorMapData || entityIndex >= view.m_pOutdoorMapData->entities.size())
+    {
+        return false;
+    }
+
+    const OutdoorEntity &entity = view.m_pOutdoorMapData->entities[entityIndex];
+    const MapDeltaData *pMapDeltaData =
+        view.m_pOutdoorWorldRuntime != nullptr ? view.m_pOutdoorWorldRuntime->mapDeltaData() : nullptr;
+    const uint16_t mapFlags = pMapDeltaData != nullptr && entityIndex < pMapDeltaData->decorationFlags.size()
+        ? pMapDeltaData->decorationFlags[entityIndex] : entity.aiAttributes;
+    const EventRuntimeState *pEventRuntimeState =
+        view.m_pOutdoorWorldRuntime != nullptr ? view.m_pOutdoorWorldRuntime->eventRuntimeState() : nullptr;
+
+    if (pEventRuntimeState == nullptr)
+    {
+        return (mapFlags & LevelDecorationInvisible) != 0;
+    }
+
+    const OutdoorGameView::InteractiveDecorationBinding *pBinding =
+        findInteractiveDecorationBindingForEntity(view, entityIndex);
+    const DecorationClearRule rule = pBinding != nullptr
+        ? DecorationClearRule{int16_t(pBinding->decorVarIndex), pBinding->eventCount, pBinding->hideWhenCleared}
+        : DecorationClearRule{};
+
+    return isDecorationHidden(entity.spriteOverrideKey(entityIndex), mapFlags, &rule, *pEventRuntimeState);
 }
 
 void OutdoorInteractionController::rebuildInteractiveDecorationBindings(OutdoorGameView &view)
@@ -1163,26 +1177,6 @@ const OutdoorGameView::InteractiveDecorationBinding *OutdoorInteractionControlle
 
     const OutdoorGameView::InteractiveDecorationBinding &binding = view.m_interactiveDecorationBindings[entityIndex];
     return binding.active ? &binding : nullptr;
-}
-
-bool OutdoorInteractionController::isInteractiveDecorationHidden(const OutdoorGameView &view, size_t entityIndex)
-{
-    const OutdoorGameView::InteractiveDecorationBinding *pBinding =
-        findInteractiveDecorationBindingForEntity(view, entityIndex);
-
-    if (pBinding == nullptr || !pBinding->hideWhenCleared || view.m_pOutdoorWorldRuntime == nullptr)
-    {
-        return false;
-    }
-
-    const EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
-
-    if (pEventRuntimeState == nullptr)
-    {
-        return false;
-    }
-
-    return pEventRuntimeState->decorVars[pBinding->decorVarIndex] == pBinding->eventCount;
 }
 
 int OutdoorInteractionController::interactiveDecorationState(const OutdoorGameView &view, size_t entityIndex)
@@ -1385,14 +1379,7 @@ void OutdoorInteractionController::executeActiveDialogAction(OutdoorGameView &vi
         {
             OutdoorInteractionController::closeActiveEventDialog(view);
         },
-        [&view](const GameplayDialogController::Result &result)
-        {
-            if (result.pendingInnRest.has_value())
-            {
-                view.m_gameSession.gameplayScreenRuntime().startInnRest(
-                    view.innRestDurationMinutes(result.pendingInnRest->houseId));
-            }
-        },
+        {},
         [&view](size_t previousMessageCount, bool allowNpcFallbackContent)
         {
             OutdoorInteractionController::presentPendingEventDialog(
@@ -3663,7 +3650,7 @@ OutdoorGameView::InspectHit OutdoorInteractionController::inspectBModelFace(
     {
         const OutdoorEntity &entity = outdoorMapData.entities[entityIndex];
 
-        if (isInteractiveDecorationHidden(view, entityIndex) || entityHasDecoration[entityIndex] != 0)
+        if (isDecorationEntityHidden(view, entityIndex) || entityHasDecoration[entityIndex] != 0)
         {
             continue;
         }
@@ -3725,68 +3712,14 @@ OutdoorGameView::InspectHit OutdoorInteractionController::inspectBModelFace(
             candidateBillboardIndices);
 
         const uint32_t animationTimeTicks = currentAnimationTicks();
-        const auto resolveDecorationBillboardVisual = [&view](const DecorationBillboard &billboard, bool &hidden)
-        {
-            hidden = false;
-            uint16_t spriteId = billboard.spriteId;
-
-            if (!view.m_outdoorDecorationBillboardSet || view.m_pOutdoorWorldRuntime == nullptr)
-            {
-                return spriteId;
-            }
-
-            const EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
-
-            if (pEventRuntimeState == nullptr)
-            {
-                return spriteId;
-            }
-
-            if (pEventRuntimeState->spriteOverrides.empty())
-            {
-                return spriteId;
-            }
-
-            const uint32_t overrideKey = billboard.spriteOverrideKey();
-
-            const auto overrideIterator = pEventRuntimeState->spriteOverrides.find(overrideKey);
-
-            if (overrideIterator == pEventRuntimeState->spriteOverrides.end())
-            {
-                return spriteId;
-            }
-
-            hidden = overrideIterator->second.hidden;
-
-            if (!overrideIterator->second.textureName.has_value() || overrideIterator->second.textureName->empty())
-            {
-                return spriteId;
-            }
-
-            if (const DecorationEntry *pDecoration =
-                    view.m_outdoorDecorationBillboardSet->decorationTable.findByInternalName(
-                        *overrideIterator->second.textureName))
-            {
-                return pDecoration->spriteId;
-            }
-
-            if (const std::optional<uint16_t> overrideSpriteId =
-                    view.m_outdoorDecorationBillboardSet->spriteFrameTable.findFrameIndexBySpriteName(
-                        *overrideIterator->second.textureName))
-            {
-                return *overrideSpriteId;
-            }
-
-            return spriteId;
-        };
 
         for (size_t decorationIndex : candidateBillboardIndices)
         {
             const DecorationBillboard &decoration = view.m_outdoorDecorationBillboardSet->billboards[decorationIndex];
             bool hidden = false;
-            const uint16_t spriteId = resolveDecorationBillboardVisual(decoration, hidden);
+            const uint16_t spriteId = resolveDecorationBillboardSpriteId(view, decoration, hidden);
 
-            if (isInteractiveDecorationHidden(view, decoration.entityIndex) || hidden)
+            if (hidden)
             {
                 continue;
             }

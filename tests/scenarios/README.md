@@ -77,6 +77,9 @@ content package schema the game does not have, and `load_game: {name, expect_fai
 load is refused, leaving the game in progress (`cross_ruleset_load_failure.yml`, audit STD3-1). `save_game: {name,
 block_with_directory: true, expect_failure: true}` puts a folder where the save file would go, so the write fails and
 the step passes only then; `assert: {food: N}` checks the party's food (`maw_save_food_refund.yml`).
+`assert: {game_hour: N}` checks the clock's hour of the day, 0-23 (`mm7/stone_city_inn_rest.yml`).
 `quick_load: {save, expect: loaded | warned, expect_status}` presses the quick load key (F10) once with a scenario save
 as the quicksave, from a scratch working folder so the real `saves/quicksave.oysav` is never read
 (`maw_quick_load_warning.yml`).
+Scenarios read the local `settings.ini` but always run with the Immortal cheat off, so a `party_health` check gives the
+same answer on every machine (`mm6/abandoned_temple_cage_trap.yml`).

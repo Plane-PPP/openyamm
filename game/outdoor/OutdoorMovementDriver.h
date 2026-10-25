@@ -117,6 +117,7 @@ public:
         float deltaSeconds,
         GameplayWorldMovementFrameDiagnostics *pPerformanceDiagnostics = nullptr);
     void setActorColliders(const std::vector<OutdoorActorCollision> &actorColliders);
+    void setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities);
     void setFaceAttributes(size_t bModelIndex, size_t faceIndex, uint32_t attributes);
     void updateFaceGeometries(const std::vector<OutdoorFaceGeometryData> &geometries);
     bool translateWithSupportedBModel(size_t bModelIndex, float deltaX, float deltaY, float deltaZ);
@@ -157,9 +158,9 @@ private:
     OutdoorMoveState m_state;
     OutdoorPartyMovementState m_partyMovementState;
     OutdoorMovementTuning m_tuning;
-    OutdoorBodyDimensions m_bodyDimensions;
     // The map's flight ceiling (its scene's movement.flight_ceiling), restored into m_tuning whenever it resets.
     float m_flightCeiling = 0.0f;
+    OutdoorBodyDimensions m_bodyDimensions;
     OutdoorMovementEvents m_lastEvents;
     OutdoorMovementConsequences m_lastConsequences;
     OutdoorMovementEffects m_pendingEffects;

@@ -373,7 +373,7 @@ void OutdoorSpatialFxRuntime::syncDecorationEmitters(OutdoorGameView &view)
     const DecorationBillboardSet &billboardSet = *view.m_outdoorDecorationBillboardSet;
     for (const DecorationBillboard &billboard : billboardSet.billboards)
     {
-        if (OutdoorInteractionController::isInteractiveDecorationHidden(view, billboard.entityIndex))
+        if (OutdoorInteractionController::isDecorationEntityHidden(view, billboard.entityIndex))
         {
             continue;
         }

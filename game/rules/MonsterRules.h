@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 #include <random>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -217,6 +218,10 @@ public:
     // A barrel or cauldron of the map (its decor var, left in `emptyState`) raised a party member's base stat or
     // resistance (MAW: it stays empty from now on, even through refills). Standard: nothing.
     virtual void decorationRaisedStats(const std::string &mapFileName, uint8_t decorVarIndex, uint8_t emptyState) const;
+    // The map's decoration states were renumbered (a save from before MMerge's campfire list): `remap` gives each old
+    // index its new one, or -1 (legacyCampFireDecorVarRemap). MAW: moves the decorations it remembers. Standard:
+    // nothing.
+    virtual void decorationsRenumbered(const std::string &mapFileName, std::span<const int16_t> remap) const;
     // What a slain monster carries (MAW: drop chance, item grade and gold by its level, rolls keyed by the kill).
     // Standard: the monster table's loot, scaled by MMMerge's bolster.
     virtual CorpseLoot corpseLoot(const CorpseLootContext &context) const;

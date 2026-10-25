@@ -899,11 +899,6 @@ bool isResidentSelectionMode(const EventDialogContent &dialog)
             });
 }
 
-uint32_t currentDialogueHostHouseId(const EventRuntimeState *pEventRuntimeState)
-{
-    return pEventRuntimeState != nullptr ? pEventRuntimeState->dialogueState.hostHouseId : 0;
-}
-
 bool indoorActorExplicitlyHostile(const MapDeltaActor &actor)
 {
     return (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Hostile)) != 0
@@ -1212,7 +1207,7 @@ void IndoorGameView::render(int width, int height, const GameplayInputFrame &inp
     }
 
     updateFootstepAudio(deltaSeconds);
-    updateDialogueVideoPlayback(deltaSeconds);
+    m_gameSession.gameplayScreenRuntime().updateHouseDialoguePresentation(deltaSeconds);
 
     presentPendingEventFeedback();
 
@@ -1398,6 +1393,7 @@ void IndoorGameView::shutdown()
     m_pGameAudioSystem = nullptr;
     m_gameSession.gameplayScreenRuntime().clearSceneAdapter(this);
     m_gameSession.gameplayScreenRuntime().bindAudioSystem(nullptr);
+    m_gameSession.gameplayScreenRuntime().resetHouseEntryAudio();
     m_map.reset();
     GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
     screenRuntime.clearHudRenderBackend();
@@ -1690,49 +1686,6 @@ void IndoorGameView::setStatusBarEvent(
     GameplayUiController::StatusBarEventPriority priority)
 {
     m_gameSession.gameplayScreenRuntime().setStatusBarEvent(text, durationSeconds, priority);
-}
-
-void IndoorGameView::updateDialogueVideoPlayback(float deltaSeconds)
-{
-    const EventRuntimeState *pEventRuntimeState =
-        worldRuntime() != nullptr ? worldRuntime()->eventRuntimeState() : nullptr;
-    const uint32_t hostHouseId = currentDialogueHostHouseId(pEventRuntimeState);
-    const HouseEntry *pHostHouseEntry =
-        hostHouseId != 0 ? m_gameSession.data().houseTable().get(hostHouseId) : nullptr;
-    GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
-    const EventDialogContent &activeDialog = screenRuntime.activeEventDialog();
-
-    if (!activeDialog.isActive
-        || screenRuntime.currentHudScreenState() != GameplayHudScreenState::Dialogue
-        || !activeEventDialogAllowsHouseVideoPlayback(activeDialog))
-    {
-        screenRuntime.stopHouseVideoPlayback();
-        return;
-    }
-
-    if (!activeDialog.videoName.empty())
-    {
-        if (activeDialog.videoDirectory.empty())
-        {
-            screenRuntime.playHouseVideo(activeDialog.videoName);
-        }
-        else
-        {
-            screenRuntime.playHouseVideo(activeDialog.videoName, activeDialog.videoDirectory);
-        }
-
-        screenRuntime.updateHouseVideoPlayback(deltaSeconds);
-        return;
-    }
-
-    if (pHostHouseEntry == nullptr || pHostHouseEntry->videoName.empty())
-    {
-        screenRuntime.stopHouseVideoPlayback();
-        return;
-    }
-
-    screenRuntime.playHouseVideo(pHostHouseEntry->videoName);
-    screenRuntime.updateHouseVideoPlayback(deltaSeconds);
 }
 
 void IndoorGameView::presentPendingEventFeedback()

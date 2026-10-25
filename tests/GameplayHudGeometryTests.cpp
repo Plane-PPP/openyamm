@@ -360,6 +360,7 @@ TEST_CASE("Obsidian skull effects retain the legacy desktop spell meanings")
     CHECK(definition(PartyBuffId::Fly).pLayer == nullptr);
     CHECK(definition(PartyBuffId::WaterWalk).pLayer == nullptr);
     CHECK(definition(PartyBuffId::Invisibility).pLayer == nullptr);
+    CHECK_FALSE(definition(PartyBuffId::Invisibility).cornerBadge);
     CHECK(definition(PartyBuffId::DetectLife).pLayer == &GameplayBuffHudFarEye);
 }
 

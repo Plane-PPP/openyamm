@@ -648,6 +648,11 @@ public:
     );
 
     bool isInitialized() const;
+    // Per map entity: whether the decoration is hidden now (evt.SetSprite, the map's invisible flag, a cleared
+    // interactive decoration); hidden decorations neither draw nor collide.
+    std::vector<bool> hiddenDecorationEntities() const;
+    // Recomputes hiddenDecorationEntities for this frame's actor movement and returns it.
+    const std::vector<bool> &refreshHiddenDecorationEntities();
     void setBolsterMonstersEnabled(bool enabled);
     void setPartyCollisionDimensions(float radius, float height);
     void bindInteractionView(OutdoorGameView *pView);
@@ -1632,6 +1637,8 @@ private:
     GameplayActorModifiers m_actorModifiers;
     // Decoration cylinders a blink must not land in; filled only when some monster blinks.
     std::vector<OutdoorDecorationCollision> m_blinkDecorationColliders;
+    std::vector<DecorationClearRule> m_decorationClearRules;
+    std::vector<bool> m_hiddenDecorationEntities;
     // MonsterRelationAddOns::revision() last applied to the actors; UINT64_MAX after a load.
     uint64_t m_appliedRelationRevision = UINT64_MAX;
     GameplayCombatController *m_pGameplayCombatController = nullptr;

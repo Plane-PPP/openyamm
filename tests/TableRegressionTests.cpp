@@ -617,6 +617,25 @@ TEST_CASE("house data magic guild types are explicit")
     CHECK_EQ(pDarkGuild->type, "Dark Guild");
 }
 
+TEST_CASE("readable scrolls after truncated quoted item names load")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+
+    // scroll.txt cuts item names such as "Journal Entry, 2nd Janua without a closing quote; the following records,
+    // including the Red Dwarf Mines journal (1528), must still load.
+    for (const uint32_t itemId : {1520u, 1521u, 1522u, 1525u, 1526u, 1527u, 1528u})
+    {
+        CAPTURE(itemId);
+        const OpenYAMM::Game::ReadableScrollEntry *pEntry = gameData.readableScrollTable.get(itemId);
+        REQUIRE(pEntry != nullptr);
+        CHECK_FALSE(pEntry->text.empty());
+    }
+
+    const OpenYAMM::Game::ReadableScrollEntry *pRedDwarfJournal = gameData.readableScrollTable.get(1528);
+    REQUIRE(pRedDwarfJournal != nullptr);
+    CHECK_EQ(pRedDwarfJournal->location, "Red Dwarf Mines");
+}
+
 TEST_CASE("merged house movie metadata drives videos and proprietor portraits")
 {
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();

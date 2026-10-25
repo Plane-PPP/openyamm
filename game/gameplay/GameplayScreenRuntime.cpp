@@ -13,6 +13,7 @@
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayFxService.h"
 #include "game/gameplay/GameplayHeldItemController.h"
+#include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/GameplaySaveLoadUiSupport.h"
 #include "game/gameplay/GameplaySpellService.h"
 #include "game/items/InventoryItemUseRuntime.h"
@@ -1596,10 +1597,19 @@ void GameplayScreenRuntime::startRestAction(GameplayUiController::RestMode mode,
     beginRestAction(mode, minutes, true, false);
 }
 
-void GameplayScreenRuntime::startInnRest(float durationMinutes)
+void GameplayScreenRuntime::startInnRest(uint32_t houseId)
 {
+    if (worldRuntime() == nullptr)
+    {
+        return;
+    }
+
     openRestOverlay(false);
-    beginRestAction(GameplayUiController::RestMode::Heal, durationMinutes, false, true);
+    beginRestAction(
+        GameplayUiController::RestMode::Heal,
+        innRestDurationMinutes(houseId, worldRuntime()->gameMinutes()),
+        false,
+        true);
 }
 
 void GameplayScreenRuntime::openSpellbookOverlay()
@@ -2400,6 +2410,11 @@ void GameplayScreenRuntime::executeActiveDialogAction(
     else
     {
         closeActiveDialogActionResult(result, closeActiveDialog);
+
+        if (result.pendingInnRest.has_value())
+        {
+            startInnRest(result.pendingInnRest->houseId);
+        }
     }
 
     if (afterCloseContinuation)
@@ -2806,7 +2821,8 @@ void GameplayScreenRuntime::playSpeechReaction(size_t memberIndex, SpeechId spee
 
     const Character *pMember = pParty->member(memberIndex);
 
-    if (pMember == nullptr)
+    // An incapacitated member neither speaks nor animates; the portrait shows the condition.
+    if (pMember == nullptr || !canMemberSpeak(*pMember, speechId))
     {
         return;
     }
@@ -3439,6 +3455,93 @@ void GameplayScreenRuntime::updateHouseVideoPlayback(float deltaSeconds)
     }
 
     uiRuntime().updateHouseVideoPlayback(deltaSeconds);
+}
+
+void GameplayScreenRuntime::updateHouseDialoguePresentation(float deltaSeconds)
+{
+    const EventDialogContent &activeDialog = activeEventDialog();
+
+    if (!activeDialog.isActive
+        || currentHudScreenState() != GameplayHudScreenState::Dialogue
+        || !activeEventDialogAllowsHouseVideoPlayback(activeDialog))
+    {
+        leaveHouseEntryAudio(true);
+        stopHouseVideoPlayback();
+        return;
+    }
+
+    if (!activeDialog.videoName.empty())
+    {
+        // A dialogue with its own video carries its own audio: no door sound or greeting.
+        leaveHouseEntryAudio(false);
+
+        if (activeDialog.videoDirectory.empty())
+        {
+            playHouseVideo(activeDialog.videoName);
+        }
+        else
+        {
+            playHouseVideo(activeDialog.videoName, activeDialog.videoDirectory);
+        }
+
+        updateHouseVideoPlayback(deltaSeconds);
+        return;
+    }
+
+    const EventRuntimeState *pEventRuntimeState =
+        worldRuntime() != nullptr ? worldRuntime()->eventRuntimeState() : nullptr;
+    const uint32_t hostHouseId = pEventRuntimeState != nullptr ? pEventRuntimeState->dialogueState.hostHouseId : 0;
+    const HouseEntry *pHostHouseEntry = hostHouseId != 0 ? m_session.data().houseTable().get(hostHouseId) : nullptr;
+
+    if (pHostHouseEntry == nullptr || pHostHouseEntry->videoName.empty())
+    {
+        leaveHouseEntryAudio(true);
+        stopHouseVideoPlayback();
+        return;
+    }
+
+    if (m_activeHouseAudioHostId != pHostHouseEntry->id)
+    {
+        m_activeHouseAudioHostId = pHostHouseEntry->id;
+
+        if (m_pAudioSystem != nullptr)
+        {
+            m_pAudioSystem->pauseBackgroundMusic();
+            m_pAudioSystem->playCommonSound(SoundId::Enter, GameAudioSystem::PlaybackGroup::HouseDoor);
+            const std::optional<uint32_t> greetingSoundId =
+                deriveHouseSoundId(
+                    *pHostHouseEntry,
+                    houseEntrySoundType(*pHostHouseEntry, partyReadOnly(), worldRuntime()));
+
+            if (greetingSoundId.has_value())
+            {
+                playHouseSound(*greetingSoundId);
+            }
+        }
+    }
+
+    playHouseVideo(pHostHouseEntry->videoName);
+    updateHouseVideoPlayback(deltaSeconds);
+}
+
+void GameplayScreenRuntime::resetHouseEntryAudio()
+{
+    m_activeHouseAudioHostId = 0;
+}
+
+void GameplayScreenRuntime::leaveHouseEntryAudio(bool playDoorSound)
+{
+    if (m_activeHouseAudioHostId != 0 && m_pAudioSystem != nullptr)
+    {
+        if (playDoorSound)
+        {
+            m_pAudioSystem->playCommonSound(SoundId::WoodDoorClosing, GameAudioSystem::PlaybackGroup::HouseDoor);
+        }
+
+        m_pAudioSystem->resumeBackgroundMusic();
+    }
+
+    m_activeHouseAudioHostId = 0;
 }
 
 bool GameplayScreenRuntime::isControlsRenderButtonPressed(GameplayControlsRenderButton button) const

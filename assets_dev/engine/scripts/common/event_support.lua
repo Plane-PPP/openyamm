@@ -1345,6 +1345,10 @@ function support.playerKnowsSpell(playerIndex, spellId)
     return evt.PartyMemberKnowsSpell(playerIndex, spellId or 0)
 end
 
+function support.forgetPlayerSpell(playerIndex, spellId)
+    return evt.ForgetPartyMemberSpell(playerIndex, spellId or 0)
+end
+
 function support.removePlayerItem(playerIndex, itemId, quantity)
     return evt.RemovePartyMemberItem(playerIndex, itemId or 0, quantity or 1)
 end
@@ -1363,6 +1367,16 @@ end
 
 function support.canPlayerLearnSkill(playerIndex, skillName, requiredMastery)
     return evt.CanPlayerLearnSkill(playerIndex, skillName or "", requiredMastery or 1)
+end
+
+-- Returns the base level and the mastery (0 none .. 4 Grandmaster) of a skill.
+function support.getPlayerSkill(playerIndex, skillName)
+    return evt.GetPlayerSkill(playerIndex, skillName or "")
+end
+
+-- Level or mastery 0 removes the skill.
+function support.setPlayerSkill(playerIndex, skillName, level, mastery)
+    return evt.SetPlayerSkill(playerIndex, skillName or "", level or 0, mastery or 0)
 end
 
 local function normalizeClassId(classIdOrName)
@@ -1683,11 +1697,14 @@ PlayerItemCount = support.playerItemCount
 PlayerHasItem = support.playerHasItem
 GivePlayerItem = support.givePlayerItem
 PlayerKnowsSpell = support.playerKnowsSpell
+ForgetPlayerSpell = support.forgetPlayerSpell
 RemovePlayerItem = support.removePlayerItem
 ApplyLichTransformation = support.applyLichTransformation
 GetClassSkillCap = support.getClassSkillCap
 CanClassLearnSkill = support.canClassLearnSkill
 CanPlayerLearnSkill = support.canPlayerLearnSkill
+GetPlayerSkill = support.getPlayerSkill
+SetPlayerSkill = support.setPlayerSkill
 PlayerClassMatches = support.playerClassMatches
 ApplyPlayerRewards = support.applyPlayerRewards
 PromotePlayers = support.promotePlayers
@@ -1788,11 +1805,14 @@ setPlayerClass = support.setPlayerClass
 playerItemCount = support.playerItemCount
 playerHasItem = support.playerHasItem
 playerKnowsSpell = support.playerKnowsSpell
+forgetPlayerSpell = support.forgetPlayerSpell
 removePlayerItem = support.removePlayerItem
 applyLichTransformation = support.applyLichTransformation
 getClassSkillCap = support.getClassSkillCap
 canClassLearnSkill = support.canClassLearnSkill
 canPlayerLearnSkill = support.canPlayerLearnSkill
+getPlayerSkill = support.getPlayerSkill
+setPlayerSkill = support.setPlayerSkill
 playerClassMatches = support.playerClassMatches
 applyPlayerRewards = support.applyPlayerRewards
 promotePlayers = support.promotePlayers

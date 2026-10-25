@@ -913,9 +913,10 @@ void collideOutdoorWithModels(
 
 void collideOutdoorWithDecorations(
     CollisionState &collisionState,
-    const std::vector<OutdoorDecorationCollision> &decorationColliders)
+    const std::vector<OutdoorDecorationCollision> &decorationColliders,
+    const std::vector<bool> &hiddenEntities)
 {
-    auto collideOnce = [&collisionState, &decorationColliders](
+    auto collideOnce = [&collisionState, &decorationColliders, &hiddenEntities](
                            const bx::Vec3 &position,
                            float radius,
                            float heightOffset)
@@ -923,6 +924,12 @@ void collideOutdoorWithDecorations(
         for (size_t decorationIndex = 0; decorationIndex < decorationColliders.size(); ++decorationIndex)
         {
             const OutdoorDecorationCollision &collider = decorationColliders[decorationIndex];
+
+            if (collider.entityIndex < hiddenEntities.size() && hiddenEntities[collider.entityIndex])
+            {
+                continue;
+            }
+
             const bx::Vec3 centerLo = {
                 static_cast<float>(collider.worldX),
                 static_cast<float>(collider.worldY),
@@ -2280,7 +2287,7 @@ OutdoorMoveState OutdoorMovementController::resolveMoveForBody(
                 collisionState.bboxMaxY,
                 candidateFaceIndices);
             collideOutdoorWithModels(collisionState, m_faces, &candidateFaceIndices, bModelGround);
-            collideOutdoorWithDecorations(collisionState, m_decorationColliders);
+            collideOutdoorWithDecorations(collisionState, m_decorationColliders, m_hiddenDecorationEntities);
             collideOutdoorWithActors(collisionState, m_actorColliders, ignoredActorCollider);
             collectSpriteObjectCandidates(
                 collisionState.bboxMinX,
@@ -3129,7 +3136,7 @@ OutdoorMoveState OutdoorMovementController::resolveOutdoorActorMove(
             collisionState.bboxMaxY,
             candidateFaceIndices);
         collideOutdoorWithModels(collisionState, m_faces, &candidateFaceIndices, bModelGround);
-        collideOutdoorWithDecorations(collisionState, m_decorationColliders);
+        collideOutdoorWithDecorations(collisionState, m_decorationColliders, m_hiddenDecorationEntities);
         collideOutdoorWithActors(collisionState, m_actorColliders, ignoredActorCollider);
         collectSpriteObjectCandidates(
             collisionState.bboxMinX,
@@ -3411,6 +3418,11 @@ OutdoorMoveState OutdoorMovementController::resolveOutdoorActorMove(
     }
 
     return result;
+}
+
+void OutdoorMovementController::setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities)
+{
+    m_hiddenDecorationEntities = hiddenEntities;
 }
 
 void OutdoorMovementController::setActorColliders(const std::vector<OutdoorActorCollision> &actorColliders)

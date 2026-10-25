@@ -558,6 +558,10 @@ function MM7.CheckPromotionSide(thisSideBit, oppositeSideBit, thisMessage, oppos
     return false
 end
 
+-- out09's flower07 at (-2008, -13448), link number 20; its click event 170 opens the obelisk chest. The map file
+-- flags it invisible.
+local EvenmornObeliskTreasureCog = 20
+
 function MM7.UpdateEvenmornObeliskTreasure()
     local allObelisksFound = true
 
@@ -565,13 +569,10 @@ function MM7.UpdateEvenmornObeliskTreasure()
         allObelisksFound = allObelisksFound and IsQBitSet(QBit(qbitId))
     end
 
-    if not allObelisksFound then
-        return
-    end
-
-    if IsAtLeast(Hour, 1) then
-        evt.SetSprite(170, 0, "0")
-    end
+    -- Shown only during the midnight hour once every obelisk is read (MMerge out09.lua). IsAtLeast tests the hour
+    -- for equality.
+    local visible = allObelisksFound and IsAtLeast(Hour, 0)
+    evt.SetSprite(EvenmornObeliskTreasureCog, visible and 1 or 0)
 end
 
 function MM7.OpenEvenmornDimensionDoorIfNear()

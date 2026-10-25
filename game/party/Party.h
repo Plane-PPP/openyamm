@@ -536,6 +536,10 @@ public:
     // Counts the 3 AM dawns passed since the last rest; from the second on the party weakens, starves and
     // eventually goes insane or dies. A rest or heal resynchronises the dawn clock without these effects.
     void updateDaysWithoutRest(float gameMinutes);
+    // The world runtime that owns the clock publishes every change of it here, so conditions inflicted without a
+    // caller-supplied time (damage knockouts, rule effects) record when they started.
+    void setGameMinutes(float gameMinutes);
+    float gameMinutes() const;
     void reviveAndRestoreAll();
     void restoreActiveMember();
     bool trainLeader(uint32_t maxLevel, uint32_t &newLevel, uint32_t &skillPointsEarned);
@@ -705,7 +709,9 @@ public:
     const PartyBuffState *partyBuff(PartyBuffId buffId) const;
     const CharacterBuffState *characterBuff(size_t memberIndex, CharacterBuffId buffId) const;
     bool blockConditionWithProtectionFromMagic(CharacterCondition condition);
-    bool applyMemberCondition(size_t memberIndex, CharacterCondition condition, float gameMinutes = 0.0f);
+    // Starts the condition at the party's current game time.
+    bool applyMemberCondition(size_t memberIndex, CharacterCondition condition);
+    bool applyMemberCondition(size_t memberIndex, CharacterCondition condition, float gameMinutes);
     bool clearMemberCondition(size_t memberIndex, CharacterCondition condition);
     bool hasMemberConditionImmunity(size_t memberIndex, CharacterCondition condition) const;
     bool healMember(size_t memberIndex, int amount);
@@ -796,6 +802,7 @@ private:
     uint32_t m_monsterTargetSelectionCounter = 0;
     uint32_t m_houseStockSeed = 0;
     float m_periodicEffectElapsedGameSeconds = 0.0f;
+    float m_gameMinutes = 0.0f;
     uint32_t m_itemWeeklyEffectSequence = 0;
     float m_lastFallDamageDistance = 0.0f;
     int m_daysWithoutRest = 0;

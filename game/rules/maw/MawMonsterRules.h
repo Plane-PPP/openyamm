@@ -58,6 +58,7 @@ public:
     void leaveMap(IGameplayWorldRuntime &world) const override;
     // Remembers the barrel or cauldron; the map's next loads empty it again (zzMaw-Maps.lua:240-283).
     void decorationRaisedStats(const std::string &mapFileName, uint8_t decorVarIndex, uint8_t emptyState) const override;
+    void decorationsRenumbered(const std::string &mapFileName, std::span<const int16_t> remap) const override;
     // checkMapCompletition's progress (zzMaw-Monsters.lua:2568-2796) for the HUD's bar: mawMapProgress on the map's
     // kills, revival state, reward and dimension run, or the Endless Arena's wave in d42.
     std::optional<RulesetMapProgress> mapProgress(const IGameplayWorldRuntime &world) const override;

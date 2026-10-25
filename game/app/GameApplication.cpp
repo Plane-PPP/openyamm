@@ -11,6 +11,7 @@
 #include "game/debug/MawTestParties.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayHeldItemController.h"
+#include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/gameplay/ReputationRuntime.h"
 #include "game/scene/IndoorSceneRuntime.h"
 #include "game/scene/OutdoorSceneRuntime.h"
@@ -1345,6 +1346,51 @@ const IndoorSceneRuntime::Snapshot *findSavedIndoorSceneState(
     }
 
     return stateIt != states.end() ? &stateIt->second : nullptr;
+}
+
+// A saved map state from before MMerge's campfire list: renumbers its decoration states now that the map's decorations
+// are loaded (EventRuntimeState::legacyCampFireDecorVars).
+void renumberSavedLegacyCampFireDecorVars(GameSession &session, const MapAssetInfo &mapAssetInfo, const Party &party)
+{
+    const auto renumber = [&](auto &states, const auto &entities, const DecorationBillboardSet &billboards)
+    {
+        auto stateIt = states.end();
+
+        if (!mapAssetInfo.map.canonicalId.empty())
+        {
+            stateIt = states.find(mapAssetInfo.map.canonicalId);
+        }
+
+        if (stateIt == states.end())
+        {
+            stateIt = states.find(mapAssetInfo.map.fileName);
+        }
+
+        if (stateIt != states.end() && stateIt->second.eventRuntimeState)
+        {
+            renumberLegacyCampFireDecorVars(
+                *stateIt->second.eventRuntimeState,
+                mapAssetInfo.map.fileName,
+                std::span(entities),
+                billboards.decorationTable,
+                party);
+        }
+    };
+
+    if (mapAssetInfo.outdoorMapData && mapAssetInfo.outdoorDecorationBillboardSet)
+    {
+        renumber(
+            session.outdoorWorldStates(),
+            mapAssetInfo.outdoorMapData->entities,
+            *mapAssetInfo.outdoorDecorationBillboardSet);
+    }
+    else if (mapAssetInfo.indoorMapData && mapAssetInfo.indoorDecorationBillboardSet)
+    {
+        renumber(
+            session.indoorSceneStates(),
+            mapAssetInfo.indoorMapData->entities,
+            *mapAssetInfo.indoorDecorationBillboardSet);
+    }
 }
 
 bool savedSelectedMapStateNeedsFreshAssets(
@@ -8158,6 +8204,7 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
             m_gameSession.setPartyState(m_pOutdoorPartyRuntime->party());
         }
 
+        renumberSavedLegacyCampFireDecorVars(m_gameSession, *selectedMap, m_pOutdoorPartyRuntime->party());
         const int32_t currentMapDay = currentLocationDay(m_gameSession.gameMinutes());
         const OutdoorWorldRuntime::Snapshot *pSavedOutdoorState =
             findSavedOutdoorWorldState(m_gameSession, *selectedMap);
@@ -8388,6 +8435,7 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
             selectedMap->indoorSpriteObjectBillboardSet
                 ? &selectedMap->indoorSpriteObjectBillboardSet->spriteFrameTable
                 : pIndoorActorSpriteFrameTable;
+        renumberSavedLegacyCampFireDecorVars(m_gameSession, *selectedMap, party);
         const int32_t currentMapDay = currentLocationDay(m_gameSession.gameMinutes());
         const IndoorSceneRuntime::Snapshot *pSavedIndoorState =
             findSavedIndoorSceneState(m_gameSession, *selectedMap);

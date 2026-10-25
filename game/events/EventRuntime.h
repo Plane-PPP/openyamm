@@ -532,6 +532,9 @@ struct EventRuntimeState
     bool pendingDimensionDoorWithoutQuest = false;
     DialogueRuntimeState dialogueState;
     std::array<uint8_t, 125> decorVars = {};
+    // decorVars still use the numbering of saves before MMerge's campfire list (SaveVersionMMergeCampfireDecorVars);
+    // the map renumbers them when it is next entered (legacyCampFireDecorVarRemap).
+    bool legacyCampFireDecorVars = false;
     std::optional<ActiveDecorationContext> activeDecorationContext;
     std::optional<ActiveHookContext> activeHookContext;
     std::vector<std::string> messages;

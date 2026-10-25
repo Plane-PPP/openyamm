@@ -3797,8 +3797,10 @@ void IndoorRenderer::render(
     const float deltaMilliseconds = deltaSeconds * 1000.0f;
     m_elapsedTime += std::max(deltaSeconds, 0.0f);
 
-    if (allowWorldSimulation && m_pSceneRuntime != nullptr && !gameSession.turnBasedCombatRuntime().active())
+    if (allowWorldSimulation && m_pSceneRuntime != nullptr)
     {
+        // Turn-based mode freezes game time, but doors and lifts keep moving.
+        const bool turnBasedActive = gameSession.turnBasedCombatRuntime().active();
         const bool collectDiagnostics = m_logIndoorPerformanceDiagnostics;
         const uint64_t mechanismBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
         const uint64_t simulationBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
@@ -3807,7 +3809,9 @@ void IndoorRenderer::render(
             pPreviousEventRuntimeState != nullptr
                 ? pPreviousEventRuntimeState->mechanisms
                 : std::unordered_map<uint32_t, RuntimeMechanismState>();
-        const bool simulationAdvanced = m_pSceneRuntime->advanceSimulation(deltaMilliseconds);
+        const bool simulationAdvanced = turnBasedActive
+            ? m_pSceneRuntime->advanceMechanisms(deltaMilliseconds)
+            : m_pSceneRuntime->advanceSimulation(deltaMilliseconds);
 
         if (collectDiagnostics)
         {
@@ -6091,8 +6095,7 @@ std::vector<size_t> IndoorRenderer::gameplayVisibleHostileActorIndices() const
         if (!worldRuntime.actorRuntimeState(actorIndex, actorState)
             || actorState.isDead
             || actorState.isInvisible
-            || !actorState.hostileToParty
-            || !actorState.hasDetectedParty)
+            || !actorState.hostileToParty)
         {
             continue;
         }

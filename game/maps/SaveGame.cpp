@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 128;
+constexpr uint32_t SaveVersion = 129;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -175,6 +175,9 @@ constexpr uint32_t SaveVersionLootFilterPresets = 126;
 constexpr uint32_t SaveVersionMawUsedStatDecorations = 127;
 // MAW games keep Beyond Madness's death count in the save as well as in the death ledger.
 constexpr uint32_t SaveVersionMawMadnessDeaths = 128;
+// The decoration states (decorVars) are numbered with MMerge's campfire list; older map states keep a marker until the
+// map renumbers them (EventRuntimeState::legacyCampFireDecorVars).
+constexpr uint32_t SaveVersionMMergeCampfireDecorVars = 129;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -2772,6 +2775,7 @@ void writeValue(BinaryWriter &writer, const EventRuntimeState &value)
     writeValue(writer, value.localOnLoadEventsExecuted);
     writeValue(writer, value.globalOnLoadEventsExecuted);
     writeValue(writer, value.processedMapRespawnCount);
+    writeValue(writer, value.legacyCampFireDecorVars);
 }
 
 bool readValue(BinaryReader &reader, EventRuntimeState &value)
@@ -2854,7 +2858,9 @@ bool readValue(BinaryReader &reader, EventRuntimeState &value)
         && readValue(reader, value.localOnLoadEventsExecuted)
         && readValue(reader, value.globalOnLoadEventsExecuted)
         && (reader.version() < SaveVersionActorExtraItemOverrides
-            || readValue(reader, value.processedMapRespawnCount));
+            || readValue(reader, value.processedMapRespawnCount))
+        && (reader.version() < SaveVersionMMergeCampfireDecorVars
+            || readValue(reader, value.legacyCampFireDecorVars));
 
     if (!ok)
     {
@@ -4729,6 +4735,33 @@ void migrateLegacyNpcRosters(GameSaveData &data)
     }
 }
 
+void markLegacyCampFireDecorVars(GameSaveData &data, uint32_t sourceSaveVersion)
+{
+    if (sourceSaveVersion >= SaveVersionMMergeCampfireDecorVars)
+    {
+        return;
+    }
+
+    // Renumbering needs the map's decorations, so each map does it when next entered.
+    const auto mark = [](std::optional<EventRuntimeState> &state)
+    {
+        if (state)
+        {
+            state->legacyCampFireDecorVars = true;
+        }
+    };
+    mark(data.outdoorWorld.eventRuntimeState);
+    mark(data.indoorScene.eventRuntimeState);
+    for (auto &[mapFileName, snapshot] : data.outdoorWorldStates)
+    {
+        mark(snapshot.eventRuntimeState);
+    }
+    for (auto &[mapFileName, snapshot] : data.indoorSceneStates)
+    {
+        mark(snapshot.eventRuntimeState);
+    }
+}
+
 void migrateLegacyMapAutonotes(GameSaveData &data, uint32_t sourceSaveVersion)
 {
     if (sourceSaveVersion >= SaveVersionPartyAutonotes)
@@ -5171,6 +5204,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     migrateLegacyMapAutonotes(data, version);
     migrateLegacyMapHistory(data, version);
     migrateLegacyMapJournalNotes(data, version);
+    markLegacyCampFireDecorVars(data, version);
     data.sourceSaveVersion = version;
 
     return data;

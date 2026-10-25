@@ -1505,6 +1505,33 @@ bool characterHasLearnedSkill(const Character &member, const std::string &skillN
     return pSkill != nullptr && pSkill->level > 0 && pSkill->mastery != SkillMastery::None;
 }
 
+// Sets a canonical skill to the level and mastery, or removes it when either is zero; returns whether the member
+// learned the skill by it.
+bool setCharacterSkillValue(
+    const Party *pParty,
+    Character &member,
+    const std::string &skillName,
+    uint32_t level,
+    SkillMastery mastery)
+{
+    const ClassMultiplierTable *pClassMultiplierTable = pParty != nullptr ? pParty->classMultiplierTable() : nullptr;
+
+    if (level == 0 || mastery == SkillMastery::None)
+    {
+        member.skills.erase(skillName);
+        GameMechanics::refreshCharacterBaseResources(member, false, pClassMultiplierTable);
+        return false;
+    }
+
+    const bool hadLearnedSkill = characterHasLearnedSkill(member, skillName);
+    CharacterSkill &skill = member.skills[skillName];
+    skill.name = skillName;
+    skill.level = level;
+    skill.mastery = mastery;
+    GameMechanics::refreshCharacterBaseResources(member, false, pClassMultiplierTable);
+    return !hadLearnedSkill;
+}
+
 SkillMastery normalizeCheckSkillMastery(uint32_t rawMastery)
 {
     switch (rawMastery)
@@ -3294,34 +3321,10 @@ void EventRuntime::setVariableValue(
         {
             Character *pMember = pParty->member(targetMemberIndex);
 
-            if (pMember == nullptr)
-            {
-                continue;
-            }
-
-            if (level == 0 || mastery == SkillMastery::None)
-            {
-                pMember->skills.erase(*skillName);
-                GameMechanics::refreshCharacterBaseResources(
-                    *pMember,
-                    false,
-                    pParty != nullptr ? pParty->classMultiplierTable() : nullptr);
-                continue;
-            }
-
-            const bool hadLearnedSkill = characterHasLearnedSkill(*pMember, *skillName);
-            CharacterSkill &skill = pMember->skills[*skillName];
-            skill.name = *skillName;
-            skill.level = level;
-            skill.mastery = mastery;
-            if (!hadLearnedSkill)
+            if (pMember != nullptr && setCharacterSkillValue(pParty, *pMember, *skillName, level, mastery))
             {
                 learnedMemberIndices.push_back(targetMemberIndex);
             }
-            GameMechanics::refreshCharacterBaseResources(
-                *pMember,
-                false,
-                pParty != nullptr ? pParty->classMultiplierTable() : nullptr);
         }
 
         if (!learnedMemberIndices.empty())
@@ -5765,6 +5768,16 @@ int luaPartyMemberKnowsSpell(lua_State *pLuaState)
     return 1;
 }
 
+int luaForgetPartyMemberSpell(lua_State *pLuaState)
+{
+    Party *pParty = writableParty(pLuaState);
+    const std::optional<size_t> memberIndex = luaMemberIndexArgument(pLuaState, 1);
+    const uint32_t spellId = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 2));
+    Character *pMember = pParty != nullptr && memberIndex ? pParty->member(*memberIndex) : nullptr;
+    lua_pushboolean(pLuaState, pMember != nullptr && pMember->forgetSpell(spellId));
+    return 1;
+}
+
 int luaRemovePartyMemberItem(lua_State *pLuaState)
 {
     Party *pParty = writableParty(pLuaState);
@@ -7342,6 +7355,41 @@ int luaCanPlayerLearnSkill(lua_State *pLuaState)
     return 1;
 }
 
+// The member's base level and mastery (0 none .. 4 Grandmaster) of a skill; 0, 0 when they lack it.
+int luaGetPlayerSkill(lua_State *pLuaState)
+{
+    const Party *pParty = readableParty(pLuaState);
+    const std::optional<size_t> memberIndex = luaMemberIndexArgument(pLuaState, 1);
+    const Character *pMember = pParty != nullptr && memberIndex ? pParty->member(*memberIndex) : nullptr;
+    const char *pSkillName = luaL_checkstring(pLuaState, 2);
+    const CharacterSkill *pSkill = pMember != nullptr ? pMember->findSkill(pSkillName) : nullptr;
+    lua_pushinteger(pLuaState, pSkill != nullptr ? static_cast<lua_Integer>(pSkill->level) : 0);
+    lua_pushinteger(pLuaState, pSkill != nullptr ? static_cast<lua_Integer>(pSkill->mastery) : 0);
+    return 2;
+}
+
+// Sets the member's skill to a base level and mastery (0 none .. 4 Grandmaster); level or mastery 0 removes it.
+int luaSetPlayerSkill(lua_State *pLuaState)
+{
+    Party *pParty = writableParty(pLuaState);
+    const std::optional<size_t> memberIndex = luaMemberIndexArgument(pLuaState, 1);
+    Character *pMember = pParty != nullptr && memberIndex ? pParty->member(*memberIndex) : nullptr;
+    const std::string skillName = canonicalSkillName(luaL_checkstring(pLuaState, 2));
+    const uint32_t level = static_cast<uint32_t>(std::max<lua_Integer>(0, luaL_checkinteger(pLuaState, 3)));
+    const SkillMastery mastery =
+        static_cast<SkillMastery>(std::clamp(static_cast<int>(luaL_checkinteger(pLuaState, 4)), 0, 4));
+
+    if (pMember == nullptr || skillName.empty())
+    {
+        lua_pushboolean(pLuaState, 0);
+        return 1;
+    }
+
+    setCharacterSkillValue(pParty, *pMember, skillName, level, mastery);
+    lua_pushboolean(pLuaState, 1);
+    return 1;
+}
+
 void appendLuaStringTable(lua_State *pLuaState, int tableIndex, std::vector<std::string> &values)
 {
     const lua_Integer tableLength = static_cast<lua_Integer>(lua_rawlen(pLuaState, tableIndex));
@@ -8678,6 +8726,7 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "GivePartyMemberItem", luaGivePartyMemberItem);
     registerLuaFunction(pLuaState, "ReplacePartyInventoryItems", luaReplacePartyInventoryItems);
     registerLuaFunction(pLuaState, "PartyMemberKnowsSpell", luaPartyMemberKnowsSpell);
+    registerLuaFunction(pLuaState, "ForgetPartyMemberSpell", luaForgetPartyMemberSpell);
     registerLuaFunction(pLuaState, "RemovePartyMemberItem", luaRemovePartyMemberItem);
     registerLuaFunction(pLuaState, "ApplyLichTransformation", luaApplyLichTransformation);
     registerLuaFunction(pLuaState, "SkillResetCost", luaSkillResetCost);
@@ -8788,6 +8837,8 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "GetClassSkillCap", luaGetClassSkillCap);
     registerLuaFunction(pLuaState, "CanClassLearnSkill", luaCanClassLearnSkill);
     registerLuaFunction(pLuaState, "CanPlayerLearnSkill", luaCanPlayerLearnSkill);
+    registerLuaFunction(pLuaState, "GetPlayerSkill", luaGetPlayerSkill);
+    registerLuaFunction(pLuaState, "SetPlayerSkill", luaSetPlayerSkill);
     registerLuaFunction(pLuaState, "SetMonsterRelation", luaSetMonsterRelation);
     registerLuaFunction(pLuaState, "SetLocalMonsterRelation", luaSetMonsterRelation);
     registerLuaFunction(pLuaState, "FaceAnimation", luaFaceAnimation);

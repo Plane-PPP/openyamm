@@ -1201,7 +1201,7 @@ std::optional<size_t> firstActingMemberIndex(const std::vector<Character> &membe
     return std::nullopt;
 }
 
-void updateMemberIncapacitatedCondition(Character &member, bool preservationActive)
+void updateMemberIncapacitatedCondition(Character &member, bool preservationActive, float gameMinutes)
 {
     if (member.health > 0)
     {
@@ -1217,7 +1217,7 @@ void updateMemberIncapacitatedCondition(Character &member, bool preservationActi
         const size_t unconsciousIndex = static_cast<size_t>(CharacterCondition::Unconscious);
         if (!member.conditions.test(unconsciousIndex))
         {
-            member.conditionStartGameMinutes[unconsciousIndex] = 0.0f;
+            member.conditionStartGameMinutes[unconsciousIndex] = std::max(0.0f, gameMinutes);
         }
         member.conditions.set(unconsciousIndex);
         member.conditions.reset(static_cast<size_t>(CharacterCondition::Dead));
@@ -1228,7 +1228,7 @@ void updateMemberIncapacitatedCondition(Character &member, bool preservationActi
         const size_t deadIndex = static_cast<size_t>(CharacterCondition::Dead);
         if (!member.conditions.test(deadIndex))
         {
-            member.conditionStartGameMinutes[deadIndex] = 0.0f;
+            member.conditionStartGameMinutes[deadIndex] = std::max(0.0f, gameMinutes);
         }
         member.conditions.set(deadIndex);
         member.conditions.reset(static_cast<size_t>(CharacterCondition::Unconscious));
@@ -3035,6 +3035,7 @@ bool Party::applyDamageToMember(
 
     Character &member = m_members[memberIndex];
     const int previousHealth = member.health;
+    const bool couldActBeforeDamage = GameMechanics::canAct(member);
     const size_t actingMembersBeforeDamage = countActingMembers(m_members);
 
     if (member.health <= 0 && (!allowUnconscious || !canReceiveUnconsciousAoeDamage(member)))
@@ -3055,7 +3056,7 @@ bool Party::applyDamageToMember(
         member.health -= damage;
         const bool preservationActive =
             m_characterBuffs[memberIndex][static_cast<size_t>(CharacterBuffId::Preservation)].active();
-        updateMemberIncapacitatedCondition(member, preservationActive);
+        updateMemberIncapacitatedCondition(member, preservationActive, m_gameMinutes);
         rules().combat.characterDamaged(*this, memberIndex);
 
         if (preservationActive && previousHealth > 0 && member.health <= 0)
@@ -3072,14 +3073,18 @@ bool Party::applyDamageToMember(
 
     if (status == "falling")
     {
-        queueSpeech(memberIndex, SpeechId::Falling);
+        if (couldActBeforeDamage)
+        {
+            queueSpeech(memberIndex, SpeechId::Falling);
+        }
     }
     else if (GameMechanics::canAct(member))
     {
         queueSpeech(memberIndex, SpeechId::DamageMinor);
     }
 
-    if (member.health <= 0)
+    // Only the blow that takes the member down: an unconscious one finished off by area damage stays silent.
+    if (member.health <= 0 && previousHealth > 0)
     {
         queueSpeech(memberIndex, SpeechId::Dying);
     }
@@ -3677,6 +3682,16 @@ void Party::clearDaysWithoutRest()
 void Party::addDayWithoutRest()
 {
     ++m_daysWithoutRest;
+}
+
+void Party::setGameMinutes(float gameMinutes)
+{
+    m_gameMinutes = std::max(0.0f, gameMinutes);
+}
+
+float Party::gameMinutes() const
+{
+    return m_gameMinutes;
 }
 
 void Party::updateDaysWithoutRest(float gameMinutes)
@@ -6799,6 +6814,11 @@ bool Party::clearMemberCondition(size_t memberIndex, CharacterCondition conditio
     return true;
 }
 
+bool Party::applyMemberCondition(size_t memberIndex, CharacterCondition condition)
+{
+    return applyMemberCondition(memberIndex, condition, m_gameMinutes);
+}
+
 bool Party::applyMemberCondition(size_t memberIndex, CharacterCondition condition, float gameMinutes)
 {
     Character *pMember = member(memberIndex);
@@ -6864,7 +6884,8 @@ bool Party::healMember(size_t memberIndex, int amount)
     pMember->health = std::min(pMember->health + amount, maxHealth);
     updateMemberIncapacitatedCondition(
         *pMember,
-        m_characterBuffs[memberIndex][static_cast<size_t>(CharacterBuffId::Preservation)].active());
+        m_characterBuffs[memberIndex][static_cast<size_t>(CharacterBuffId::Preservation)].active(),
+        m_gameMinutes);
     return pMember->health > previousHealth;
 }
 
@@ -6880,7 +6901,8 @@ void Party::adjustMemberHealth(size_t memberIndex, int amount)
     pMember->health = std::min(pMember->health + amount, effectiveMaximumHealth(*pMember));
     updateMemberIncapacitatedCondition(
         *pMember,
-        m_characterBuffs[memberIndex][static_cast<size_t>(CharacterBuffId::Preservation)].active());
+        m_characterBuffs[memberIndex][static_cast<size_t>(CharacterBuffId::Preservation)].active(),
+        m_gameMinutes);
 }
 
 bool Party::reviveMember(size_t memberIndex, int health, bool applyWeak)

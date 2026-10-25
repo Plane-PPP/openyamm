@@ -524,7 +524,6 @@ constexpr float Mm9CivilianHelpIntervalSeconds = 0.5f;
 constexpr uint8_t Mm9GuardPlayerHitTolerance = 3;
 constexpr float OutdoorFaceSpatialCellSize = 2048.0f;
 constexpr uint16_t LevelDecorationVisibleOnMap = 0x0008;
-constexpr uint16_t LevelDecorationInvisible = 0x0020;
 constexpr bool DebugProjectileSpawnLogging = false;
 constexpr bool DebugProjectileCollisionLogging = false;
 constexpr bool DebugProjectileLifetimeLogging = false;
@@ -4978,6 +4977,7 @@ void OutdoorWorldRuntime::initialize(
     m_pParty = pParty;
     if (m_pParty != nullptr)
     {
+        m_pParty->setGameMinutes(gameMinutes());
         m_pParty->setPersonalShieldRules(&monsterTable.shields().partyRules());
     }
     if (m_eventRuntimeState && m_pParty != nullptr)
@@ -4998,6 +4998,9 @@ void OutdoorWorldRuntime::initialize(
     {
         m_blinkDecorationColliders = outdoorDecorationCollisionSet->colliders;
     }
+    m_decorationClearRules = outdoorDecorationCollisionSet
+        ? outdoorDecorationCollisionSet->clearRules : std::vector<DecorationClearRule>{};
+    m_hiddenDecorationEntities.clear();
     m_appliedRelationRevision = UINT64_MAX;
     m_pMergedBolsterMapTable = pMergedBolsterMapTable;
     m_pMergedBolsterMonsterTable = pMergedBolsterMonsterTable;
@@ -7665,6 +7668,12 @@ bool OutdoorWorldRuntime::blinkMapActorTo(
 
     for (const OutdoorDecorationCollision &decoration : m_blinkDecorationColliders)
     {
+        if (decoration.entityIndex < m_hiddenDecorationEntities.size()
+            && m_hiddenDecorationEntities[decoration.entityIndex])
+        {
+            continue;
+        }
+
         if (overlaps(float(decoration.worldX), float(decoration.worldY), float(decoration.worldZ),
                 float(std::max<int16_t>(decoration.radius, 0)), float(decoration.height)))
         {
@@ -7880,7 +7889,26 @@ bool OutdoorWorldRuntime::turnBasedActorActionInProgress() const
 
 void OutdoorWorldRuntime::setTurnBasedActorMode(ActorTurnBasedMode mode)
 {
+    const bool enteringWait =
+        mode == ActorTurnBasedMode::MoveOnly && m_turnBasedActorFacts.mode != ActorTurnBasedMode::MoveOnly;
     m_turnBasedActorFacts.mode = mode;
+
+    // Like the original, standing actors decide afresh when the wait stage starts instead of finishing a stand
+    // timer chosen while they were held.
+    if (enteringWait)
+    {
+        for (MapActorState &actor : m_mapActors)
+        {
+            if (!actor.isDead
+                && actor.aiState == ActorAiState::Standing
+                && actor.stunRemainingSeconds <= 0.0f
+                && actor.paralyzeRemainingSeconds <= 0.0f)
+            {
+                actor.actionSeconds = 0.0f;
+                actor.idleDecisionSeconds = 0.0f;
+            }
+        }
+    }
 
     if (mode == ActorTurnBasedMode::RealTime)
     {
@@ -8449,6 +8477,12 @@ void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     projectileSnapshot.projectileImpacts = snapshot.projectileImpacts;
 
     m_gameMinutes = snapshot.gameMinutes;
+
+    if (m_pParty != nullptr)
+    {
+        m_pParty->setGameMinutes(gameMinutes());
+    }
+
     if (m_pOutdoorMapDeltaData != nullptr)
     {
         m_pOutdoorMapDeltaData->locationInfo = snapshot.locationInfo;
@@ -8643,6 +8677,32 @@ void OutdoorWorldRuntime::applyMapReentryReset()
         m_outdoorMovementController->setActorColliders(
             buildNearbyActorMovementColliders(m_mapActors, activeActorMask, *m_pMonsterTable));
     }
+}
+
+std::vector<bool> OutdoorWorldRuntime::hiddenDecorationEntities() const
+{
+    if (m_pOutdoorMapData == nullptr || !m_eventRuntimeState)
+    {
+        return {};
+    }
+
+    return Game::hiddenDecorationEntities(
+        std::span<const OutdoorEntity>(m_pOutdoorMapData->entities),
+        m_decorationClearRules,
+        m_pOutdoorMapDeltaData != nullptr ? &m_pOutdoorMapDeltaData->decorationFlags : nullptr,
+        *m_eventRuntimeState);
+}
+
+const std::vector<bool> &OutdoorWorldRuntime::refreshHiddenDecorationEntities()
+{
+    m_hiddenDecorationEntities = hiddenDecorationEntities();
+
+    if (m_outdoorMovementController)
+    {
+        m_outdoorMovementController->setHiddenDecorationEntities(m_hiddenDecorationEntities);
+    }
+
+    return m_hiddenDecorationEntities;
 }
 
 float OutdoorWorldRuntime::gameMinutes() const
@@ -8881,6 +8941,7 @@ void OutdoorWorldRuntime::advanceGameMinutesInternal(float minutes)
 
     if (m_pParty != nullptr)
     {
+        m_pParty->setGameMinutes(gameMinutes());
         m_pParty->updateDaysWithoutRest(m_gameMinutes);
     }
 }
@@ -12032,6 +12093,7 @@ void OutdoorWorldRuntime::updateMapActors(float deltaSeconds, float partyX, floa
     }
 
     updateMm9FoundPlayerEvents(deltaSeconds, partyX, partyY, partyZ);
+    refreshHiddenDecorationEntities();
 
     updateActorFrameGlobalEffects(deltaSeconds, partyX, partyY, partyZ);
     bool traceActorAiThisFrame = shouldTraceOutdoorActorAi(deltaSeconds);
@@ -21671,6 +21733,8 @@ void OutdoorWorldRuntime::collectGameplayMinimapMarkers(std::vector<GameplayMini
         && m_pOutdoorMapDeltaData != nullptr
         && m_pOutdoorMapData != nullptr)
     {
+        const std::vector<bool> hiddenDecorations = hiddenDecorationEntities();
+
         for (size_t entityIndex = 0; entityIndex < m_pOutdoorMapData->entities.size(); ++entityIndex)
         {
             if (entityIndex >= m_pOutdoorMapDeltaData->decorationFlags.size())
@@ -21678,26 +21742,13 @@ void OutdoorWorldRuntime::collectGameplayMinimapMarkers(std::vector<GameplayMini
                 continue;
             }
 
-            const uint16_t decorationFlags = m_pOutdoorMapDeltaData->decorationFlags[entityIndex];
-
-            if ((decorationFlags & LevelDecorationVisibleOnMap) == 0
-                || (decorationFlags & LevelDecorationInvisible) != 0)
+            if ((m_pOutdoorMapDeltaData->decorationFlags[entityIndex] & LevelDecorationVisibleOnMap) == 0
+                || (entityIndex < hiddenDecorations.size() && hiddenDecorations[entityIndex]))
             {
                 continue;
             }
 
             const OutdoorEntity &entity = m_pOutdoorMapData->entities[entityIndex];
-
-            if (m_eventRuntimeState)
-            {
-                const uint32_t overrideKey = entity.spriteOverrideKey(entityIndex);
-                const auto overrideIterator = m_eventRuntimeState->spriteOverrides.find(overrideKey);
-
-                if (overrideIterator != m_eventRuntimeState->spriteOverrides.end() && overrideIterator->second.hidden)
-                {
-                    continue;
-                }
-            }
 
             GameplayMinimapMarkerState marker = {};
             marker.type = GameplayMinimapMarkerType::Decoration;

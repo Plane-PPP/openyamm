@@ -3134,12 +3134,49 @@ std::optional<int> PartySpellSystem::healAmount(
                                                       : std::nullopt;
 }
 
+bool PartySpellSystem::isActorWithinSpellTargetRange(const IGameplayWorldRuntime &worldRuntime, size_t actorIndex)
+{
+    GameplayRuntimeActorState actor = {};
+
+    if (!worldRuntime.actorRuntimeState(actorIndex, actor))
+    {
+        return false;
+    }
+
+    const float dx = actor.preciseX - worldRuntime.partyX();
+    const float dy = actor.preciseY - worldRuntime.partyY();
+    const float dz = actor.preciseZ - worldRuntime.partyFootZ();
+    return dx * dx + dy * dy + dz * dz <= SpellActorTargetRange * SpellActorTargetRange;
+}
+
+bool PartySpellSystem::isUsableSpellActorTarget(
+    const IGameplayWorldRuntime &worldRuntime,
+    size_t actorIndex,
+    bool requireHostile)
+{
+    GameplayRuntimeActorState actor = {};
+
+    if (!worldRuntime.actorRuntimeState(actorIndex, actor)
+        || actor.isDead
+        || actor.isInvisible
+        || (requireHostile && !actor.hostileToParty))
+    {
+        return false;
+    }
+
+    return isActorWithinSpellTargetRange(worldRuntime, actorIndex);
+}
+
 std::optional<size_t> PartySpellSystem::quickCastActorTarget(
     const IGameplayWorldRuntime &worldRuntime,
     const SpellRules &spellRules,
     uint32_t spellId)
 {
-    const std::vector<size_t> visible = worldRuntime.spellActionVisibleHostileActorIndices();
+    std::vector<size_t> visible = worldRuntime.spellActionVisibleHostileActorIndices();
+    std::erase_if(visible, [&worldRuntime](size_t actorIndex)
+        {
+            return !isUsableSpellActorTarget(worldRuntime, actorIndex, true);
+        });
 
     if (!spellRules.quickCastSpreadsDebuff(spellId))
     {

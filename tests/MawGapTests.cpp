@@ -3204,6 +3204,12 @@ TEST_CASE("MAW's used stat barrels stay empty through refills (L8.1, zzMaw-Maps.
     // Standard keeps no barrels.
     standardGameRules().monsters.decorationRaisedStats("d05.blv", 4, 0);
     CHECK_EQ(rules.state().usedStatDecorations.size(), 1);
+
+    // A save from before MMerge's campfire list renumbers the map's decorations; the used barrel moves with them.
+    const std::vector<int16_t> remap = {0, 1, -1, 4};
+    monsters.decorationsRenumbered("D05.blv", remap);
+    CHECK(rules.state().usedStatDecorations == std::unordered_map<std::string, std::unordered_map<uint8_t, uint8_t>>{
+        {"d05.blv", {{4, 0}}}});
 }
 
 TEST_CASE("MAW readiness fixes: utility auras need their full cost free, falls skip Mist Form, two weapons average "

@@ -182,13 +182,25 @@ public:
         size_t casterIndex,
         uint32_t spellId,
         const SpellTable *pSpellTable);
-    // The monster a quick cast takes when none is under the cursor: the closest visible hostile, or, for a spell the
+    // The monster a quick cast takes when none is under the cursor: the closest visible hostile within
+    // SpellActorTargetRange, whether or not it has noticed the party, or, for a spell the
     // rules spread (SpellRules::quickCastSpreadsDebuff, MAW), the visible hostile within 4800 whose debuff of the spell
     // ends soonest (an undead one for Control Undead), the closer on a tie (SPL-18).
     static std::optional<size_t> quickCastActorTarget(
         const IGameplayWorldRuntime &worldRuntime,
         const SpellRules &spellRules,
         uint32_t spellId);
+    // The original pick depth of spell and missile targets (MM7/MM8; OpenEnroth's RangedAttackDepth). The player's
+    // actor-targeted casts reach no further; scripted casts are not limited.
+    static constexpr float SpellActorTargetRange = 5120.0f;
+    // Whether the actor, alive or dead, is within SpellActorTargetRange of the party's feet.
+    static bool isActorWithinSpellTargetRange(const IGameplayWorldRuntime &worldRuntime, size_t actorIndex);
+    // A living, visible actor within spell reach of the party; with `requireHostile` (the targets the game picks for
+    // a quick or attack spell) only a hostile one.
+    static bool isUsableSpellActorTarget(
+        const IGameplayWorldRuntime &worldRuntime,
+        size_t actorIndex,
+        bool requireHostile);
     // The HP the caster's heal spell would give one member, as a cast applies it (the ruleset's heal, else Standard's
     // Heal), before any crit; nothing for a spell that does not heal or a caster without the skill.
     static std::optional<int> healAmount(

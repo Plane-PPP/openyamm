@@ -443,6 +443,18 @@ TEST_CASE("MAW magic shops and alchemists stock crafting materials in place of g
         CHECK_EQ(item.objectDescriptionId, 177u);
     }
 
+    // The alchemist's guaranteed row of empty bottles is never swapped.
+    HouseEntry alchemist;
+    alchemist.type = "Alchemist";
+    std::vector<InventoryItem> bottles(40, ItemGenerator::makeInventoryItem(220, gameData.itemTable,
+        ItemGenerationMode::Shop));
+    pRules->itemRules().adjustShopStock(bottles, alchemist, party, gameData.itemTable, rng);
+
+    for (const InventoryItem &item : bottles)
+    {
+        CHECK_EQ(item.objectDescriptionId, 220u);
+    }
+
     const ItemDefinition *pGem = gameData.itemTable.get(1043);
     REQUIRE(pGem != nullptr);
     CHECK_EQ(pRules->itemRules().shopBuyValue(InventoryItem{}, *pGem, nullptr, nullptr), 4000);

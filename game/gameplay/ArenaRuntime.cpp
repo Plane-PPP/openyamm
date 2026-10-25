@@ -22,6 +22,8 @@ namespace
 constexpr const char *DifficultyVariable = "OpenYAMM.Arena.Difficulty";
 constexpr const char *RewardVariable = "OpenYAMM.Arena.RewardGold";
 constexpr const char *ClaimedVariable = "OpenYAMM.Arena.Claimed";
+// The original puts every opponent in one group, so they never fight each other (MM8 0x4bc74f).
+constexpr uint32_t ArenaOpponentGroup = 1;
 
 int32_t arenaVariable(const EventRuntimeState &state, const char *name)
 {
@@ -234,6 +236,7 @@ bool startArenaChallenge(
         actor.monsterInfoId = monsterId;
         actor.attributes = uint32_t(EvtActorAttribute::Aggressor);
         actor.hostilityType = 4;
+        actor.group = ArenaOpponentGroup;
         actor.hp = std::max(1, stats.hitPoints);
         actor.radius = monster.radius;
         actor.height = monster.height;

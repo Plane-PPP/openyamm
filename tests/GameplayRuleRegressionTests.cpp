@@ -7130,7 +7130,78 @@ TEST_CASE("interactive decoration rules cover MM6 and MM7 indoor loot decoration
     CHECK_EQ(mm8BeaconFireSpec->eventCount, 7u);
     CHECK(mm8BeaconFireSpec->useSeededInitialState);
 
+    // MMerge's campfires by name (GlobalEventsNewHandler.lua): the MM6 fires give food; MM8's dec04 does not.
+    const std::vector<std::pair<std::string, std::string>> campFires = {
+        {"ckfyr00", "fire"}, {"cmpfyr00", "fire"}, {"fire01", "large fire"}, {"7dec02", "campfire"},
+        {"dec24", "campfire"}, {"dec25", "campfire"}};
+    for (const auto &[internalName, hint] : campFires)
+    {
+        CAPTURE(internalName);
+        const std::optional<OpenYAMM::Game::InteractiveDecorationBindingSpec> campFireSpec =
+            OpenYAMM::Game::resolveInteractiveDecorationBindingSpec(makeDecoration(internalName, hint), internalName);
+        REQUIRE(campFireSpec.has_value());
+        CHECK_EQ(campFireSpec->family, OpenYAMM::Game::InteractiveDecorationFamily::CampFire);
+        CHECK_EQ(campFireSpec->baseEventId, 285u);
+        CHECK_EQ(campFireSpec->eventCount, 2u);
+        CHECK(campFireSpec->hideWhenCleared);
+    }
+    CHECK_FALSE(OpenYAMM::Game::resolveInteractiveDecorationBindingSpec(makeDecoration("dec04", "campfire"), "dec04")
+        .has_value());
+
     CHECK_FALSE(OpenYAMM::Game::resolveInteractiveDecorationBindingSpec(makeDecoration("", "bag"), "").has_value());
+}
+
+TEST_CASE("legacy save decoration states follow MMerge's campfire list")
+{
+    using namespace OpenYAMM::Game;
+    DecorationTable decorationTable;
+    REQUIRE(decorationTable.loadRows(loadSourceTabSeparatedRows("assets_dev/engine/data_tables/decoration_data.txt")));
+
+    // An old save numbered the barrels 0 and 2 and MM8's dec04 1; the MM6 cookpot fire before them was not counted.
+    // Now the fire is 0 and the barrels 1 and 2; the fire with its own event (an ambush) is never interactive.
+    std::vector<OutdoorEntity> entities(5);
+    entities[0].name = "ckfyr00";
+    entities[1].name = "bigbarel";
+    entities[2].name = "dec04";
+    entities[3].name = "bigbarel";
+    entities[4].name = "ckfyr00";
+    entities[4].eventIdSecondary = 222;
+
+    const std::vector<int16_t> remap = legacyCampFireDecorVarRemap(entities, decorationTable);
+    CHECK_EQ(remap, std::vector<int16_t>{1, -1, 2});
+
+    EventRuntimeState state = {};
+    state.decorVars[0] = 5;
+    state.decorVars[1] = 1;
+    state.decorVars[2] = 3;
+    state.decorVars[40] = 9;
+    state.legacyCampFireDecorVars = true;
+
+    // Only marked states are renumbered (markLegacyCampFireDecorVars marks every map state of a save before 129).
+    GameSaveData saveData = {};
+    saveData.outdoorWorldStates["oute3.odm"].eventRuntimeState = EventRuntimeState{};
+    markLegacyCampFireDecorVars(saveData, 129);
+    CHECK_FALSE(saveData.outdoorWorldStates["oute3.odm"].eventRuntimeState->legacyCampFireDecorVars);
+    markLegacyCampFireDecorVars(saveData, 128);
+    CHECK(saveData.outdoorWorldStates["oute3.odm"].eventRuntimeState->legacyCampFireDecorVars);
+
+    const Party party;
+    renumberLegacyCampFireDecorVars(state, "oute3.odm", entities, decorationTable, party);
+    CHECK_FALSE(state.legacyCampFireDecorVars);
+    CHECK_EQ(state.decorVars[0], 0u);
+    CHECK_EQ(state.decorVars[1], 5u);
+    CHECK_EQ(state.decorVars[2], 3u);
+    CHECK_EQ(state.decorVars[40], 9u);
+
+    // Renumbering happens once.
+    renumberLegacyCampFireDecorVars(state, "oute3.odm", entities, decorationTable, party);
+    CHECK_EQ(state.decorVars[1], 5u);
+    CHECK_EQ(state.decorVars[2], 3u);
+
+    std::vector<OutdoorEntity> unchanged(2);
+    unchanged[0].name = "bigbarel";
+    unchanged[1].name = "dec24";
+    CHECK(legacyCampFireDecorVarRemap(unchanged, decorationTable).empty());
 }
 
 TEST_CASE("MM6 one-shot bags clear after empty item and gold searches")

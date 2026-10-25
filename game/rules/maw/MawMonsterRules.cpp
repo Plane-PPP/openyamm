@@ -1508,6 +1508,28 @@ void MawMonsterRules::decorationRaisedStats(
     m_rules.state().usedStatDecorations[lowerFileName(mapFileName)][decorVarIndex] = emptyState;
 }
 
+void MawMonsterRules::decorationsRenumbered(const std::string &mapFileName, std::span<const int16_t> remap) const
+{
+    const auto used = m_rules.state().usedStatDecorations.find(lowerFileName(mapFileName));
+
+    if (used == m_rules.state().usedStatDecorations.end())
+    {
+        return;
+    }
+
+    std::unordered_map<uint8_t, uint8_t> renumbered;
+
+    for (const auto &[decorVarIndex, emptyState] : used->second)
+    {
+        if (decorVarIndex < remap.size() && remap[decorVarIndex] >= 0)
+        {
+            renumbered[uint8_t(remap[decorVarIndex])] = emptyState;
+        }
+    }
+
+    used->second = std::move(renumbered);
+}
+
 void MawMonsterRules::mapLoaded(const std::string &mapFileName, bool refilled) const
 {
     const std::string fileName = lowerFileName(mapFileName);

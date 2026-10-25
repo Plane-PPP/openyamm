@@ -1,6 +1,7 @@
 #include "doctest/doctest.h"
 #include "engine/TextTable.h"
 #include "game/content/ContentTableComposer.h"
+#include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayActorService.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 #include "game/party/EventSpellBuffs.h"
@@ -1535,4 +1536,28 @@ TEST_CASE("MAW class spells cast at their class mastery step, as the original en
     pCaster->knownSpellIds = {38};
     party.setRules(&standardGameRules());
     CHECK(cast(38) == PartySpellCastStatus::NotSkilledEnough);
+}
+
+TEST_CASE("a dragon bites a target in melee range and breathes at one further away")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    Character dragon;
+    dragon.name = "Ariel";
+    dragon.className = "Dragon";
+    dragon.level = 10;
+    dragon.skills["DragonAbility"] = {"DragonAbility", 5, SkillMastery::Normal};
+    const CharacterAttackProfile profile =
+        GameMechanics::buildCharacterAttackProfile(dragon, &gameData.itemTable, &gameData.spellTable);
+    REQUIRE(profile.hasDragonBreath);
+    std::mt19937 rng(7);
+    const auto modeAt = [&](float distance)
+    {
+        return GameMechanics::resolveCharacterAttackAgainstArmorClass(
+            dragon, &gameData.itemTable, &gameData.spellTable, 10, distance, rng).mode;
+    };
+    // MAW's dragon damage has a bite branch (fang knockback, SP gain; Damage.lua:592-610) that breath alone never
+    // reached.
+    CHECK(modeAt(200.0f) == CharacterAttackMode::Melee);
+    CHECK(modeAt(1024.0f) == CharacterAttackMode::DragonBreath);
 }

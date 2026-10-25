@@ -421,7 +421,8 @@ CharacterAttackMode choosePartyAttackMode(
     const CharacterAttackProfile &profile,
     bool targetInMeleeRange)
 {
-    if (profile.hasDragonBreath && profile.rangedAttackBonus.has_value())
+    // A dragon bites a target in melee range and breathes at anything further.
+    if (profile.hasDragonBreath && profile.rangedAttackBonus.has_value() && !targetInMeleeRange)
     {
         return CharacterAttackMode::DragonBreath;
     }
@@ -975,20 +976,25 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     if (!pAttacker->attackSpellName.empty() && !cannotCastAttackSpell(config, actingMemberIndex, *pAttacker))
     {
         AttackCastResult attackCastResult = {};
+        bool noSpellTarget = false;
 
         if (config.pRuntime != nullptr && config.pSpellService != nullptr)
         {
+            GameplaySpellActionController::TargetQueries targetQueries = config.targetQueries;
+            targetQueries.preferredActorIndex = config.directTargetActorIndex;
             const GameplaySpellActionController::AttackCastResult spellAttackCastResult =
                 GameplaySpellActionController::tryBeginAttackCast(
                     *config.pRuntime,
                     *config.pSpellService,
                     actingMemberIndex,
                     pAttacker->attackSpellName,
-                    config.targetQueries);
+                    targetQueries);
             attackCastResult.castStarted =
                 spellAttackCastResult.disposition
                 == GameplaySpellActionController::AttackCastDisposition::CastStarted;
             attackCastResult.followupUiActive = spellAttackCastResult.followupUiActive;
+            noSpellTarget =
+                spellAttackCastResult.disposition == GameplaySpellActionController::AttackCastDisposition::NoTarget;
         }
 
         if (attackCastResult.castStarted
@@ -998,7 +1004,11 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
             party.switchToNextReadyMember();
         }
 
-        return result;
+        // An attack spell with nothing to aim at swings the weapon instead, as an unaffordable one does.
+        if (!noSpellTarget)
+        {
+            return result;
+        }
     }
 
     std::optional<PartyAttackActorFacts> target = resolveUsableActorTarget(config, config.directTargetActorIndex);

@@ -124,6 +124,11 @@ public:
     void bindParty(Game::Party *pParty)
     {
         m_pParty = pParty;
+
+        if (m_pParty != nullptr)
+        {
+            m_pParty->setGameMinutes(m_gameMinutes);
+        }
     }
 
     void bindEventRuntimeState(Game::EventRuntimeState *pEventRuntimeState)
@@ -375,6 +380,11 @@ public:
     void advanceGameMinutes(float minutes) override
     {
         m_gameMinutes += minutes;
+
+        if (m_pParty != nullptr)
+        {
+            m_pParty->setGameMinutes(m_gameMinutes);
+        }
     }
 
     void refreshRulesetMonsters() override
@@ -991,7 +1001,13 @@ public:
 
     std::optional<size_t> spellActionHoveredActorIndex() const override
     {
-        return std::nullopt;
+        return m_hoveredActorIndex;
+    }
+
+    // The actor under the cursor, as the views report it: any picked actor.
+    void setHoveredActorIndex(std::optional<size_t> actorIndex)
+    {
+        m_hoveredActorIndex = actorIndex;
     }
 
     // Every living hostile actor, in index order as the closest-first order.
@@ -1203,6 +1219,7 @@ private:
     const Game::MergedBolsterMonsterTable *m_pBolsterMonsterTable = nullptr;
     std::optional<Game::GameplayWorldPoint> m_bountyHuntSpawnPoint;
     std::vector<Game::GameplayRuntimeActorState> m_actors;
+    std::optional<size_t> m_hoveredActorIndex;
     std::vector<Game::GameplayPartySpellProjectileRequest> m_projectileRequests;
     std::vector<AppliedSpellToActor> m_appliedSpellRequests;
     std::vector<Game::GameplayWorldHit> m_activatedWorldHits;

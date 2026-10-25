@@ -3226,7 +3226,6 @@ void OutdoorRenderer::updateDecorationModels(OutdoorGameView &view, const Outdoo
     {
         const DecorationBillboard &billboard = billboards[index];
         const uint16_t sprite = OutdoorInteractionController::resolveDecorationBillboardSpriteId(view, billboard, hidden);
-        hidden = hidden || OutdoorInteractionController::isInteractiveDecorationHidden(view, billboard.entityIndex);
         state = OutdoorInteractionController::interactiveDecorationState(view, billboard.entityIndex);
         return sprite;
     });

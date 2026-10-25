@@ -4432,6 +4432,41 @@ bool assertPartyFood(
     return true;
 }
 
+// assert game_hour: N: the clock shows hour N (0-23) of the current day.
+bool assertGameHour(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    const YAML::Node node = step.payload["game_hour"];
+
+    if (!node)
+    {
+        return true;
+    }
+
+    if (!node.IsScalar())
+    {
+        failures.push_back(stepLocation(step) + ": game_hour assertion requires a scalar hour");
+        return false;
+    }
+
+    syncContextFromRuntime(context);
+    const int expected = node.as<int>();
+    const int actual = static_cast<int>(std::floor(std::max(0.0f, context.gameMinutes) / 60.0f)) % 24;
+    scenarioLogAssert(
+        context, step, "game_hour", std::to_string(expected), std::to_string(actual), actual == expected);
+
+    if (actual != expected)
+    {
+        failures.push_back(stepLocation(step) + ": game hour " + std::to_string(actual) + ", expected "
+            + std::to_string(expected));
+        return false;
+    }
+
+    return true;
+}
+
 // assert gold: N: the party carries exactly N gold.
 bool assertPartyGold(
     ScenarioExecutionContext &context,
@@ -9219,6 +9254,7 @@ bool runAssert(
     success = assertHomingEnds(context, step, failures) && success;
     success = assertPartyGold(context, step, failures) && success;
     success = assertPartyFood(context, step, failures) && success;
+    success = assertGameHour(context, step, failures) && success;
     success = assertJournalMapNote(context, step, failures) && success;
     success = assertQuickItemRing(context, step, failures) && success;
     success = assertDimensionDoor(context, step, failures) && success;

@@ -36,35 +36,53 @@ void clearShownCards(ArcomageState &state)
     }
 }
 
+// The change that lowers value by amount, clamped at 0 like every other Arcomage value.
+int clampedLoss(int value, int amount)
+{
+    return std::max(0, value - amount) - value;
+}
+
 void applyMm8SpecialCard(const ArcomageCardDefinition &card, ArcomagePlayerState &player, ArcomagePlayerState &enemy)
 {
+    const ArcomageRules::SpecialCardEffect effect = ArcomageRules::specialCardEffect(card, player, enemy);
+    player.wall += effect.playerWall;
+    player.tower += effect.playerTower;
+    player.dungeon += effect.playerDungeon;
+    enemy.wall += effect.enemyWall;
+    enemy.tower += effect.enemyTower;
+    enemy.dungeon += effect.enemyDungeon;
+}
+}
+
+ArcomageRules::SpecialCardEffect ArcomageRules::specialCardEffect(
+    const ArcomageCardDefinition &card,
+    const ArcomagePlayerState &player,
+    const ArcomagePlayerState &enemy)
+{
+    SpecialCardEffect effect = {};
+
     if (card.name == "Flood Water")
     {
-        if (player.wall < enemy.wall)
+        // The side with the lower wall loses 1 dungeon and 2 tower; equal walls hit both sides.
+        if (player.wall <= enemy.wall)
         {
-            player.dungeon = std::max(0, player.dungeon - 1);
-            player.tower = std::max(0, player.tower - 2);
+            effect.playerDungeon = clampedLoss(player.dungeon, 1);
+            effect.playerTower = clampedLoss(player.tower, 2);
         }
-        else if (player.wall > enemy.wall)
+
+        if (player.wall >= enemy.wall)
         {
-            enemy.dungeon = std::max(0, enemy.dungeon - 1);
-            enemy.tower = std::max(0, enemy.tower - 2);
-        }
-        else
-        {
-            player.dungeon = std::max(0, player.dungeon - 1);
-            player.tower = std::max(0, player.tower - 2);
-            enemy.dungeon = std::max(0, enemy.dungeon - 1);
-            enemy.tower = std::max(0, enemy.tower - 2);
+            effect.enemyDungeon = clampedLoss(enemy.dungeon, 1);
+            effect.enemyTower = clampedLoss(enemy.tower, 2);
         }
     }
     else if (card.name == "Shift")
     {
-        const int wall = player.wall;
-        player.wall = enemy.wall;
-        enemy.wall = wall;
+        effect.playerWall = enemy.wall - player.wall;
+        effect.enemyWall = player.wall - enemy.wall;
     }
-}
+
+    return effect;
 }
 
 bool ArcomageRules::initializeMatch(

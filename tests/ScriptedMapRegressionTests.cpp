@@ -2051,6 +2051,207 @@ TEST_CASE("seer lost item topic recovers ever owned active quest items")
     CHECK(kilburnNeverOwnedState.grantedItems.empty());
 }
 
+TEST_CASE("mm6 path of light and dark topics change the class and merge the magic schools")
+{
+    using namespace OpenYAMM;
+    REQUIRE_MESSAGE(Tests::regressionGameDataLoaded(), Tests::regressionGameDataFailure().c_str());
+    const Tests::RegressionGameData &gameData = Tests::regressionGameData();
+    std::string error;
+    const std::optional<Game::ScriptedEventProgram> globalProgram =
+        loadMm6GlobalSupplementProgram(OPENYAMM_SOURCE_DIR, error);
+    REQUIRE_MESSAGE(globalProgram.has_value(), error.c_str());
+    REQUIRE(globalProgram->hasEvent(10001));
+    REQUIRE(globalProgram->hasEvent(10002));
+
+    const std::optional<Game::NpcDialogTable::ResolvedTopic> lightTopic = gameData.npcDialogTable.getTopicById(10001);
+    const std::optional<Game::NpcDialogTable::ResolvedTopic> darkTopic = gameData.npcDialogTable.getTopicById(10002);
+    REQUIRE(lightTopic.has_value());
+    REQUIRE(darkTopic.has_value());
+    CHECK_EQ(lightTopic->topic, "Path of Light");
+    CHECK_EQ(darkTopic->topic, "Path of Dark");
+
+    Game::EventRuntime eventRuntime(nullptr, &gameData.npcDialogTable);
+    const std::string darkAdvert = gameData.npcDialogTable.getText(2107).value_or("");
+    const std::string darkWarning = gameData.npcDialogTable.getText(2105).value_or("");
+    const std::string notReady = gameData.npcDialogTable.getText(2109).value_or("");
+    REQUIRE_FALSE(darkWarning.empty());
+
+    const auto makePathParty =
+        [&gameData](const std::string &className)
+        {
+            Game::Character member = makeScriptedRegressionMember();
+            member.className = className;
+            member.skills["LightMagic"] = {"LightMagic", 10, Game::SkillMastery::Master};
+            member.skills["DarkMagic"] = {"DarkMagic", 12, Game::SkillMastery::Expert};
+            member.learnSpell(78);
+            member.learnSpell(90);
+            Game::PartySeed seed;
+            seed.members = {makeScriptedRegressionMember(), member};
+            Game::Party party;
+            party.setClassSkillTable(&gameData.classSkillTable);
+            party.seed(seed);
+            party.setActiveMemberIndex(1);
+            return party;
+        };
+
+    SUBCASE("the topics are attached to slot 4 of the five masters")
+    {
+        Game::Party party = makePathParty("MasterWizard");
+        Game::EventRuntimeState state;
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 65303, state, &party));
+        CHECK_EQ(state.npcTopicOverrides[1040][4], 10002u);
+        CHECK_EQ(state.npcTopicOverrides[1030][4], 10002u);
+        CHECK_EQ(state.npcTopicOverrides[1057][4], 10001u);
+        CHECK_EQ(state.npcTopicOverrides[1031][4], 10001u);
+        CHECK_EQ(state.npcTopicOverrides[795][4], 10001u);
+    }
+
+    SUBCASE("a master wizard asks on the second click and turns dark")
+    {
+        Game::Party party = makePathParty("MasterWizard");
+        Game::EventRuntimeState state;
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10002, state, &party));
+        CHECK_FALSE(state.pendingInputPrompt.has_value());
+        REQUIRE_FALSE(state.messages.empty());
+        CHECK_EQ(state.messages.back(), darkAdvert);
+
+        state = {};
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10002, state, &party));
+        REQUIRE(state.pendingInputPrompt.has_value());
+        CHECK_EQ(state.pendingInputPrompt->eventId, 10002u);
+        CHECK_EQ(state.pendingInputPrompt->continueStep, 2u);
+        REQUIRE_EQ(state.pendingInputPrompt->answers.size(), 1u);
+        CHECK_EQ(state.pendingInputPrompt->answers.front(), "yes");
+        REQUIRE_EQ(state.pendingInputPrompt->answerContinueSteps.size(), 1u);
+        const uint8_t yesStep = state.pendingInputPrompt->answerContinueSteps.front();
+        CHECK_EQ(state.pendingInputPrompt->text.value_or(""), darkWarning);
+
+        // The answer is resolved after the active member changed; the asking member still changes path.
+        party.setActiveMemberIndex(0);
+        state = {};
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10002, state, &party, nullptr, yesStep));
+        const Game::Character &member = *party.member(1);
+        CHECK_EQ(member.className, "DarkArchMage");
+        CHECK_EQ(party.member(0)->className, "Knight");
+        CHECK(member.findSkill("LightMagic") == nullptr);
+        const Game::CharacterSkill *pDark = member.findSkill("DarkMagic");
+        REQUIRE(pDark != nullptr);
+        CHECK_EQ(pDark->level, 10u);
+        CHECK_EQ(pDark->mastery, Game::SkillMastery::Master);
+        CHECK_FALSE(member.knowsSpell(78));
+        CHECK(member.knowsSpell(90));
+    }
+
+    SUBCASE("declining keeps the class")
+    {
+        Game::Party party = makePathParty("HighPriest");
+        Game::EventRuntimeState state;
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party));
+        state = {};
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party));
+        REQUIRE(state.pendingInputPrompt.has_value());
+        const uint8_t declinedStep = state.pendingInputPrompt->continueStep;
+        state = {};
+        REQUIRE(
+            eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party, nullptr, declinedStep));
+        CHECK_EQ(party.member(1)->className, "HighPriest");
+        CHECK(party.member(1)->findSkill("DarkMagic") != nullptr);
+        CHECK(party.member(1)->knowsSpell(90));
+    }
+
+    SUBCASE("a high priest turns light and keeps the higher mastery")
+    {
+        Game::Party party = makePathParty("HighPriest");
+        Game::EventRuntimeState state;
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party));
+        state = {};
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party));
+        REQUIRE(state.pendingInputPrompt.has_value());
+        REQUIRE_EQ(state.pendingInputPrompt->answerContinueSteps.size(), 1u);
+        const uint8_t yesStep = state.pendingInputPrompt->answerContinueSteps.front();
+        state = {};
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party, nullptr, yesStep));
+        const Game::Character &member = *party.member(1);
+        CHECK_EQ(member.className, "PriestLight");
+        CHECK(member.findSkill("DarkMagic") == nullptr);
+        const Game::CharacterSkill *pLight = member.findSkill("LightMagic");
+        REQUIRE(pLight != nullptr);
+        CHECK_EQ(pLight->level, 10u);
+        CHECK_EQ(pLight->mastery, Game::SkillMastery::Master);
+        CHECK(member.knowsSpell(78));
+        CHECK_FALSE(member.knowsSpell(90));
+    }
+
+    SUBCASE("classes outside the tables are not ready")
+    {
+        for (const char *pClassName : {"Wizard", "PriestLight", "Lich"})
+        {
+            CAPTURE(pClassName);
+            Game::Party party = makePathParty(pClassName);
+            Game::EventRuntimeState state;
+            REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party));
+            REQUIRE(eventRuntime.executeEventById(std::nullopt, globalProgram, 10001, state, &party));
+            CHECK_FALSE(state.pendingInputPrompt.has_value());
+            REQUIRE_FALSE(state.messages.empty());
+            CHECK_EQ(state.messages.back(), notReady);
+            CHECK_EQ(party.member(1)->className, pClassName);
+        }
+    }
+}
+
+TEST_CASE("lua player skill and spell functions read and change one member")
+{
+    using namespace OpenYAMM;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    const std::optional<std::string> supportLua =
+        readSourceTextFile(sourceRoot / "assets_dev/engine/scripts/common/event_support.lua");
+    REQUIRE(supportLua.has_value());
+    const std::string scriptLua = R"lua(
+RegisterEvent(1, "Skills", function()
+    local level, mastery = GetPlayerSkill(1, "Light Magic")
+    SetPlayerSkill(1, "BodyMagic", level + 1, mastery - 1)
+    SetPlayerSkill(1, "DarkMagic", 0, 0)
+    ForgetPlayerSpell(1, 78)
+    local missingLevel, missingMastery = GetPlayerSkill(1, "FireMagic")
+    SetPlayerSkill(1, "FireMagic", missingLevel + 3, missingMastery + 1)
+end)
+)lua";
+    std::string error;
+    const std::optional<Game::ScriptedEventProgram> program = Game::ScriptedEventProgram::loadFromLuaText(
+        *supportLua + "\n\n" + scriptLua,
+        "@events/player_skill_test.lua",
+        Game::ScriptedEventScope::Map,
+        error);
+    REQUIRE_MESSAGE(program.has_value(), error.c_str());
+
+    Game::Character member = makeScriptedRegressionMember();
+    member.skills["LightMagic"] = {"LightMagic", 7, Game::SkillMastery::Expert};
+    member.skills["DarkMagic"] = {"DarkMagic", 4, Game::SkillMastery::Normal};
+    member.learnSpell(78);
+    member.learnSpell(79);
+    Game::PartySeed seed;
+    seed.members = {makeScriptedRegressionMember(), member};
+    Game::Party party;
+    party.seed(seed);
+
+    Game::EventRuntime eventRuntime;
+    Game::EventRuntimeState state;
+    REQUIRE(eventRuntime.executeEventById(program, std::nullopt, 1, state, &party));
+    const Game::Character &changed = *party.member(1);
+    const Game::CharacterSkill *pBody = changed.findSkill("BodyMagic");
+    REQUIRE(pBody != nullptr);
+    CHECK_EQ(pBody->level, 8u);
+    CHECK_EQ(pBody->mastery, Game::SkillMastery::Normal);
+    CHECK(changed.findSkill("DarkMagic") == nullptr);
+    const Game::CharacterSkill *pFire = changed.findSkill("FireMagic");
+    REQUIRE(pFire != nullptr);
+    CHECK_EQ(pFire->level, 3u);
+    CHECK_EQ(pFire->mastery, Game::SkillMastery::Normal);
+    CHECK_FALSE(changed.knowsSpell(78));
+    CHECK(changed.knowsSpell(79));
+    CHECK(party.member(0)->skills.empty());
+}
+
 TEST_CASE("seer lost item tables compile for mm7 and mm8")
 {
     struct Case
@@ -4309,8 +4510,9 @@ TEST_CASE("mm7 deyja tatalia and evenmorn mmmerge overlays apply local behavior"
             party.setQuestBit(qbitId, true);
         }
         REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 65009, treasureState, &party));
-        REQUIRE(treasureState.spriteOverrides.contains(170));
-        CHECK_EQ(treasureState.spriteOverrides[170].textureName, "0");
+        CHECK_FALSE(treasureState.spriteOverrides.contains(170));
+        REQUIRE(treasureState.spriteOverrides.contains(20));
+        CHECK(treasureState.spriteOverrides[20].hidden);
     }
 }
 
@@ -5790,6 +5992,49 @@ TEST_CASE("mm7 phase1 mmmerge map overlays apply runtime state changes")
         CHECK_EQ(runtimeState.grantedItemIds.front(), 1423u);
         CHECK_EQ(runtimeState.textureOverrides[15], "t2bs");
     }
+}
+
+TEST_CASE("mm7 Evenmorn obelisk treasure shows only at midnight after every obelisk")
+{
+    std::string error;
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> localEventProgram =
+        loadMm7MapOverlayProgram(OPENYAMM_SOURCE_DIR, "out09", "out09_mmmerge", error);
+    REQUIRE_MESSAGE(localEventProgram.has_value(), error.c_str());
+
+    // Recomputed on map load and every half hour.
+    CHECK(localEventProgram->hasEvent(65009));
+    const std::vector<OpenYAMM::Game::ScriptedEventProgram::TimerTrigger> &timers = localEventProgram->timerTriggers();
+    const auto clock = std::find_if(timers.begin(), timers.end(),
+        [](const OpenYAMM::Game::ScriptedEventProgram::TimerTrigger &timer) { return timer.eventId == 65011; });
+    REQUIRE(clock != timers.end());
+    CHECK(clock->repeating);
+    CHECK_EQ(clock->intervalGameMinutes, doctest::Approx(30.0));
+
+    OpenYAMM::Game::EventRuntime eventRuntime = {};
+    OpenYAMM::Game::Party party = makeScriptedRegressionParty();
+    constexpr uint32_t TreasureCog = 20;
+    const uint32_t hourVariable = static_cast<uint32_t>(OpenYAMM::Game::EvtVariable::Hour);
+    const auto treasureHidden = [&](int hour)
+    {
+        OpenYAMM::Game::EventRuntimeState state = {};
+        state.variables[hourVariable] = hour;
+        REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 65009, state, &party));
+        const auto sprite = state.spriteOverrides.find(TreasureCog);
+        REQUIRE(sprite != state.spriteOverrides.end());
+        return sprite->second.hidden;
+    };
+
+    for (uint32_t qbitId = 676; qbitId <= 688; ++qbitId)
+    {
+        party.setQuestBit(qbitId, true);
+    }
+    CHECK(treasureHidden(0));
+
+    party.setQuestBit(689, true);
+    CHECK(treasureHidden(5));
+    CHECK(treasureHidden(1));
+    CHECK(treasureHidden(23));
+    CHECK_FALSE(treasureHidden(0));
 }
 
 TEST_CASE("mm7 rescued dwarf and Haunted Mansion portrait states survive map reloads")
@@ -9151,6 +9396,45 @@ TEST_CASE("outdoor liquid bmodel faces load no art and carry their liquid colour
         REQUIRE(pAnimation != nullptr);
         CHECK(pAnimation->frames.size() <= 1);
     }
+}
+
+TEST_CASE("MM7 Haunted Mansion cleric portrait animates instead of drawing water")
+{
+    const OpenYAMM::Tests::RegressionMapLoader &mapLoader = requireRegressionMapLoader();
+    const OpenYAMM::Game::MapAssetInfo *pLoadedMap = loadCachedIndoorMapWithCompanionOptions(
+        mapLoader.assetFileSystem, mapLoader.gameDataLoader, "7d37.blv",
+        OpenYAMM::Game::MapLoadPurpose::Full,
+        OpenYAMM::Game::MapCompanionLoadOptions{.allowSceneYml = true, .allowLegacyCompanion = true});
+    REQUIRE(pLoadedMap != nullptr);
+    REQUIRE(pLoadedMap->indoorMapData.has_value());
+    REQUIRE(pLoadedMap->indoorTextureSet.has_value());
+
+    // Face 1844 keeps the leftover name hdwtr010; its stored frame table index 13 is the cleric portrait.
+    REQUIRE(pLoadedMap->indoorMapData->faces.size() > 1844);
+    const OpenYAMM::Game::IndoorFace &portraitFace = pLoadedMap->indoorMapData->faces[1844];
+    CHECK_EQ(portraitFace.textureName, "hdwtr010");
+    CHECK(OpenYAMM::Game::hasFaceAttribute(portraitFace.attributes, OpenYAMM::Game::FaceAttribute::Animated));
+    CHECK_EQ(portraitFace.textureFrameTableIndex, 13);
+
+    const OpenYAMM::Game::IndoorTextureSet &textureSet = *pLoadedMap->indoorTextureSet;
+    const OpenYAMM::Game::SurfaceAnimationSequence *pAnimation =
+        findSurfaceAnimationBinding(textureSet.animationBindings, "hdwtr010");
+    REQUIRE(pAnimation != nullptr);
+    REQUIRE(pAnimation->frames.size() > 1);
+    CHECK_EQ(pAnimation->frames.front().textureName, "cleric_0");
+    CHECK_EQ(pAnimation->frames[1].textureName, "cleric_20");
+
+    // The liquid shader no longer claims the face: no water stand-in is made for its leftover name.
+    for (const OpenYAMM::Game::OutdoorBitmapTexture &texture : textureSet.textures)
+    {
+        if (texture.textureName == "hdwtr010")
+        {
+            CHECK(texture.liquid == OpenYAMM::Game::LiquidKind::None);
+            CHECK(texture.waterColorAbgr == 0);
+        }
+    }
+
+    CHECK(bitmapTextureSetContains(textureSet.textures, "cleric_0"));
 }
 
 TEST_CASE("MM8 lava terrain is drawn by the liquid shader")

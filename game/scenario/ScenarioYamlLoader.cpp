@@ -41,7 +41,8 @@ const KeyList AssertKeys = {
     "map_transition_canceled",
     "chest_opened", "actor_dialog_started", "pressure_plate_triggered", "dialogue_canceled", "dialog",
     "input_prompt", "new_game_party_member", "new_game_party_skill", "qbit_set", "qbit_clear", "ruleset",
-    "mechanism", "gold", "food", "charges", "dimension_door", "combat_log", "journal_map_note", "quick_item_ring",
+    "mechanism", "gold", "food", "game_hour", "charges", "dimension_door", "combat_log", "journal_map_note",
+    "quick_item_ring",
     // recorded:
     "scene_kind", "new_game_starting", "new_game_started", "state_dump_party", "state_dump_party_member",
     "state_dump_party_skill", "follower_hired", "follower_left", "gold_received", "starting_items"};

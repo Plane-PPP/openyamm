@@ -883,6 +883,58 @@ TEST_CASE("shared actor AI uses the pursuit speed multiplier and cap")
     CHECK(update.movementIntent.moveSpeed == doctest::Approx(1000.0f));
 }
 
+TEST_CASE("turn-based wait stage multiplies movement speed by 5/3 before the cap")
+{
+    GameplayActorAiSystem system;
+    ActorAiFrameFacts frame = makeFrame();
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::MoveOnly;
+    frame.turnBased.actionGrantActorIndices = {};
+    ActorAiFacts actor = makeActor(25, 125);
+    actor.world.active = true;
+    actor.identity.hostilityType = 4;
+    actor.status.hostileToParty = true;
+    actor.status.hasDetectedParty = true;
+    actor.stats.aiType = GameplayActorAiType::Normal;
+    actor.stats.moveSpeed = 200;
+    actor.stats.attack1Damage.diceRolls = 1;
+    actor.stats.attack1Damage.diceSides = 4;
+    actor.movement.movementAllowed = true;
+    actor.movement.effectiveMoveSpeed = 200.0f;
+    actor.target.currentKind = ActorAiTargetKind::Party;
+    actor.target.currentPosition = {600.0f, 200.0f, 64.0f};
+    actor.target.currentDistance = 500.0f;
+    actor.target.currentEdgeDistance = 500.0f;
+    actor.target.currentCanSense = true;
+    actor.target.currentHasAttackLineOfSight = false;
+    actor.target.partyCanSenseActor = true;
+    frame.activeActors.push_back(actor);
+
+    const OpenYAMM::Game::ActorAiFrameResult waitResult = system.updateActors(frame);
+    REQUIRE_EQ(waitResult.actorUpdates.size(), 1u);
+    const OpenYAMM::Game::ActorAiUpdate &waitUpdate = waitResult.actorUpdates.front();
+    REQUIRE(waitUpdate.state.motionState.has_value());
+    CHECK(*waitUpdate.state.motionState == ActorAiMotionState::Pursuing);
+    CHECK(waitUpdate.movementIntent.applyMovement);
+    CHECK(waitUpdate.movementIntent.moveSpeed == doctest::Approx(200.0f * 1.75f * 5.0f / 3.0f));
+
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::RealTime;
+    const OpenYAMM::Game::ActorAiFrameResult realTimeResult = system.updateActors(frame);
+    REQUIRE_EQ(realTimeResult.actorUpdates.size(), 1u);
+    CHECK(realTimeResult.actorUpdates.front().movementIntent.moveSpeed == doctest::Approx(350.0f));
+
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::MoveOnly;
+    frame.activeActors.front().stats.moveSpeed = 700;
+    frame.activeActors.front().movement.effectiveMoveSpeed = 700.0f;
+    const OpenYAMM::Game::ActorAiFrameResult cappedResult = system.updateActors(frame);
+    REQUIRE_EQ(cappedResult.actorUpdates.size(), 1u);
+    CHECK(cappedResult.actorUpdates.front().movementIntent.moveSpeed == doctest::Approx(1000.0f));
+
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::Hold;
+    const OpenYAMM::Game::ActorAiFrameResult heldResult = system.updateActors(frame);
+    REQUIRE_EQ(heldResult.actorUpdates.size(), 1u);
+    CHECK_FALSE(heldResult.actorUpdates.front().movementIntent.applyMovement);
+}
+
 TEST_CASE("shared actor AI emits vertical movement for flying actors pursuing above or below")
 {
     GameplayActorAiSystem system;

@@ -77,7 +77,7 @@ public:
         const Character *pCharacter,
         const HouseEntry &houseEntry,
         int effectiveReputation = 0);
-    static int templeHealPrice(const Character *pCharacter, const HouseEntry &houseEntry, float gameMinutes = 0.0f);
+    static int templeHealPrice(const Character *pCharacter, const HouseEntry &houseEntry);
     static int trainingPrice(
         const Character *pCharacter,
         const HouseEntry &houseEntry,

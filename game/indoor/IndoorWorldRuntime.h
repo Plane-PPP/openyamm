@@ -946,7 +946,7 @@ private:
     const SpriteFrameTable *m_pProjectileSpriteFrameTable = nullptr;
     const IndoorMapData *m_pIndoorMapData = nullptr;
     const DecorationBillboardSet *m_pIndoorDecorationBillboardSet = nullptr;
-    std::vector<IndoorDecorationClearRule> m_decorationClearRules;
+    std::vector<DecorationClearRule> m_decorationClearRules;
     // The map is still taking its first fill (MAW Nightmare revival raises only that roster).
     bool m_firstFillOpen = false;
     bool m_bolsterMonstersEnabled = false;

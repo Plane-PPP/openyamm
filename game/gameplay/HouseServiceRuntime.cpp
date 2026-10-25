@@ -559,6 +559,106 @@ std::vector<InventoryItem> generateStockItems(
     return results;
 }
 
+constexpr uint32_t PotionBottleItemId = 220;
+constexpr size_t AlchemistTopRowSlots = 6;
+
+bool isRecipeScrollItem(const ItemDefinition &entry)
+{
+    static const std::string RecipeSuffix = " Recipe";
+    return entry.equipStat == "Mscroll"
+        && entry.name.size() > RecipeSuffix.size()
+        && entry.name.ends_with(RecipeSuffix);
+}
+
+// The merged table carries the MM8 and MM7 recipe sets under the same names; only the first of each name is sold so
+// neither set doubles the odds.
+std::unordered_set<uint32_t> uniqueRecipeScrollItemIds(const ItemTable &itemTable)
+{
+    std::unordered_set<uint32_t> itemIds;
+    std::unordered_set<std::string> names;
+
+    for (const ItemDefinition &entry : itemTable.entries())
+    {
+        if (isRecipeScrollItem(entry) && names.insert(entry.name).second)
+        {
+            itemIds.insert(entry.itemId);
+        }
+    }
+
+    return itemIds;
+}
+
+// The native alchemist rows (OpenEnroth GUIWindow_AlchemyShop::generateShopItems): the standard stock is six empty
+// bottles over random reagents, the special stock six random recipe scrolls over random potions.
+std::vector<InventoryItem> generateAlchemistStock(
+    const ItemTable &itemTable,
+    const StandardItemEnchantTable &standardItemEnchantTable,
+    const SpecialItemEnchantTable &specialItemEnchantTable,
+    const HouseEntry &houseEntry,
+    Party *pParty,
+    std::mt19937 &rng,
+    size_t count,
+    int tier,
+    bool special)
+{
+    const size_t topRowCount = std::min(AlchemistTopRowSlots, count);
+    std::vector<InventoryItem> results(count);
+
+    if (special)
+    {
+        const std::unordered_set<uint32_t> recipeItemIds = uniqueRecipeScrollItemIds(itemTable);
+        const std::vector<InventoryItem> topRow = generateStockItems(
+            itemTable,
+            standardItemEnchantTable,
+            specialItemEnchantTable,
+            houseEntry,
+            pParty,
+            tier,
+            rng,
+            topRowCount,
+            [&recipeItemIds](const ItemDefinition &entry)
+            {
+                return recipeItemIds.contains(entry.itemId);
+            },
+            [](const ItemDefinition &)
+            {
+                return 1;
+            },
+            true);
+        std::copy(topRow.begin(), topRow.end(), results.begin());
+    }
+    else
+    {
+        for (size_t index = 0; index < topRowCount; ++index)
+        {
+            results[index] = ItemGenerator::makeInventoryItem(PotionBottleItemId, itemTable, ItemGenerationMode::Shop);
+        }
+    }
+
+    const std::vector<InventoryItem> bottomRow = generateStockItems(
+        itemTable,
+        standardItemEnchantTable,
+        specialItemEnchantTable,
+        houseEntry,
+        pParty,
+        tier,
+        rng,
+        count - topRowCount,
+        [special](const ItemDefinition &entry)
+        {
+            return special
+                ? entry.equipStat == "Bottle" && entry.itemId != PotionBottleItemId
+                : entry.equipStat == "Reagent" || entry.equipStat == "Herb";
+        },
+        [tier, special](const ItemDefinition &entry)
+        {
+            return special ? itemTreasureWeightForSpecialStock(entry, tier) : itemTreasureWeightUpToTier(entry, tier);
+        },
+        true);
+    std::copy(bottomRow.begin(), bottomRow.end(), results.begin() + static_cast<std::ptrdiff_t>(topRowCount));
+    return results;
+}
+
 std::vector<InventoryItem> generateShopStandardStock(
     const ItemTable &itemTable,
     const StandardItemEnchantTable &standardItemEnchantTable,
@@ -570,11 +670,25 @@ std::vector<InventoryItem> generateShopStandardStock(
 {
     const HouseEntry::StockRule &rule = houseEntry.standardStockRule;
     const int tier = stockRuleTreasureTier(rule);
-    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop") || isHouseType(houseEntry, "Alchemist");
+    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop");
 
     if (tier <= 0)
     {
         return std::vector<InventoryItem>(count);
+    }
+
+    if (isHouseType(houseEntry, "Alchemist"))
+    {
+        return generateAlchemistStock(
+            itemTable,
+            standardItemEnchantTable,
+            specialItemEnchantTable,
+            houseEntry,
+            pParty,
+            rng,
+            count,
+            tier,
+            false);
     }
 
     if (isHouseType(houseEntry, "Armor Shop"))
@@ -665,11 +779,25 @@ std::vector<InventoryItem> generateShopSpecialStock(
 {
     const HouseEntry::StockRule &rule = houseEntry.specialStockRule;
     const int tier = stockRuleTreasureTier(rule);
-    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop") || isHouseType(houseEntry, "Alchemist");
+    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop");
 
     if (tier <= 0)
     {
         return std::vector<InventoryItem>(count);
+    }
+
+    if (isHouseType(houseEntry, "Alchemist"))
+    {
+        return generateAlchemistStock(
+            itemTable,
+            standardItemEnchantTable,
+            specialItemEnchantTable,
+            houseEntry,
+            pParty,
+            rng,
+            count,
+            tier,
+            true);
     }
 
     if (isHouseType(houseEntry, "Armor Shop"))

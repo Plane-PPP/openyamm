@@ -35,6 +35,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
+constexpr uint32_t PotionBottleItemId = 220;
 constexpr int FirstSkillEnchant = 17;
 constexpr int LastSkillEnchant = 24;
 constexpr int ArmsmasterEnchant = 22;
@@ -2204,7 +2205,9 @@ void MawItemRules::adjustShopStock(
     {
         const ItemDefinition *pDefinition = itemTable.get(item.objectDescriptionId);
 
-        if (pDefinition == nullptr || ItemEnchantRuntime::categoryForItem(*pDefinition) != ItemEnchantCategory::None)
+        // The alchemist's row of empty bottles is the guaranteed native stock; only the random slots are swapped.
+        if (pDefinition == nullptr || ItemEnchantRuntime::categoryForItem(*pDefinition) != ItemEnchantCategory::None
+            || (house.type == "Alchemist" && item.objectDescriptionId == PotionBottleItemId))
         {
             continue;
         }

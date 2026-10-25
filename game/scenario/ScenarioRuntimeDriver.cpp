@@ -182,7 +182,14 @@ struct ScenarioGameApplicationAccess
     static bool loadGameData(GameApplication &application, Engine::AssetFileSystem &assetFileSystem)
     {
         // Headless scenarios do not render the menu frames that trigger deferred common-data loading.
-        return application.loadGameData(assetFileSystem) && application.ensureCommonGameDataLoaded();
+        if (!application.loadGameData(assetFileSystem) || !application.ensureCommonGameDataLoaded())
+        {
+            return false;
+        }
+
+        // The local settings.ini's Immortal cheat would make every party damage check pass or fail by machine.
+        application.m_settings.immortal = false;
+        return true;
     }
 
     static bool activateWorldForMapFileName(GameApplication &application, const std::string &mapFileName)

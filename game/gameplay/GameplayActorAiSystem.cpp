@@ -35,6 +35,8 @@ constexpr float FleeMoveSpeedMultiplier = 2.0f;
 // 16 of the original 2048 angle units.
 constexpr float RangedOrbitStepRadians = Pi / 64.0f;
 constexpr float MaxActorMoveSpeed = 1000.0f;
+// The original speeds monsters up by 5/3 during the turn-based wait stage, before its 1000 cap (MM8 0x46fd09).
+constexpr float TurnBasedWaitMoveSpeedMultiplier = 5.0f / 3.0f;
 constexpr uint32_t IdleStandChancePercent = 25u;
 // Tactics (ActorTacticsFacts): a post counts as reached within this distance of home; band moves last at most these.
 constexpr float TacticPostArrivalRadius = 48.0f;
@@ -4525,6 +4527,19 @@ ActorAiFrameResult GameplayActorAiSystem::updateActors(const ActorAiFrameFacts &
 
     updateBackgroundActors(facts, result);
     updateActiveActors(facts, result);
+
+    if (facts.turnBased.mode == ActorTurnBasedMode::MoveOnly)
+    {
+        for (ActorAiUpdate &update : result.actorUpdates)
+        {
+            if (update.movementIntent.applyMovement && update.movementIntent.moveSpeed > 0.0f)
+            {
+                update.movementIntent.moveSpeed = std::min(
+                    update.movementIntent.moveSpeed * TurnBasedWaitMoveSpeedMultiplier,
+                    MaxActorMoveSpeed);
+            }
+        }
+    }
 
     return result;
 }

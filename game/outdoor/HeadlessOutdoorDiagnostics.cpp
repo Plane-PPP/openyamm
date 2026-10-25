@@ -575,7 +575,7 @@ struct GameApplicationTestAccess
 
     static void updateHouseVideoPlayback(GameApplication &application, float deltaSeconds)
     {
-        application.m_outdoorGameView.updateHouseVideoPlayback(deltaSeconds);
+        application.m_gameSession.gameplayScreenRuntime().updateHouseDialoguePresentation(deltaSeconds);
     }
 
     static void openPendingEventDialog(

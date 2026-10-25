@@ -63,6 +63,14 @@ GameplaySpellActionController::AttackCastResult GameplaySpellActionController::t
             true,
             &targetQueries);
 
+    if (castResolution.noTarget)
+    {
+        return {
+            .disposition = AttackCastDisposition::NoTarget,
+            .followupUiActive = false,
+        };
+    }
+
     if (!castResolution.castStarted)
     {
         return {
@@ -251,6 +259,13 @@ bool GameplaySpellActionController::resolvePendingActorTarget(
     if (pWorldRuntime != nullptr
         && !isSpellId(request.spellId, SpellId::Reanimate)
         && !pWorldRuntime->spellActionActorTargetPoint(worldHit.actor->actorIndex))
+    {
+        return false;
+    }
+
+    // A clicked actor beyond spell reach is no target; the dead (Reanimate's corpses) are measured the same way.
+    if (pWorldRuntime != nullptr
+        && !PartySpellSystem::isActorWithinSpellTargetRange(*pWorldRuntime, worldHit.actor->actorIndex))
     {
         return false;
     }

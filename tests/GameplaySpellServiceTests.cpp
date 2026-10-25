@@ -2,7 +2,7 @@
 #include "game/app/GameSession.h"
 #include "game/data/GameDataLoader.h"
 #include "game/gameplay/GameMechanics.h"
-#include "game/gameplay/GameMechanics.h"
+#include "game/gameplay/GameplayActionController.h"
 #include "game/party/SpellIds.h"
 #include "game/rules/GameRules.h"
 #include "game/rules/SpellRules.h"
@@ -425,4 +425,171 @@ TEST_CASE("a game session leaves no class table behind when it and its data go")
 
     // The session bound its repository's table for the formulas; a later party must not read the freed one.
     CHECK_EQ(Game::GameMechanics::calculateBaseCharacterMaxHealth(member, nullptr), withoutTable);
+}
+
+namespace
+{
+OpenYAMM::Game::GameplayRuntimeActorState spellTargetActor(float x, bool hostile)
+{
+    OpenYAMM::Game::GameplayRuntimeActorState actor;
+    actor.preciseX = x;
+    actor.hostileToParty = hostile;
+    actor.currentHp = actor.maxHp = 50;
+    return actor;
+}
+}
+
+TEST_CASE("spell actor targets are living hostiles within spell reach, whether or not they noticed the party")
+{
+    using namespace OpenYAMM;
+    Tests::PartySpellTestWorldRuntime world;
+    world.setPartyPosition(0.0f, 0.0f, 0.0f);
+    // Neither has detected the party: the quick-target lists no longer ask.
+    const size_t near = world.addActor(spellTargetActor(3000.0f, true));
+    const size_t far = world.addActor(spellTargetActor(6000.0f, true));
+    const size_t friendly = world.addActor(spellTargetActor(1000.0f, false));
+    const Game::SpellRules &standard = Game::standardSpellRules();
+    const uint32_t lifedrain = Game::spellIdValue(Game::SpellId::Lifedrain);
+
+    CHECK(Game::PartySpellSystem::isUsableSpellActorTarget(world, near, true));
+    CHECK_FALSE(Game::PartySpellSystem::isUsableSpellActorTarget(world, far, true));
+    CHECK_FALSE(Game::PartySpellSystem::isUsableSpellActorTarget(world, friendly, true));
+    CHECK(Game::PartySpellSystem::isUsableSpellActorTarget(world, friendly, false));
+    CHECK_EQ(Game::PartySpellSystem::quickCastActorTarget(world, standard, lifedrain), std::optional<size_t>(near));
+
+    // A corpse is no living target, but a click may still reach it (Reanimate).
+    world.actor(near).isDead = true;
+    CHECK_FALSE(Game::PartySpellSystem::isUsableSpellActorTarget(world, near, false));
+    CHECK(Game::PartySpellSystem::isActorWithinSpellTargetRange(world, near));
+    CHECK_FALSE(Game::PartySpellSystem::isActorWithinSpellTargetRange(world, far));
+    // With only the far hostile left, the quick cast has no target, under MAW's spread rule as well.
+    CHECK_FALSE(Game::PartySpellSystem::quickCastActorTarget(world, standard, lifedrain).has_value());
+    CHECK_FALSE(Game::PartySpellSystem::quickCastActorTarget(
+        world, standard, Game::spellIdValue(Game::SpellId::Slow)).has_value());
+}
+
+TEST_CASE("a quick Lifedrain takes a hostile within reach; beyond reach it attacks instead")
+{
+    using namespace OpenYAMM;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    Engine::AssetFileSystem assets;
+    REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", Engine::AssetScaleTier::X1));
+    Game::GameDataLoader loader;
+    REQUIRE(loader.loadForHeadlessGameplay(assets));
+    Game::GameDataRepository data;
+    data.bind(loader);
+    const Game::SpellEntry *pLifedrain =
+        loader.getSpellTable().findById(int(Game::spellIdValue(Game::SpellId::Lifedrain)));
+    REQUIRE(pLifedrain != nullptr);
+    Game::Party party;
+    party.seed(Tests::createSpellRegressionPartySeed());
+    Game::Character *pCaster = party.member(0);
+    REQUIRE(pCaster != nullptr);
+    // The vampires' racial spell.
+    pCaster->skills["VampireAbility"] = {"VampireAbility", 5, Game::SkillMastery::Normal};
+    pCaster->learnSpell(Game::spellIdValue(Game::SpellId::Lifedrain));
+    pCaster->quickSpellName = pLifedrain->name;
+    pCaster->spellPoints = 100;
+    Tests::PartySpellTestWorldRuntime world;
+    world.bindParty(&party);
+    world.setPartyPosition(0.0f, 0.0f, 0.0f);
+    Game::GameSession session;
+    session.bindDataRepository(&data);
+    session.bindActiveWorldRuntime(&world);
+    Game::GameplayScreenRuntime &runtime = session.gameplayScreenRuntime();
+    StartingSceneAdapter scene;
+    runtime.bindSceneAdapter(&scene);
+    Game::GameplaySpellService &spells = session.gameplaySpellService();
+    Game::PartySpellCastRequest request;
+    request.spellId = Game::spellIdValue(Game::SpellId::Lifedrain);
+
+    SUBCASE("the hovered far hostile and a hovered friend give way to the near hostile")
+    {
+        const size_t far = world.addActor(spellTargetActor(7000.0f, true));
+        const size_t near = world.addActor(spellTargetActor(4000.0f, true));
+        const size_t friendly = world.addActor(spellTargetActor(500.0f, false));
+        world.setHoveredActorIndex(far);
+        REQUIRE(spells.tryPrepareQuickCastRequest(runtime, request, pLifedrain->name, {}));
+        CHECK_EQ(request.targetActorIndex, std::optional<size_t>(near));
+        world.setHoveredActorIndex(friendly);
+        REQUIRE(spells.tryPrepareQuickCastRequest(runtime, request, pLifedrain->name, {}));
+        CHECK_EQ(request.targetActorIndex, std::optional<size_t>(near));
+        CHECK(spells.tryStartQuickSpellCast(runtime, {}).disposition
+            == Game::GameplaySpellService::QuickSpellStartDisposition::CastStarted);
+        CHECK_EQ(scene.casts, 1);
+    }
+    SUBCASE("a hostile only beyond reach: the quick cast attacks")
+    {
+        world.setHoveredActorIndex(world.addActor(spellTargetActor(7000.0f, true)));
+        CHECK_FALSE(spells.tryPrepareQuickCastRequest(runtime, request, pLifedrain->name, {}));
+        CHECK(spells.tryStartQuickSpellCast(runtime, {}).disposition
+            == Game::GameplaySpellService::QuickSpellStartDisposition::AttackFallback);
+        CHECK_EQ(scene.casts, 0);
+        CHECK_EQ(pCaster->spellPoints, 100);
+    }
+}
+
+TEST_CASE("an attack spell without a target swings the weapon instead")
+{
+    using namespace OpenYAMM;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    Engine::AssetFileSystem assets;
+    REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", Engine::AssetScaleTier::X1));
+    Game::GameDataLoader loader;
+    REQUIRE(loader.loadForHeadlessGameplay(assets));
+    Game::GameDataRepository data;
+    data.bind(loader);
+    const Game::SpellEntry *pLifedrain =
+        loader.getSpellTable().findById(int(Game::spellIdValue(Game::SpellId::Lifedrain)));
+    REQUIRE(pLifedrain != nullptr);
+    Game::Party party;
+    party.seed(Tests::createSpellRegressionPartySeed());
+    Game::Character *pAttacker = party.member(0);
+    REQUIRE(pAttacker != nullptr);
+    pAttacker->skills["VampireAbility"] = {"VampireAbility", 5, Game::SkillMastery::Normal};
+    pAttacker->learnSpell(Game::spellIdValue(Game::SpellId::Lifedrain));
+    pAttacker->attackSpellName = pLifedrain->name;
+    pAttacker->spellPoints = 100;
+    Tests::PartySpellTestWorldRuntime world;
+    world.bindParty(&party);
+    world.setPartyPosition(0.0f, 0.0f, 0.0f);
+    Game::GameSession session;
+    session.bindDataRepository(&data);
+    session.bindActiveWorldRuntime(&world);
+    Game::GameplayScreenRuntime &runtime = session.gameplayScreenRuntime();
+    // The weapon path reads the attack tuning from the settings.
+    Game::GameSettings settings = Game::GameSettings::createDefault();
+    runtime.bindSettings(&settings);
+    StartingSceneAdapter scene;
+    runtime.bindSceneAdapter(&scene);
+    REQUIRE_EQ(party.activeMemberIndex(), 0);
+    Game::GameplayActionController::PartyAttackConfig config = {
+        .pRuntime = &runtime,
+        .pSpellService = &session.gameplaySpellService(),
+        .pWorldRuntime = &world,
+        .pParty = &party,
+        .pItemTable = &loader.getItemTable(),
+        .pSpellTable = &loader.getSpellTable(),
+        .pMonsterTable = &loader.getMonsterTable(),
+        .pSpecialItemEnchantTable = &loader.getSpecialItemEnchantTable(),
+    };
+
+    SUBCASE("nothing to aim at: the weapon swings and no mana is spent")
+    {
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.attempted);
+        CHECK(result.actionPerformed);
+        CHECK_EQ(scene.casts, 0);
+        CHECK_EQ(pAttacker->spellPoints, 100);
+    }
+    SUBCASE("the attack's own target, unnoticed by it, takes the spell")
+    {
+        config.directTargetActorIndex = world.addActor(spellTargetActor(300.0f, true));
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.attempted);
+        CHECK_FALSE(result.actionPerformed);
+        CHECK_EQ(scene.casts, 1);
+    }
 }

@@ -29,6 +29,8 @@ public:
     {
         NotConfigured,
         Failed,
+        // No target for the attack spell: the attack swings the weapon instead.
+        NoTarget,
         CastStarted
     };
 

@@ -102,7 +102,6 @@ private:
     void updateItemInspectOverlayState(int width, int height, const GameplayInputFrame &input);
     void updateActorInspectOverlayState(int width, int height, const GameplayInputFrame &input);
     void updateFootstepAudio(float deltaSeconds);
-    void updateDialogueVideoPlayback(float deltaSeconds);
     void updateCombatFeedback(float deltaSeconds);
     void renderCombatFeedbackOverlay(int width, int height);
     bool beginSaveWithPreview(

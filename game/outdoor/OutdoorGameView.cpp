@@ -205,12 +205,7 @@ bool outdoorActorIsPartyControlled(OutdoorWorldRuntime::ActorControlMode mode)
 
 using SpellbookSchool = OutdoorGameView::SpellbookSchool;
 using SpellbookPointerTargetType = OutdoorGameView::SpellbookPointerTargetType;
-constexpr int MinutesPerDay = 24 * 60;
-constexpr int InnRestDawnHour = 5;
-constexpr uint32_t DeyjaTavernHouseId = 111;
-constexpr uint32_t PitTavernHouseId = 114;
 constexpr uint64_t GameplayMouseLookCursorSyncIntervalTicks = 100;
-constexpr uint32_t MountNighonTavernHouseId = 116;
 constexpr std::array<int, 3> JournalMapZoomLevels = {384, 768, 1536};
 constexpr int JournalRevealWidth = 88;
 constexpr int JournalRevealHeight = 88;
@@ -589,99 +584,6 @@ PortraitAggroIndicator classifyPortraitAggroIndicator(
     return PortraitAggroIndicator::Green;
 }
 
-std::string normalizeDecorationKey(const std::string &value)
-{
-    const std::string lowered = toLowerCopy(value);
-    size_t begin = 0;
-
-    while (begin < lowered.size() && std::isspace(static_cast<unsigned char>(lowered[begin])) != 0)
-    {
-        ++begin;
-    }
-
-    size_t end = lowered.size();
-
-    while (end > begin && std::isspace(static_cast<unsigned char>(lowered[end - 1])) != 0)
-    {
-        --end;
-    }
-
-    return lowered.substr(begin, end - begin);
-}
-
-bool decorationMatchesAnyKey(
-    const std::vector<std::string> &keys,
-    std::initializer_list<std::string_view> candidates)
-{
-    for (const std::string &key : keys)
-    {
-        for (std::string_view candidate : candidates)
-        {
-            if (key == candidate)
-            {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-std::optional<OutdoorGameView::InteractiveDecorationFamily> classifyInteractiveDecorationFamily(
-    const DecorationEntry &decoration,
-    const std::string &instanceName)
-{
-    std::vector<std::string> keys;
-    keys.reserve(3);
-
-    const std::string hint = normalizeDecorationKey(decoration.hint);
-    const std::string internalName = normalizeDecorationKey(decoration.internalName);
-    const std::string normalizedInstanceName = normalizeDecorationKey(instanceName);
-
-    if (!hint.empty())
-    {
-        keys.push_back(hint);
-    }
-
-    if (!internalName.empty() && std::find(keys.begin(), keys.end(), internalName) == keys.end())
-    {
-        keys.push_back(internalName);
-    }
-
-    if (!normalizedInstanceName.empty()
-        && std::find(keys.begin(), keys.end(), normalizedInstanceName) == keys.end())
-    {
-        keys.push_back(normalizedInstanceName);
-    }
-
-    if (decorationMatchesAnyKey(keys, {"barrel", "dec03", "dec32"}))
-    {
-        return OutdoorGameView::InteractiveDecorationFamily::Barrel;
-    }
-
-    if (decorationMatchesAnyKey(keys, {"cauldron", "dec26"}))
-    {
-        return OutdoorGameView::InteractiveDecorationFamily::Cauldron;
-    }
-
-    if (decorationMatchesAnyKey(keys, {"trash heap", "trash pile", "dec01", "dec10", "dec23"}))
-    {
-        return OutdoorGameView::InteractiveDecorationFamily::TrashHeap;
-    }
-
-    if (decorationMatchesAnyKey(keys, {"campfire", "camp fire", "dec24", "dec25"}))
-    {
-        return OutdoorGameView::InteractiveDecorationFamily::CampFire;
-    }
-
-    if (decorationMatchesAnyKey(keys, {"keg", "cask", "dec21"}))
-    {
-        return OutdoorGameView::InteractiveDecorationFamily::Cask;
-    }
-
-    return std::nullopt;
-}
-
 float resolveActorAabbBaseZ(
     const OutdoorMapData &outdoorMapData,
     const OutdoorWorldRuntime::MapActorState *pActorState,
@@ -711,105 +613,6 @@ float resolveActorAabbBaseZ(
         static_cast<float>(actorX),
         static_cast<float>(actorY),
         static_cast<float>(actorZ));
-}
-
-uint16_t interactiveDecorationBaseEventId(OutdoorGameView::InteractiveDecorationFamily family)
-{
-    switch (family)
-    {
-        case OutdoorGameView::InteractiveDecorationFamily::Barrel:
-            return 268;
-
-        case OutdoorGameView::InteractiveDecorationFamily::Cauldron:
-            return 276;
-
-        case OutdoorGameView::InteractiveDecorationFamily::TrashHeap:
-            return 281;
-
-        case OutdoorGameView::InteractiveDecorationFamily::CampFire:
-            return 285;
-
-        case OutdoorGameView::InteractiveDecorationFamily::Cask:
-            return 288;
-
-        case OutdoorGameView::InteractiveDecorationFamily::Crystal:
-            break;
-
-        case OutdoorGameView::InteractiveDecorationFamily::None:
-            break;
-    }
-
-    return 0;
-}
-
-uint8_t interactiveDecorationEventCount(OutdoorGameView::InteractiveDecorationFamily family)
-{
-    switch (family)
-    {
-        case OutdoorGameView::InteractiveDecorationFamily::Barrel:
-            return 8;
-
-        case OutdoorGameView::InteractiveDecorationFamily::Cauldron:
-            return 5;
-
-        case OutdoorGameView::InteractiveDecorationFamily::TrashHeap:
-            return 4;
-
-        case OutdoorGameView::InteractiveDecorationFamily::CampFire:
-            return 2;
-
-        case OutdoorGameView::InteractiveDecorationFamily::Cask:
-            return 2;
-
-        case OutdoorGameView::InteractiveDecorationFamily::Crystal:
-            return 1;
-
-        case OutdoorGameView::InteractiveDecorationFamily::None:
-            break;
-    }
-
-    return 0;
-}
-
-bool interactiveDecorationHidesWhenCleared(OutdoorGameView::InteractiveDecorationFamily family)
-{
-    return family == OutdoorGameView::InteractiveDecorationFamily::CampFire
-        || family == OutdoorGameView::InteractiveDecorationFamily::Crystal;
-}
-
-uint32_t makeInteractiveDecorationSeed(const OutdoorEntity &entity, size_t entityIndex)
-{
-    uint32_t seed = static_cast<uint32_t>((entityIndex + 1u) * 2654435761u);
-    seed ^= static_cast<uint32_t>(entity.decorationListId + 1u) * 2246822519u;
-    seed ^= static_cast<uint32_t>(entity.x) * 3266489917u;
-    seed ^= static_cast<uint32_t>(entity.y) * 668265263u;
-    seed ^= static_cast<uint32_t>(entity.z + 1) * 374761393u;
-    return seed;
-}
-
-uint8_t initialInteractiveDecorationState(
-    OutdoorGameView::InteractiveDecorationFamily family,
-    uint32_t seed)
-{
-    switch (family)
-    {
-        case OutdoorGameView::InteractiveDecorationFamily::Barrel:
-            return static_cast<uint8_t>(1u + seed % 7u);
-
-        case OutdoorGameView::InteractiveDecorationFamily::Cauldron:
-            return static_cast<uint8_t>(1u + seed % 4u);
-
-        case OutdoorGameView::InteractiveDecorationFamily::Cask:
-            return 1;
-
-        case OutdoorGameView::InteractiveDecorationFamily::TrashHeap:
-        case OutdoorGameView::InteractiveDecorationFamily::CampFire:
-        case OutdoorGameView::InteractiveDecorationFamily::Crystal:
-        case OutdoorGameView::InteractiveDecorationFamily::None:
-            break;
-    }
-
-    return 0;
 }
 
 struct UiViewportRect
@@ -1581,11 +1384,6 @@ UiViewportRect computeUiViewportRect(int screenWidth, int screenHeight)
     }
 
     return viewport;
-}
-
-uint32_t currentDialogueHostHouseId(const EventRuntimeState *pEventRuntimeState)
-{
-    return pEventRuntimeState != nullptr ? pEventRuntimeState->dialogueState.hostHouseId : 0;
 }
 
 uint32_t makeAbgrColor(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = 255)
@@ -2630,7 +2428,6 @@ OutdoorGameView::OutdoorGameView(GameSession &gameSession, SpriteAtlasCache &spr
     , m_hasLastFootstepPosition(false)
     , m_walkingMotionHoldSeconds(0.0f)
     , m_activeWalkingSoundId(std::nullopt)
-    , m_activeHouseAudioHostId(0)
 {
     GameplayOverlayInteractionState &overlayInteractionState = m_gameSession.overlayInteractionState();
     overlayInteractionState.eventDialogPartySelectLatches.fill(false);
@@ -3137,7 +2934,7 @@ void OutdoorGameView::render(int width, int height, const GameplayInputFrame &in
 
     if (!preparingResources)
     {
-        updateHouseVideoPlayback(deltaSeconds);
+        m_gameSession.gameplayScreenRuntime().updateHouseDialoguePresentation(deltaSeconds);
         updateItemInspectOverlayState(width, height, input);
         updateActorInspectOverlayState(width, height, input);
     }
@@ -3975,7 +3772,7 @@ void OutdoorGameView::shutdown()
     m_hasLastFootstepPosition = false;
     m_walkingMotionHoldSeconds = 0.0f;
     m_activeWalkingSoundId = std::nullopt;
-    m_activeHouseAudioHostId = 0;
+    m_gameSession.gameplayScreenRuntime().resetHouseEntryAudio();
 }
 
 float OutdoorGameView::cameraYawRadians() const
@@ -4181,86 +3978,6 @@ void OutdoorGameView::setCameraAngles(float yawRadians, float pitchRadians)
 void OutdoorGameView::reopenMenuScreen()
 {
     m_gameSession.gameplayScreenRuntime().openMenuOverlay();
-}
-
-void OutdoorGameView::updateHouseVideoPlayback(float deltaSeconds)
-{
-    const EventRuntimeState *pEventRuntimeState =
-        m_pOutdoorWorldRuntime != nullptr ? m_pOutdoorWorldRuntime->eventRuntimeState() : nullptr;
-    const uint32_t hostHouseId = currentDialogueHostHouseId(pEventRuntimeState);
-    const HouseEntry *pHostHouseEntry =
-        hostHouseId != 0 ? m_gameSession.data().houseTable().get(hostHouseId) : nullptr;
-    GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
-    const EventDialogContent &activeDialog = screenRuntime.activeEventDialog();
-
-    if (resolveGameplayHudScreenState(
-            m_gameSession.gameplayUiController(),
-            activeDialog,
-            m_pOutdoorWorldRuntime)
-            != GameplayHudScreenState::Dialogue
-        || !activeDialog.isActive
-        || m_pAssetFileSystem == nullptr
-        || !activeEventDialogAllowsHouseVideoPlayback(activeDialog))
-    {
-        if (m_activeHouseAudioHostId != 0 && m_pGameAudioSystem != nullptr)
-        {
-            m_pGameAudioSystem->playCommonSound(SoundId::WoodDoorClosing, GameAudioSystem::PlaybackGroup::HouseDoor);
-            m_pGameAudioSystem->resumeBackgroundMusic();
-        }
-
-        m_activeHouseAudioHostId = 0;
-        m_gameSession.gameplayScreenRuntime().stopHouseVideoPlayback();
-        return;
-    }
-
-    if (!activeDialog.videoName.empty())
-    {
-        if (m_activeHouseAudioHostId != 0 && m_pGameAudioSystem != nullptr)
-        {
-            m_pGameAudioSystem->resumeBackgroundMusic();
-        }
-
-        m_activeHouseAudioHostId = 0;
-        m_gameSession.gameplayScreenRuntime().playHouseVideo(activeDialog.videoName, activeDialog.videoDirectory);
-        m_gameSession.gameplayScreenRuntime().updateHouseVideoPlayback(deltaSeconds);
-        return;
-    }
-
-    if (pHostHouseEntry == nullptr || pHostHouseEntry->videoName.empty())
-    {
-        if (m_activeHouseAudioHostId != 0 && m_pGameAudioSystem != nullptr)
-        {
-            m_pGameAudioSystem->playCommonSound(SoundId::WoodDoorClosing, GameAudioSystem::PlaybackGroup::HouseDoor);
-            m_pGameAudioSystem->resumeBackgroundMusic();
-        }
-
-        m_activeHouseAudioHostId = 0;
-        m_gameSession.gameplayScreenRuntime().stopHouseVideoPlayback();
-        return;
-    }
-
-    if (m_activeHouseAudioHostId != pHostHouseEntry->id)
-    {
-        m_activeHouseAudioHostId = pHostHouseEntry->id;
-
-        if (m_pGameAudioSystem != nullptr)
-        {
-            m_pGameAudioSystem->pauseBackgroundMusic();
-            m_pGameAudioSystem->playCommonSound(SoundId::Enter, GameAudioSystem::PlaybackGroup::HouseDoor);
-            const std::optional<uint32_t> greetingSoundId =
-                deriveHouseSoundId(*pHostHouseEntry, HouseSoundType::GeneralGreeting);
-
-            if (greetingSoundId.has_value())
-            {
-                m_pGameAudioSystem->playSound(
-                    worldSound(*greetingSoundId),
-                    GameAudioSystem::PlaybackGroup::HouseSpeech);
-            }
-        }
-    }
-
-    m_gameSession.gameplayScreenRuntime().playHouseVideo(pHostHouseEntry->videoName);
-    m_gameSession.gameplayScreenRuntime().updateHouseVideoPlayback(deltaSeconds);
 }
 
 bool OutdoorGameView::hasActiveEventDialog() const
@@ -4471,40 +4188,6 @@ void OutdoorGameView::clearWorldInteractionInputLatches()
     m_cachedRightMouseInspectPickRequest = {};
     m_cachedRightMouseInspectHit = {};
     screenRuntime.clearWorldStatusBarHoverText();
-}
-
-float OutdoorGameView::innRestDurationMinutes(uint32_t houseId) const
-{
-    if (m_pOutdoorWorldRuntime == nullptr)
-    {
-        return 8.0f * 60.0f;
-    }
-
-    int currentMinuteOfDay = static_cast<int>(std::floor(m_pOutdoorWorldRuntime->gameMinutes()));
-    currentMinuteOfDay %= MinutesPerDay;
-
-    if (currentMinuteOfDay < 0)
-    {
-        currentMinuteOfDay += MinutesPerDay;
-    }
-
-    int minutesUntilDawn = InnRestDawnHour * 60 - currentMinuteOfDay;
-
-    if (minutesUntilDawn <= 0)
-    {
-        minutesUntilDawn += MinutesPerDay;
-    }
-
-    float durationMinutes = static_cast<float>(minutesUntilDawn) + 60.0f;
-
-    if (houseId == DeyjaTavernHouseId
-        || houseId == PitTavernHouseId
-        || houseId == MountNighonTavernHouseId)
-    {
-        durationMinutes += 12.0f * 60.0f;
-    }
-
-    return durationMinutes;
 }
 
 bool OutdoorGameView::activeMemberKnowsSpell(uint32_t spellId) const

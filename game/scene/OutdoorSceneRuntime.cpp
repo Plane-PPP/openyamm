@@ -339,6 +339,7 @@ OutdoorSceneRuntime::AdvanceFrameResult OutdoorSceneRuntime::advanceFrame(
 
     uint64_t stageBeginTickCount = pPerformanceDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
     m_pPartyRuntime->setActorColliders(buildRuntimeActorColliders(*m_pWorldRuntime));
+    m_pPartyRuntime->setHiddenDecorationEntities(m_pWorldRuntime->refreshHiddenDecorationEntities());
     if (pPerformanceDiagnostics != nullptr)
     {
         pPerformanceDiagnostics->actorColliderBuildNanoseconds += SDL_GetTicksNS() - stageBeginTickCount;

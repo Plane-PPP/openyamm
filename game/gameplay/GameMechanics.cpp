@@ -793,7 +793,9 @@ bool isWeaponItem(const ItemDefinition &itemDefinition)
 bool requiresLearnedSkillToEquip(const ItemDefinition &itemDefinition)
 {
     const std::string skillName = canonicalSkillName(itemDefinition.skillGroup);
-    return !skillName.empty() && skillName != "Misc";
+
+    // Anyone can wield a club: it has no skill of its own (MM7, MM8 and MMerge).
+    return !skillName.empty() && skillName != "Misc" && skillName != "Club";
 }
 
 bool isRestrictedByDollType(const ItemDefinition &itemDefinition, const CharacterDollTypeEntry *pCharacterDollType)
@@ -2796,7 +2798,8 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
     result.targetArmorClass = std::max(0, targetArmorClass);
     result.targetDistance = std::max(0.0f, targetDistance);
 
-    if (profile.hasDragonBreath && profile.rangedAttackBonus.has_value())
+    // A dragon bites a target in melee range and breathes at anything further; a blaster or wand fires at any range.
+    if (profile.hasDragonBreath && profile.rangedAttackBonus.has_value() && !inMeleeRange)
     {
         result.mode = CharacterAttackMode::DragonBreath;
     }

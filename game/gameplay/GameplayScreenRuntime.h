@@ -218,7 +218,7 @@ public:
     void openRestOverlay(bool enforceWorldRestrictions = true);
     void beginRestAction(GameplayUiController::RestMode mode, float minutes, bool consumeFood, bool innRest);
     void startRestAction(GameplayUiController::RestMode mode, float minutes);
-    void startInnRest(float durationMinutes);
+    void startInnRest(uint32_t houseId);
     void openSpellbookOverlay();
     void openChestTransferInventoryOverlay();
     void toggleCharacterInventoryScreen();
@@ -347,6 +347,8 @@ public:
     bool playHouseVideo(const std::string &videoStem);
     bool playHouseVideo(const std::string &videoStem, const std::string &videoDirectory);
     void updateHouseVideoPlayback(float deltaSeconds);
+    void updateHouseDialoguePresentation(float deltaSeconds);
+    void resetHouseEntryAudio();
     bool isControlsRenderButtonPressed(GameplayControlsRenderButton button) const;
     bool isVideoOptionsRenderButtonPressed(GameplayVideoOptionsRenderButton button) const;
     void clearHudLayoutRuntimeHeightOverrides();
@@ -531,11 +533,13 @@ private:
     void playPortraitExpression(size_t memberIndex, PortraitId portraitId, std::optional<uint32_t> durationTicks);
     GameplayDialogController::Context buildDialogContext(EventRuntimeState &eventRuntimeState);
     void returnToHouseBankMainDialogShared();
+    void leaveHouseEntryAudio(bool playDoorSound);
 
     mutable CombatActorHealthBarRuntime m_enemyHealthBars;
     bool m_dimensionDoorWithoutQuest = false;
     GameSession &m_session;
     GameAudioSystem *m_pAudioSystem = nullptr;
+    uint32_t m_activeHouseAudioHostId = 0;
     GameSettings *m_pSettings = nullptr;
     IGameplayOverlaySceneAdapter *m_pSceneAdapter = nullptr;
     DialogueCloseCallback m_pendingMapMoveDialogClose;

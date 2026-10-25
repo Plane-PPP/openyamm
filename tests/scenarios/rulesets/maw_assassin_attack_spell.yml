@@ -32,8 +32,7 @@ steps:
       min_weapon_attacks: 20
       min_hit_rate: 0.2
       report: true
-  # With five points the attack takes the spell instead: no swing. (A headless run has no visible hostile target
-  # for the quick cast, so the cast itself is made with cast_spell below.)
+  # With five points the attack casts Blades at its target instead: no swing, and three of the points are spent...
   - console: {line: ruleset counter 1 5, expect_contains: Counter set}
   - party_attack:
       actor_index: last
@@ -41,8 +40,6 @@ steps:
       attack_spell: Blades
       max_weapon_attacks: 0
       report: true
-  # Blades on the guardian is cast and spends three of the five points...
-  - cast_spell: {spell_id: 39, actor_index: last, expect: applied}
   # ...so the next attack, two points left, is refused again and swings the sword.
   - party_attack:
       actor_index: last
@@ -50,6 +47,9 @@ steps:
       attack_spell: Blades
       min_weapon_attacks: 1
       report: true
+  # Cast directly, Blades takes the points too.
+  - console: {line: ruleset counter 1 5, expect_contains: Counter set}
+  - cast_spell: {spell_id: 39, actor_index: last, expect: applied}
   # And with no points, the rules refuse the cast itself.
   - console: {line: ruleset counter 1 0, expect_contains: Counter set}
   - cast_spell: {spell_id: 39, actor_index: last, expect: refused}

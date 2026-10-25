@@ -183,7 +183,7 @@ GameplaySpellService::MemberSpellCastResolution GameplaySpellService::castSpellF
         && pTargetQueries != nullptr
         && !tryPrepareQuickCastRequest(runtime, request, spellName, *pTargetQueries))
     {
-        runtime.setStatusBarEvent("No valid target exists!", 3.0f);
+        resolution.noTarget = true;
         return resolution;
     }
 
@@ -283,9 +283,20 @@ bool GameplaySpellService::tryResolveQuickCastRequest(
     {
         if (pWorldRuntime != nullptr)
         {
-            request.targetActorIndex = pWorldRuntime->spellActionHoveredActorIndex();
+            // The attack's own target, else the hovered actor, else the game's pick; every one a living hostile
+            // within spell reach, whether or not it has noticed the party.
+            const auto usable = [pWorldRuntime](const std::optional<size_t> &actorIndex)
+            {
+                return actorIndex && PartySpellSystem::isUsableSpellActorTarget(*pWorldRuntime, *actorIndex, true);
+            };
+            request.targetActorIndex = targetQueries.preferredActorIndex;
 
-            if (!request.targetActorIndex)
+            if (!usable(request.targetActorIndex))
+            {
+                request.targetActorIndex = pWorldRuntime->spellActionHoveredActorIndex();
+            }
+
+            if (!usable(request.targetActorIndex))
             {
                 const Party *pParty = runtime.partyReadOnly();
                 const SpellRules &spellRules = pParty != nullptr ? pParty->rules().spells : standardSpellRules();
