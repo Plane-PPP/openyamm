@@ -3443,7 +3443,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 // (audit TXT-2-B2).
                 const ItemRules &itemRules = gameRulesFor(pParty).items;
                 const int bagCount = itemRules.bagCount(*pParty);
-                const bool shiftHeld = pKeyboardState[SDL_SCANCODE_LSHIFT] || pKeyboardState[SDL_SCANCODE_RSHIFT];
+                // The overview shows every bag, so its Sort sorts every bag, as Shift does on one bag.
+                const bool shiftHeld = pKeyboardState[SDL_SCANCODE_LSHIFT] || pKeyboardState[SDL_SCANCODE_RSHIFT]
+                    || GameplayHudOverlaySupport::bagOverviewActive(context);
                 const bool ctrlHeld = pKeyboardState[SDL_SCANCODE_LCTRL] || pKeyboardState[SDL_SCANCODE_RCTRL];
                 const std::optional<size_t> alchemist = itemRules.alchemist(*pParty);
                 const Character *pMember = pParty->member(selectedPartyMemberIndex);
@@ -3462,10 +3464,17 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                         }
                     }
 
+                    const ItemTable *pItemTable = pParty->itemTable();
                     const bool sorted = InventoryBags::sortPartyBags(*pParty, members, shiftHeld, bagCount, alchemist,
                         [&itemRules](const InventoryItem &item)
                         {
                             return itemRules.alchemySortRank(item);
+                        },
+                        [&itemRules, pItemTable](const InventoryItem &item) -> std::optional<BagTag>
+                        {
+                            const ItemDefinition *pDefinition =
+                                pItemTable != nullptr ? pItemTable->get(item.objectDescriptionId) : nullptr;
+                            return pDefinition != nullptr ? itemRules.bagTag(*pDefinition) : std::nullopt;
                         });
                     context.setStatusBarEvent(!sorted ? "Not enough room to sort."
                             : ctrlHeld && shiftHeld ? "All bags of the party sorted"

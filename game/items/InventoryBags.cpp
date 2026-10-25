@@ -175,6 +175,93 @@ std::vector<InventoryItem> packIntoBags(
     return leftovers;
 }
 
+// packIntoBags for a member whose bags carry tags: an item with a tag goes to the bags with that tag first, then to the
+// untagged bags, then to the bags of the other tag; an item without one to the untagged bags first. Each item takes the
+// first bag of its order with room (pickups route by the tags the same way, placeInTaggedBag).
+std::vector<InventoryItem> packIntoTaggedBags(
+    const std::vector<InventoryItem> &items,
+    int bagCount,
+    const Character &character,
+    const std::function<std::optional<BagTag>(const InventoryItem &)> &bagTagOf,
+    std::vector<std::vector<InventoryItem>> &bags)
+{
+    const int count = std::max(1, bagCount);
+    const auto tagOfBag = [&character](int bag) -> std::optional<BagTag>
+    {
+        for (const BagTag tag : {BagTag::Crafting, BagTag::Alchemy})
+        {
+            if (InventoryBags::hasTag(character, uint8_t(bag), tag))
+            {
+                return tag;
+            }
+        }
+
+        return std::nullopt;
+    };
+    bool tagged = false;
+
+    for (int bag = 0; bag < count; ++bag)
+    {
+        tagged = tagged || tagOfBag(bag).has_value();
+    }
+
+    if (!tagged || !bagTagOf)
+    {
+        return packIntoBags(items, count, bags);
+    }
+
+    bags.assign(size_t(count), {});
+    std::vector<BagGrid> grids(bags.size());
+    std::vector<InventoryItem> leftovers;
+
+    for (InventoryItem item : items)
+    {
+        item.width = std::max<uint8_t>(1, item.width);
+        item.height = std::max<uint8_t>(1, item.height);
+        const std::optional<BagTag> itemTag = bagTagOf(item);
+        std::vector<int> order;
+
+        for (const int pass : {0, 1, 2})
+        {
+            for (int bag = 0; bag < count; ++bag)
+            {
+                const std::optional<BagTag> bagTag = tagOfBag(bag);
+                const int rank = itemTag && bagTag == itemTag ? 0 : !bagTag ? 1 : 2;
+
+                if (rank == pass)
+                {
+                    order.push_back(bag);
+                }
+            }
+        }
+
+        bool placed = false;
+
+        for (const int bag : order)
+        {
+            const std::optional<std::pair<uint8_t, uint8_t>> place =
+                firstFreePlace(grids[size_t(bag)], item.width, item.height);
+
+            if (place)
+            {
+                item.gridX = place->first;
+                item.gridY = place->second;
+                occupy(grids[size_t(bag)], item);
+                bags[size_t(bag)].push_back(item);
+                placed = true;
+                break;
+            }
+        }
+
+        if (!placed)
+        {
+            leftovers.push_back(item);
+        }
+    }
+
+    return leftovers;
+}
+
 // Puts packed bags back: the first is the open bag when only it was sorted; else packed bag i is bag i, the same one
 // open.
 void storeBags(Character &character, std::vector<std::vector<InventoryItem>> bags, bool allBags, int bagCount)
@@ -260,7 +347,8 @@ bool sortPartyBags(
     bool allBags,
     int bagCount,
     std::optional<size_t> alchemist,
-    const std::function<std::optional<int>(const InventoryItem &)> &alchemyRank)
+    const std::function<std::optional<int>(const InventoryItem &)> &alchemyRank,
+    const std::function<std::optional<BagTag>(const InventoryItem &)> &bagTagOf)
 {
     const ItemTable *pItemTable = party.itemTable();
     const int bags = allBags ? std::max(1, bagCount) : 1;
@@ -303,6 +391,12 @@ bool sortPartyBags(
             return *alchemyRank(left.first) < *alchemyRank(right.first);
         });
     std::vector<std::vector<std::vector<InventoryItem>>> packed(party.members().size());
+    // Sorting every bag honours the member's bag tags; the open bag alone has nowhere else to send an item.
+    const auto packMember = [&](size_t memberIndex, const std::vector<InventoryItem> &items)
+    {
+        return allBags ? packIntoTaggedBags(items, bags, *party.member(memberIndex), bagTagOf, packed[memberIndex])
+                       : packIntoBags(items, bags, packed[memberIndex]);
+    };
 
     if (alchemist)
     {
@@ -321,7 +415,7 @@ bool sortPartyBags(
 
             items.insert(items.end(), kept[*alchemist].begin(), kept[*alchemist].end());
 
-            if (packIntoBags(items, bags, packed[*alchemist]).empty())
+            if (packMember(*alchemist, items).empty())
             {
                 break;
             }
@@ -351,7 +445,7 @@ bool sortPartyBags(
 
         sortByMawOrder(kept[memberIndex], pItemTable);
 
-        if (!packIntoBags(kept[memberIndex], bags, packed[memberIndex]).empty())
+        if (!packMember(memberIndex, kept[memberIndex]).empty())
         {
             return false;
         }

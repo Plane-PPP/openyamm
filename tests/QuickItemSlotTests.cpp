@@ -1,3 +1,4 @@
+#include "game/items/InventoryBags.h"
 #include "game/items/QuickItemSlots.h"
 #include "game/party/Party.h"
 
@@ -70,4 +71,54 @@ TEST_CASE("a quick item slot uses the owner's bottle first, else another member'
     CHECK_EQ(QuickItemSlots::countPartyItems(party, slot, 1), 3u);
     slot.itemId = 230;
     CHECK_FALSE(QuickItemSlots::findPartyItem(party, 0, slot, 1).has_value());
+}
+
+TEST_CASE("sorting every bag sends crafting and alchemy items to the bags tagged for them")
+{
+    using OpenYAMM::Game::BagTag;
+    using OpenYAMM::Game::Party;
+    using OpenYAMM::Game::PartySeed;
+    namespace InventoryBags = OpenYAMM::Game::InventoryBags;
+
+    const auto item = [](uint32_t itemId, uint8_t gridX)
+    {
+        InventoryItem result;
+        result.objectDescriptionId = itemId;
+        result.width = 1;
+        result.height = 1;
+        result.gridX = gridX;
+        return result;
+    };
+    // 1050 a crafting material, 222 a reagent, 1 a sword (the rules' bagTag, by id here).
+    const auto bagTagOf = [](const InventoryItem &stored) -> std::optional<BagTag>
+    {
+        return stored.objectDescriptionId == 1050 ? std::optional<BagTag>(BagTag::Crafting)
+            : stored.objectDescriptionId == 222   ? std::optional<BagTag>(BagTag::Alchemy)
+                                                  : std::nullopt;
+    };
+    const auto noRank = [](const InventoryItem &) -> std::optional<int>
+    {
+        return std::nullopt;
+    };
+
+    PartySeed seed;
+    seed.members = {Character{}};
+    Party party;
+    party.seed(seed);
+    Character &member = *party.member(0);
+    member.inventory = {item(1050, 0), item(222, 1), item(1, 2)};
+    InventoryBags::toggleTag(member, 2, BagTag::Alchemy);
+    InventoryBags::toggleTag(member, 3, BagTag::Crafting);
+
+    // The open bag alone keeps everything: it has nowhere else to put an item.
+    REQUIRE(InventoryBags::sortPartyBags(party, {0}, false, 4, std::nullopt, noRank, bagTagOf));
+    CHECK_EQ(InventoryBags::itemsInBag(member, 0).size(), 3u);
+
+    REQUIRE(InventoryBags::sortPartyBags(party, {0}, true, 4, std::nullopt, noRank, bagTagOf));
+    REQUIRE_EQ(InventoryBags::itemsInBag(member, 0).size(), 1u);
+    CHECK_EQ(InventoryBags::itemsInBag(member, 0)[0].objectDescriptionId, 1u);
+    REQUIRE_EQ(InventoryBags::itemsInBag(member, 2).size(), 1u);
+    CHECK_EQ(InventoryBags::itemsInBag(member, 2)[0].objectDescriptionId, 222u);
+    REQUIRE_EQ(InventoryBags::itemsInBag(member, 3).size(), 1u);
+    CHECK_EQ(InventoryBags::itemsInBag(member, 3)[0].objectDescriptionId, 1050u);
 }

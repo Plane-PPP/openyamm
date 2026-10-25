@@ -30,14 +30,17 @@ bool sortAllBags(Character &character, int bagCount, const ItemTable *pItemTable
 // Sorts the open bags (allBags: every bag) of the members in sortAllBags' order, MAW's party sorts (T, G; Ctrl and
 // Ctrl+Shift on Sort). With an alchemist (ItemRules::alchemist), the items alchemyRank ranks go from all of them to
 // the alchemist, lowest rank first, as far as they fit after the alchemist's own; the rest stays with its owner
-// (zzMaw-Item-Sorter.lua sortInventory). False, with nothing changed, when a member's items no longer fit.
+// (zzMaw-Item-Sorter.lua sortInventory). Sorting every bag also honours the bag tags (ours; MAW's sort has none): an
+// item bagTagOf tags goes to the member's bags with that tag first. False, with nothing changed, when a member's items
+// no longer fit.
 bool sortPartyBags(
     Party &party,
     const std::vector<size_t> &members,
     bool allBags,
     int bagCount,
     std::optional<size_t> alchemist,
-    const std::function<std::optional<int>(const InventoryItem &)> &alchemyRank);
+    const std::function<std::optional<int>(const InventoryItem &)> &alchemyRank,
+    const std::function<std::optional<BagTag>(const InventoryItem &)> &bagTagOf = {});
 // A save from when the ruleset had more bags (MAW had five, and 25 for a party of one, before 2026-10-25): every
 // member's items past `bagCount` bags go to the first free place of the owner's bags, else of another member's; a
 // member whose open bag is gone opens the first. Returns how many fit nowhere: they wait for takeOverflow.
