@@ -1,4 +1,5 @@
 #include "game/app/GameSettings.h"
+#include "game/app/KeyboardBindings.h"
 
 #include <doctest/doctest.h>
 
@@ -212,4 +213,25 @@ TEST_CASE("kept modified packs are a choice of the file only and survive a save"
     OpenYAMM::Game::releaseStoredSettings(*loaded, {"check_for_updates", "update_now"});
     CHECK(contains(savedNames(*loaded), "updates.keep_modified_packs"));
     std::filesystem::remove_all(path.parent_path());
+}
+
+TEST_CASE("every function, keypad and punctuation key has a readable binding name that loads back")
+{
+    using OpenYAMM::Game::keyboardBindingName;
+    using OpenYAMM::Game::parseKeyboardBindingName;
+
+    // A potion slot bound to F1, F3 or F4 showed "Scancode_58" on the potion wheel.
+    for (const SDL_Scancode scancode : {SDL_SCANCODE_F1, SDL_SCANCODE_F3, SDL_SCANCODE_F4, SDL_SCANCODE_F9,
+             SDL_SCANCODE_F12, SDL_SCANCODE_KP_0, SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_ENTER, SDL_SCANCODE_GRAVE,
+             SDL_SCANCODE_MINUS, SDL_SCANCODE_SEMICOLON, SDL_SCANCODE_SLASH, SDL_SCANCODE_CAPSLOCK})
+    {
+        const std::string name = keyboardBindingName(scancode);
+        CHECK_MESSAGE(name.rfind("Scancode_", 0) != 0, name);
+        CHECK_EQ(parseKeyboardBindingName(name), scancode);
+    }
+
+    CHECK_EQ(keyboardBindingName(SDL_SCANCODE_F1), "F1");
+    CHECK_EQ(keyboardBindingName(SDL_SCANCODE_KP_7), "Num 7");
+    // Settings saved before keep loading.
+    CHECK_EQ(parseKeyboardBindingName("Scancode_58"), SDL_SCANCODE_F1);
 }
