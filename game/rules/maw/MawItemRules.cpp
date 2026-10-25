@@ -2428,7 +2428,8 @@ std::optional<BagTag> MawItemRules::bagTag(const ItemDefinition &definition) con
         return BagTag::Crafting;
     }
 
-    if (definition.equipStat == "Bottle" || definition.equipStat == "Reagent")
+    // MM6's reagents are herbs (1762-1764).
+    if (definition.equipStat == "Bottle" || definition.equipStat == "Reagent" || definition.equipStat == "Herb")
     {
         return BagTag::Alchemy;
     }
