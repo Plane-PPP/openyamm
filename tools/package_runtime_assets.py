@@ -169,7 +169,9 @@ def verify_surface_cook(assets_root, profile):
 
 # The model manifests the game reads (ActorModelManifest, DecorationModelManifest, DecorationModelSet). Review and
 # stress-test manifests selected through debug.actor_models_manifest stay out.
-RUNTIME_MODEL_MANIFESTS = {"actors.yml", "decorations.yml", "indoor_decorations.yml", "decoration_overlays.yml"}
+RUNTIME_MODEL_MANIFESTS = {
+    "actors.yml", "decorations.yml", "indoor_decorations.yml", "decoration_overlays.yml", "projectiles.yml"
+}
 
 
 def release_model_file(relative):
