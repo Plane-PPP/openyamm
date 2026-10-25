@@ -830,6 +830,18 @@ std::string formatLegacyReferenceId(uint32_t value)
     return std::to_string(signedValue < 0 ? -signedValue : signedValue);
 }
 
+// A SetTexture reference keeps its sign: positive, a cog number (every face of that cog); negative, one face by its
+// index (MMerge's MM6 maps, "the facet itself").
+std::string formatLegacySignedReferenceId(uint32_t value)
+{
+    if (value <= static_cast<uint32_t>(std::numeric_limits<int32_t>::max()))
+    {
+        return std::to_string(value);
+    }
+
+    return std::to_string(static_cast<int64_t>(value) - (static_cast<int64_t>(UINT32_MAX) + 1));
+}
+
 std::string formatMonsterBit(uint32_t value)
 {
     switch (value)
@@ -3925,7 +3937,7 @@ bool emitReadableActionInstruction(
             if (!instruction.arguments.empty())
             {
                 std::ostringstream line;
-                line << "evt.SetTexture(" << formatLegacyReferenceId(instruction.arguments[0]);
+                line << "evt.SetTexture(" << formatLegacySignedReferenceId(instruction.arguments[0]);
 
                 if (instruction.text && !instruction.text->empty())
                 {
@@ -8799,7 +8811,7 @@ void emitNormalInstruction(
             if (!instruction.arguments.empty())
             {
                 std::ostringstream line;
-                line << "evt.SetTexture(" << formatLegacyReferenceId(instruction.arguments[0]);
+                line << "evt.SetTexture(" << formatLegacySignedReferenceId(instruction.arguments[0]);
 
                 if (instruction.text && !instruction.text->empty())
                 {

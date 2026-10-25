@@ -75,6 +75,7 @@ public:
         int maxHp = 0;
         int effectiveArmorClass = 0;
         int hourOfPowerPower = 0;
+        ActorRulesetFacts rulesetFacts;
         bool isDead = false;
         bool isInvisible = false;
         bool hostileToParty = false;
@@ -126,6 +127,7 @@ public:
         GameplayWorldHoverRequest worldInspectionRefreshRequest = {};
         uint32_t randomSeed = 0;
         uint32_t arrowProjectileObjectId = 0;
+        uint32_t fireArrowProjectileObjectId = 0;
         uint32_t throwingDaggerProjectileObjectId = 0;
         uint32_t throwingAxeProjectileObjectId = 0;
         uint32_t blasterProjectileObjectId = 0;
@@ -158,5 +160,17 @@ public:
         GameplayScreenState::QuickSpellState &quickSpellState,
         const AttackActionConfig &config);
     static PartyAttackExecutionResult executePartyAttack(const PartyAttackConfig &config);
+    // The Unstuck action (MAW's L key): lifts the party when its rules allow it now, else does nothing and says why.
+    // True when the party was lifted.
+    static bool tryUnstuckParty(Party &party, IGameplayWorldRuntime &worldRuntime, std::string &statusText);
+    // The Knight Charge action at the actor under the cursor: what the party's rules say of it (empty for nothing to
+    // show); nothing in rules or parties without a charge.
+    static std::optional<std::string> tryPartyCharge(
+        Party &party,
+        IGameplayWorldRuntime &worldRuntime,
+        std::optional<size_t> targetActorIndex);
+    // The gather key (MAW's K): brings the corpses and ground items the party's rules name to the party's feet and
+    // says how many came; nothing in rules without it.
+    static std::optional<std::string> gatherLoot(const Party &party, IGameplayWorldRuntime &worldRuntime);
 };
 } // namespace OpenYAMM::Game

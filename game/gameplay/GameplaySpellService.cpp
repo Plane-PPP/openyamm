@@ -8,6 +8,8 @@
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 #include "game/party/LloydsBeaconRuntime.h"
 #include "game/party/SpellIds.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/SpellRules.h"
 
 namespace OpenYAMM::Game
 {
@@ -43,7 +45,8 @@ GameplaySpellService::GameplaySpellService(GameSession &session)
 
 GameplaySpellService::QuickSpellStartResolution GameplaySpellService::tryStartQuickSpellCast(
     GameplayScreenRuntime &runtime,
-    const TargetQueries &targetQueries)
+    const TargetQueries &targetQueries,
+    std::optional<size_t> extraSlot)
 {
     QuickSpellStartResolution resolution = {};
 
@@ -87,7 +90,11 @@ GameplaySpellService::QuickSpellStartResolution GameplaySpellService::tryStartQu
         return resolution;
     }
 
-    if (pCaster->quickSpellName.empty())
+    const std::string &quickSpellName = extraSlot && *extraSlot < ExtraQuickSpellSlotCount
+        ? pCaster->extraQuickSpellNames[*extraSlot]
+        : pCaster->quickSpellName;
+
+    if (quickSpellName.empty())
     {
         resolution.disposition = QuickSpellStartDisposition::AttackFallback;
         return resolution;
@@ -100,7 +107,7 @@ GameplaySpellService::QuickSpellStartResolution GameplaySpellService::tryStartQu
         return resolution;
     }
 
-    const SpellEntry *pSpellEntry = pSpellTable->findByName(pCaster->quickSpellName);
+    const SpellEntry *pSpellEntry = pSpellTable->findByName(quickSpellName);
 
     if (pSpellEntry == nullptr)
     {
@@ -117,10 +124,12 @@ GameplaySpellService::QuickSpellStartResolution GameplaySpellService::tryStartQu
         return resolution;
     }
 
-    // A caster without the mana or a target for the quick spell attacks instead, so the character is never stuck.
-    const std::optional<uint32_t> manaCost = PartySpellSystem::manaCost(*pCaster, *pSpellTable, spellId);
+    // A caster without the mana, the rules' other means (an Assassin's combo points) or a target for the quick spell
+    // attacks instead, so the character is never stuck; attacking is how an Assassin builds combo points.
+    const std::optional<uint32_t> manaCost = PartySpellSystem::manaCost(*pParty, *pCaster, *pSpellTable, spellId);
 
-    if (manaCost && !pParty->canSpendSpellPoints(casterMemberIndex, int(*manaCost)))
+    if ((manaCost && !pParty->canSpendSpellPoints(casterMemberIndex, int(*manaCost)))
+        || pParty->rules().spells.castRefusal(*pParty, casterMemberIndex, spellId))
     {
         resolution.disposition = QuickSpellStartDisposition::AttackFallback;
         return resolution;
@@ -207,6 +216,14 @@ bool GameplaySpellService::tryPrepareQuickCastRequest(
     const std::string &spellName,
     const TargetQueries &targetQueries) const
 {
+    // A spell the rules hold as an aura (MAW's Meditation on Telepathy's id, Bless) toggles without a target.
+    const Party *pParty = runtime.partyReadOnly();
+
+    if (pParty != nullptr && pParty->rules().spells.castsAsAura(*pParty, request.casterMemberIndex, request.spellId))
+    {
+        return true;
+    }
+
     if (spellIdFromValue(request.spellId) == SpellId::Fear)
     {
         request.quickCast = true;
@@ -257,24 +274,8 @@ bool GameplaySpellService::tryResolveQuickCastRequest(
             return false;
         }
 
-        request.targetCharacterIndex.reset();
-        for (size_t memberIndex = 0; memberIndex < pParty->members().size(); ++memberIndex)
-        {
-            const Character &member = pParty->members()[memberIndex];
-            if (member.health >= Party::effectiveMaximumHealth(member)
-                || member.conditions.test(static_cast<size_t>(CharacterCondition::Dead))
-                || member.conditions.test(static_cast<size_t>(CharacterCondition::Petrified))
-                || member.conditions.test(static_cast<size_t>(CharacterCondition::Eradicated)))
-            {
-                continue;
-            }
-
-            if (!request.targetCharacterIndex
-                || member.health < pParty->members()[*request.targetCharacterIndex].health)
-            {
-                request.targetCharacterIndex = memberIndex;
-            }
-        }
+        request.targetCharacterIndex = PartySpellSystem::quickCastCharacterTarget(
+            *pParty, request.casterMemberIndex, request.spellId, runtime.spellTable());
         return request.targetCharacterIndex.has_value();
     }
 
@@ -286,7 +287,10 @@ bool GameplaySpellService::tryResolveQuickCastRequest(
 
             if (!request.targetActorIndex)
             {
-                request.targetActorIndex = pWorldRuntime->spellActionClosestVisibleHostileActorIndex();
+                const Party *pParty = runtime.partyReadOnly();
+                const SpellRules &spellRules = pParty != nullptr ? pParty->rules().spells : standardSpellRules();
+                request.targetActorIndex =
+                    PartySpellSystem::quickCastActorTarget(*pWorldRuntime, spellRules, request.spellId);
             }
         }
 

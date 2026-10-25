@@ -3,6 +3,7 @@
 #include "game/audio/GameAudioSystem.h"
 #include "game/gameplay/GameplayActorHitFeedback.h"
 #include "game/gameplay/GameplayFxService.h"
+#include "game/gameplay/GameplayProjectileService.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/GameplaySpellService.h"
 #include "game/gameplay/MeleeContactEffects.h"
@@ -10,6 +11,8 @@
 #include "game/items/ItemEnchantRuntime.h"
 #include "game/party/PartySpellSystem.h"
 #include "game/party/SkillData.h"
+#include "game/party/SpellIds.h"
+#include "game/rules/GameRules.h"
 #include "game/StringUtils.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MonsterTable.h"
@@ -36,6 +39,8 @@ constexpr float MeleeGlancingDamageFraction = 0.06f;
 constexpr float MeleeCrushingDamageFraction = 0.3f;
 // The camera kick on a critical or killing melee blow, about 1.5 degrees.
 constexpr float MeleeCameraKickRadians = 0.026f;
+// Fireball's explosion, where a Carnage arrow strikes.
+constexpr uint32_t FireballExplosionObjectId = 1051;
 
 void resetQuickCastRepeatState(GameplayScreenState::QuickSpellState &quickSpellState)
 {
@@ -444,6 +449,26 @@ CharacterAttackMode choosePartyAttackMode(
     return CharacterAttackMode::Melee;
 }
 
+// Energy Blades Grandmaster: the hit may cut a raised shield to a share of what is left before it lands
+// (MonsterShieldTable::overloadRules). Only rolls against a raised shield, so other targets keep their dice.
+void tryOverloadActorShield(const GameplayActionController::PartyAttackConfig &config, size_t actorIndex,
+    std::mt19937 &rng)
+{
+    GameplayActorShields *pShields = config.pWorldRuntime->actorShields();
+
+    if (pShields == nullptr || pShields->table() == nullptr || pShields->shieldPoints(actorIndex) <= 0.0f)
+    {
+        return;
+    }
+
+    const ShieldOverloadRules &rules = pShields->table()->overloadRules();
+
+    if (std::uniform_real_distribution<float>(0.0f, 1.0f)(rng) < rules.chance)
+    {
+        pShields->cutRaisedShield(actorIndex, rules.remainingFraction);
+    }
+}
+
 CharacterAttackResult buildUntargetedMeleeAttack(const CharacterAttackProfile &profile)
 {
     CharacterAttackResult attack = {};
@@ -452,6 +477,7 @@ CharacterAttackResult buildUntargetedMeleeAttack(const CharacterAttackProfile &p
     attack.hit = false;
     attack.attackBonus = profile.meleeAttackBonus;
     attack.recoverySeconds = profile.meleeRecoverySeconds;
+    attack.shieldTier = profile.meleeShieldTier;
     attack.attackSoundHook = "melee_swing";
     attack.voiceHook = "attack";
     return attack;
@@ -490,6 +516,7 @@ CharacterAttackResult buildRangedReleaseAttack(
     attack.projectileCount = profile.rangedProjectileCount;
     attack.projectileSpreadArcRadians = profile.rangedSpreadArcRadians;
     attack.spellId = profile.rangedSpellId;
+    attack.shieldTier = profile.rangedShieldTier;
     attack.attackSoundHook = "wand_cast";
 
     if (mode == CharacterAttackMode::Bow)
@@ -550,6 +577,7 @@ std::optional<GameplayActionController::PartyAttackActorFacts> resolveUsableActo
         .maxHp = actor->maxHp,
         .effectiveArmorClass = actor->effectiveArmorClass,
         .hourOfPowerPower = actor->hourOfPowerPower,
+        .rulesetFacts = actor->rulesetFacts,
         .isDead = actor->isDead,
         .isInvisible = actor->isInvisible,
         .hostileToParty = actor->hostileToParty,
@@ -593,6 +621,7 @@ std::optional<GameplayActionController::PartyAttackActorFacts> chooseFallbackRan
             .maxHp = actor.maxHp,
             .effectiveArmorClass = actor.effectiveArmorClass,
             .hourOfPowerPower = actor.hourOfPowerPower,
+            .rulesetFacts = actor.rulesetFacts,
             .isDead = actor.isDead,
             .isInvisible = actor.isInvisible,
             .hostileToParty = actor.hostileToParty,
@@ -663,13 +692,16 @@ void playPartyAttackSound(
         GameAudioSystem::WorldPosition{config.rangedSource.x, config.rangedSource.y, config.rangedSource.z});
 }
 
+// The blow's damage after the monster's resistances; `elementalDamage` gets what its enchantments and auras added.
 int resolveMeleeAppliedDamage(
     const GameplayActionController::PartyAttackConfig &config,
     const Character &attacker,
     const GameplayActionController::PartyAttackActorFacts &target,
     const CharacterAttackResult &attack,
-    std::mt19937 &rng)
+    std::mt19937 &rng,
+    int &elementalDamage)
 {
+    elementalDamage = 0;
     int appliedDamage = attack.damage;
 
     if (config.pMonsterTable == nullptr)
@@ -684,43 +716,60 @@ int resolveMeleeAppliedDamage(
         return appliedDamage;
     }
 
-    const int multiplier =
-        ItemEnchantRuntime::characterAttackDamageMultiplierAgainstMonster(
-            attacker,
-            CharacterAttackMode::Melee,
-            config.pItemTable,
-            config.pSpecialItemEnchantTable,
-            pStats->kindFlags);
-    ElementalDamageBonuses additionalDamage = ItemEnchantRuntime::characterAttackElementalDamageBonuses(
-        attacker,
-        CharacterAttackMode::Melee,
-        config.pItemTable,
-        config.pSpecialItemEnchantTable);
+    const int multiplier = gameRulesFor(config.pParty).combat.weaponKindMultiplierApplies()
+        ? ItemEnchantRuntime::characterAttackDamageMultiplierAgainstMonster(
+              attacker,
+              CharacterAttackMode::Melee,
+              config.pItemTable,
+              config.pSpecialItemEnchantTable,
+              pStats->kindFlags)
+        : 1;
+    ElementalDamageBonuses additionalDamage = attack.rulesWeaponElements
+        ? ElementalDamageBonuses{}
+        : ItemEnchantRuntime::characterAttackElementalDamageBonuses(
+              attacker,
+              CharacterAttackMode::Melee,
+              config.pItemTable,
+              config.pSpecialItemEnchantTable);
     additionalDamage.fire *= multiplier;
     additionalDamage.air *= multiplier;
     additionalDamage.water *= multiplier;
     additionalDamage.body *= multiplier;
     additionalDamage.light *= multiplier;
     additionalDamage.dark *= multiplier;
+    additionalDamage.fire += attack.rulesElementalDamage.fire;
+    additionalDamage.air += attack.rulesElementalDamage.air;
+    additionalDamage.water += attack.rulesElementalDamage.water;
+    additionalDamage.body += attack.rulesElementalDamage.body;
+    additionalDamage.light += attack.rulesElementalDamage.light;
+    additionalDamage.dark += attack.rulesElementalDamage.dark;
+    elementalDamage = additionalDamage.fire + additionalDamage.air + additionalDamage.water + additionalDamage.body
+        + additionalDamage.light + additionalDamage.dark;
 
-    return GameMechanics::resolveMonsterIncomingWeaponDamage(
-        appliedDamage * multiplier,
-        attack.damageType,
-        additionalDamage,
-        MonsterDamageResistances{
-            .fire = pStats->fireResistance,
-            .air = pStats->airResistance,
-            .water = pStats->waterResistance,
-            .earth = pStats->earthResistance,
-            .spirit = pStats->spiritResistance,
-            .mind = pStats->mindResistance,
-            .body = pStats->bodyResistance,
-            .light = pStats->lightResistance,
-            .dark = pStats->darkResistance,
-            .physical = pStats->physicalResistance,
-        },
-        target.hourOfPowerPower,
-        rng);
+    MonsterDamageHit hit = {};
+    hit.amount = appliedDamage * multiplier;
+    hit.type = attack.damageType;
+    hit.weaponElements = additionalDamage;
+    hit.resistances = MonsterDamageResistances{
+        .fire = pStats->fireResistance,
+        .air = pStats->airResistance,
+        .water = pStats->waterResistance,
+        .earth = pStats->earthResistance,
+        .spirit = pStats->spiritResistance,
+        .mind = pStats->mindResistance,
+        .body = pStats->bodyResistance,
+        .light = pStats->lightResistance,
+        .dark = pStats->darkResistance,
+        .physical = pStats->physicalResistance,
+    };
+    hit.hourOfPowerResistanceBonus = target.hourOfPowerPower;
+    hit.targetFacts = target.rulesetFacts;
+    hit.pMeleeAttacker = &attacker;
+    hit.lateDamage = attack.rulesLateDamage;
+    hit.pItemTable = config.pItemTable;
+    hit.targetCurrentHp = target.currentHp;
+    hit.pRng = &rng;
+    return gameRulesFor(config.pParty).combat.damageToMonster(hit);
 }
 
 std::mt19937 buildPartyAttackRng(
@@ -735,8 +784,9 @@ std::mt19937 buildPartyAttackRng(
     return std::mt19937(seed);
 }
 
-// An attacker without the mana for their attack spell swings or shoots their weapon instead.
-bool lacksManaForAttackSpell(
+// An attacker who no longer knows their attack spell, lacks its mana or the rules' other means (an Assassin's combo
+// points) swings or shoots their weapon instead, as a quick cast does.
+bool cannotCastAttackSpell(
     const GameplayActionController::PartyAttackConfig &config,
     size_t attackerMemberIndex,
     const Character &attacker)
@@ -753,9 +803,17 @@ bool lacksManaForAttackSpell(
         return false;
     }
 
+    const uint32_t spellId = uint32_t(pSpellEntry->id);
+
+    if (!attacker.knowsSpell(spellId))
+    {
+        return true;
+    }
+
     const std::optional<uint32_t> manaCost =
-        PartySpellSystem::manaCost(attacker, *config.pSpellTable, uint32_t(pSpellEntry->id));
-    return manaCost && !config.pParty->canSpendSpellPoints(attackerMemberIndex, int(*manaCost));
+        PartySpellSystem::manaCost(*config.pParty, attacker, *config.pSpellTable, spellId);
+    return (manaCost && !config.pParty->canSpendSpellPoints(attackerMemberIndex, int(*manaCost)))
+        || config.pParty->rules().spells.castRefusal(*config.pParty, attackerMemberIndex, spellId).has_value();
 }
 } // namespace
 
@@ -914,7 +972,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
         party.clearPartyBuff(PartyBuffId::Invisibility);
     }
 
-    if (!pAttacker->attackSpellName.empty() && !lacksManaForAttackSpell(config, actingMemberIndex, *pAttacker))
+    if (!pAttacker->attackSpellName.empty() && !cannotCastAttackSpell(config, actingMemberIndex, *pAttacker))
     {
         AttackCastResult attackCastResult = {};
 
@@ -994,10 +1052,57 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
         attack = buildRangedReleaseAttack(attackMode, attackProfile, rng);
     }
 
+    CharacterAttackOnMonster attackContext = {};
+    attackContext.pCharacter = pAttacker;
+    attackContext.pItemTable = config.pItemTable;
+    attackContext.pSpecialItemEnchantTable = config.pSpecialItemEnchantTable;
+    attackContext.minimumDamage =
+        attack.mode == CharacterAttackMode::Melee ? attackProfile.meleeMinDamage : attackProfile.rangedMinDamage;
+    attackContext.maximumDamage =
+        attack.mode == CharacterAttackMode::Melee ? attackProfile.meleeMaxDamage : attackProfile.rangedMaxDamage;
+    // A blow reads the target in reach; a missile the actor it is aimed at (rules crit against its level).
+    attackContext.pTargetFacts = target && (attack.mode != CharacterAttackMode::Melee || targetInMeleeRange)
+        ? &target->rulesetFacts
+        : nullptr;
+    attackContext.targetCurrentHp = attackContext.pTargetFacts != nullptr ? target->currentHp : 0;
+
+    if (target && config.pMonsterTable != nullptr)
+    {
+        if (const MonsterTable::MonsterStatsEntry *pStats = config.pMonsterTable->findStatsById(target->monsterId))
+        {
+            attackContext.targetKindFlags = pStats->kindFlags;
+        }
+    }
+
+    if (attackContext.pTargetFacts != nullptr && config.pWorldRuntime != nullptr)
+    {
+        attackContext.targetKey = mapActorKey(config.pWorldRuntime->mapName(), target->actorIndex);
+        // A game minute is two real seconds.
+        attackContext.nowSeconds = double(config.pWorldRuntime->gameMinutes()) * 2.0;
+
+        attackContext.targetHostile = target->hostileToParty;
+
+        // The crowd around a blow's target (MAW's Assassination thins its bonus by it, MCC:414-421).
+        if (attack.mode == CharacterAttackMode::Melee)
+        {
+            for (const size_t nearIndex : config.pWorldRuntime->collectMapActorIndicesWithinRadius(target->position.x,
+                     target->position.y, target->position.z, 384.0f, false, target->position.x, target->position.y,
+                     target->position.z))
+            {
+                GameplayRuntimeActorState nearActor = {};
+                attackContext.monstersNearTarget +=
+                    config.pWorldRuntime->actorRuntimeState(nearIndex, nearActor) && !nearActor.isDead ? 1 : 0;
+            }
+        }
+    }
+    attackContext.partyCount = config.pParty != nullptr ? int(std::max<size_t>(1, config.pParty->members().size())) : 1;
+    attackContext.pRng = &rng;
+    gameRulesFor(config.pParty).combat.resolveCharacterAttack(attack, attackContext);
     result.attack = attack;
 
     if (attack.canAttack && attack.mode != CharacterAttackMode::Melee
-        && pAttacker->conditions.test(static_cast<size_t>(CharacterCondition::Weak)))
+        && pAttacker->conditions.test(static_cast<size_t>(CharacterCondition::Weak))
+        && gameRulesFor(config.pParty).combat.callerHalvesWeakMissile(attack.mode))
     {
         attack.damage /= 2;
         result.attack = attack;
@@ -1020,16 +1125,25 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
             && attack.hit
             && config.pWorldRuntime != nullptr)
         {
-            const int appliedDamage = resolveMeleeAppliedDamage(config, *pAttacker, *target, attack, rng);
+            int elementalDamage = 0;
+            const int appliedDamage =
+                resolveMeleeAppliedDamage(config, *pAttacker, *target, attack, rng, elementalDamage);
             appliedMeleeDamage = appliedDamage;
             hitWithoutDamage = !GameplayCombatController::partyHitLands(appliedDamage, attack.stunTarget);
             const int beforeHp = target->currentHp;
             const std::optional<MeleeContact> contact = resolveMeleeContact(config, *target);
+
+            if (attack.shieldOverload && !hitWithoutDamage)
+            {
+                tryOverloadActorShield(config, target->actorIndex, rng);
+            }
+
             attacked = !hitWithoutDamage
                 && config.pWorldRuntime->applyPartyAttackMeleeDamage(
                     target->actorIndex,
                     appliedDamage,
-                    toRuntimeWorldPoint(config.partyPosition));
+                    toRuntimeWorldPoint(config.partyPosition),
+                    attack.shieldTier);
 
             if (attacked)
             {
@@ -1041,6 +1155,23 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                 const std::optional<GameplayPartyAttackActorFacts> afterTarget =
                     config.pWorldRuntime->partyAttackActorFacts(target->actorIndex, false);
                 killed = beforeHp > 0 && afterTarget && afterTarget->currentHp <= 0;
+                PartyHitOnMonster hit;
+                hit.memberIndex = actingMemberIndex;
+                hit.pTarget = &target->rulesetFacts;
+                hit.damage = appliedDamage;
+                hit.elementalDamage = std::min(elementalDamage, appliedDamage);
+                hit.type = attack.damageType;
+                hit.melee = true;
+                hit.killed = killed;
+                hit.pWorld = config.pWorldRuntime;
+                hit.targetActorIndex = target->actorIndex;
+                gameRulesFor(config.pParty).combat.applyPartyHitEffects(party, hit);
+
+                // A kill may shorten the blow's recovery (MAW's Legendary 11), before it is applied below.
+                if (killed)
+                {
+                    attack.recoverySeconds *= gameRulesFor(config.pParty).combat.killRecoveryScale(*pAttacker);
+                }
 
                 if (contact)
                 {
@@ -1183,7 +1314,9 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
         }
         else if (config.pWorldRuntime != nullptr)
         {
-            uint32_t projectileObjectId = config.arrowProjectileObjectId;
+            uint32_t projectileObjectId = attack.fireArrow && config.fireArrowProjectileObjectId != 0
+                ? config.fireArrowProjectileObjectId
+                : config.arrowProjectileObjectId;
             const ItemDefinition *pRangedWeapon = config.pItemTable != nullptr
                 ? config.pItemTable->get(pAttacker->equipment.bow)
                 : nullptr;
@@ -1201,16 +1334,26 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     attack.mode == CharacterAttackMode::Blaster
                         ? config.blasterProjectileObjectId
                         : projectileObjectId,
-                .impactObjectId = attack.mode == CharacterAttackMode::Blaster
-                    ? config.blasterProjectileObjectId + 1 : 0,
+                .impactObjectId = attack.mode == CharacterAttackMode::Blaster ? config.blasterProjectileObjectId + 1
+                    : attack.explosiveArrow                                  ? FireballExplosionObjectId
+                                                                             : 0,
                 .damage = attack.damage,
                 .attackBonus = attack.attackBonus,
-                .useActorHitChance = true,
+                // A Carnage arrow never misses (it explodes).
+                .useActorHitChance = !attack.explosiveArrow,
                 .damageType = attack.damageType,
+                .shieldTier = attack.shieldTier,
+                .weakerOfPhysicalAndFire = attack.fireArrow,
+                .explosionRadius = attack.explosiveArrow
+                    ? GameplayProjectileService::spellImpactDamageRadius(uint32_t(SpellId::Fireball))
+                    : 0.0f,
                 .source = toRuntimeWorldPoint(rangedSource),
                 .target = toRuntimeWorldPoint(rangedTarget),
                 .turnBasedPendingAction =
                     config.pRuntime != nullptr && config.pRuntime->turnBasedCombatRuntime().active(),
+                // A fanned volley spreads on purpose; only a single shot homes.
+                .targetActorIndex =
+                    attack.projectileSpreadArcRadians > 0.0f ? std::nullopt : result.targetActorIndex,
             };
             if (attack.projectileSpreadArcRadians > 0.0f)
             {
@@ -1345,5 +1488,52 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     result.killed = killed;
     result.attack = attack;
     return result;
+}
+
+bool GameplayActionController::tryUnstuckParty(
+    Party &party,
+    IGameplayWorldRuntime &worldRuntime,
+    std::string &statusText)
+{
+    const std::optional<float> lift = party.rules().classes.unstuckLift(worldRuntime.gameMinutes());
+
+    if (!lift)
+    {
+        statusText = "You can't do that yet";
+        return false;
+    }
+
+    return worldRuntime.liftParty(*lift);
+}
+
+std::optional<std::string> GameplayActionController::tryPartyCharge(
+    Party &party,
+    IGameplayWorldRuntime &worldRuntime,
+    std::optional<size_t> targetActorIndex)
+{
+    return party.rules().classes.partyCharge(party, worldRuntime, targetActorIndex);
+}
+
+std::optional<std::string> GameplayActionController::gatherLoot(
+    const Party &party,
+    IGameplayWorldRuntime &worldRuntime)
+{
+    const ItemRules &items = party.rules().items;
+    const std::optional<LootGathering> gathering = items.lootGathering();
+
+    if (!gathering)
+    {
+        return std::nullopt;
+    }
+
+    const size_t corpses = worldRuntime.gatherCorpsesToParty(gathering->corpses);
+    const size_t gathered = worldRuntime.gatherWorldItemsToParty(gathering->items,
+        [&items](const InventoryItem &item)
+        {
+            return items.gathersItem(item);
+        });
+    const std::string corpseText = std::to_string(corpses) + " monsters";
+    const std::string itemText = std::to_string(gathered) + " crafting items";
+    return "Teleported " + (gathered == 0 ? corpseText : corpses == 0 ? itemText : corpseText + " and " + itemText);
 }
 } // namespace OpenYAMM::Game

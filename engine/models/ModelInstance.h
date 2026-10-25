@@ -72,6 +72,31 @@ struct ModelBurn
     float seconds = 0.0f;
 };
 
+// An energy shield drawn over an instance's skinned surface (game: GameplayActorShields): a translucent fresnel shell
+// pushed out along the normals, additive, with ripples at recent hits, a rise from the feet when it comes up and a
+// shatter when it breaks. Skinned and CPU-deformed draws only; null draws nothing (no cost).
+struct ModelShieldShell
+{
+    static constexpr size_t MaxHits = 4;
+
+    // Linear RGB and overall strength (0 draws nothing).
+    std::array<float, 3> color = {1.0f, 0.4f, 0.8f};
+    float strength = 1.0f;
+    // Share of the pool left (weaker shells flicker).
+    float fraction = 1.0f;
+    // Seconds since it broke (shatter, about 0.7 s) or came back up (rise, about 0.5 s); -1 for none.
+    float breakSeconds = -1.0f;
+    float raiseSeconds = -1.0f;
+    // Clock of the drifting energy, in seconds.
+    float seconds = 0.0f;
+    // World height of the feet and body height, for the rise sweep; offset of the shell from the skin.
+    float footZ = 0.0f;
+    float bodyHeight = 100.0f;
+    float thickness = 3.0f;
+    // World impact point and age in seconds of recent hits (age < 0: unused).
+    std::array<std::array<float, 4>, MaxHits> hits = {};
+};
+
 inline bool modelBurnConsumed(const ModelBurn &burn)
 {
     return burn.front > 1.0f + burn.edgeWidth + burn.fireWidth;
@@ -97,6 +122,9 @@ public:
     // Null stops the burn: the surface is whole again.
     bool setBurn(ModelInstanceHandle handle, const ModelBurn *pBurn);
     const ModelBurn *burn(ModelInstanceHandle handle) const;
+    // Null removes the shield shell.
+    bool setShieldShell(ModelInstanceHandle handle, const ModelShieldShell *pShell);
+    const ModelShieldShell *shieldShell(ModelInstanceHandle handle) const;
     bool setNodeMarkersVisible(ModelInstanceHandle handle, bool visible);
     bool setAttachments(ModelInstanceHandle handle, std::vector<ModelAttachment> attachments);
     bool setNodeRotations(ModelInstanceHandle handle, std::vector<ModelNodeRotation> rotations);
@@ -169,6 +197,7 @@ private:
         uint32_t outlineColorAbgr = 0;
         float hitFlash = 0.0f;
         std::optional<ModelBurn> burn;
+        std::optional<ModelShieldShell> shieldShell;
         uint32_t materialVariant = 0;
         bool nodeMarkersVisible = false;
         std::vector<ModelAttachment> attachments;

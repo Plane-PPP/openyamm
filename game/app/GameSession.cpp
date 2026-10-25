@@ -9,7 +9,10 @@
 #include "game/gameplay/GameplayScreenController.h"
 #include "game/gameplay/GenericActorDialog.h"
 #include "game/gameplay/MercenaryRecruitmentRuntime.h"
+#include "game/items/InventoryBags.h"
 #include "game/maps/MapIdentity.h"
+#include "game/rules/RandomStreams.h"
+#include "game/rules/maw/MawRulesFactory.h"
 #include "game/ui/GameplaySpellTargetingOverlayRenderer.h"
 
 #include <cassert>
@@ -90,9 +93,11 @@ void pulseGameplayAction(GameplayInputFrame &input, KeyboardAction action)
 
 Party buildConfiguredParty(
     const Party::Snapshot &snapshot,
-    const GameDataRepository &data)
+    const GameDataRepository &data,
+    const GameRules *pRules)
 {
     Party party = {};
+    party.setRules(pRules);
     party.setItemTable(&data.itemTable());
     party.setJournalQuestTable(&data.journalQuestTable());
     party.setItemEnchantTables(&data.standardItemEnchantTable(), &data.specialItemEnchantTable());
@@ -193,6 +198,16 @@ GameSession::GameSession()
     m_gameplayUiController.bindExternalState(&m_gameplayScreenState.uiState());
 }
 
+GameSession::~GameSession()
+{
+    // The class multiplier table bound in bindDataRepository belongs to the repository, which may go before the
+    // next session binds its own.
+    if (m_pDataRepository != nullptr)
+    {
+        GameMechanics::bindClassMultiplierTable(nullptr);
+    }
+}
+
 void GameSession::bindDataRepository(const GameDataRepository *pDataRepository)
 {
     m_pDataRepository = pDataRepository;
@@ -253,6 +268,10 @@ void GameSession::clear()
     m_indoorSceneStates.clear();
     m_namedGlobalVars.clear();
     m_gameMinutes = 9.0f * 60.0f;
+    m_ruleset = {};
+    m_pMawRules.reset();
+    bindGameRules(nullptr);
+    m_randomRootSeed = 0;
     m_cameraYawRadians = 0.0f;
     m_cameraPitchRadians = 0.0f;
     m_cameraAnglesValid = false;
@@ -276,11 +295,13 @@ std::optional<Party> &GameSession::partyState()
 void GameSession::setPartyState(const Party &party)
 {
     m_partyState = party;
+    m_partyState->setRules(rulesetGameRules());
 }
 
 void GameSession::setPartyState(Party &&party)
 {
     m_partyState = std::move(party);
+    m_partyState->setRules(rulesetGameRules());
 }
 
 SceneKind GameSession::currentSceneKind() const
@@ -325,6 +346,97 @@ float GameSession::gameMinutes() const
 void GameSession::setGameMinutes(float gameMinutes)
 {
     m_gameMinutes = std::max(0.0f, gameMinutes);
+}
+
+const RulesetSelection &GameSession::ruleset() const
+{
+    return m_ruleset;
+}
+
+void GameSession::setRuleset(const RulesetSelection &ruleset)
+{
+    m_ruleset = ruleset;
+    m_pMawRules.reset();
+
+    if (ruleset.id == MawRulesetId)
+    {
+        // GameApplication::activateRuleset loads the MAW data before the session gets the ruleset.
+        m_pMawRules = createMawRules(data(), ruleset.options);
+        assert(m_pMawRules != nullptr);
+
+        if (m_pMawRules)
+        {
+            if (m_madnessLedgerFile)
+            {
+                m_pMawRules->setMadnessLedgerFile(*m_madnessLedgerFile);
+            }
+
+            m_pMawRules->setRandomRootSeed(m_randomRootSeed);
+            m_pMawRules->setCurrentMap(m_currentMapFileName);
+        }
+    }
+
+    if (m_partyState)
+    {
+        m_partyState->setRules(rulesetGameRules());
+    }
+
+    bindGameRules(m_pMawRules ? &m_pMawRules->gameRules() : nullptr);
+}
+
+void GameSession::setRulesetOptions(const RulesetOptions &options)
+{
+    m_ruleset.options = options;
+
+    if (m_pMawRules)
+    {
+        m_pMawRules->setOptions(options);
+    }
+
+    if (m_pActiveWorldRuntime != nullptr)
+    {
+        m_pActiveWorldRuntime->refreshRulesetMonsters();
+    }
+}
+
+const GameRules *GameSession::rulesetGameRules() const
+{
+    return m_pMawRules ? &m_pMawRules->gameRules() : nullptr;
+}
+
+MawRules *GameSession::mawRules()
+{
+    return m_pMawRules.get();
+}
+
+const MawRules *GameSession::mawRules() const
+{
+    return m_pMawRules.get();
+}
+
+uint64_t GameSession::randomRootSeed() const
+{
+    return m_randomRootSeed;
+}
+
+void GameSession::setMadnessLedgerFile(const std::filesystem::path &file)
+{
+    m_madnessLedgerFile = file;
+
+    if (m_pMawRules)
+    {
+        m_pMawRules->setMadnessLedgerFile(file);
+    }
+}
+
+void GameSession::setRandomRootSeed(uint64_t rootSeed)
+{
+    m_randomRootSeed = rootSeed;
+
+    if (m_pMawRules)
+    {
+        m_pMawRules->setRandomRootSeed(rootSeed);
+    }
 }
 
 GameplayUiController &GameSession::gameplayUiController()
@@ -948,6 +1060,15 @@ void GameSession::updateGameplay(
 
             const uint64_t actorAiBeginTickCount = collectPerformanceDiagnostics ? SDL_GetTicksNS() : 0;
             pWorldRuntime->updateActorAi(deltaSeconds);
+            gameRulesFor(pWorldRuntime->party()).monsters.updateMonsters(*pWorldRuntime, deltaSeconds);
+
+            if (Party *pParty = pWorldRuntime->party())
+            {
+                pParty->rules().spells.updateAuras(*pParty, deltaSeconds);
+                pParty->rules().skills.updateRegeneration(*pParty, *pWorldRuntime, deltaSeconds);
+                pParty->rules().combat.updateCombat(*pParty, *pWorldRuntime, deltaSeconds);
+                pParty->rules().classes.update(*pParty, *pWorldRuntime, deltaSeconds);
+            }
             recordDiagnostics(
                 m_gameplayUpdatePerformanceDiagnostics.actorAiNanoseconds,
                 m_lastGameplayUpdateFramePerformanceDiagnostics.actorAiNanoseconds,
@@ -974,6 +1095,9 @@ void GameSession::updateGameplay(
         }
 
         const uint64_t combatEventsBeginTickCount = collectPerformanceDiagnostics ? SDL_GetTicksNS() : 0;
+        // The combat log records only while its setting is on (nothing is kept or worded otherwise).
+        m_gameplayScreenRuntime.combatLog().setRecording(m_gameplayScreenRuntime.settingsSnapshot().combatLog);
+        m_gameplayScreenRuntime.combatLog().setGameMinutes(pWorldRuntime->gameMinutes());
         Party *pMutableParty = pWorldRuntime->party();
         if (pMutableParty != nullptr && !m_gameplayCombatController.pendingCombatEvents().empty())
         {
@@ -1599,6 +1723,9 @@ std::optional<GameSaveData> GameSession::buildSaveData() const
     saveData.party = m_partyState->snapshot();
     saveData.namedGlobalVars = m_namedGlobalVars;
     saveData.savedGameMinutes = m_gameMinutes;
+    saveData.ruleset = m_ruleset;
+    saveData.mawState = m_pMawRules ? std::optional<MawGameState>(m_pMawRules->state()) : std::nullopt;
+    saveData.randomRootSeed = m_randomRootSeed;
 
     if (m_outdoorPartyState && m_currentOutdoorWorldState)
     {
@@ -1664,7 +1791,20 @@ std::optional<GameSaveData> GameSession::buildSaveData() const
 void GameSession::restoreFromSaveData(const GameSaveData &saveData)
 {
     m_turnBasedCombatRuntime.reset();
-    m_partyState = buildConfiguredParty(saveData.party, data());
+    m_currentSceneKind = saveData.currentSceneKind;
+    m_currentMapFileName = saveData.mapFileName;
+    m_gameMinutes = std::max(0.0f, saveData.savedGameMinutes);
+    // The ruleset and its state come before the party: restoring the party works out the members' maximum hit and
+    // spell points under them and clamps the saved ones to those (under Standard's they would lose what MAW adds).
+    m_partyState.reset();
+    setRuleset(saveData.ruleset);
+
+    if (m_pMawRules && saveData.mawState)
+    {
+        m_pMawRules->setState(*saveData.mawState);
+    }
+
+    m_partyState = buildConfiguredParty(saveData.party, data(), rulesetGameRules());
     restoreHeldInventoryItemFromSaveData(saveData);
 
     if (m_partyState)
@@ -1681,9 +1821,15 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
         }
     }
 
-    m_currentSceneKind = saveData.currentSceneKind;
-    m_currentMapFileName = saveData.mapFileName;
-    m_gameMinutes = std::max(0.0f, saveData.savedGameMinutes);
+    // A save from when the ruleset had more bags: their items move into the bags there are now; what fits nowhere
+    // falls at the party's feet once the world runs (GameplayScreenController).
+    if (m_partyState && saveData.sourceSaveVersion < SaveVersionFourMawBags)
+    {
+        InventoryBags::fitIntoBagCount(*m_partyState, m_partyState->rules().items.bagCount(*m_partyState));
+    }
+
+    // Saves from before the random streams get their root seed when first loaded.
+    setRandomRootSeed(saveData.randomRootSeed != 0 ? saveData.randomRootSeed : freshRandomRootSeed());
     m_namedGlobalVars = saveData.namedGlobalVars;
     const bool collectLegacyNamedGlobalVars = m_namedGlobalVars.empty();
 

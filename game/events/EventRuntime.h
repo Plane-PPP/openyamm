@@ -209,6 +209,8 @@ struct EventRuntimeState
         SoundScope soundScope = SoundScope::Engine;
         uint32_t soundId = 0;
         std::string soundName;
+        // One-shot by name only: played instead while no sound of soundName exists (placeholder names). Not saved.
+        std::string fallbackSoundName;
         uint64_t key = 0;
         std::optional<size_t> actorIndex;
         float pitch = 1.0f;
@@ -478,6 +480,8 @@ struct EventRuntimeState
     std::unordered_map<uint32_t, RuntimeMechanismState> mechanisms;
     std::unordered_map<uint32_t, RuntimeDestructibleState> destructibles;
     std::unordered_map<uint32_t, OutdoorModelMechanismDefinition> outdoorModelMechanisms;
+    // evt.SetTexture swaps: keyed by a face cog number (MM7/MM8: every face of the cog), or by
+    // EventRuntime::indoorFaceTextureOverrideKey(face index) (a negative reference, MMerge's MM6 maps: that one face).
     std::unordered_map<uint32_t, std::string> textureOverrides;
     std::unordered_map<uint32_t, std::string> outdoorModelFacetTextureOverrides;
     std::unordered_map<uint32_t, SpriteOverride> spriteOverrides;
@@ -524,6 +528,8 @@ struct EventRuntimeState
     std::unordered_set<uint32_t> unavailableNpcIds;
     std::vector<HiredNpcFollower> hiredNpcFollowers;
     bool pendingDimensionDoorOverlay = false;
+    // The pending Dimension Door opens before the Cross Continents quest allows it (MAW's town pedestals).
+    bool pendingDimensionDoorWithoutQuest = false;
     DialogueRuntimeState dialogueState;
     std::array<uint8_t, 125> decorVars = {};
     std::optional<ActiveDecorationContext> activeDecorationContext;
@@ -549,6 +555,8 @@ struct EventRuntimeState
     std::optional<PendingMovie> pendingMovie;
     std::optional<PendingWinGame> pendingWinGame;
     bool pendingReturnToMainMenu = false;
+    // AddValue(Experience) gives the value as it is, past the rules' event experience (MAW's unscaled rewards).
+    bool unscaledExperience = false;
     std::optional<PendingInputPrompt> pendingInputPrompt;
     std::optional<PendingArcomageGame> pendingArcomageGame;
     std::vector<PendingSound> pendingSounds;
@@ -603,6 +611,8 @@ public:
     const NpcDialogTable *npcDialogTable() const;
 
     static uint32_t outdoorModelFacetTextureOverrideKey(uint32_t modelIndex, uint32_t faceIndex);
+    // The textureOverrides key of one indoor face named by its index (cog numbers are 16-bit, so never collide).
+    static uint32_t indoorFaceTextureOverrideKey(uint32_t faceIndex);
     static uint32_t monsterRelationOverrideKey(uint32_t leftMonsterId, uint32_t rightMonsterId);
     static uint64_t transportRouteOverrideKey(uint32_t houseId, uint32_t routeIndex);
 

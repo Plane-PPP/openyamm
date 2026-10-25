@@ -175,6 +175,11 @@ enum class EvtVariable : uint16_t
     Invisible = 0x013A,
     ItemEquipped = 0x013B,
     Players = 0x013E,
+    // OpenYAMM's technology skills, appended after the EVT variables (Lua events only: EVT has no encoding).
+    EnergyGunsSkill = 0x0140,
+    EnergyBladesSkill = 0x0141,
+    ShieldTechSkill = 0x0142,
+    HackingSkill = 0x0143,
 };
 
 using EvtFaceAttribute = FaceAttribute;
@@ -246,6 +251,8 @@ enum class EvtActorKillCheck : uint32_t
     MonsterId = 2,
     ActorIdOe = 3,
     UniqueNameId = 4,
+    // OpenYAMM's own (no EVT encoding): every actor except the party's summons and other allies (ally 999).
+    Hostile = 5,
 };
 
 enum class EvtSkillJoinedMask : uint16_t

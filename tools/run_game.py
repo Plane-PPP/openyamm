@@ -30,6 +30,8 @@ def parse_args():
     parser.add_argument('--map', help='Map filename, e.g. oute3.odm; optional when retaining a save\'s map')
     parser.add_argument('--save', type=Path, help='Read an existing save through a private copy')
     parser.add_argument('--menu', action='store_true', help='Start at the main menu with isolated settings and saves')
+    parser.add_argument('--ruleset', metavar='ID[:OPTION...]',
+                        help='Rules of the new game, e.g. maw or maw:hell:horizontal (not with --save or --menu)')
     parser.add_argument('--position', nargs=3, type=finite_number, metavar=('X', 'Y', 'Z'))
     parser.add_argument('--yaw-radians', type=finite_number)
     parser.add_argument('--pitch-degrees', type=finite_number)
@@ -52,6 +54,8 @@ def parse_args():
         parser.error('provide --position, --yaw-radians and --pitch-degrees together')
     if args.pitch_degrees is not None and not -89 <= args.pitch_degrees <= 89:
         parser.error('pitch must be between -89 and 89 degrees')
+    if args.ruleset and (args.save or args.menu):
+        parser.error('--ruleset starts a new game; it cannot be combined with --save or --menu')
     if args.seconds < 0 or args.warmup < 0:
         parser.error('seconds and warmup must be nonnegative')
     return args
@@ -122,7 +126,10 @@ def prepare(args, run, binary, metadata):
         if args.map and not args.position:
             steps.append({'load_map': {'map': args.map}})
     else:
-        steps.append({'new_game_flow': {'start_map': args.map}})
+        new_game = {'start_map': args.map}
+        if args.ruleset:
+            new_game['ruleset'] = args.ruleset
+        steps.append({'new_game_flow': new_game})
     if args.position:
         pose = dict(zip(('x', 'y', 'z'), args.position))
         pose.update(yaw=args.yaw_radians, pitch=math.radians(args.pitch_degrees))
@@ -134,7 +141,7 @@ def prepare(args, run, binary, metadata):
     # JSON is a YAML subset; use the existing scenario loader without a Python YAML dependency.
     scenario_path = run / 'prepare.yml'
     scenario_path.write_text(json.dumps(scenario, indent=2) + '\n')
-    environment = dict(os.environ, TMPDIR=str(run / 'tmp'))
+    environment = dict(os.environ, TMPDIR=str(run / 'tmp'), OPENYAMM_SCENARIO_SAVE_DIR=str(run / 'prepared'))
     for trace in ('GAMEPLAY', 'PROJECTILE'):
         variable = f'OPENYAMM_{trace}_TRACE_FILE'
         if environment.get(variable):
@@ -152,7 +159,7 @@ def prepare(args, run, binary, metadata):
                     raise RuntimeError('Scenario preparation failed; inspect prepare.log')
             finally:
                 stop_game(process)
-        prepared = run / 'tmp/openyamm_scenario_saves/desktop_launch/desktop.oysav'
+        prepared = run / 'prepared/desktop.oysav'
     startup_save = run / 'saves/startup.oysav'
     shutil.copy2(prepared, startup_save)
     # Faithful scenarios can rewrite debug settings: restore the requested rendering/settings snapshot afterwards.

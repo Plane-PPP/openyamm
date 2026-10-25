@@ -922,6 +922,33 @@ TEST_CASE("legacy lua exporter preserves mm8 indoor light group ids")
     CHECK(buttonLua.find("evt.SetLight(4, 0)") == std::string::npos);
 }
 
+TEST_CASE("legacy lua exporter keeps the sign of a SetTexture reference")
+{
+    // MMerge's MM6 maps name one face by its index, negated ("the facet itself"); MM7 and MM8 name a cog (positive).
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    const std::vector<uint8_t> evtBytes =
+        readBinaryFixture(sourceRoot / "assets_dev/worlds/mm6/_legacy/events/6D13.EVT");
+    const std::vector<uint8_t> strBytes =
+        readBinaryFixture(sourceRoot / "assets_dev/worlds/mm6/_legacy/events/6D13.STR");
+
+    OpenYAMM::Game::EvtProgram evtProgram = {};
+    REQUIRE(evtProgram.loadFromBytes(evtBytes));
+
+    OpenYAMM::Game::StrTable strTable = {};
+    REQUIRE(strTable.loadFromBytes(strBytes));
+
+    OpenYAMM::Game::LegacyLuaExportLookups lookups = {};
+    const std::string lua = OpenYAMM::Game::generateLegacyEventLuaChunk(
+        evtProgram,
+        strTable,
+        lookups,
+        OpenYAMM::Game::LegacyLuaExportScope::Map,
+        OpenYAMM::Game::LegacyEventVersion::Mm6);
+
+    CHECK(lua.find("evt.SetTexture(-949, \"d6flora\")") != std::string::npos);
+    CHECK(lua.find("evt.SetTexture(949,") == std::string::npos);
+}
+
 TEST_CASE("legacy lua exporter keeps mm6 indoor light ids zero based")
 {
     const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;

@@ -1,5 +1,6 @@
 #include "game/maps/SaveGame.h"
 
+#include "game/events/EventRuntime.h"
 #include "game/events/EvtEnums.h"
 #include "game/tables/HouseTable.h"
 #include "game/tables/ItemTable.h"
@@ -21,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 94;
+constexpr uint32_t SaveVersion = 128;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -104,6 +105,76 @@ constexpr uint32_t SaveVersionActorRevealedLoot = 91;
 constexpr uint32_t SaveVersionHardenedItems = 92;
 constexpr uint32_t SaveVersionPotionCharacterBuffs = 93;
 constexpr uint32_t SaveVersionMapMoveStartPoint = 94;
+// Each character keeps a tech point pool for the technology skills (older saves load it as 0).
+constexpr uint32_t SaveVersionCharacterTechPoints = 95;
+// The ruleset id and options of the game (older saves load as the Standard ruleset).
+constexpr uint32_t SaveVersionRuleset = 96;
+// Items carry the fields a ruleset uses (ItemRulesetFields), and the game a root seed for its random streams.
+constexpr uint32_t SaveVersionItemRulesetFields = 97;
+constexpr uint32_t SaveVersionRandomRootSeed = 97;
+// Actors carry what a ruleset resolved for them (ActorRulesetFacts), indoor actor HP is 32-bit, and MAW games keep
+// their level banks (MawGameState).
+constexpr uint32_t SaveVersionActorRulesetFacts = 98;
+// MAW games keep their loot bad-luck counters (MawGameState).
+constexpr uint32_t SaveVersionMawLootState = 99;
+// Characters carry the state a ruleset keeps for them (CharacterRulesetState), and MAW games the auras they hold.
+constexpr uint32_t SaveVersionCharacterRulesetState = 100;
+constexpr uint32_t SaveVersionMawAuras = 100;
+// The ruleset state of characters also keeps MAW's class spell switches and Elementalist progress.
+constexpr uint32_t SaveVersionMawClassState = 101;
+// Items count their crafts and keep a crafting material's state.
+constexpr uint32_t SaveVersionItemCraftState = 102;
+constexpr uint32_t SaveVersionMawCraftingPity = 103;
+constexpr uint32_t SaveVersionElementalRotation = 104;
+constexpr uint32_t SaveVersionRisenActors = 105;
+// Items carry a dimension map's fields, and MAW games their dimension runs, the Dimensional Maps quest and the map drop
+// counter.
+constexpr uint32_t SaveVersionDimensionMaps = 106;
+// Bosses keep the draw that places their level inside its band, and actors their Spear stacks.
+constexpr uint32_t SaveVersionBossLevelDraw = 107;
+// Characters keep MAW's poison timer and Divine Protection cooldown, MAW games the unique items they sold.
+constexpr uint32_t SaveVersionMawCharacterTimers = 107;
+// Actor ruleset facts mark the map's unique monsters.
+constexpr uint32_t SaveVersionUniqueMonsters = 108;
+// MAW games keep where their scroll, pedestal and temple auras came from.
+constexpr uint32_t SaveVersionMawFixedAuras = 109;
+constexpr uint32_t SaveVersionMawMultibag = 110;
+// Characters keep the masteries a switch to horizontal progression, and a lone character's utility skills, took.
+constexpr uint32_t SaveVersionProgressionMasteries = 111;
+// The member who takes alchemy items when the party sorts (MAW).
+constexpr uint32_t SaveVersionMawAlchemist = 112;
+// MAW's challenge modes (devdocs/maw/PHASE9_SCOPE.md): the food Road to Insanity holds back, Beyond Madness's boss pity,
+// the special attacks the Doom modes gave monsters.
+constexpr uint32_t SaveVersionMawChallengeModes = 113;
+// MAW games keep the maps cleared since their last refill (older saves take every completed map).
+constexpr uint32_t SaveVersionMawClearedMaps = 114;
+// A character's experience takes 64 bits: MAW levels need more than 4 billion (audit ROB-2-1).
+constexpr uint32_t SaveVersionWideExperience = 115;
+// Items on the floor indoors keep the whole item beside the MM record (audit ITM-1).
+constexpr uint32_t SaveVersionIndoorHeldItems = 116;
+// Indoor actors remember whether they came after the map's first fill (audit MON-11).
+constexpr uint32_t SaveVersionActorSpawnedAfterFill = 117;
+// MAW items keep their drop's ancient tier apart from their rarity (audit ALC-8).
+constexpr uint32_t SaveVersionItemAncientTier = 118;
+// A Regenerating boss keeps the party's hits on it with the actor (audit FCOR-2-6).
+constexpr uint32_t SaveVersionRegeneratingHits = 119;
+// Summoned actors keep the party member who summoned them: Summon Wisp's limit is per caster (MM8).
+constexpr uint32_t SaveVersionActorSummoner = 120;
+// MMMerge's four extra quick spells per character (ExtraQuickSpells.lua).
+constexpr uint32_t SaveVersionExtraQuickSpells = 122;
+// Each character's crafting and alchemy bags (MAW's crafting bag, zzzMaw_CraftingBag.lua; our alchemy bag).
+constexpr uint32_t SaveVersionMawBagTags = 123;
+// MAW games keep the maps the party left, the dimension runs cleared and the bounties claimed (the Progress tab).
+constexpr uint32_t SaveVersionMawMapVisits = 124;
+// Each character's six quick item slots (the potion radial).
+constexpr uint32_t SaveVersionQuickItemSlots = 125;
+// MAW's loot filter presets: the preset, the kinds without rarity turned into gold, and whether filtered drops stay where
+// they fell (a flag on such an item); before, one rarity, migrated to the nearest preset.
+constexpr uint32_t SaveVersionLootFilterPresets = 126;
+// MAW games keep the barrels and cauldrons that raised a stat, which stay empty through refills.
+constexpr uint32_t SaveVersionMawUsedStatDecorations = 127;
+// MAW games keep Beyond Madness's death count in the save as well as in the death ledger.
+constexpr uint32_t SaveVersionMawMadnessDeaths = 128;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -219,6 +290,10 @@ private:
 };
 
 void writeValue(BinaryWriter &writer, const HiredNpcFollower &value);
+void writeValue(BinaryWriter &writer, const MawDimensionRun &value);
+bool readValue(BinaryReader &reader, MawDimensionRun &value);
+void writeValue(BinaryWriter &writer, const MawMapVisit &value);
+bool readValue(BinaryReader &reader, MawMapVisit &value);
 bool readValue(BinaryReader &reader, HiredNpcFollower &value);
 void writeValue(BinaryWriter &writer, const GameplayProjectileService::Snapshot &value);
 bool readValue(BinaryReader &reader, GameplayProjectileService::Snapshot &value);
@@ -519,6 +594,26 @@ bool readValue(BinaryReader &reader, std::unordered_set<T> &value)
     return true;
 }
 
+void writeValue(BinaryWriter &writer, const QuickItemSlot &value)
+{
+    writeValue(writer, value.itemId);
+    writeValue(writer, uint8_t(value.bottleRule));
+}
+
+bool readValue(BinaryReader &reader, QuickItemSlot &value)
+{
+    uint8_t bottleRule = 0;
+
+    if (!readValue(reader, value.itemId) || !readValue(reader, bottleRule))
+    {
+        return false;
+    }
+
+    value.bottleRule = bottleRule == uint8_t(QuickItemBottleRule::Strongest) ? QuickItemBottleRule::Strongest
+                                                                             : QuickItemBottleRule::Weakest;
+    return true;
+}
+
 void writeValue(BinaryWriter &writer, const CharacterSkill &value)
 {
     writeValue(writer, value.name);
@@ -531,6 +626,394 @@ bool readValue(BinaryReader &reader, CharacterSkill &value)
     return readValue(reader, value.name)
         && readValue(reader, value.level)
         && readValue(reader, value.mastery);
+}
+
+void writeValue(BinaryWriter &writer, const InventoryItem &value);
+bool readValue(BinaryReader &reader, InventoryItem &value);
+
+// One byte for a Standard character; the fields follow only when a ruleset set any.
+void writeValue(BinaryWriter &writer, const CharacterRulesetState &value)
+{
+    const bool present = !value.empty();
+    writeValue(writer, present);
+
+    if (present)
+    {
+        writeValue(writer, value.rememberedMasteries);
+        writeValue(writer, value.coverDisabled);
+        writeValue(writer, value.manaShieldDisabled);
+        writeValue(writer, value.classToggles);
+
+        for (const double progress : value.elementalProgress)
+        {
+            writeValue(writer, progress);
+        }
+
+        writeValue(writer, uint32_t(value.potionEffects.size()));
+
+        for (const TimedPotionEffect &effect : value.potionEffects)
+        {
+            writeValue(writer, effect.kind);
+            writeValue(writer, effect.key);
+            writeValue(writer, effect.amount);
+            writeValue(writer, effect.remainingSeconds);
+        }
+
+        writeValue(writer, value.potionSteps);
+        writeValue(writer, value.elementalRotationDisabled);
+        writeValue(writer, value.poisonSeconds);
+        writeValue(writer, value.divineProtectionReadyGameMinutes);
+        writeValue(writer, value.legendaryProtectionReadyGameMinutes);
+        writeValue(writer, value.currentBag);
+        writeValue(writer, uint32_t(value.storedBags.size()));
+
+        for (const auto &[bag, items] : value.storedBags)
+        {
+            writeValue(writer, bag);
+            writeValue(writer, items);
+        }
+
+        writeValue(writer, value.progressionStoredMasteries);
+        writeValue(writer, value.soloStoredMasteries);
+        writeValue(writer, value.craftingBags);
+        writeValue(writer, value.alchemyBags);
+    }
+}
+
+bool readValue(BinaryReader &reader, CharacterRulesetState &value)
+{
+    bool present = false;
+    value = {};
+    const auto readClassState = [&reader, &value]()
+    {
+        return reader.version() < SaveVersionMawClassState
+            || (readValue(reader, value.classToggles)
+                && std::all_of(value.elementalProgress.begin(), value.elementalProgress.end(),
+                    [&reader](double &progress) { return readValue(reader, progress); }));
+    };
+    const auto readPotionState = [&reader, &value]()
+    {
+        uint32_t count = 0;
+
+        if (reader.version() < SaveVersionItemCraftState)
+        {
+            return true;
+        }
+
+        if (!readValue(reader, count) || !canReadSerializedElementCount(reader, count))
+        {
+            return false;
+        }
+
+        value.potionEffects.resize(count);
+
+        for (TimedPotionEffect &effect : value.potionEffects)
+        {
+            if (!readValue(reader, effect.kind) || !readValue(reader, effect.key) || !readValue(reader, effect.amount)
+                || !readValue(reader, effect.remainingSeconds))
+            {
+                return false;
+            }
+        }
+
+        return readValue(reader, value.potionSteps);
+    };
+    const auto readRotationState = [&reader, &value]()
+    {
+        return reader.version() < SaveVersionElementalRotation || readValue(reader, value.elementalRotationDisabled);
+    };
+    const auto readTimers = [&reader, &value]()
+    {
+        return reader.version() < SaveVersionMawCharacterTimers
+            || (readValue(reader, value.poisonSeconds) && readValue(reader, value.divineProtectionReadyGameMinutes)
+                && readValue(reader, value.legendaryProtectionReadyGameMinutes));
+    };
+    const auto readBags = [&reader, &value]()
+    {
+        uint32_t count = 0;
+
+        if (reader.version() < SaveVersionMawMultibag)
+        {
+            return true;
+        }
+
+        if (!readValue(reader, value.currentBag) || !readValue(reader, count)
+            || !canReadSerializedElementCount(reader, count))
+        {
+            return false;
+        }
+
+        for (uint32_t index = 0; index < count; ++index)
+        {
+            uint8_t bag = 0;
+            std::vector<InventoryItem> items;
+
+            if (!readValue(reader, bag) || !readValue(reader, items))
+            {
+                return false;
+            }
+
+            value.storedBags[bag] = std::move(items);
+        }
+
+        return true;
+    };
+    return readValue(reader, present)
+        && (!present
+            || (readValue(reader, value.rememberedMasteries)
+                && readValue(reader, value.coverDisabled)
+                && readValue(reader, value.manaShieldDisabled)
+                && readClassState()
+                && readPotionState()
+                && readRotationState()
+                && readTimers()
+                && readBags()
+                && (reader.version() < SaveVersionProgressionMasteries
+                    || (readValue(reader, value.progressionStoredMasteries)
+                        && readValue(reader, value.soloStoredMasteries)))
+                && (reader.version() < SaveVersionMawBagTags
+                    || (readValue(reader, value.craftingBags) && readValue(reader, value.alchemyBags)))));
+}
+
+// One byte for a Standard item; the fields follow only when a ruleset set any.
+void writeValue(BinaryWriter &writer, const ItemRulesetFields &value)
+{
+    const bool present = !value.empty();
+    writeValue(writer, present);
+
+    if (!present)
+    {
+        return;
+    }
+
+    writeValue(writer, value.secondStandardEnchantId);
+    writeValue(writer, value.secondStandardEnchantPower);
+    writeValue(writer, value.lootRarity);
+    writeValue(writer, value.legendaryAffixId);
+    writeValue(writer, value.itemPower);
+    writeValue(writer, value.dropLevel);
+    writeValue(writer, value.qualityPercent);
+    writeValue(writer, value.craftSeed);
+    writeValue(writer, value.potionCharges);
+    writeValue(writer, value.craftCount);
+    writeValue(writer, value.craftState);
+    writeValue(writer, value.dimensionMapId);
+    writeValue(writer, value.dimensionAffixes);
+    writeValue(writer, value.dimensionActiveSlots);
+    writeValue(writer, value.dimensionPower);
+    writeValue(writer, value.ancientTier);
+    writeValue(writer, value.lootFiltered);
+}
+
+void writeValue(BinaryWriter &writer, const ActorRulesetFacts &value)
+{
+    const bool present = !value.empty();
+    writeValue(writer, present);
+
+    if (!present)
+    {
+        return;
+    }
+
+    writeValue(writer, value.level);
+    writeValue(writer, value.familyLevel);
+    writeValue(writer, value.tier);
+    writeValue(writer, value.bossAffix);
+    writeValue(writer, value.bossHealthMultiplier);
+    writeValue(writer, value.bossDamageMultiplier);
+    writeValue(writer, value.attack1Damage);
+    writeValue(writer, value.attack2Damage);
+    writeValue(writer, value.experience);
+    writeValue(writer, value.maxHp);
+    writeValue(writer, value.risen);
+    writeValue(writer, value.bossLevelDraw);
+    writeValue(writer, value.spearDamageTaken);
+    writeValue(writer, value.legendaryDamageTaken);
+    writeValue(writer, value.unique);
+    writeValue(writer, value.doomSpecialAttack);
+    writeValue(writer, value.regeneratingHits);
+}
+
+bool readValue(BinaryReader &reader, ActorRulesetFacts &value)
+{
+    bool present = false;
+
+    if (!readValue(reader, present))
+    {
+        return false;
+    }
+
+    value = {};
+    return !present
+        || (readValue(reader, value.level)
+            && readValue(reader, value.familyLevel)
+            && readValue(reader, value.tier)
+            && readValue(reader, value.bossAffix)
+            && readValue(reader, value.bossHealthMultiplier)
+            && readValue(reader, value.bossDamageMultiplier)
+            && readValue(reader, value.attack1Damage)
+            && readValue(reader, value.attack2Damage)
+            && readValue(reader, value.experience)
+            && readValue(reader, value.maxHp)
+            && (reader.version() < SaveVersionRisenActors || readValue(reader, value.risen))
+            && (reader.version() < SaveVersionBossLevelDraw
+                || (readValue(reader, value.bossLevelDraw) && readValue(reader, value.spearDamageTaken)
+                    && readValue(reader, value.legendaryDamageTaken)))
+            && (reader.version() < SaveVersionUniqueMonsters || readValue(reader, value.unique))
+            && (reader.version() < SaveVersionMawChallengeModes || readValue(reader, value.doomSpecialAttack))
+            && (reader.version() < SaveVersionRegeneratingHits || readValue(reader, value.regeneratingHits)));
+}
+
+void writeValue(BinaryWriter &writer, const MawDimensionRun &value)
+{
+    writeValue(writer, value.affixes);
+    writeValue(writer, value.power);
+    writeValue(writer, value.families);
+    writeValue(writer, value.entering);
+    writeValue(writer, value.completed);
+    writeValue(writer, value.questTier);
+}
+
+bool readValue(BinaryReader &reader, MawDimensionRun &value)
+{
+    return readValue(reader, value.affixes)
+        && readValue(reader, value.power)
+        && readValue(reader, value.families)
+        && readValue(reader, value.entering)
+        && readValue(reader, value.completed)
+        && readValue(reader, value.questTier);
+}
+
+void writeValue(BinaryWriter &writer, const MawGameState &value)
+{
+    writeValue(writer, value.continentLevels);
+    writeValue(writer, value.bankedExperience);
+    writeValue(writer, value.bankedLevel);
+    writeValue(writer, value.mapResetCounts);
+    writeValue(writer, value.completedMaps);
+    writeValue(writer, value.celestialPity);
+    writeValue(writer, value.legendaryPity);
+    writeValue(writer, value.primordialPity);
+    writeValue(writer, value.artifactPity);
+    writeValue(writer, value.artifactDrops);
+    writeValue(writer, value.legendaryAffixDrops);
+    writeValue(writer, value.auraHolders);
+    writeValue(writer, value.craftingPity);
+    writeValue(writer, value.dimensionRuns);
+    writeValue(writer, value.dimensionQuest.tierLevel);
+    writeValue(writer, value.dimensionQuest.mapGiven);
+    writeValue(writer, value.dimensionQuest.cleared);
+    writeValue(writer, value.dimensionQuest.clearedLevel);
+    writeValue(writer, value.dimensionQuest.clearedMapName);
+    writeValue(writer, value.dimensionQuest.done);
+    writeValue(writer, value.mapDropPity);
+    writeValue(writer, value.mapsDropped);
+    writeValue(writer, value.soldUniqueItems);
+    writeValue(writer, value.fixedAuraMaps);
+    writeValue(writer, value.alchemistMember);
+    writeValue(writer, value.heldFood);
+    writeValue(writer, value.broodlordPity);
+    writeValue(writer, value.omnipotentPity);
+    writeValue(writer, value.clearedSinceRefill);
+    writeValue(writer, value.mapVisits);
+    writeValue(writer, value.dimensionRunsCleared);
+    writeValue(writer, value.bountiesClaimed);
+    writeValue(writer, value.usedStatDecorations);
+    writeValue(writer, value.madnessDeaths);
+}
+
+void writeValue(BinaryWriter &writer, const MawMapVisit &value)
+{
+    writeValue(writer, value.slain);
+    writeValue(writer, value.counted);
+    writeValue(writer, value.lastRefillDay);
+}
+
+bool readValue(BinaryReader &reader, MawMapVisit &value)
+{
+    return readValue(reader, value.slain) && readValue(reader, value.counted) && readValue(reader, value.lastRefillDay);
+}
+
+bool readValue(BinaryReader &reader, MawGameState &value)
+{
+    return readValue(reader, value.continentLevels)
+        && readValue(reader, value.bankedExperience)
+        && readValue(reader, value.bankedLevel)
+        && readValue(reader, value.mapResetCounts)
+        && readValue(reader, value.completedMaps)
+        && (reader.version() < SaveVersionMawLootState
+            || (readValue(reader, value.celestialPity)
+                && readValue(reader, value.legendaryPity)
+                && readValue(reader, value.primordialPity)
+                && readValue(reader, value.artifactPity)
+                && readValue(reader, value.artifactDrops)
+                && readValue(reader, value.legendaryAffixDrops)))
+        && (reader.version() < SaveVersionMawAuras || readValue(reader, value.auraHolders))
+        && (reader.version() < SaveVersionMawCraftingPity || readValue(reader, value.craftingPity))
+        && (reader.version() < SaveVersionDimensionMaps
+            || (readValue(reader, value.dimensionRuns)
+                && readValue(reader, value.dimensionQuest.tierLevel)
+                && readValue(reader, value.dimensionQuest.mapGiven)
+                && readValue(reader, value.dimensionQuest.cleared)
+                && readValue(reader, value.dimensionQuest.clearedLevel)
+                && readValue(reader, value.dimensionQuest.clearedMapName)
+                && readValue(reader, value.dimensionQuest.done)
+                && readValue(reader, value.mapDropPity)
+                && readValue(reader, value.mapsDropped)))
+        && (reader.version() < SaveVersionMawCharacterTimers || readValue(reader, value.soldUniqueItems))
+        && (reader.version() < SaveVersionMawFixedAuras || readValue(reader, value.fixedAuraMaps))
+        && (reader.version() < SaveVersionMawAlchemist || readValue(reader, value.alchemistMember))
+        && (reader.version() < SaveVersionMawChallengeModes
+            || (readValue(reader, value.heldFood)
+                && readValue(reader, value.broodlordPity)
+                && readValue(reader, value.omnipotentPity)))
+        && (reader.version() < SaveVersionMawClearedMaps ? (value.clearedSinceRefill = value.completedMaps, true)
+                                                         : readValue(reader, value.clearedSinceRefill))
+        && (reader.version() < SaveVersionMawMapVisits
+            || (readValue(reader, value.mapVisits)
+                && readValue(reader, value.dimensionRunsCleared)
+                && readValue(reader, value.bountiesClaimed)))
+        && (reader.version() < SaveVersionMawUsedStatDecorations || readValue(reader, value.usedStatDecorations))
+        && (reader.version() < SaveVersionMawMadnessDeaths || readValue(reader, value.madnessDeaths));
+}
+
+// Before the tier was saved apart: a drop's rarity tells its tier (crafted changes before then cannot be told).
+uint8_t ancientTierOf(const ItemRulesetFields &value)
+{
+    // MawRarity: Ancient 5, Primordial 6, Celestial 8.
+    return value.lootRarity == 5 ? 1 : value.lootRarity == 6 || value.lootRarity == 8 ? 2 : 0;
+}
+
+bool readValue(BinaryReader &reader, ItemRulesetFields &value)
+{
+    bool present = false;
+
+    if (!readValue(reader, present))
+    {
+        return false;
+    }
+
+    value = {};
+    return !present
+        || (readValue(reader, value.secondStandardEnchantId)
+            && readValue(reader, value.secondStandardEnchantPower)
+            && readValue(reader, value.lootRarity)
+            && readValue(reader, value.legendaryAffixId)
+            && readValue(reader, value.itemPower)
+            && readValue(reader, value.dropLevel)
+            && readValue(reader, value.qualityPercent)
+            && readValue(reader, value.craftSeed)
+            && readValue(reader, value.potionCharges)
+            && (reader.version() < SaveVersionItemCraftState
+                || (readValue(reader, value.craftCount) && readValue(reader, value.craftState)))
+            && (reader.version() < SaveVersionDimensionMaps
+                || (readValue(reader, value.dimensionMapId)
+                    && readValue(reader, value.dimensionAffixes)
+                    && readValue(reader, value.dimensionActiveSlots)
+                    && readValue(reader, value.dimensionPower)))
+            && (reader.version() >= SaveVersionItemAncientTier ? readValue(reader, value.ancientTier)
+                                                               : (value.ancientTier = ancientTierOf(value), true))
+            && (reader.version() < SaveVersionLootFilterPresets || readValue(reader, value.lootFiltered)));
 }
 
 void writeValue(BinaryWriter &writer, const InventoryItem &value)
@@ -553,6 +1036,7 @@ void writeValue(BinaryWriter &writer, const InventoryItem &value)
     writeValue(writer, value.maxCharges);
     writeValue(writer, value.temporaryBonusRemainingSeconds);
     writeValue(writer, value.hardened);
+    writeValue(writer, value.rulesetFields);
 }
 
 bool readValue(BinaryReader &reader, InventoryItem &value)
@@ -574,7 +1058,8 @@ bool readValue(BinaryReader &reader, InventoryItem &value)
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.currentCharges))
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.maxCharges))
         && readValue(reader, value.temporaryBonusRemainingSeconds)
-        && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened));
+        && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened))
+        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields));
 }
 
 void writeValue(BinaryWriter &writer, const LloydBeacon &value)
@@ -741,6 +1226,7 @@ void writeValue(BinaryWriter &writer, const EquippedItemRuntimeState &value)
     writeValue(writer, value.maxCharges);
     writeValue(writer, value.temporaryBonusRemainingSeconds);
     writeValue(writer, value.hardened);
+    writeValue(writer, value.rulesetFields);
 }
 
 bool readValue(BinaryReader &reader, EquippedItemRuntimeState &value)
@@ -756,7 +1242,8 @@ bool readValue(BinaryReader &reader, EquippedItemRuntimeState &value)
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.currentCharges))
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.maxCharges))
         && readValue(reader, value.temporaryBonusRemainingSeconds)
-        && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened));
+        && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened))
+        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields));
 }
 
 void writeValue(BinaryWriter &writer, const CharacterEquipmentRuntimeState &value)
@@ -872,6 +1359,29 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.lloydsBeacons);
     writeValue(writer, value.inventory);
     writeValue(writer, value.timedPrimaryStatBonuses);
+    writeValue(writer, value.techPoints);
+    writeValue(writer, value.rulesetState);
+    writeValue(writer, value.extraQuickSpellNames);
+    writeValue(writer, value.quickItemSlots);
+}
+
+// Saves before SaveVersionWideExperience hold a character's experience in 32 bits.
+bool readCharacterExperience(BinaryReader &reader, uint64_t &experience)
+{
+    if (reader.version() >= SaveVersionWideExperience)
+    {
+        return readValue(reader, experience);
+    }
+
+    uint32_t narrowExperience = 0;
+
+    if (!readValue(reader, narrowExperience))
+    {
+        return false;
+    }
+
+    experience = narrowExperience;
+    return true;
 }
 
 bool readValue(BinaryReader &reader, Character &value)
@@ -892,7 +1402,7 @@ bool readValue(BinaryReader &reader, Character &value)
         && readValue(reader, value.birthYear)
         && readValue(reader, value.sexId)
         && readValue(reader, value.raceId)
-        && readValue(reader, value.experience)
+        && readCharacterExperience(reader, value.experience)
         && readValue(reader, value.level)
         && readValue(reader, value.skillPoints)
         && readValue(reader, value.might)
@@ -937,7 +1447,11 @@ bool readValue(BinaryReader &reader, Character &value)
         && readValue(reader, value.lloydsBeacons)
         && readValue(reader, value.inventory)
         && (reader.version() < SaveVersionTimedPrimaryStatBonuses
-            || readValue(reader, value.timedPrimaryStatBonuses));
+            || readValue(reader, value.timedPrimaryStatBonuses))
+        && (reader.version() < SaveVersionCharacterTechPoints || readValue(reader, value.techPoints))
+        && (reader.version() < SaveVersionCharacterRulesetState || readValue(reader, value.rulesetState))
+        && (reader.version() < SaveVersionExtraQuickSpells || readValue(reader, value.extraQuickSpellNames))
+        && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots));
 }
 
 void writeValue(BinaryWriter &writer, const PartyBuffState &value)
@@ -2463,6 +2977,27 @@ void writeValue(BinaryWriter &writer, const MapDeltaActor &value)
     writeValue(writer, value.mm9Civilian);
     writeValue(writer, value.mm9Guard);
     writeValue(writer, value.proceduralDeathLoot);
+    writeValue(writer, value.rulesetFacts);
+    writeValue(writer, value.spawnedAfterFill);
+    writeValue(writer, value.summonerMemberIndex);
+}
+
+bool readHitPoints(BinaryReader &reader, int32_t &value)
+{
+    if (reader.version() >= SaveVersionActorRulesetFacts)
+    {
+        return readValue(reader, value);
+    }
+
+    int16_t narrowHitPoints = 0;
+
+    if (!readValue(reader, narrowHitPoints))
+    {
+        return false;
+    }
+
+    value = narrowHitPoints;
+    return true;
 }
 
 bool readValue(BinaryReader &reader, MapDeltaActor &value)
@@ -2470,7 +3005,7 @@ bool readValue(BinaryReader &reader, MapDeltaActor &value)
     if (!(readValue(reader, value.name)
         && readValue(reader, value.npcId)
         && readValue(reader, value.attributes)
-        && readValue(reader, value.hp)
+        && readHitPoints(reader, value.hp)
         && readValue(reader, value.hostilityType)
         && readValue(reader, value.monsterInfoId)
         && readValue(reader, value.monsterId)
@@ -2533,7 +3068,9 @@ bool readValue(BinaryReader &reader, MapDeltaActor &value)
         return false;
     }
 
-    return true;
+    return (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.rulesetFacts))
+        && (reader.version() < SaveVersionActorSpawnedAfterFill || readValue(reader, value.spawnedAfterFill))
+        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex));
 }
 
 void writeValue(BinaryWriter &writer, const MapDeltaSpriteObject &value)
@@ -2570,6 +3107,7 @@ void writeValue(BinaryWriter &writer, const MapDeltaSpriteObject &value)
     writeValue(writer, value.semanticPlacedPickup);
     writeValue(writer, value.semanticLootContainer);
     writeValue(writer, value.semanticPolicyHidden);
+    writeValue(writer, value.heldItem);
 }
 
 bool readValue(BinaryReader &reader, MapDeltaSpriteObject &value)
@@ -2606,7 +3144,8 @@ bool readValue(BinaryReader &reader, MapDeltaSpriteObject &value)
                 && readValue(reader, value.semanticLootContainerId)
                 && readValue(reader, value.semanticPlacedPickup)
                 && readValue(reader, value.semanticLootContainer)
-                && readValue(reader, value.semanticPolicyHidden)));
+                && readValue(reader, value.semanticPolicyHidden)))
+        && (reader.version() < SaveVersionIndoorHeldItems || readValue(reader, value.heldItem));
 }
 
 void writeValue(BinaryWriter &writer, const MapDeltaDoor &value)
@@ -3053,6 +3592,8 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.mm9HelpCooldownSeconds);
     writeValue(writer, value.mm9PlayerHitCount);
     writeValue(writer, value.proceduralDeathLoot);
+    writeValue(writer, value.rulesetFacts);
+    writeValue(writer, value.summonerMemberIndex);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
@@ -3206,7 +3747,9 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
                 && readValue(reader, value.mm9HelpCooldownSeconds)
                 && readValue(reader, value.mm9PlayerHitCount)))
         && (reader.version() < SaveVersionActorProceduralDeathLoot
-            || readValue(reader, value.proceduralDeathLoot));
+            || readValue(reader, value.proceduralDeathLoot))
+        && (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.rulesetFacts))
+        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)
@@ -3811,6 +4354,56 @@ bool readValue(BinaryReader &reader, IndoorSceneRuntime::Snapshot &value)
         && readValue(reader, value.mechanismAccumulatorMilliseconds);
 }
 
+void writeValue(BinaryWriter &writer, const RulesetSelection &value)
+{
+    writeValue(writer, value.id);
+    writeValue(writer, value.options.difficulty);
+    writeValue(writer, value.options.progression);
+    writeValue(writer, value.options.challengeMode);
+    writeValue(writer, value.options.randomizer);
+    writeValue(writer, value.options.preferences.homingProjectiles);
+    writeValue(writer, value.options.preferences.friendlyFire);
+    writeValue(writer, value.options.preferences.lootFilter.preset);
+    writeValue(writer, value.options.preferences.lootFilter.goldKinds);
+    writeValue(writer, value.options.preferences.lootFilter.leaveOnGround);
+    writeValue(writer, value.options.preferences.disintegration);
+}
+
+bool readLootFilter(BinaryReader &reader, RulesetLootFilter &filter)
+{
+    if (reader.version() >= SaveVersionLootFilterPresets)
+    {
+        return readValue(reader, filter.preset) && readValue(reader, filter.goldKinds)
+            && readValue(reader, filter.leaveOnGround);
+    }
+
+    uint8_t legacyRarity = 0;
+
+    if (!readValue(reader, legacyRarity))
+    {
+        return false;
+    }
+
+    filter = rulesetLootFilterFromLegacyRarity(legacyRarity);
+    return true;
+}
+
+bool readValue(BinaryReader &reader, RulesetSelection &value)
+{
+    return readValue(reader, value.id)
+        && readValue(reader, value.options.difficulty)
+        && readValue(reader, value.options.progression)
+        && readValue(reader, value.options.challengeMode)
+        && readValue(reader, value.options.randomizer)
+        && readValue(reader, value.options.preferences.homingProjectiles)
+        && readValue(reader, value.options.preferences.friendlyFire)
+        && readLootFilter(reader, value.options.preferences.lootFilter)
+        && (reader.version() < SaveVersionMawChallengeModes
+            || readValue(reader, value.options.preferences.disintegration))
+        && !value.id.empty()
+        && rulesetOptionsValid(value.options);
+}
+
 void writeValue(BinaryWriter &writer, const GameSaveData &value)
 {
     writeValue(writer, value.currentSceneKind);
@@ -3834,6 +4427,9 @@ void writeValue(BinaryWriter &writer, const GameSaveData &value)
     writeValue(writer, value.heldInventoryItemGrabOffsetX);
     writeValue(writer, value.heldInventoryItemGrabOffsetY);
     writeValue(writer, value.requiredContentPackages);
+    writeValue(writer, value.ruleset);
+    writeValue(writer, value.randomRootSeed);
+    writeValue(writer, value.mawState);
     writeValue(writer, value.saveName);
     writeValue(writer, value.previewBmp);
 }
@@ -3864,6 +4460,9 @@ bool readValue(BinaryReader &reader, GameSaveData &value)
         && (reader.version() < SaveVersionHeldCursorItem || readValue(reader, value.heldInventoryItemGrabOffsetY))
         && (reader.version() < SaveVersionRequiredContentPackages
             || readValue(reader, value.requiredContentPackages))
+        && (reader.version() < SaveVersionRuleset || readValue(reader, value.ruleset))
+        && (reader.version() < SaveVersionRandomRootSeed || readValue(reader, value.randomRootSeed))
+        && (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.mawState))
         && readValue(reader, value.saveName)
         && readValue(reader, value.previewBmp);
     value.cameraAnglesValid = reader.version() >= SaveVersionIndoorCamera || value.currentSceneKind == SceneKind::Outdoor;
@@ -4271,6 +4870,47 @@ void migrateLegacyMapJournalNotes(GameSaveData &data, uint32_t sourceSaveVersion
     }
 }
 
+void migrateLegacyMm6FaceTextureKeys(
+    GameSaveData &data,
+    const std::function<bool(const std::string &mapFileName)> &isMm6IndoorMap)
+{
+    if (data.sourceSaveVersion >= SaveVersionWideExperience)
+    {
+        return;
+    }
+
+    // MM6's scripts make no cog swaps (every reference is negative), so any key without the face bit is a face.
+    const auto migrate = [](std::optional<EventRuntimeState> &state)
+    {
+        if (!state)
+        {
+            return;
+        }
+
+        std::unordered_map<uint32_t, std::string> overrides;
+
+        for (auto &[key, textureName] : state->textureOverrides)
+        {
+            overrides[EventRuntime::indoorFaceTextureOverrideKey(key)] = std::move(textureName);
+        }
+
+        state->textureOverrides = std::move(overrides);
+    };
+
+    if (data.currentSceneKind == SceneKind::Indoor && isMm6IndoorMap(data.mapFileName))
+    {
+        migrate(data.indoorScene.eventRuntimeState);
+    }
+
+    for (auto &[mapFileName, snapshot] : data.indoorSceneStates)
+    {
+        if (isMm6IndoorMap(mapFileName))
+        {
+            migrate(snapshot.eventRuntimeState);
+        }
+    }
+}
+
 void migrateLegacyConsumedCorpseMarkers(GameSaveData &data, uint32_t sourceSaveVersion)
 {
     if (sourceSaveVersion >= SaveVersionConsumedCorpseMarkers)
@@ -4336,13 +4976,19 @@ std::unordered_map<std::string, uint32_t> collectRequiredContentPackages(
         result[pHouseEntry->packageId] = foundSchema != loadedPackageSchemas.end() ? foundSchema->second : 0;
     }
 
+    // A ruleset game needs its ruleset package at the same content schema.
+    if (!data.ruleset.isStandard())
+    {
+        const std::string packageId = RulesetContentPackagePrefix + data.ruleset.id;
+        const auto foundSchema = loadedPackageSchemas.find(packageId);
+        result[packageId] = foundSchema != loadedPackageSchemas.end() ? foundSchema->second : 0;
+    }
+
     return result;
 }
 
-bool validateRequiredContentPackages(
+bool validateRequiredContentPackageSchemas(
     const GameSaveData &data,
-    const ItemTable &itemTable,
-    const HouseTable &houseTable,
     const std::unordered_map<std::string, uint32_t> &loadedPackageSchemas,
     std::string &error)
 {
@@ -4364,6 +5010,21 @@ bool validateRequiredContentPackages(
                 + std::to_string(requiredSchema) + ", loaded schema is " + std::to_string(foundPackage->second);
             return false;
         }
+    }
+
+    return true;
+}
+
+bool validateRequiredContentPackages(
+    const GameSaveData &data,
+    const ItemTable &itemTable,
+    const HouseTable &houseTable,
+    const std::unordered_map<std::string, uint32_t> &loadedPackageSchemas,
+    std::string &error)
+{
+    if (!validateRequiredContentPackageSchemas(data, loadedPackageSchemas, error))
+    {
+        return false;
     }
 
     for (uint32_t itemId : persistentSaveItemIds(data))
@@ -4510,6 +5171,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     migrateLegacyMapAutonotes(data, version);
     migrateLegacyMapHistory(data, version);
     migrateLegacyMapJournalNotes(data, version);
+    data.sourceSaveVersion = version;
 
     return data;
 }

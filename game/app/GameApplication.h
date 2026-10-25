@@ -6,6 +6,7 @@
 #include "game/app/GameInputSystem.h"
 #include "game/app/GameSettings.h"
 #include "game/app/GameUpdater.h"
+#include "game/app/NewGameOptions.h"
 #include "game/app/GameSession.h"
 #include "engine/ApplicationConfig.h"
 #include "engine/EngineApplication.h"
@@ -29,6 +30,7 @@
 #include "game/debug/MenuInputTour.h"
 #include "game/maps/SaveGame.h"
 #include "game/scene/IMapSceneRuntime.h"
+#include "game/ui/screens/LoadGameScreen.h"
 #include "game/ui/screens/LoadingOverlayScreen.h"
 
 #include <cstddef>
@@ -44,6 +46,7 @@
 namespace OpenYAMM::Game
 {
 class HeadlessGameplayDiagnostics;
+struct MawTestPartyCatalog;
 struct ScenarioGameApplicationAccess;
 struct GameApplicationTestAccess;
 struct WinGameCertificate;
@@ -163,6 +166,11 @@ private:
 
     bool loadGameData(Engine::AssetFileSystem &assetFileSystem);
     bool ensureCommonGameDataLoaded();
+    // Loads the common data under this ruleset's tables when they are not the loaded ones. Tear the session down
+    // first: the reload replaces the tables that runtimes and screens point into.
+    bool activateRuleset(const std::string &rulesetId, std::string &error);
+    // The pause menu's Rules tab: what the ruleset lets change mid-game.
+    bool applyRulesetOptions(const RulesetOptions &options, std::string &error);
     void updateDeferredStartupLoads();
     // The active scene's (outdoor or indoor) effects and actor models.
     WorldFxSystem &activeWorldFxSystem();
@@ -182,6 +190,9 @@ private:
     void beginDebugConsoleFrame();
     void renderDebugConsoleFrame(int width, int height);
     bool processPendingDebugMapJump();
+    // The debug console's `testparty`: a new MAW game with a test party (game/debug/MawTestParties.h).
+    bool processPendingTestParty();
+    bool loadMawTestPartyCatalog(MawTestPartyCatalog &catalog, std::string &error) const;
     void shutdownRenderer();
     Party &ensureSessionPartyState();
     void bindPartyDependencies(Party &party) const;
@@ -201,6 +212,8 @@ private:
     bool processPendingReturnToMainMenu();
     bool processPendingDimensionDoorOverlay();
     bool executeCurrentMapOnLeaveEvents();
+    // What the party's rules do as it leaves the current map (MonsterRules::leaveMap).
+    void applyRulesMapLeave();
     bool processPendingPartyDefeat();
     void handleCompletedPartyDefeatScreen();
     void handleCompletedEventMovieScreen();
@@ -230,6 +243,8 @@ private:
         const std::string &saveName = "",
         const std::vector<uint8_t> &previewBmp = {});
     bool quickLoadFromPath(const std::filesystem::path &path, bool initializeView);
+    // What saving costs in food at the party's place now (MAW from Nightmare), zero without a party.
+    SaveFoodCost saveFoodCost();
     void openMainMenuScreen();
     void openMenuScreen(bool paused);
     void openPauseMenuScreen();
@@ -246,8 +261,7 @@ private:
     bool startNewSessionFromCharacterCreation(const std::vector<Character> &characters, bool initializeView = true);
     bool startNewSessionFromCharacterCreation(
         const std::vector<Character> &characters,
-        uint32_t continentId,
-        bool preserveDebugLoadout,
+        const NewGameOptions &options,
         bool initializeView);
     bool loadSessionFromPath(const std::filesystem::path &path);
     void beginLoadingOverlay(
@@ -326,6 +340,9 @@ private:
     GameplayTraceMovementCapture m_traceMovementCapture = {};
     bool m_pendingQuickSave = false;
     bool m_pendingQuickLoad = false;
+    // When quick load last stopped to warn what loading costs now (MAW's pending Beyond Madness death); a second
+    // press soon after loads.
+    std::optional<uint64_t> m_quickLoadWarnedTicks;
     bool m_pendingAdvanceTime = false;
     bool m_bootSeededDwiOnNextRendererInit = false;
     bool m_commonGameDataLoaded = false;
@@ -363,6 +380,8 @@ private:
     bool m_debugConsoleFrameBegun = false;
     bool m_debugConsoleCommandsRegistered = false;
     std::optional<PendingDebugMapJump> m_pendingDebugMapJump;
+    // The arguments of a `testparty` that starts a new game, run at the start of the next frame.
+    std::optional<std::vector<std::string>> m_pendingTestParty;
     // A map move held for a few frames while the leaving map's autosave captures its preview.
     std::optional<EventRuntimeState::PendingMapMove> m_mapMoveAwaitingAutosave;
     std::vector<EffectHandle> m_debugEffectHandles;

@@ -1653,6 +1653,13 @@ TEST_CASE("default party seed grants first member full spell access and preserve
     for (const std::string &skillName : OpenYAMM::Game::allCanonicalSkillNames())
     {
         const OpenYAMM::Game::CharacterSkill *pSkill = pMember->findSkill(skillName);
+
+        if (OpenYAMM::Game::isTechnologySkill(skillName) || OpenYAMM::Game::isRulesetSkill(skillName))
+        {
+            CHECK(pSkill == nullptr);
+            continue;
+        }
+
         REQUIRE(pSkill != nullptr);
         CHECK(pSkill->level == 200);
         CHECK(pSkill->mastery == OpenYAMM::Game::SkillMastery::Grandmaster);

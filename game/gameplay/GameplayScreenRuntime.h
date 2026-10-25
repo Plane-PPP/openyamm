@@ -4,7 +4,9 @@
 #include "game/render/CombatActorHealthBarPolicy.h"
 #include "game/tables/ChestTable.h"
 #include "game/events/EventDialogContent.h"
+#include "game/gameplay/CombatLog.h"
 #include "game/gameplay/GameplayDialogUiFlow.h"
+#include "game/ui/GameplayCombatLogPanel.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/GameplayTouchControl.h"
 #include "game/ui/GameplayOverlayAdapters.h"
@@ -85,6 +87,7 @@ public:
     using SaveGameExecutor = std::function<bool(const PreparedSaveGameRequest &request)>;
 
     explicit GameplayScreenRuntime(GameSession &session);
+    ~GameplayScreenRuntime();
 
     void bindAudioSystem(GameAudioSystem *pAudioSystem);
     void bindSettings(GameSettings *pSettings);
@@ -108,6 +111,8 @@ public:
     float partyFootZ() const;
     GameAudioSystem *audioSystem() const;
     const ItemTable *itemTable() const;
+    // The active ruleset's player's guide address, empty for none.
+    const std::string &rulesetGuideUrl() const;
     const StandardItemEnchantTable *standardItemEnchantTable() const;
     const SpecialItemEnchantTable *specialItemEnchantTable() const;
     const ClassSkillTable *classSkillTable() const;
@@ -184,6 +189,12 @@ public:
     void updateStatusBarEvent(float deltaSeconds) const;
     void setStatusBarHoverText(const std::string &text) const;
     void clearStatusBarHoverText() const;
+    // The world's hover text, which the world clears again without touching an overlay's.
+    void setWorldStatusBarHoverText(const std::string &text) const;
+    void clearWorldStatusBarHoverText() const;
+    // The hovered ground item's name above the pointer (cleared with the hover text); an empty text clears it.
+    void setWorldItemHoverLabel(const std::string &text, uint32_t colorAbgr, float screenX, float screenY) const;
+    const GameplayUiController::StatusBarState &statusBarState() const;
     GameplayContextActionState &contextActionState() const;
     const GameplayContextActionState &contextActionStateReadOnly() const;
     void clearContextActionState() const;
@@ -409,6 +420,12 @@ public:
     void clearHudRenderBackend();
     void releaseHudGpuResources(bool destroyBgfxResources);
     void clearSharedUiRuntime();
+    // The combat log the damage rules and the hit wording feed while the combat_log setting is on; cleared with the
+    // shared UI (a new game or a load).
+    CombatLog &combatLog();
+    const CombatLog &combatLog() const;
+    // The docked log's view: open, scrolled, the line opened, and its laid-out text.
+    GameplayCombatLogPanel &combatLogPanel();
     bool hasHudRenderResources() const;
     void prepareHudView(int width, int height) const;
     void submitHudQuadBatch(const std::vector<GameplayHudBatchQuad> &quads) const;
@@ -431,6 +448,9 @@ public:
     void collectGameplayMinimapMarkers(std::vector<GameplayMinimapMarkerState> &markers) const;
     bool ensureTownPortalDestinationsLoaded();
     bool ensureDimensionDoorDestinationsLoaded();
+    // The next Dimension Door overlay offers its destinations before the Cross Continents quest does (an event's
+    // evt.OpenDimensionDoor(true)); the spell and the HUD button open it with the quest's gate.
+    void setDimensionDoorWithoutQuest(bool withoutQuest);
     bool shouldTownPortalCastOpenDimensionDoor() const;
     bool openDimensionDoorOverlay(
         size_t casterMemberIndex,
@@ -494,6 +514,8 @@ public:
     bool renderHouseVideoFrame(float x, float y, float quadWidth, float quadHeight) const;
 
 private:
+    CombatLog m_combatLog;
+    GameplayCombatLogPanel m_combatLogPanel;
     struct DelayedSpeechReaction
     {
         size_t memberIndex = 0;
@@ -511,6 +533,7 @@ private:
     void returnToHouseBankMainDialogShared();
 
     mutable CombatActorHealthBarRuntime m_enemyHealthBars;
+    bool m_dimensionDoorWithoutQuest = false;
     GameSession &m_session;
     GameAudioSystem *m_pAudioSystem = nullptr;
     GameSettings *m_pSettings = nullptr;

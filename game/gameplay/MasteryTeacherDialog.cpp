@@ -4,6 +4,7 @@
 #include "game/tables/MergedBaseTables.h"
 #include "game/tables/NpcDialogTable.h"
 #include "game/party/Party.h"
+#include "game/rules/GameRules.h"
 
 #include <cctype>
 
@@ -41,17 +42,6 @@ std::string trimCopy(const std::string &text)
     return text.substr(start, end - start);
 }
 
-std::optional<std::string> skillNameForMergedSkillId(uint32_t skillId)
-{
-    const std::vector<std::string> skillNames = allCanonicalSkillNames();
-
-    if (skillId >= skillNames.size())
-    {
-        return std::nullopt;
-    }
-
-    return skillNames[skillId];
-}
 
 SkillMastery masteryForMergedTeacherTopic(uint32_t mastery)
 {
@@ -101,7 +91,7 @@ std::optional<MasteryTeacherTopicDefinition> resolveMasteryTeacherTopic(
         return std::nullopt;
     }
 
-    const std::optional<std::string> skillName = skillNameForMergedSkillId(definition.skillId);
+    const std::optional<std::string> skillName = skillNameForSkillId(definition.skillId);
     if (!skillName.has_value())
     {
         return std::nullopt;
@@ -146,6 +136,22 @@ uint32_t alreadyHasTextId(SkillMastery mastery)
 int masteryTeacherCost(const std::string &skillName, SkillMastery targetMastery)
 {
     const std::string canonicalSkill = canonicalSkillName(skillName);
+
+    // Technology lessons default to Hesper's prices; a topic's Req. Gold overrides them.
+    if (isTechnologySkill(canonicalSkill))
+    {
+        switch (targetMastery)
+        {
+            case SkillMastery::Expert:
+                return 15000;
+            case SkillMastery::Master:
+                return 40000;
+            case SkillMastery::Grandmaster:
+                return 100000;
+            default:
+                return 0;
+        }
+    }
 
     if (targetMastery == SkillMastery::Expert)
     {
@@ -360,16 +366,19 @@ MasteryRequirementFailure masteryRequirementFailure(
         return MasteryRequirementFailure::General;
     }
 
+    if (pSkill->level < party.rules().skills.masteryRequiredLevel(skillName, targetMastery))
+    {
+        return MasteryRequirementFailure::General;
+    }
+
     if (targetMastery == SkillMastery::Expert)
     {
-        return pSkill->level >= 4
-            ? MasteryRequirementFailure::None
-            : MasteryRequirementFailure::General;
+        return MasteryRequirementFailure::None;
     }
 
     if (targetMastery == SkillMastery::Master)
     {
-        if (pSkill->level < 7 || pSkill->mastery != SkillMastery::Expert)
+        if (pSkill->mastery != SkillMastery::Expert)
         {
             return MasteryRequirementFailure::General;
         }
@@ -418,7 +427,7 @@ MasteryRequirementFailure masteryRequirementFailure(
 
     if (targetMastery == SkillMastery::Grandmaster)
     {
-        if (pSkill->level < 10 || pSkill->mastery != SkillMastery::Master)
+        if (pSkill->mastery != SkillMastery::Master)
         {
             return MasteryRequirementFailure::General;
         }
@@ -516,6 +525,9 @@ std::optional<MasteryTeacherEvaluation> evaluateSkillMasteryTraining(
     {
         evaluation.cost = masteryTeacherCost(evaluation.skillName, evaluation.targetMastery);
     }
+
+    evaluation.cost = party.rules().skills.masteryTeacherCost(
+        *pCharacter, evaluation.skillName, evaluation.targetMastery, evaluation.cost);
 
     const SkillMastery classCap =
         classSkillTable.getEffectiveCap(pCharacter->className, pCharacter->raceId, evaluation.skillName);

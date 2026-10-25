@@ -151,7 +151,7 @@ class PackConfig:
 
     def package(self, package_id):
         if package_id == "engine":
-            return self.packages["engine"]
+            return self.packages[package_id]
         world = self.packages["world"]
         override = self.packages.get(package_id, {})
         return {"core": override.get("core", world.get("core", [])),
@@ -159,7 +159,9 @@ class PackConfig:
 
 
 def package_mount(package_id):
-    return "/engine" if package_id == "engine" else f"/worlds/{package_id}"
+    if package_id == "engine":
+        return "/engine"
+    return f"/worlds/{package_id}"
 
 
 def assign_packs(package_id, entries, config, profile):

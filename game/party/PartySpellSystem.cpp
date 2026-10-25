@@ -10,18 +10,20 @@
 #include "game/party/LloydsBeaconRuntime.h"
 #include "game/party/SpellSchool.h"
 #include "game/party/SpellIds.h"
+#include "game/rules/GameRules.h"
+#include "game/tables/MonsterTable.h"
 #include "game/tables/SpellTable.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <random>
 
 namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr float OeRealtimeRecoveryScale = 2.133333333333333f;
 constexpr float Pi = 3.14159265358979323846f;
 constexpr float SoulDrinkerOutdoorRange = 10240.0f;
 constexpr float CameraVerticalFovRadians = Pi / 3.0f;
@@ -30,12 +32,11 @@ constexpr float ProjectileRightVectorEpsilon = 0.0001f;
 constexpr float SpellFailureRecoveryScale = 0.5f;
 constexpr float JumpSpellVerticalVelocity = 1000.0f;
 constexpr float JumpSpellLift = 5.0f;
-constexpr uint32_t FirstBaseSpellId = spellIdValue(SpellId::TorchLight);
-constexpr uint32_t LastBaseSpellId = spellIdValue(SpellId::SoulDrinker);
 constexpr int16_t SummonWispNormalMonsterId = 97;
 constexpr int16_t SummonWispMasterMonsterId = 98;
 constexpr int16_t SummonWispGrandmasterMonsterId = 99;
-constexpr size_t SummonWispActiveLimit = 5;
+// A wisp the rules add past the limit stays until it dies.
+constexpr float PermanentWispSeconds = 1.0e9f;
 
 constexpr const char *SpellFailedText = "Spell failed";
 constexpr const char *NoValidTargetText = "No valid target exists!";
@@ -200,14 +201,9 @@ bool canApplyEnchantItemSpell(const ItemDefinition &itemDefinition, const Invent
         && item.artifactId == 0;
 }
 
-bool isSummonWispMonsterId(int16_t monsterId)
-{
-    return monsterId == SummonWispNormalMonsterId
-        || monsterId == SummonWispMasterMonsterId
-        || monsterId == SummonWispGrandmasterMonsterId;
-}
-
-size_t activeFriendlyWispCount(const IGameplayWorldRuntime &worldRuntime)
+// The living monsters a party member summoned: MM8 counts every monster whose summoner is the caster, wisp or not
+// (MM8-Rel 0x42c1a0-0x42c1b2).
+size_t summonedMonsterCount(const IGameplayWorldRuntime &worldRuntime, size_t casterMemberIndex)
 {
     size_t count = 0;
 
@@ -216,16 +212,22 @@ size_t activeFriendlyWispCount(const IGameplayWorldRuntime &worldRuntime)
         GameplayRuntimeActorState actor = {};
 
         if (worldRuntime.actorRuntimeState(actorIndex, actor)
-            && isSummonWispMonsterId(actor.monsterId)
+            && actor.summonerMemberIndex == int32_t(casterMemberIndex)
             && !actor.isDead
-            && !actor.isInvisible
-            && !actor.hostileToParty)
+            && !actor.isInvisible)
         {
             ++count;
         }
     }
 
     return count;
+}
+
+// How many monsters a caster's Summon Wisp keeps at once: 1 up to Expert, 3 at Master, 5 at Grandmaster (MM8-Rel
+// 0x42c12b).
+size_t summonWispLimit(SkillMastery skillMastery)
+{
+    return skillMastery == SkillMastery::Grandmaster ? 5 : skillMastery == SkillMastery::Master ? 3 : 1;
 }
 
 int16_t summonWispMonsterIdForMastery(SkillMastery skillMastery)
@@ -237,19 +239,11 @@ int16_t summonWispMonsterIdForMastery(SkillMastery skillMastery)
         : SummonWispNormalMonsterId;
 }
 
+// 15 game minutes a point from Master, 5 below (MM8-Rel 0x42c12b).
 float summonWispDurationSeconds(uint32_t skillLevel, SkillMastery skillMastery)
 {
-    if (skillMastery == SkillMastery::Grandmaster)
-    {
-        return secondsFromHours(static_cast<float>(skillLevel));
-    }
-
-    if (skillMastery == SkillMastery::Master)
-    {
-        return secondsFromMinutes(static_cast<float>(15 * skillLevel));
-    }
-
-    return secondsFromMinutes(static_cast<float>(5 * skillLevel));
+    const uint32_t minutesPerPoint = skillMastery >= SkillMastery::Master ? 15 : 5;
+    return secondsFromMinutes(static_cast<float>(minutesPerPoint * skillLevel));
 }
 
 bool isSpellOutdoorOnly(SpellId spellId)
@@ -368,106 +362,25 @@ bool areaSpellSucceedsWithoutTargets(SpellId spellId)
         || spellId == SpellId::SoulDrinker;
 }
 
+// How a party cast of a spell behaves. Its numbers (cost, recovery, damage, projectiles and the mastery it needs) come
+// from spells.txt (spellNumbersAtMastery), so a ruleset changes them through its table.
 struct BackendSpellRule
 {
-    uint32_t spellId = 0;
     PartySpellCastTargetKind targetKind = PartySpellCastTargetKind::None;
     PartySpellCastEffectKind effectKind = PartySpellCastEffectKind::Unsupported;
-    SkillMastery requiredMastery = SkillMastery::Normal;
-    std::array<int, 4> manaByMastery = {};
-    std::array<int, 4> recoveryTicksByMastery = {};
     PartyBuffId partyBuffId = PartyBuffId::TorchLight;
-    int baseDamage = 0;
-    int bonusSkillDamage = 0;
-    bool damageScalesLinearly = false;
-    uint32_t multiProjectileCount = 1;
 };
 
-float ticksToRecoverySeconds(int ticks)
-{
-    return std::max(0.0f, static_cast<float>(ticks) / 128.0f * OeRealtimeRecoveryScale);
-}
-
-uint32_t spellSlotLevel(uint32_t spellId)
-{
-    if (spellId < FirstBaseSpellId || spellId > LastBaseSpellId)
-    {
-        return 1;
-    }
-
-    return ((spellId - 1) % 11) + 1;
-}
-
-int masteryIndex(SkillMastery mastery)
-{
-    switch (mastery)
-    {
-        case SkillMastery::Normal:
-            return 0;
-        case SkillMastery::Expert:
-            return 1;
-        case SkillMastery::Master:
-            return 2;
-        case SkillMastery::Grandmaster:
-            return 3;
-        case SkillMastery::None:
-        default:
-            return -1;
-    }
-}
-
 BackendSpellRule makeBackendSpellRule(
-    uint32_t spellId,
     PartySpellCastTargetKind targetKind,
     PartySpellCastEffectKind effectKind,
-    SkillMastery requiredMastery,
-    std::array<int, 4> manaByMastery = {},
-    std::array<int, 4> recoveryTicksByMastery = {},
-    PartyBuffId partyBuffId = PartyBuffId::TorchLight,
-    int baseDamage = 0,
-    int bonusSkillDamage = 0,
-    bool damageScalesLinearly = false,
-    uint32_t multiProjectileCount = 1)
+    PartyBuffId partyBuffId = PartyBuffId::TorchLight)
 {
     BackendSpellRule rule = {};
-    rule.spellId = spellId;
     rule.targetKind = targetKind;
     rule.effectKind = effectKind;
-    rule.requiredMastery = requiredMastery;
-    rule.manaByMastery = manaByMastery;
-    rule.recoveryTicksByMastery = recoveryTicksByMastery;
     rule.partyBuffId = partyBuffId;
-    rule.baseDamage = baseDamage;
-    rule.bonusSkillDamage = bonusSkillDamage;
-    rule.damageScalesLinearly = damageScalesLinearly;
-    rule.multiProjectileCount = multiProjectileCount;
     return rule;
-}
-
-bool ruleHasExplicitManaCost(const BackendSpellRule &rule)
-{
-    for (int manaCost : rule.manaByMastery)
-    {
-        if (manaCost > 0)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool ruleHasExplicitRecovery(const BackendSpellRule &rule)
-{
-    for (int recoveryTicks : rule.recoveryTicksByMastery)
-    {
-        if (recoveryTicks > 0)
-        {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 bool anyPartyMemberWeak(const Party &party)
@@ -499,134 +412,71 @@ void appendAllPartyMemberIndices(const Party &party, std::vector<size_t> &indice
     }
 }
 
-SkillMastery defaultRequiredMasteryForSpellId(uint32_t spellId)
+// Casts the spell again on the rules' further targets near the struck monster: living hostile monsters in reach not
+// yet shrunk, nearest first, then those whose shrinking ends soonest (SP:1674-1703).
+void applySpellSplash(
+    IGameplayWorldRuntime &worldRuntime,
+    const PartySpellCastRequest &request,
+    const SpellSplash &splash,
+    const bx::Vec3 &center,
+    uint32_t skillLevel,
+    SkillMastery skillMastery,
+    float sourceX,
+    float sourceY,
+    float sourceZ,
+    float footZ)
 {
-    if (spellIdInRange(spellId, SpellId::Glamour, SpellId::DarkfireBolt)
-        || spellIdInRange(spellId, SpellId::Lifedrain, SpellId::Mistform)
-        || spellIdInRange(spellId, SpellId::Fear, SpellId::WingBuffet))
+    struct Candidate
     {
-        const uint32_t offset =
-            spellIdInRange(spellId, SpellId::Glamour, SpellId::DarkfireBolt)
-                ? spellId - spellIdValue(SpellId::Glamour)
-                : spellIdInRange(spellId, SpellId::Lifedrain, SpellId::Mistform)
-                ? spellId - spellIdValue(SpellId::Lifedrain)
-                : spellId - spellIdValue(SpellId::Fear);
-        return offset == 0
-            ? SkillMastery::Normal
-            : offset == 1
-            ? SkillMastery::Expert
-            : offset == 2
-            ? SkillMastery::Master
-            : SkillMastery::Grandmaster;
+        size_t actorIndex = 0;
+        bool fresh = false;
+        float order = 0.0f;
+    };
+
+    std::vector<Candidate> candidates;
+
+    for (const size_t actorIndex : worldRuntime.collectMapActorIndicesWithinRadius(
+             center.x, center.y, center.z, splash.radius, false, sourceX, sourceY, sourceZ))
+    {
+        GameplayRuntimeActorState actor = {};
+        GameplayActorInspectState inspect = {};
+
+        if (actorIndex == *request.targetActorIndex
+            || !worldRuntime.actorRuntimeState(actorIndex, actor)
+            || actor.isDead
+            || actor.isInvisible
+            || !actor.hostileToParty)
+        {
+            continue;
+        }
+
+        const float distance = std::hypot(actor.preciseX - center.x, actor.preciseY - center.y,
+            actor.preciseZ - center.z);
+        const bool fresh =
+            !worldRuntime.actorInspectState(actorIndex, 0, inspect) || inspect.shrinkRemainingSeconds <= 0.0f;
+        candidates.push_back({actorIndex, fresh, fresh ? distance : inspect.shrinkRemainingSeconds});
     }
 
-    const uint32_t level = spellSlotLevel(spellId);
+    std::sort(candidates.begin(), candidates.end(),
+        [](const Candidate &left, const Candidate &right)
+        {
+            return left.fresh != right.fresh ? left.fresh : left.order < right.order;
+        });
+    candidates.resize(std::min(candidates.size(), splash.extraTargets));
 
-    if (level >= 11)
+    for (const Candidate &candidate : candidates)
     {
-        return SkillMastery::Grandmaster;
+        worldRuntime.applyPartySpellToActor(
+            candidate.actorIndex,
+            request.spellId,
+            skillLevel,
+            skillMastery,
+            0,
+            sourceX,
+            sourceY,
+            footZ,
+            uint32_t(request.casterMemberIndex));
     }
-
-    if (level >= 8)
-    {
-        return SkillMastery::Master;
-    }
-
-    if (level >= 5)
-    {
-        return SkillMastery::Expert;
-    }
-
-    return SkillMastery::Normal;
-}
-
-int defaultManaCostForSpellId(uint32_t spellId)
-{
-    switch (spellSlotLevel(spellId))
-    {
-        case 1:
-            return 1;
-        case 2:
-            return 2;
-        case 3:
-            return 3;
-        case 4:
-            return 4;
-        case 5:
-            return 5;
-        case 6:
-            return 8;
-        case 7:
-            return 10;
-        case 8:
-            return 15;
-        case 9:
-            return 20;
-        case 10:
-            return 25;
-        case 11:
-        default:
-            return 30;
-    }
-}
-
-int manaCostForSpellEntry(const SpellEntry &spellEntry, SkillMastery mastery)
-{
-    switch (mastery)
-    {
-        case SkillMastery::Expert:
-            return spellEntry.expertManaCost;
-        case SkillMastery::Master:
-            return spellEntry.masterManaCost;
-        case SkillMastery::Grandmaster:
-            return spellEntry.grandmasterManaCost;
-        case SkillMastery::Normal:
-        case SkillMastery::None:
-        default:
-            return spellEntry.normalManaCost;
-    }
-}
-
-int recoveryTicksForSpellEntry(const SpellEntry &spellEntry, SkillMastery mastery)
-{
-    switch (mastery)
-    {
-        case SkillMastery::Expert:
-            return spellEntry.expertRecoveryTicks;
-        case SkillMastery::Master:
-            return spellEntry.masterRecoveryTicks;
-        case SkillMastery::Grandmaster:
-            return spellEntry.grandmasterRecoveryTicks;
-        case SkillMastery::Normal:
-        case SkillMastery::None:
-        default:
-            return spellEntry.normalRecoveryTicks;
-    }
-}
-
-int manaCostForRule(const BackendSpellRule &rule, SkillMastery mastery)
-{
-    const int index = masteryIndex(mastery);
-    return index >= 0 ? rule.manaByMastery[static_cast<size_t>(index)] : 0;
-}
-
-uint32_t resolveManaCost(
-    const BackendSpellRule &rule,
-    const SpellEntry &spellEntry,
-    SkillMastery mastery,
-    uint32_t spellId)
-{
-    return static_cast<uint32_t>(std::max(
-        0,
-        ruleHasExplicitManaCost(rule)
-            ? manaCostForRule(rule, mastery)
-            : std::max(manaCostForSpellEntry(spellEntry, mastery), defaultManaCostForSpellId(spellId))));
-}
-
-int recoveryTicksForRule(const BackendSpellRule &rule, SkillMastery mastery)
-{
-    const int index = masteryIndex(mastery);
-    return index >= 0 ? rule.recoveryTicksByMastery[static_cast<size_t>(index)] : 0;
 }
 
 float secondsFromHours(float hours)
@@ -641,353 +491,371 @@ float secondsFromMinutes(float minutes)
 
 std::optional<BackendSpellRule> resolveBackendSpellRule(uint32_t spellId, SkillMastery mastery)
 {
-    const uint32_t sparksCount = mastery == SkillMastery::Grandmaster
-        ? 9
-        : mastery == SkillMastery::Master
-        ? 7
-        : mastery == SkillMastery::Expert
-        ? 5
-        : 3;
-    const uint32_t poisonSprayCount = mastery == SkillMastery::Grandmaster
-        ? 7
-        : mastery == SkillMastery::Master
-        ? 5
-        : mastery == SkillMastery::Expert
-        ? 3
-        : 1;
 
     switch (spellIdFromValue(spellId))
     {
         case SpellId::TorchLight:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {1, 1, 1, 1}, {60, 60, 60, 40}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff);
         case SpellId::FireBolt:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Normal, {2, 2, 2, 2}, {110, 110, 100, 90}, PartyBuffId::TorchLight, 0, 3, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::FireResistance:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {3, 3, 3, 3}, {120, 120, 120, 120}, PartyBuffId::FireResistance);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::FireResistance);
         case SpellId::FireAura:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::InventoryItem, PartySpellCastEffectKind::UtilityUi, SkillMastery::Normal, {4, 4, 4, 4}, {120, 120, 120, 120}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::InventoryItem, PartySpellCastEffectKind::UtilityUi);
         case SpellId::Haste:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {5, 5, 5, 5}, {120, 120, 120, 120}, PartyBuffId::Haste);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Haste);
         case SpellId::Fireball:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Expert, {8, 8, 8, 8}, {100, 100, 90, 80}, PartyBuffId::TorchLight, 0, 6, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::FireSpike:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::AreaEffect, SkillMastery::Expert, {10, 10, 10, 10}, {150, 150, 150, 150}, PartyBuffId::TorchLight, 1, 6, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::AreaEffect);
         case SpellId::Immolation:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Master, {15, 15, 15, 15}, {120, 120, 120, 120}, PartyBuffId::Immolation);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Immolation);
         case SpellId::MeteorShower:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile, SkillMastery::Master, {20, 20, 20, 20}, {100, 100, 100, 90}, PartyBuffId::TorchLight, 8, 1, true);
+            return makeBackendSpellRule(PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile);
         case SpellId::Inferno:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 12, 2, true);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         case SpellId::Incinerate:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Grandmaster, {30, 30, 30, 30}, {90, 90, 90, 90}, PartyBuffId::TorchLight, 15, 15, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::WizardEye:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {1, 1, 1, 0}, {60, 60, 60, 60}, PartyBuffId::WizardEye);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::WizardEye);
         case SpellId::FeatherFall:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {2, 2, 2, 2}, {120, 120, 120, 100}, PartyBuffId::FeatherFall);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::FeatherFall);
         case SpellId::AirResistance:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {3, 3, 3, 3}, {120, 120, 120, 120}, PartyBuffId::AirResistance);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::AirResistance);
         case SpellId::Sparks:
             return makeBackendSpellRule(
-                spellId,
                 PartySpellCastTargetKind::GroundPoint,
-                PartySpellCastEffectKind::MultiProjectile,
-                SkillMastery::Normal,
-                {4, 4, 4, 4},
-                {},
-                PartyBuffId::TorchLight,
-                2,
-                1,
-                true,
-                sparksCount);
+                PartySpellCastEffectKind::MultiProjectile);
         case SpellId::Jump:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::Jump, SkillMastery::Expert, {5, 5, 5, 5}, {90, 90, 70, 50}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::Jump);
         case SpellId::Shield:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {8, 8, 8, 8}, {120, 120, 120, 120}, PartyBuffId::Shield);
-        case SpellId::LightningBolt:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Expert, {10, 10, 10, 10}, {100, 100, 90, 70}, PartyBuffId::TorchLight, 0, 8, false);
-        case SpellId::Invisibility:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Master, {}, {}, PartyBuffId::Invisibility);
-        case SpellId::Implosion:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 10, 10, false);
-        case SpellId::Fly:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Master, {}, {}, PartyBuffId::Fly);
-        case SpellId::Starburst:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile, SkillMastery::Grandmaster, {}, {}, PartyBuffId::TorchLight, 20, 1, true);
-        case SpellId::Awaken:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
-        case SpellId::PoisonSpray:
-            return makeBackendSpellRule(spellId,
-                PartySpellCastTargetKind::GroundPoint,
-                PartySpellCastEffectKind::MultiProjectile,
-                SkillMastery::Normal,
-                {},
-                {},
-                PartyBuffId::TorchLight,
-                2,
-                2,
-                true,
-                poisonSprayCount);
-        case SpellId::WaterResistance:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {3, 3, 3, 3}, {120, 120, 120, 120}, PartyBuffId::WaterResistance);
-        case SpellId::IceBolt:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight, 1, 4, false);
-        case SpellId::WaterWalk:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {}, {}, PartyBuffId::WaterWalk);
-        case SpellId::RechargeItem:
             return makeBackendSpellRule(
-                spellId,
-                PartySpellCastTargetKind::InventoryItem,
-                PartySpellCastEffectKind::UtilityUi,
-                SkillMastery::Expert,
-                {8, 8, 8, 8},
-                {200, 200, 200, 200},
-                PartyBuffId::TorchLight);
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Shield);
+        case SpellId::LightningBolt:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
+        case SpellId::Invisibility:
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Invisibility);
+        case SpellId::Implosion:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
+        case SpellId::Fly:
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Fly);
+        case SpellId::Starburst:
+            return makeBackendSpellRule(PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile);
+        case SpellId::Awaken:
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore);
+        case SpellId::PoisonSpray:
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::GroundPoint,
+                PartySpellCastEffectKind::MultiProjectile);
+        case SpellId::WaterResistance:
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::WaterResistance);
+        case SpellId::IceBolt:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
+        case SpellId::WaterWalk:
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::WaterWalk);
+        case SpellId::RechargeItem:
+            return makeBackendSpellRule(PartySpellCastTargetKind::InventoryItem, PartySpellCastEffectKind::UtilityUi);
         case SpellId::AcidBurst:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight, 9, 9, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::EnchantItem:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::InventoryItem, PartySpellCastEffectKind::UtilityUi, SkillMastery::Master, {15, 15, 15, 15}, {140, 140, 140, 140}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::InventoryItem, PartySpellCastEffectKind::UtilityUi);
         case SpellId::TownPortal:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::UtilityUi, PartySpellCastEffectKind::UtilityUi, SkillMastery::Master, {20, 20, 20, 20}, {200, 200, 200, 200}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::UtilityUi, PartySpellCastEffectKind::UtilityUi);
         case SpellId::LloydsBeacon:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::UtilityUi, PartySpellCastEffectKind::UtilityUi, SkillMastery::Grandmaster, {30, 30, 30, 30}, {250, 250, 250, 250}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::UtilityUi, PartySpellCastEffectKind::UtilityUi);
         case SpellId::IceBlast:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::MultiProjectile, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 12, 6, true, 7);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::GroundPoint,
+                PartySpellCastEffectKind::MultiProjectile);
         case SpellId::Stun:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::Slow:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::EarthResistance:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {3, 3, 3, 3}, {120, 120, 120, 120}, PartyBuffId::EarthResistance);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::EarthResistance);
         case SpellId::DeadlySwarm:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight, 5, 3, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::StoneSkin:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {5, 5, 5, 5}, {120, 120, 120, 120}, PartyBuffId::Stoneskin);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Stoneskin);
         case SpellId::Blades:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight, 1, 9, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::StoneToFlesh:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::CharacterOrWorldTarget, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::CharacterOrWorldTarget,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::RockBlast:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 10, 10, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile);
         case SpellId::Telekinesis:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::TelekinesisTarget, PartySpellCastEffectKind::Telekinesis, SkillMastery::Master, {20, 20, 20, 20}, {150, 150, 150, 150}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::TelekinesisTarget,
+                PartySpellCastEffectKind::Telekinesis);
         case SpellId::DeathBlossom:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 20, 2, true);
+            return makeBackendSpellRule(PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile);
         case SpellId::MassDistortion:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Grandmaster, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::DetectLife:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {}, {}, PartyBuffId::DetectLife);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::DetectLife);
         case SpellId::Bless:
             return makeBackendSpellRule(
-                spellId,
                 mastery == SkillMastery::Normal
                     ? PartySpellCastTargetKind::Character
                     : PartySpellCastTargetKind::None,
-                PartySpellCastEffectKind::CharacterBuff,
-                SkillMastery::Normal,
-                {},
-                {},
-                PartyBuffId::TorchLight);
+                PartySpellCastEffectKind::CharacterBuff);
         case SpellId::Fate:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::ActorOrCharacter, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::ActorOrCharacter,
+                PartySpellCastEffectKind::ActorEffect);
         case SpellId::TurnUndead:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         case SpellId::RemoveCurse:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::Preservation:
             return makeBackendSpellRule(
-                spellId,
                 mastery == SkillMastery::Master || mastery == SkillMastery::Grandmaster
                     ? PartySpellCastTargetKind::None
                     : PartySpellCastTargetKind::Character,
-                PartySpellCastEffectKind::CharacterBuff,
-                SkillMastery::Normal,
-                {},
-                {},
-                PartyBuffId::TorchLight);
+                PartySpellCastEffectKind::CharacterBuff);
         case SpellId::Heroism:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {10, 10, 10, 10}, {120, 120, 120, 120}, PartyBuffId::Heroism);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Heroism);
         case SpellId::SpiritLash:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 10, 8, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         case SpellId::RaiseDead:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::SharedLife:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore);
         case SpellId::Resurrection:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Grandmaster, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::Telepathy:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {1, 1, 1, 1}, {90, 90, 90, 90}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::RemoveFear:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::MindResistance:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {}, {}, PartyBuffId::MindResistance);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::MindResistance);
         case SpellId::MindBlast:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight, 3, 3, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::Charm:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::CureParalysis:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::Berserk:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::MassFear:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         case SpellId::CureInsanity:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::PsychicShock:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 12, 12, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::Enslave:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Grandmaster, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::CureWeakness:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::Heal:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::BodyResistance:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Normal, {3, 3, 3, 3}, {120, 120, 120, 120}, PartyBuffId::BodyResistance);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::BodyResistance);
         case SpellId::Harm:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight, 8, 2, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::Regeneration:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterBuff, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterBuff);
         case SpellId::CurePoison:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
         case SpellId::Hammerhands:
             return makeBackendSpellRule(
-                spellId,
                 mastery == SkillMastery::Grandmaster
                     ? PartySpellCastTargetKind::None
                     : PartySpellCastTargetKind::Character,
-                PartySpellCastEffectKind::CharacterBuff,
-                SkillMastery::Expert,
-                {},
-                {},
-                PartyBuffId::TorchLight);
+                PartySpellCastEffectKind::CharacterBuff);
         case SpellId::CureDisease:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterRestore, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight);
-        case SpellId::ProtectionFromMagic:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Master, {20, 20, 20, 20}, {120, 120, 120, 120}, PartyBuffId::ProtectionFromMagic);
-        case SpellId::FlyingFist:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Master, {25, 25, 25, 25}, {110, 110, 110, 100}, PartyBuffId::TorchLight, 30, 5, false);
-        case SpellId::PowerCure:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore, SkillMastery::Grandmaster, {}, {}, PartyBuffId::TorchLight);
-        case SpellId::LightBolt:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Normal, {5, 5, 5, 5}, {110, 100, 90, 80}, PartyBuffId::TorchLight, 0, 4, false);
-        case SpellId::DestroyUndead:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight, 16, 16, false);
-        case SpellId::DispelMagic:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
-        case SpellId::Paralyze:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
-        case SpellId::SummonWisp:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Normal, {25, 25, 25, 25}, {140, 140, 140, 140}, PartyBuffId::TorchLight);
-        case SpellId::DayOfGods:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {30, 30, 30, 30}, {500, 500, 500, 500}, PartyBuffId::DayOfGods);
-        case SpellId::PrismaticLight:
             return makeBackendSpellRule(
-                spellId,
+                PartySpellCastTargetKind::Character,
+                PartySpellCastEffectKind::CharacterRestore);
+        case SpellId::ProtectionFromMagic:
+            return makeBackendSpellRule(
                 PartySpellCastTargetKind::None,
-                PartySpellCastEffectKind::AreaEffect,
-                SkillMastery::Expert,
-                {},
-                {},
-                PartyBuffId::TorchLight,
-                25,
-                1,
-                true);
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::ProtectionFromMagic);
+        case SpellId::FlyingFist:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
+        case SpellId::PowerCure:
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore);
+        case SpellId::LightBolt:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
+        case SpellId::DestroyUndead:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
+        case SpellId::DispelMagic:
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
+        case SpellId::Paralyze:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
+        case SpellId::SummonWisp:
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
+        case SpellId::DayOfGods:
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::DayOfGods);
+        case SpellId::PrismaticLight:
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         case SpellId::DayOfProtection:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Master, {40, 40, 40, 40}, {500, 500, 500, 500}, PartyBuffId::BodyResistance);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::BodyResistance);
         case SpellId::HourOfPower:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Master, {45, 45, 45, 45}, {250, 250, 250, 250}, PartyBuffId::Heroism);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Heroism);
         case SpellId::Sunray:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 20, 20, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::DivineIntervention:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore, SkillMastery::Grandmaster, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyRestore);
         case SpellId::Reanimate:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::ActorOrCharacter, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::ActorOrCharacter,
+                PartySpellCastEffectKind::ActorEffect);
         case SpellId::ToxicCloud:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight, 25, 10, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::VampiricWeapon:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::InventoryItem, PartySpellCastEffectKind::UtilityUi, SkillMastery::Normal, {20, 20, 20, 20}, {120, 100, 90, 120}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::InventoryItem, PartySpellCastEffectKind::UtilityUi);
         case SpellId::ShrinkingRay:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Normal, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::Shrapmetal:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::MultiProjectile, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight, 1, 6, true, 5);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::GroundPoint,
+                PartySpellCastEffectKind::MultiProjectile);
         case SpellId::ControlUndead:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Expert, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::PainReflection:
             return makeBackendSpellRule(
-                spellId,
                 mastery == SkillMastery::Master || mastery == SkillMastery::Grandmaster
                     ? PartySpellCastTargetKind::None
                     : PartySpellCastTargetKind::Character,
-                PartySpellCastEffectKind::CharacterBuff,
-                SkillMastery::Expert,
-                {},
-                {},
-                PartyBuffId::TorchLight);
+                PartySpellCastEffectKind::CharacterBuff);
         case SpellId::DarkGrasp:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::DragonBreath:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 1, 25, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::Armageddon:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Master, {}, {}, PartyBuffId::TorchLight, 50, 1, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         case SpellId::SoulDrinker:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Grandmaster, {}, {}, PartyBuffId::TorchLight, 25, 8, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         case SpellId::Glamour:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterBuff, SkillMastery::Normal, {5, 5, 5, 5}, {100, 100, 100, 100}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Character, PartySpellCastEffectKind::CharacterBuff);
         case SpellId::TravelersBoon:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {10, 10, 10, 10}, {100, 100, 100, 100}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff);
         case SpellId::Blind:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Master, {15, 15, 15, 15}, {120, 120, 120, 120}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::DarkfireBolt:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Grandmaster, {30, 30, 30, 30}, {90, 90, 90, 90}, PartyBuffId::TorchLight, 0, 17, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::Lifedrain:
-        {
-            const int damage = mastery == SkillMastery::Grandmaster ? 7 : mastery == SkillMastery::Master ? 5 : 3;
-            return makeBackendSpellRule(
-                spellId,
-                PartySpellCastTargetKind::Actor,
-                PartySpellCastEffectKind::ActorEffect,
-                SkillMastery::Normal,
-                {5, 5, 5, 5},
-                {100, 80, 80, 80},
-                PartyBuffId::TorchLight,
-                damage,
-                damage,
-                false);
-        }
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
         case SpellId::Levitate:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Expert, {10, 10, 10, 10}, {110, 110, 110, 110}, PartyBuffId::Levitate);
-        case SpellId::VampireCharm:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect, SkillMastery::Master, {20, 20, 20, 20}, {110, 110, 110, 110}, PartyBuffId::TorchLight);
-        case SpellId::Mistform:
             return makeBackendSpellRule(
-                spellId,
                 PartySpellCastTargetKind::None,
-                PartySpellCastEffectKind::CharacterBuff,
-                SkillMastery::Grandmaster,
-                {30, 30, 30, 30},
-                {110, 110, 110, 110},
-                PartyBuffId::TorchLight);
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Levitate);
+        case SpellId::VampireCharm:
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::ActorEffect);
+        case SpellId::Mistform:
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::CharacterBuff);
         case SpellId::Fear:
             return makeBackendSpellRule(
-                spellId,
                 mastery == SkillMastery::Grandmaster
                     ? PartySpellCastTargetKind::None
                     : PartySpellCastTargetKind::Actor,
                 mastery == SkillMastery::Grandmaster
                     ? PartySpellCastEffectKind::AreaEffect
-                    : PartySpellCastEffectKind::ActorEffect,
-                SkillMastery::Normal,
-                {5, 5, 5, 5},
-                {100, 100, 100, 100},
-                PartyBuffId::TorchLight);
+                    : PartySpellCastEffectKind::ActorEffect);
         case SpellId::FlameBlast:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile, SkillMastery::Expert, {10, 10, 10, 10}, {100, 100, 100, 100}, PartyBuffId::TorchLight, 10, 10, false);
+            return makeBackendSpellRule(PartySpellCastTargetKind::Actor, PartySpellCastEffectKind::Projectile);
         case SpellId::Flight:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::PartyBuff, SkillMastery::Master, {15, 15, 15, 15}, {120, 120, 120, 120}, PartyBuffId::Fly);
+            return makeBackendSpellRule(
+                PartySpellCastTargetKind::None,
+                PartySpellCastEffectKind::PartyBuff,
+                PartyBuffId::Fly);
         case SpellId::WingBuffet:
-            return makeBackendSpellRule(spellId, PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect, SkillMastery::Grandmaster, {30, 30, 30, 30}, {110, 110, 110, 110}, PartyBuffId::TorchLight);
+            return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         default:
             return std::nullopt;
     }
+}
+
+// Standard's Heal: 5 HP plus 2, 3, 4 or 5 per point of Body Magic by mastery.
+int standardHealAmount(SkillMastery mastery, uint32_t skillLevel)
+{
+    const int perPoint = mastery == SkillMastery::Grandmaster ? 5
+        : mastery == SkillMastery::Master                     ? 4
+        : mastery == SkillMastery::Expert                     ? 3
+                                                              : 2;
+    return 5 + perPoint * static_cast<int>(skillLevel);
 }
 
 bool resolveSpellSkill(
@@ -1031,35 +899,6 @@ bx::Vec3 resolveActorTargetPoint(const GameplayRuntimeActorState &actor)
         actor.preciseY,
         actor.preciseZ + GameMechanics::actorTargetHeight(actor.height)
     };
-}
-
-int rollSpellDamage(const BackendSpellRule &rule, const SpellEntry &spellEntry, uint32_t skillLevel)
-{
-    const bool hasExplicitDamage = rule.baseDamage > 0 || rule.bonusSkillDamage > 0;
-    const int baseDamage = hasExplicitDamage ? rule.baseDamage : spellEntry.damageBase;
-    const int bonusSkillDamage = hasExplicitDamage ? rule.bonusSkillDamage : spellEntry.damageDiceSides;
-
-    if (skillLevel == 0)
-    {
-        return std::max(0, baseDamage);
-    }
-
-    if (rule.damageScalesLinearly)
-    {
-        return std::max(0, baseDamage + bonusSkillDamage * static_cast<int>(skillLevel));
-    }
-
-    static thread_local std::mt19937 rng(std::random_device{}());
-    const int diceSides = std::max(1, bonusSkillDamage);
-    std::uniform_int_distribution<int> distribution(1, diceSides);
-    int damage = baseDamage;
-
-    for (uint32_t rollIndex = 0; rollIndex < skillLevel; ++rollIndex)
-    {
-        damage += distribution(rng);
-    }
-
-    return std::max(0, damage);
 }
 
 float resolvePartyBuffDurationSeconds(uint32_t spellId, uint32_t skillLevel, SkillMastery mastery)
@@ -1497,6 +1336,46 @@ PartySpellCastResult PartySpellSystem::castSpell(
             SpellFailedText);
     }
 
+    // The monster the request names, for rules that read it (MAW's class spells): its level and the crowd around it.
+    int targetLevel = 0;
+    int monstersNearTarget = 0;
+    GameplayRuntimeActorState targetActor = {};
+
+    if (request.targetActorIndex && worldRuntime.actorRuntimeState(*request.targetActorIndex, targetActor))
+    {
+        targetLevel = targetActor.rulesetFacts.level;
+
+        for (const size_t nearIndex : worldRuntime.collectMapActorIndicesWithinRadius(targetActor.preciseX,
+                 targetActor.preciseY, targetActor.preciseZ, 384.0f, false, targetActor.preciseX, targetActor.preciseY,
+                 targetActor.preciseZ))
+        {
+            GameplayRuntimeActorState nearActor = {};
+            monstersNearTarget += worldRuntime.actorRuntimeState(nearIndex, nearActor) && !nearActor.isDead ? 1 : 0;
+        }
+    }
+
+    const auto castAtLevel = [&party, pCaster, targetLevel, monstersNearTarget](
+                                 const SpellEntry &spellEntry, SkillMastery mastery, uint32_t level)
+    {
+        CharacterSpellCast cast = {};
+        cast.targetLevel = targetLevel;
+        cast.monstersNearTarget = monstersNearTarget;
+        cast.pCaster = pCaster;
+        cast.pItemTable = party.itemTable();
+        cast.pStandardItemEnchantTable = party.standardItemEnchantTable();
+        cast.pSpecialItemEnchantTable = party.specialItemEnchantTable();
+        cast.pSpell = &spellEntry;
+        cast.mastery = mastery;
+        cast.skillLevel = level;
+        cast.partyCount = int(std::max<size_t>(1, party.members().size()));
+        return cast;
+    };
+    const auto rollSpellDamage =
+        [&party, &castAtLevel](const SpellEntry &spellEntry, SkillMastery mastery, uint32_t level)
+    {
+        return party.rules().combat.rollSpellDamage(castAtLevel(spellEntry, mastery, level));
+    };
+
     if (party.hasPartyBuff(PartyBuffId::Invisibility))
     {
         party.clearPartyBuff(PartyBuffId::Invisibility);
@@ -1532,12 +1411,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
     result.skillLevel = skillLevel;
     result.skillMastery = skillMastery;
 
-    const SkillMastery requiredMastery =
-        rule->requiredMastery != SkillMastery::None
-            ? rule->requiredMastery
-            : defaultRequiredMasteryForSpellId(request.spellId);
-
-    if (!request.bypassRequiredMastery && skillMastery < requiredMastery)
+    if (!request.bypassRequiredMastery && skillMastery < pSpellEntry->requiredMastery)
     {
         return makeFailure(
             request.spellId,
@@ -1547,12 +1421,38 @@ PartySpellCastResult PartySpellSystem::castSpell(
             "Not skilled enough");
     }
 
-    result.manaCost = resolveManaCost(*rule, *pSpellEntry, skillMastery, request.spellId);
-    const int baseSpellRecoveryTicks =
-        ruleHasExplicitRecovery(*rule)
-            ? recoveryTicksForRule(*rule, skillMastery)
-            : recoveryTicksForSpellEntry(*pSpellEntry, skillMastery);
+    CharacterSpellCast spellCast = {};
+    spellCast.pCaster = pCaster;
+    spellCast.pItemTable = party.itemTable();
+    spellCast.pStandardItemEnchantTable = party.standardItemEnchantTable();
+    spellCast.pSpecialItemEnchantTable = party.specialItemEnchantTable();
+    spellCast.pSpell = pSpellEntry;
+    spellCast.mastery = skillMastery;
+    spellCast.skillLevel = skillLevel;
+    spellCast.partyCount = int(std::max<size_t>(1, party.members().size()));
+    spellCast.fromScroll = request.fromScroll;
+    const SpellRules &spellRules = party.rules().spells;
+    const SpellMasteryNumbers spellNumbers = spellNumbersAtMastery(*pSpellEntry, skillMastery);
+    result.manaCost = static_cast<uint32_t>(spellRules.manaCost(spellCast, spellNumbers.manaCost));
+    const int baseSpellRecoveryTicks = spellRules.recoveryTicks(spellCast, spellNumbers.recoveryTicks);
+    // A ruleset's heal for this spell (MAW's heal table), else Standard's.
+    const std::optional<int> rulesetHeal = spellRules.healAmount(spellCast);
     int spellRecoveryTicks = baseSpellRecoveryTicks;
+    // What the cast healed and how much of it went past full HP, for rules that reward overhealing (MAW).
+    int healedTotal = 0;
+    int overhealed = 0;
+    const auto healTracked = [&party, &healedTotal, &overhealed](size_t memberIndex, int amount)
+    {
+        const Character *pMember = party.member(memberIndex);
+
+        if (pMember != nullptr && amount > 0)
+        {
+            healedTotal += amount;
+            overhealed += std::max(0, amount - std::max(0, Party::effectiveMaximumHealth(*pMember) - pMember->health));
+        }
+
+        return party.healMember(memberIndex, amount);
+    };
 
     if (spellIdFromValue(request.spellId) == SpellId::DispelMagic)
     {
@@ -1583,6 +1483,73 @@ PartySpellCastResult PartySpellSystem::castSpell(
 
             return failure;
         };
+
+    // A scroll's buff the rules hold as an aura of the place (MAW).
+    if (request.fromScroll && spellRules.castSourceBuff(party, request.spellId, BuffSource::Scroll))
+    {
+        result.manaCost = 0;
+        result.status = PartySpellCastStatus::Succeeded;
+        appendAllPartyMemberIndices(party, result.affectedCharacterIndices);
+
+        if (request.applyRecovery && result.recoverySeconds > 0.0f)
+        {
+            party.applyRecoveryToMember(request.casterMemberIndex, result.recoverySeconds);
+        }
+
+        return result;
+    }
+
+    // A member's own buff cast under rules that make buffs auras (MAW) toggles the aura and spends no mana.
+    if (request.spendMana && request.skillLevelOverride == 0 && !request.bypassRequiredMastery)
+    {
+        if (const std::optional<AuraCastResult> aura =
+                spellRules.castAura(party, request.casterMemberIndex, request.spellId))
+        {
+            if (*aura == AuraCastResult::NotEnoughMana)
+            {
+                return makeFailure(
+                    request.spellId,
+                    PartySpellCastStatus::NotEnoughSpellPoints,
+                    rule->targetKind,
+                    rule->effectKind,
+                    "Not enough mana to hold " + spellRules.spellName(*pCaster, *pSpellEntry));
+            }
+
+            spellRules.updateAuras(party, 0.0f);
+            result.manaCost = 0;
+            result.status = PartySpellCastStatus::Succeeded;
+            result.statusText = *aura == AuraCastResult::Held
+                ? spellRules.spellName(*pCaster, *pSpellEntry) + " held by " + pCaster->name
+                : spellRules.spellName(*pCaster, *pSpellEntry) + " released";
+
+            // Letting an aura go takes no time (SP:2851-2858 sets no recovery).
+            if (*aura == AuraCastResult::Released)
+            {
+                result.recoverySeconds = 0.0f;
+            }
+
+            if (request.applyRecovery && result.recoverySeconds > 0.0f)
+            {
+                party.applyRecoveryToMember(request.casterMemberIndex, result.recoverySeconds);
+            }
+
+            return result;
+        }
+    }
+
+    if (request.spendMana)
+    {
+        if (const std::optional<std::string> refusal =
+                spellRules.castRefusal(party, request.casterMemberIndex, request.spellId))
+        {
+            return makeFailure(
+                request.spellId,
+                PartySpellCastStatus::NotEnoughSpellPoints,
+                rule->targetKind,
+                rule->effectKind,
+                *refusal);
+        }
+    }
 
     if (request.spendMana && !party.canSpendSpellPoints(request.casterMemberIndex, static_cast<int>(result.manaCost)))
     {
@@ -1616,8 +1583,12 @@ PartySpellCastResult PartySpellSystem::castSpell(
 
     bx::Vec3 targetPoint = {0.0f, 0.0f, 0.0f};
     const SpellId spellId = spellIdFromValue(request.spellId);
-    const std::optional<std::string> worldAvailabilityFailure =
-        spellWorldAvailabilityFailure(spellId, worldRuntime.isIndoorMap());
+    // Sunray indoors where the rules allow it (MAW), at any hour; outdoors it keeps its daylight check.
+    const bool sunrayIndoors =
+        spellId == SpellId::Sunray && worldRuntime.isIndoorMap() && party.rules().spells.sunrayWorksIndoors();
+    const std::optional<std::string> worldAvailabilityFailure = sunrayIndoors
+        ? std::nullopt
+        : spellWorldAvailabilityFailure(spellId, worldRuntime.isIndoorMap());
 
     if (worldAvailabilityFailure.has_value())
     {
@@ -1768,6 +1739,18 @@ PartySpellCastResult PartySpellSystem::castSpell(
     }
     else if (rule->targetKind == PartySpellCastTargetKind::UtilityUi)
     {
+        if ((spellId == SpellId::TownPortal || spellId == SpellId::LloydsBeacon)
+            && party.rules().monsters.teleportBlockedNearEnemies()
+            && partyHasYellowAlert(worldRuntime))
+        {
+            return makeFailure(
+                request.spellId,
+                PartySpellCastStatus::Failed,
+                rule->targetKind,
+                rule->effectKind,
+                party.rules().monsters.teleportBlockedText(spellId == SpellId::TownPortal));
+        }
+
         if (spellId == SpellId::TownPortal)
         {
             if (skillMastery < SkillMastery::Grandmaster
@@ -1848,7 +1831,9 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 HostileCreaturesNearbyText);
         }
 
-        const float durationSeconds = resolvePartyBuffDurationSeconds(request.spellId, skillLevel, skillMastery);
+        const float durationSeconds =
+            spellRules.partyBuffSeconds(party, request.spellId, skillLevel, skillMastery, request.fromScroll)
+                .value_or(resolvePartyBuffDurationSeconds(request.spellId, skillLevel, skillMastery));
         const int power = resolvePartyBuffPower(request.spellId, skillLevel, skillMastery);
 
         if (spellId == SpellId::DayOfProtection
@@ -2028,19 +2013,52 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     "Need character target");
             }
 
+            // Below Grandmaster, Raise Dead leaves the eradicated under rules that keep the engine's limit (MAW).
+            const Character *pRestored = party.member(*request.targetCharacterIndex);
+
+            if (spellId == SpellId::RaiseDead && skillMastery < SkillMastery::Grandmaster && pRestored != nullptr
+                && pRestored->conditions.test(size_t(CharacterCondition::Eradicated))
+                && !party.rules().spells.raiseDeadLiftsEradication(skillMastery))
+            {
+                return makeFailureWithRecovery(
+                    PartySpellCastStatus::Failed,
+                    rule->targetKind,
+                    rule->effectKind,
+                    SpellFailedText);
+            }
+
             castSucceeded = true;
 
-            if (spellId == SpellId::Heal)
+            if (rulesetHeal)
             {
-                const int healAmount =
-                    skillMastery == SkillMastery::Grandmaster
-                        ? 5 + static_cast<int>(5 * skillLevel)
-                        : skillMastery == SkillMastery::Master
-                        ? 5 + static_cast<int>(4 * skillLevel)
-                        : skillMastery == SkillMastery::Expert
-                        ? 5 + static_cast<int>(3 * skillLevel)
-                        : 5 + static_cast<int>(2 * skillLevel);
-                party.healMember(*request.targetCharacterIndex, healAmount);
+                // The ruleset's heal, with the spell's own cure (Remove Curse, Greater Heal) or revival; on a living
+                // target Resurrection only heals (MAW, SP:300-312).
+                const Character *pTarget = party.member(*request.targetCharacterIndex);
+                const bool targetDead = pTarget != nullptr
+                    && (pTarget->conditions.test(size_t(CharacterCondition::Dead))
+                        || pTarget->conditions.test(size_t(CharacterCondition::Eradicated)));
+
+                if (spellId == SpellId::Resurrection && !targetDead)
+                {
+                    healTracked(*request.targetCharacterIndex, *rulesetHeal);
+                }
+                else if (spellId == SpellId::Resurrection)
+                {
+                    party.reviveMember(*request.targetCharacterIndex, std::max(1, *rulesetHeal), true);
+                }
+                else
+                {
+                    if (spellId != SpellId::Heal)
+                    {
+                        applyCharacterRestoreSpell(party, request.spellId, *request.targetCharacterIndex, skillLevel);
+                    }
+
+                    healTracked(*request.targetCharacterIndex, *rulesetHeal);
+                }
+            }
+            else if (spellId == SpellId::Heal)
+            {
+                party.healMember(*request.targetCharacterIndex, standardHealAmount(skillMastery, skillLevel));
             }
             else
             {
@@ -2076,6 +2094,10 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 party.clearMemberCondition(memberIndex, CharacterCondition::Asleep);
             }
         }
+        else if (spellId == SpellId::SharedLife && rulesetHeal && spellRules.shareLife(party, *rulesetHeal))
+        {
+            // The ruleset pooled and shared the hit points.
+        }
         else if (spellId == SpellId::SharedLife)
         {
             int totalHealth = 0;
@@ -2085,8 +2107,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 totalHealth += std::max(0, member.health);
             }
 
-            totalHealth += static_cast<int>(
-                (skillMastery == SkillMastery::Grandmaster ? 4 : 3) * static_cast<int>(skillLevel));
+            totalHealth += rulesetHeal.value_or(static_cast<int>(
+                (skillMastery == SkillMastery::Grandmaster ? 4 : 3) * static_cast<int>(skillLevel)));
             const int memberCount = std::max<int>(1, static_cast<int>(party.members().size()));
             const int share = std::max(0, totalHealth / memberCount);
 
@@ -2097,11 +2119,11 @@ PartySpellCastResult PartySpellSystem::castSpell(
         }
         else if (spellId == SpellId::PowerCure)
         {
-            const int healAmount = 10 + static_cast<int>(5 * skillLevel);
+            const int healAmount = rulesetHeal.value_or(10 + static_cast<int>(5 * skillLevel));
 
             for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
             {
-                party.healMember(memberIndex, healAmount);
+                healTracked(memberIndex, healAmount);
             }
         }
         else if (spellId == SpellId::DivineIntervention)
@@ -2523,8 +2545,9 @@ PartySpellCastResult PartySpellSystem::castSpell(
         worldRequest.spellId = request.spellId;
         worldRequest.skillLevel = skillLevel;
         worldRequest.skillMastery = skillMastery;
-        worldRequest.damage = rollSpellDamage(*rule, *pSpellEntry, skillLevel);
-        worldRequest.damageType = GameMechanics::spellCombatDamageType(request.spellId, &spellTable);
+        worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+        worldRequest.damageType = party.rules().combat.partySpellDamageType(
+            request.spellId, GameMechanics::spellCombatDamageType(request.spellId, &spellTable));
         worldRequest.turnBasedPendingAction = request.turnBasedPendingAction;
         worldRequest.sourceX = projectileSource.x;
         worldRequest.sourceY = projectileSource.y;
@@ -2532,6 +2555,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
         worldRequest.targetX = targetPoint.x;
         worldRequest.targetY = targetPoint.y;
         worldRequest.targetZ = targetPoint.z;
+        worldRequest.targetActorIndex = request.targetActorIndex;
         castSucceeded = worldRuntime.castPartySpellProjectile(worldRequest);
     }
     else if (rule->effectKind == PartySpellCastEffectKind::MultiProjectile)
@@ -2548,10 +2572,10 @@ PartySpellCastResult PartySpellSystem::castSpell(
             SpellSourcePoint{.x = targetPoint.x, .y = targetPoint.y, .z = targetPoint.z},
             party.members().size());
 
-        for (uint32_t projectileIndex = 0; projectileIndex < rule->multiProjectileCount; ++projectileIndex)
+        for (uint32_t projectileIndex = 0; projectileIndex < spellNumbers.projectileCount; ++projectileIndex)
         {
             const float yawRadians = targetAngleRadians + GameMechanics::projectileFanYawOffsetRadians(
-                rule->multiProjectileCount,
+                spellNumbers.projectileCount,
                 projectileIndex,
                 spreadArcRadians);
             GameplayPartySpellProjectileRequest worldRequest = {};
@@ -2559,8 +2583,9 @@ PartySpellCastResult PartySpellSystem::castSpell(
             worldRequest.spellId = request.spellId;
             worldRequest.skillLevel = skillLevel;
             worldRequest.skillMastery = skillMastery;
-            worldRequest.damage = rollSpellDamage(*rule, *pSpellEntry, skillLevel);
-            worldRequest.damageType = GameMechanics::spellCombatDamageType(request.spellId, &spellTable);
+            worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+            worldRequest.damageType = party.rules().combat.partySpellDamageType(
+                request.spellId, GameMechanics::spellCombatDamageType(request.spellId, &spellTable));
             worldRequest.turnBasedPendingAction = request.turnBasedPendingAction;
             worldRequest.sourceX = projectileSource.x;
             worldRequest.sourceY = projectileSource.y;
@@ -2573,7 +2598,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
     }
     else if (rule->effectKind == PartySpellCastEffectKind::ActorEffect)
     {
-        if (spellId == SpellId::Sunray && (worldRuntime.currentHour() < 5 || worldRuntime.currentHour() >= 21))
+        if (spellId == SpellId::Sunray && !sunrayIndoors
+            && (worldRuntime.currentHour() < 5 || worldRuntime.currentHour() >= 21))
         {
             return makeFailureWithRecovery(
                 PartySpellCastStatus::Failed,
@@ -2602,15 +2628,32 @@ PartySpellCastResult PartySpellSystem::castSpell(
         else if (request.targetActorIndex)
         {
             GameplayActorInspectState targetBefore = {};
-            const bool hasDrainTarget = spellId == SpellId::Lifedrain
-                && worldRuntime.actorInspectState(*request.targetActorIndex, 0, targetBefore);
+            const bool hasTarget = worldRuntime.actorInspectState(*request.targetActorIndex, 0, targetBefore);
+            const bool hasDrainTarget =
+                spellId == SpellId::Lifedrain && hasTarget && party.rules().combat.lifedrainHealsCasterThird();
+            int damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+
+            // A share of the target's hit points replaces the roll under rules that have one (MAW's Mass Distortion).
+            if (hasTarget)
+            {
+                GameplayRuntimeActorState targetRuntime = {};
+                const bool hasFacts = worldRuntime.actorRuntimeState(*request.targetActorIndex, targetRuntime);
+                const SpellTargetState target = {
+                    targetBefore.currentHp, targetBefore.maxHp, hasFacts ? &targetRuntime.rulesetFacts : nullptr};
+
+                if (const std::optional<int> share = party.rules().combat.spellDamageOnTarget(
+                        castAtLevel(*pSpellEntry, skillMastery, skillLevel), target))
+                {
+                    damage = *share;
+                }
+            }
 
             castSucceeded = worldRuntime.applyPartySpellToActor(
                 *request.targetActorIndex,
                 request.spellId,
                 skillLevel,
                 skillMastery,
-                rollSpellDamage(*rule, *pSpellEntry, skillLevel),
+                damage,
                 sourceX,
                 sourceY,
                 footZ,
@@ -2663,6 +2706,23 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         footZ,
                         static_cast<uint32_t>(request.casterMemberIndex));
                 }
+            }
+
+            const SpellSplash splash = spellRules.spellSplash(request.spellId, skillMastery);
+
+            if (castSucceeded && splash.extraTargets > 0)
+            {
+                applySpellSplash(
+                    worldRuntime,
+                    request,
+                    splash,
+                    targetPoint,
+                    skillLevel,
+                    skillMastery,
+                    sourceX,
+                    sourceY,
+                    sourceZ,
+                    footZ);
             }
         }
         else if (request.targetCharacterIndex)
@@ -2728,9 +2788,18 @@ PartySpellCastResult PartySpellSystem::castSpell(
         {
             if (spellId == SpellId::SummonWisp)
             {
-                if (activeFriendlyWispCount(worldRuntime) >= SummonWispActiveLimit)
+                // Each caster keeps their own summons up to the mastery's limit; past it the rules may add a permanent
+                // Grandmaster wisp (MAW). At the limit the cast is refused without spending SP or recovery, and no
+                // wisp is replaced (MM8-Rel 0x42c1c9).
+                const size_t summoned = summonedMonsterCount(worldRuntime, request.casterMemberIndex);
+                const size_t limit = summonWispLimit(skillMastery);
+                const size_t extraWisps = party.rules().spells.extraPermanentWisps(skillMastery);
+                const bool permanent = summoned >= limit;
+
+                if (summoned >= limit + extraWisps)
                 {
-                    return makeFailureWithRecovery(
+                    return makeFailure(
+                        request.spellId,
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
@@ -2738,15 +2807,16 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 }
 
                 castSucceeded = worldRuntime.summonFriendlyMonsterById(
-                    summonWispMonsterIdForMastery(skillMastery),
+                    permanent ? SummonWispGrandmasterMonsterId : summonWispMonsterIdForMastery(skillMastery),
                     1,
-                    summonWispDurationSeconds(skillLevel, skillMastery),
+                    permanent ? PermanentWispSeconds : summonWispDurationSeconds(skillLevel, skillMastery),
                     sourceX,
                     sourceY,
-                    footZ);
+                    footZ,
+                    int32_t(request.casterMemberIndex));
             }
 
-            const bool daylightOnly = spellId == SpellId::Sunray;
+            const bool daylightOnly = spellId == SpellId::Sunray && !sunrayIndoors;
 
             if (daylightOnly && (worldRuntime.currentHour() < 5 || worldRuntime.currentHour() >= 21))
             {
@@ -2785,7 +2855,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     : spellId == SpellId::SummonWisp
                     ? 0.0f
                     : spellId == SpellId::SpiritLash
-                    ? 768.0f
+                    ? party.rules().spells.spiritLashRadius(skillMastery)
                     : spellId == SpellId::SoulDrinker
                     ? SoulDrinkerOutdoorRange
                     : spellId == SpellId::Armageddon
@@ -2853,7 +2923,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     }
                 }
 
-                const int spellDamage = rollSpellDamage(*rule, *pSpellEntry, skillLevel);
+                const int spellDamage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
                 const bool applied = worldRuntime.applyPartySpellToActor(
                     actorIndex,
                     request.spellId,
@@ -2965,6 +3035,14 @@ PartySpellCastResult PartySpellSystem::castSpell(
     if (request.spendMana)
     {
         party.spendSpellPoints(request.casterMemberIndex, static_cast<int>(result.manaCost));
+        spellRules.afterCast(party, request.casterMemberIndex, request.spellId, spellTable, worldRuntime.isIndoorMap(),
+            !request.quickCast);
+    }
+
+    if (healedTotal > 0)
+    {
+        spellRules.afterHeal(party, request.casterMemberIndex, healedTotal, overhealed, int(result.manaCost),
+            result.recoverySeconds);
     }
 
     if (request.applyRecovery && result.recoverySeconds > 0.0f)
@@ -2977,6 +3055,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
 }
 
 std::optional<uint32_t> PartySpellSystem::manaCost(
+    const Party &party,
     const Character &caster,
     const SpellTable &spellTable,
     uint32_t spellId)
@@ -2990,14 +3069,284 @@ std::optional<uint32_t> PartySpellSystem::manaCost(
         return std::nullopt;
     }
 
-    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(spellId, skillMastery);
-
-    if (!rule)
+    if (!resolveBackendSpellRule(spellId, skillMastery))
     {
         return std::nullopt;
     }
 
-    return resolveManaCost(*rule, *pSpellEntry, skillMastery, spellId);
+    CharacterSpellCast cast = {};
+    cast.pCaster = &caster;
+    cast.pItemTable = party.itemTable();
+    cast.pStandardItemEnchantTable = party.standardItemEnchantTable();
+    cast.pSpecialItemEnchantTable = party.specialItemEnchantTable();
+    cast.pSpell = pSpellEntry;
+    cast.mastery = skillMastery;
+    cast.skillLevel = skillLevel;
+    cast.partyCount = int(std::max<size_t>(1, party.members().size()));
+    return static_cast<uint32_t>(
+        party.rules().spells.manaCost(cast, spellNumbersAtMastery(*pSpellEntry, skillMastery).manaCost));
+}
+
+std::optional<int> PartySpellSystem::healAmount(
+    const Party &party,
+    const Character &caster,
+    const SpellTable &spellTable,
+    uint32_t spellId)
+{
+    const SpellEntry *pSpellEntry = spellTable.findById(static_cast<int>(spellId));
+    uint32_t skillLevel = 0;
+    SkillMastery skillMastery = SkillMastery::None;
+
+    if (pSpellEntry == nullptr || !resolveSpellSkill(caster, spellId, {}, skillLevel, skillMastery))
+    {
+        return std::nullopt;
+    }
+
+    CharacterSpellCast cast = {};
+    cast.pCaster = &caster;
+    cast.pItemTable = party.itemTable();
+    cast.pStandardItemEnchantTable = party.standardItemEnchantTable();
+    cast.pSpecialItemEnchantTable = party.specialItemEnchantTable();
+    cast.pSpell = pSpellEntry;
+    cast.mastery = skillMastery;
+    cast.skillLevel = skillLevel;
+    cast.partyCount = int(std::max<size_t>(1, party.members().size()));
+
+    if (const std::optional<int> rulesetHeal = party.rules().spells.healAmount(cast))
+    {
+        return rulesetHeal;
+    }
+
+    return spellIdFromValue(spellId) == SpellId::Heal ? std::optional<int>(standardHealAmount(skillMastery, skillLevel))
+                                                      : std::nullopt;
+}
+
+std::optional<size_t> PartySpellSystem::quickCastActorTarget(
+    const IGameplayWorldRuntime &worldRuntime,
+    const SpellRules &spellRules,
+    uint32_t spellId)
+{
+    const std::vector<size_t> visible = worldRuntime.spellActionVisibleHostileActorIndices();
+
+    if (!spellRules.quickCastSpreadsDebuff(spellId))
+    {
+        return visible.empty() ? std::nullopt : std::optional<size_t>(visible.front());
+    }
+
+    constexpr float MaxDistance = 4800.0f;
+    const SpellId spell = spellIdFromValue(spellId);
+    const MonsterTable *pMonsterTable = worldRuntime.monsterTable();
+    std::optional<size_t> target;
+    float soonest = std::numeric_limits<float>::max();
+
+    for (size_t actorIndex : visible)
+    {
+        GameplayRuntimeActorState actor = {};
+        GameplayActorInspectState debuffs = {};
+
+        if (!worldRuntime.actorRuntimeState(actorIndex, actor)
+            || !worldRuntime.actorInspectState(actorIndex, 0, debuffs))
+        {
+            continue;
+        }
+
+        const float dx = actor.preciseX - worldRuntime.partyX();
+        const float dy = actor.preciseY - worldRuntime.partyY();
+        const float dz = actor.preciseZ - worldRuntime.partyFootZ();
+
+        if (dx * dx + dy * dy + dz * dz > MaxDistance * MaxDistance)
+        {
+            continue;
+        }
+
+        if (spell == SpellId::ControlUndead)
+        {
+            const MonsterTable::MonsterStatsEntry *pStats =
+                pMonsterTable != nullptr ? pMonsterTable->findStatsById(actor.monsterId) : nullptr;
+
+            if (pStats == nullptr || !pStats->hasKind(MonsterKind::Undead))
+            {
+                continue;
+            }
+        }
+
+        // The time left on this spell's debuff; MAW keeps Charm, Berserk and Enslave apart, our actors hold one
+        // control.
+        const auto controlFor = [&debuffs](GameplayActorControlMode mode)
+        {
+            return debuffs.controlMode == mode ? debuffs.controlRemainingSeconds : 0.0f;
+        };
+        float remaining = 0.0f;
+
+        switch (spell)
+        {
+            case SpellId::Slow:
+                remaining = debuffs.slowRemainingSeconds;
+                break;
+            case SpellId::Paralyze:
+                remaining = debuffs.paralyzeRemainingSeconds;
+                break;
+            case SpellId::DarkGrasp:
+                remaining = debuffs.darkGraspRemainingSeconds;
+                break;
+            case SpellId::Berserk:
+                remaining = controlFor(GameplayActorControlMode::Berserk);
+                break;
+            case SpellId::Enslave:
+            case SpellId::ControlUndead:
+                remaining = std::max(controlFor(GameplayActorControlMode::Enslaved),
+                    controlFor(GameplayActorControlMode::ControlUndead));
+                break;
+            default:
+                remaining = controlFor(GameplayActorControlMode::Charm);
+                break;
+        }
+
+        if (remaining < soonest)
+        {
+            soonest = remaining;
+            target = actorIndex;
+        }
+    }
+
+    return target;
+}
+
+std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
+    const Party &party,
+    size_t casterIndex,
+    uint32_t spellId,
+    const SpellTable *pSpellTable)
+{
+    const auto share = [](const Character &member)
+    {
+        return double(member.health) / std::max(1, Party::effectiveMaximumHealth(member));
+    };
+    const auto has = [](const Character &member, std::initializer_list<CharacterCondition> conditions)
+    {
+        return std::any_of(conditions.begin(), conditions.end(),
+            [&member](CharacterCondition condition)
+            {
+                return member.conditions.test(size_t(condition));
+            });
+    };
+    using enum CharacterCondition;
+    const std::initializer_list<CharacterCondition> beyondHealing = {Dead, Eradicated, Petrified};
+
+    // The member who has what the spell cures (the dead for the revivals), the lowest HP share first; a cure passes the
+    // dead, eradicated and petrified by (STD2-4).
+    const auto withCondition = [&](std::initializer_list<CharacterCondition> conditions,
+                                   bool skipBeyondHealing = false) -> std::optional<size_t>
+    {
+        std::optional<size_t> target;
+
+        for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+        {
+            const Character &member = party.members()[memberIndex];
+
+            if (has(member, conditions) && !(skipBeyondHealing && has(member, beyondHealing))
+                && (!target || share(member) < share(party.members()[*target])))
+            {
+                target = memberIndex;
+            }
+        }
+
+        return target;
+    };
+
+    switch (spellIdFromValue(spellId))
+    {
+        case SpellId::RaiseDead:
+            return withCondition({Dead});
+        case SpellId::Resurrection:
+            return withCondition({Dead, Eradicated});
+        case SpellId::StoneToFlesh:
+            return withCondition({Petrified});
+        default:
+            break;
+    }
+
+    // A heal goes where it does the most: to the lowest share among members at or below a third of their maximum,
+    // else to whoever gains the most HP from this cast, ties to the lowest share. Never to the dead, petrified or
+    // whole.
+    const Character *pCaster = party.member(casterIndex);
+    const std::optional<int> heal = pCaster != nullptr && pSpellTable != nullptr
+        ? healAmount(party, *pCaster, *pSpellTable, spellId)
+        : std::nullopt;
+
+    if (heal)
+    {
+        std::optional<size_t> endangered;
+        std::optional<size_t> bestGain;
+        int bestGainAmount = 0;
+
+        for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+        {
+            const Character &member = party.members()[memberIndex];
+            const int missing = Party::effectiveMaximumHealth(member) - member.health;
+
+            if (missing <= 0 || has(member, beyondHealing))
+            {
+                continue;
+            }
+
+            if (share(member) <= 1.0 / 3.0 && (!endangered || share(member) < share(party.members()[*endangered])))
+            {
+                endangered = memberIndex;
+            }
+
+            const int gain = std::min(*heal, missing);
+
+            if (!bestGain || gain > bestGainAmount
+                || (gain == bestGainAmount && share(member) < share(party.members()[*bestGain])))
+            {
+                bestGain = memberIndex;
+                bestGainAmount = gain;
+            }
+        }
+
+        return endangered ? endangered : bestGain;
+    }
+
+    switch (spellIdFromValue(spellId))
+    {
+        case SpellId::RemoveCurse:
+            return withCondition({Cursed}, true);
+        case SpellId::RemoveFear:
+            return withCondition({Fear}, true);
+        case SpellId::CureParalysis:
+            return withCondition({Paralyzed}, true);
+        case SpellId::CureInsanity:
+            return withCondition({Insane}, true);
+        case SpellId::CureWeakness:
+            return withCondition({Weak}, true);
+        case SpellId::CurePoison:
+            return withCondition({PoisonWeak, PoisonMedium, PoisonSevere}, true);
+        case SpellId::CureDisease:
+            return withCondition({DiseaseWeak, DiseaseMedium, DiseaseSevere}, true);
+        default:
+            break;
+    }
+
+    // Any other spell on a member (buffs): the wounded member with the fewest hit points.
+    std::optional<size_t> target;
+
+    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+    {
+        const Character &member = party.members()[memberIndex];
+
+        if (member.health >= Party::effectiveMaximumHealth(member) || has(member, beyondHealing))
+        {
+            continue;
+        }
+
+        if (!target || member.health < party.members()[*target].health)
+        {
+            target = memberIndex;
+        }
+    }
+
+    return target;
 }
 
 std::optional<PartySpellDescriptor> PartySpellSystem::describeSpell(uint32_t spellId)

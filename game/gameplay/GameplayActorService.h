@@ -79,7 +79,6 @@ public:
         uint32_t spellId,
         uint32_t skillLevel,
         int baseDamage,
-        int actorCurrentHp,
         bool actorLooksUndead) const;
     static std::optional<bx::Vec3> spellPushVelocity(
         uint32_t spellId,
@@ -96,7 +95,8 @@ public:
         bool actorLooksUndead,
         bool defaultHostileToParty,
         int spellResistance,
-        GameplayActorSpellEffectState &state) const;
+        GameplayActorSpellEffectState &state,
+        std::optional<float> rulesetSeconds = std::nullopt) const;
 
     void updateSpellEffectTimers(
         GameplayActorSpellEffectState &state,

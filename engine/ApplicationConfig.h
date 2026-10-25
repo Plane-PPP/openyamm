@@ -23,6 +23,9 @@ struct ApplicationConfig
     std::string assetRoot;
     std::string activeWorldId;
     std::string startupMapFileOverride;
+    // The ruleset of a game started directly, without the New Game screen ("--ruleset maw:hell:horizontal"; see
+    // game/content/RulesetOptions.h). Empty plays the Standard rules.
+    std::string startupRuleset;
     std::optional<size_t> loadUniqueActorIndex;
     AssetScaleTier assetScaleTier;
     AssetScaleProfile assetScaleProfile;

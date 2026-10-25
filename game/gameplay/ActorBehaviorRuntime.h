@@ -197,6 +197,9 @@ public:
     void applyAiFacts(ActorAiFrameFacts &facts);
     void observeAiResult(const ActorAiFrameResult &result);
     void applyPresentation(size_t actorIndex, GameplayRuntimeActorState &state) const;
+    // True for a monster whose tactics turn it at a traverse rate (a turret): the world runtimes skip their instant
+    // reaction turns (hit, alert) for it, and its AI turns it to the attacker at that rate instead.
+    bool turnsAtTraverseRate(int16_t monsterId) const;
 
     const std::vector<GameplayProjectileService::ProjectileWardFacts> &projectileWards() const;
     const std::vector<ActorBehaviorWardDisplay> &wardDisplays() const;
@@ -275,6 +278,7 @@ private:
         ActorBehaviorFrameResult &result);
     void rebuildProjectileWards(const ActorBehaviorFrameFacts &facts);
     void applyTactics(ActorAiFrameFacts &facts);
+    void updateTacticTurret(ActorAiFacts &actor, bool active, float stepSeconds);
     void reportScriptError(InstanceRecord &record, const std::string &message);
 
     const ActorBehaviorCatalog *m_pCatalog = nullptr;
@@ -291,6 +295,28 @@ private:
         GameplayWorldPoint point;
     };
     std::unordered_map<size_t, TacticAim> m_tacticAims;
+    // A turret's idle scan, the hold of its last aim and the velocity estimate of its target for the lead (tactics
+    // `scan`, `lead_seconds`; presentation-grade state, never saved: after a load the scan restarts from the facing).
+    struct TacticTurret
+    {
+        uint32_t actorId = 0;
+        TurretScanState scan;
+        uint32_t scanStarts = 0;
+        float centreYawRadians = 0.0f;
+        float scanPitchRadians = 0.0f;
+        bool scanning = false;
+        bool engaged = false;
+        float holdRemainingSeconds = 0.0f;
+        float heldYawRadians = 0.0f;
+        bool hasHeldAim = false;
+        GameplayWorldPoint heldAim;
+        ActorAiTargetKind targetKind = ActorAiTargetKind::None;
+        size_t targetActorIndex = static_cast<size_t>(-1);
+        bool hasTargetSample = false;
+        GameplayWorldPoint targetSample;
+        GameplayWorldPoint targetVelocity;
+    };
+    std::unordered_map<size_t, TacticTurret> m_tacticTurrets;
 
     std::optional<Engine::LuaStateOwner> m_lua;
     bool m_luaFailed = false;

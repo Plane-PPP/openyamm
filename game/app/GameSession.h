@@ -16,6 +16,7 @@
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 #include "game/maps/SaveGame.h"
 #include "game/mm9/Mm9QuestMarkers.h"
+#include "game/rules/maw/MawRules.h"
 #include "game/scene/SceneKind.h"
 #include "game/data/GameDataRepository.h"
 #include "game/ui/GameplayOverlayTypes.h"
@@ -28,6 +29,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -67,6 +69,7 @@ class GameSession
 {
 public:
     GameSession();
+    ~GameSession();
 
     using SaveGameToPathCallback = std::function<bool(
         const std::filesystem::path &,
@@ -94,6 +97,24 @@ public:
     void setCurrentMapFileName(std::string &&mapFileName);
     float gameMinutes() const;
     void setGameMinutes(float gameMinutes);
+    // The rules this game is played by; the loaded tables must match (GameApplication::activateRuleset).
+    const RulesetSelection &ruleset() const;
+    // Builds the ruleset's rules (MAW) and installs them on the party.
+    void setRuleset(const RulesetSelection &ruleset);
+    // Changes the options of the game's ruleset mid-game (the Current game page): MAW re-sizes the current map's
+    // monsters now and every other map's when it loads. The caller checks what the ruleset allows.
+    void setRulesetOptions(const RulesetOptions &options);
+    // The rules the ruleset plays by; null for Standard.
+    const GameRules *rulesetGameRules() const;
+    // The MAW rules of a MAW game, else null.
+    MawRules *mawRules();
+    const MawRules *mawRules() const;
+    // Root of the game's named random streams (game/rules/RandomStreams.h), chosen at new game and saved.
+    uint64_t randomRootSeed() const;
+    void setRandomRootSeed(uint64_t rootSeed);
+    // Where MAW's Beyond Madness death ledger lives, for every MAW game the session creates (scenarios keep it in their
+    // own save folder); the default is the game's saves folder.
+    void setMadnessLedgerFile(const std::filesystem::path &file);
 
     GameplayUiController &gameplayUiController();
     const GameplayUiController &gameplayUiController() const;
@@ -277,6 +298,7 @@ private:
     void updateMm9QuestMarkerCache();
 
     const GameDataRepository *m_pDataRepository = nullptr;
+    std::optional<std::filesystem::path> m_madnessLedgerFile;
     std::optional<Party> m_partyState;
     SceneKind m_currentSceneKind = SceneKind::Outdoor;
     std::string m_currentMapFileName;
@@ -309,6 +331,9 @@ private:
     std::unordered_map<std::string, IndoorSceneRuntime::Snapshot> m_indoorSceneStates;
     std::unordered_map<std::string, int32_t> m_namedGlobalVars;
     float m_gameMinutes = 9.0f * 60.0f;
+    RulesetSelection m_ruleset;
+    std::unique_ptr<MawRules> m_pMawRules;
+    uint64_t m_randomRootSeed = 0;
     float m_cameraYawRadians = 0.0f;
     float m_cameraPitchRadians = 0.0f;
     bool m_cameraAnglesValid = false;

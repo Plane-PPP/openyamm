@@ -47,7 +47,11 @@ enum class ArcMaterial
     Track,
     NormalRim,
     SelectedRim,
-    Damage
+    Damage,
+    // The personal energy shield's thin outer rim over the HP arc: charge, empty track, the flash as it breaks.
+    Shield,
+    ShieldDown,
+    ShieldFlash
 };
 
 inline HealthBand healthBand(float fraction)
@@ -68,15 +72,25 @@ inline GameplayResolvedHudLayoutElement meterSegment(const GameplayResolvedHudLa
         : GameplayResolvedHudLayoutElement{rect.x + rect.width * begin, rect.y,
             rect.width * (end - begin), rect.height, rect.scale};
 }
+// `pLabel` replaces the layout's label text (a live price, say).
 void renderButton(GameplayScreenRuntime &context, const std::string &id, int width, int height,
-    bool selected = false, bool enabled = true);
+    bool selected = false, bool enabled = true, const std::string *pLabel = nullptr);
 void renderIconButton(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
     const std::string &icon, bool hovered, bool pressed, bool selected = false);
 void renderPanel(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
     bool openBottom = false, float borderScale = 1, uint8_t surfaceAlpha = 255);
 void renderArc(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
     float strokeWidth, float startDegrees, float sweepDegrees, ArcMaterial material, float begin = 0, float end = 1);
+// The share of a portrait gauge held by auras: a dark hatched band from `begin` to the end of the arc (green-tinted
+// on the HP arc, slate on the mana arc).
+void renderReservedArc(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
+    float strokeWidth, float startDegrees, float sweepDegrees, float begin, bool health);
+// The gold mark across a gauge where its free pool ends, drawn over the fill.
+void renderReservedMark(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
+    float strokeWidth, float startDegrees, float sweepDegrees, float at);
 void renderPartyBasebar(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect);
+// Where the drawn party frame ends on the left, its end ornament included.
+float partyBasebarLeft(const GameplayResolvedHudLayoutElement &rect);
 void renderSurface(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
     uint8_t alpha = 255);
 void renderTexture(GameplayScreenRuntime &context, const std::string &asset,

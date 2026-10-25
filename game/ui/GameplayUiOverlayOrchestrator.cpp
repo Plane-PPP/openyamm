@@ -36,6 +36,7 @@ GameplayUiOverlayInputResult GameplayUiOverlayOrchestrator::handleStandardOverla
         config.mapShortcutPressed,
         config.storyShortcutPressed,
         config.notesShortcutPressed,
+        config.progressShortcutPressed,
         config.zoomInPressed,
         config.zoomOutPressed,
         config.mouseWheelDelta);
@@ -141,6 +142,8 @@ void GameplayUiOverlayOrchestrator::renderStandardOverlays(
 
     overlayContext.beginRenderedInspectableHudFrame();
     recordStage(&GameplayUiOverlayFramePerformanceDiagnostics::beginInspectableFrameNanoseconds);
+    // The character screen's two passes share what it works out for the frame.
+    std::shared_ptr<CharacterOverlayFrameData> characterFrameData;
 
     if (config.canRenderHudOverlays)
     {
@@ -177,7 +180,8 @@ void GameplayUiOverlayOrchestrator::renderStandardOverlays(
 
         if (config.renderCharacterBelowHud)
         {
-            GameplayPartyOverlayRenderer::renderCharacterOverlay(overlayContext, width, height, false);
+            GameplayPartyOverlayRenderer::renderCharacterOverlay(
+                overlayContext, width, height, false, characterFrameData);
         }
         recordStage(&GameplayUiOverlayFramePerformanceDiagnostics::characterBelowNanoseconds);
 
@@ -200,7 +204,8 @@ void GameplayUiOverlayOrchestrator::renderStandardOverlays(
 
         if (config.renderCharacterAboveHud)
         {
-            GameplayPartyOverlayRenderer::renderCharacterOverlay(overlayContext, width, height, true);
+            GameplayPartyOverlayRenderer::renderCharacterOverlay(
+                overlayContext, width, height, true, characterFrameData);
             GameplayAlchemyBenchRenderer::render(overlayContext, width, height);
         }
         recordStage(&GameplayUiOverlayFramePerformanceDiagnostics::characterAboveNanoseconds);

@@ -3463,6 +3463,10 @@ bool OutdoorRenderer::initializeWorldRenderResources(
             loadProgramHandle("vs_model_skinned_instanced", "fs_model_emissive"),
             loadProgramHandle("vs_model_instanced", "fs_model_emissive")};
     });
+    view.m_modelRenderer.setShieldShellProgramLoader([]()
+    {
+        return loadProgramHandle("vs_model_shield", "fs_model_shield");
+    });
     view.m_outdoorTexturedFogProgramHandle =
         loadProgramHandle("vs_outdoor_textured_fog", "fs_outdoor_textured_fog");
     if (view.m_gameSettings.lightmaps && outdoorMapData.lightingData)

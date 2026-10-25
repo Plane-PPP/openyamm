@@ -4,6 +4,7 @@
 #include "game/data/GameDataLoader.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayOverlayInputController.h"
+#include "game/ui/GameplayHudCommon.h"
 #include "game/ui/GameplayUiRuntime.h"
 
 #include <doctest/doctest.h>
@@ -94,4 +95,56 @@ TEST_CASE("the press that opens a chest or dialogue is consumed before the overl
     CHECK(state.chestPressedTarget.type == Game::GameplayChestPointerTargetType::None);
     CHECK(state.dialogueClickLatch);
     CHECK(state.dialoguePressedTarget.type == Game::GameplayDialoguePointerTargetType::None);
+}
+
+TEST_CASE("HUD text colour codes take no room, carry across wrapped lines and tint only the main layer")
+{
+    using namespace OpenYAMM::Game;
+    GameplayHudFontData font;
+    font.firstChar = 32;
+    font.lastChar = 126;
+    font.fontHeight = 10;
+    font.atlasCellWidth = 6;
+    font.atlasWidth = 256;
+    font.atlasHeight = 256;
+    font.atlasScale = 1;
+
+    for (int character = font.firstChar; character <= font.lastChar; ++character)
+    {
+        font.glyphMetrics[size_t(character)] = {0, 5, 1, 0};
+    }
+
+    font.mainTextureHandle = bgfx::TextureHandle {1};
+    font.shadowTextureHandle = bgfx::TextureHandle {2};
+    font.tintTextureHandle = bgfx::TextureHandle {3};
+
+    // "\f02016" is Might and Magic's green; "\f00000" returns to the line's own colour.
+    CHECK(GameplayHudCommon::measureHudTextWidth(font, "ab") == doctest::Approx(12));
+    CHECK(GameplayHudCommon::measureHudTextWidth(font, "a\f02016b\f00000") == doctest::Approx(12));
+
+    const std::vector<std::string> lines = GameplayHudCommon::wrapHudTextToWidth(font, "x \f02016aaaa bbbb\f00000 c", 30);
+    REQUIRE_EQ(lines.size(), 4u);
+    CHECK_EQ(lines[1], "\f02016aaaa");
+    CHECK_EQ(lines[2], "\f02016bbbb\f00000");
+    CHECK_EQ(lines[3], "c");
+
+    std::vector<std::pair<uint16_t, uint32_t>> quads;
+    const auto collect = [&quads](bgfx::TextureHandle texture, float, float, float, float, float, float, float, float,
+                             TextureFilterProfile, uint32_t tint)
+    {
+        quads.emplace_back(texture.idx, tint);
+    };
+    GameplayHudCommon::renderHudFontLayer(
+        font, GameplayHudFontLayer(font.mainTextureHandle), "a\f02016b\f00000c", 0, 0, 1, collect);
+    REQUIRE_EQ(quads.size(), 3u);
+    CHECK_EQ(quads[0].first, 1);
+    CHECK_EQ(quads[1].first, 3);
+    CHECK_EQ(quads[1].second, 0xff00ff00u);
+    CHECK_EQ(quads[2].first, 1);
+
+    quads.clear();
+    GameplayHudCommon::renderHudFontLayer(
+        font, GameplayHudFontLayer(font.shadowTextureHandle), "a\f02016b", 0, 0, 1, collect);
+    REQUIRE_EQ(quads.size(), 2u);
+    CHECK_EQ(quads[1].first, 2);
 }

@@ -4470,7 +4470,7 @@ void OutdoorGameView::clearWorldInteractionInputLatches()
     m_lastRightMouseInspectUpdateNanoseconds = 0;
     m_cachedRightMouseInspectPickRequest = {};
     m_cachedRightMouseInspectHit = {};
-    screenRuntime.clearStatusBarHoverText();
+    screenRuntime.clearWorldStatusBarHoverText();
 }
 
 float OutdoorGameView::innRestDurationMinutes(uint32_t houseId) const
@@ -4899,6 +4899,23 @@ void OutdoorGameView::updateCombatFeedback(float deltaSeconds)
                         .fontScale = combatDamageFontScale(event.damage),
                     });
             }
+            else if (event.shieldDamage > 0 && m_gameSettings.combatText)
+            {
+                // A hit a raised energy shield took whole: its number in shield blue, apart from body damage.
+                m_combatFloatingTexts.push_back(
+                    CombatFloatingText{
+                        .actorIndex = event.actorIndex,
+                        .amount = event.shieldDamage,
+                        .text = std::to_string(event.shieldDamage),
+                        .x = event.x,
+                        .y = event.y,
+                        .z = GameplayUiSkin::combatDamageTextOriginZ(event.z, event.height),
+                        .remainingSeconds = 0.6f,
+                        .durationSeconds = 0.6f,
+                        .colorAbgr = makeCombatHudColor(150, 220, 255, 255),
+                        .fontScale = combatDamageFontScale(event.shieldDamage),
+                    });
+            }
         }
     }
 }
@@ -5162,7 +5179,12 @@ void OutdoorGameView::updateActorInspectOverlayState(int width, int height, cons
 
                 if (pParty != nullptr && pIdentifier != nullptr && pStats != nullptr)
                 {
-                    const SpeechId speechId = GameMechanics::resolveIdentifyMonsterSpeech(*pIdentifier, pStats->level);
+                    const int monsterLevel =
+                        pActorState->rulesetFacts.level > 0 ? pActorState->rulesetFacts.level : pStats->level;
+                    const SpeechId speechId = GameMechanics::resolveIdentifyMonsterSpeech(
+                        pParty->rules().skills.identifyMonsterReveal(*pParty, monsterLevel),
+                        *pIdentifier,
+                        monsterLevel);
 
                     if (speechId != SpeechId::None)
                     {
@@ -5239,6 +5261,7 @@ void OutdoorGameView::updateActorInspectOverlayState(int width, int height, cons
 
     actorInspectOverlay.active = true;
     actorInspectOverlay.runtimeActorIndex = runtimeActorIndex;
+    actorInspectOverlay.rawNumbers = input.altHeld();
     actorInspectOverlay.displayNameOverride =
         OutdoorInteractionController::resolveActorInspectDisplayName(*this, inspectHit);
     actorInspectOverlay.sourceX = rectMinX;

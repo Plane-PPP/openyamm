@@ -1,6 +1,9 @@
 #pragma once
 
 #include "game/party/SkillData.h"
+#include "game/tables/MonsterModifiers.h"
+#include "game/tables/MonsterRelationAddOns.h"
+#include "game/tables/MonsterShields.h"
 
 #include <array>
 #include <cstdint>
@@ -11,6 +14,24 @@
 
 namespace OpenYAMM::Game
 {
+// Flags of MonsterStatsEntry::attackPreferences: whom a monster prefers to attack. The table gives them as a number or
+// as MM6/MM7 letters (K, P, A, D, C, S, R, T, M for classes, X/O/F for male/female, H, E, W, G for races).
+inline constexpr uint32_t MonsterAttackPreferenceKnight = 0x0001;
+inline constexpr uint32_t MonsterAttackPreferencePaladin = 0x0002;
+inline constexpr uint32_t MonsterAttackPreferenceArcher = 0x0004;
+inline constexpr uint32_t MonsterAttackPreferenceDruid = 0x0008;
+inline constexpr uint32_t MonsterAttackPreferenceCleric = 0x0010;
+inline constexpr uint32_t MonsterAttackPreferenceSorcerer = 0x0020;
+inline constexpr uint32_t MonsterAttackPreferenceRanger = 0x0040;
+inline constexpr uint32_t MonsterAttackPreferenceThief = 0x0080;
+inline constexpr uint32_t MonsterAttackPreferenceMonk = 0x0100;
+inline constexpr uint32_t MonsterAttackPreferenceMale = 0x0200;
+inline constexpr uint32_t MonsterAttackPreferenceFemale = 0x0400;
+inline constexpr uint32_t MonsterAttackPreferenceHuman = 0x0800;
+inline constexpr uint32_t MonsterAttackPreferenceElf = 0x1000;
+inline constexpr uint32_t MonsterAttackPreferenceDwarf = 0x2000;
+inline constexpr uint32_t MonsterAttackPreferenceGoblin = 0x4000;
+
 class MergedBolsterMonsterTable;
 
 enum class MonsterSpecialAttackKind : uint8_t
@@ -263,12 +284,50 @@ public:
     const MonsterEntry *findByDisplayEntryId(int id) const;
     std::optional<std::string> findDisplayNameByInternalName(const std::string &internalName) const;
     std::optional<std::string> getUniqueName(int32_t uniqueNameIndex) const;
+    // Relations: a world's relations.yml add-on (relationAddOns) decides where it has a rule, else hostile.txt.
     int getRelationToParty(int16_t monsterId) const;
     int getRelationBetweenMonsters(int16_t leftMonsterId, int16_t rightMonsterId) const;
     bool isHostileToParty(int16_t monsterId) const;
     bool isLikelySameFaction(int16_t leftMonsterId, int16_t rightMonsterId) const;
+    MonsterRelationAddOns &relationAddOns()
+    {
+        return m_relationAddOns;
+    }
+    const MonsterRelationAddOns &relationAddOns() const
+    {
+        return m_relationAddOns;
+    }
+    // Energy shields from the worlds' shields.yml; monsters without a profile never meet a shield rule.
+    MonsterShieldTable &shields()
+    {
+        return m_shields;
+    }
+    const MonsterShieldTable &shields() const
+    {
+        return m_shields;
+    }
+    const MonsterShieldProfile *findShieldProfile(int16_t monsterId) const
+    {
+        return m_shields.empty() ? nullptr : m_shields.find(monsterId);
+    }
+    // Modifiers (true aim, never staggers, kites party, blink) from the worlds' modifiers.yml.
+    MonsterModifierTable &modifiers()
+    {
+        return m_modifiers;
+    }
+    const MonsterModifierTable &modifiers() const
+    {
+        return m_modifiers;
+    }
+    const MonsterModifierSet *findModifiers(int16_t monsterId) const
+    {
+        return m_modifiers.empty() ? nullptr : m_modifiers.find(monsterId);
+    }
     const std::vector<MonsterEntry> &getEntries() const;
     const std::unordered_map<int, MonsterStatsEntry> &statsEntries() const;
+    // A world's own missile tokens (worlds/<world>/monster_projectiles.yml): an attack naming one is ranged, as one
+    // naming an engine token is. MM's tokens and the monsters that name them are untouched.
+    void acceptWorldMissileTokens(const std::vector<std::string> &tokens);
 
 private:
     static size_t relationIndexForMonsterId(int16_t monsterId);
@@ -286,6 +345,9 @@ private:
     std::unordered_map<std::string, int> m_statsIdByPictureName;
     std::vector<std::string> m_relationLabels;
     std::vector<std::vector<int>> m_relations;
+    MonsterRelationAddOns m_relationAddOns;
+    MonsterShieldTable m_shields;
+    MonsterModifierTable m_modifiers;
     std::vector<MeleeHitMaterial> m_meleeHitMaterials;
     // Indexed like m_entries.
     std::vector<size_t> m_meleeHitMaterialIndexByEntry;

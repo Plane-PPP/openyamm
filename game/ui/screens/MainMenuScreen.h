@@ -1,6 +1,8 @@
 #pragma once
 
 #include "game/app/GameSettings.h"
+#include "game/content/RulesetDefinition.h"
+#include "game/rules/LootFilter.h"
 #include "game/ui/MenuDesignScreen.h"
 
 #include <filesystem>
@@ -21,10 +23,21 @@ class MainMenuScreen : public MenuDesignScreen
         Action newGame, loadGame, saveGame, quit, resume, mainMenu;
         std::function<bool(const std::filesystem::path &)> continueGame;
         std::function<bool(const GameSettings &, bool, std::string &)> applySettings;
+        // Changes the options of the game in progress (the pause menu's Rules tab).
+        std::function<bool(const RulesetOptions &, std::string &)> applyRuleset;
+    };
+    // The ruleset of the game in progress; the pause menu of a game with a ruleset shows it in a Rules tab.
+    struct CurrentGame
+    {
+        RulesetSelection selection;
+        RulesetDefinition definition;
+        // The drops the loot filter saw this session, to try a preset on (ItemRules::recentLootDrops).
+        std::deque<RecentLootDrop> recentLootDrops;
     };
     MainMenuScreen(const Engine::AssetFileSystem &assets, const GameDataRepository &gameData, GameAudioSystem *pAudio,
                    const GameSettings &settings, Actions actions, std::string &settingsSection, bool paused = false,
-                   std::string location = {}, std::string date = {}, GameUpdater *pUpdater = nullptr);
+                   std::string location = {}, std::string date = {}, GameUpdater *pUpdater = nullptr,
+                   std::optional<CurrentGame> currentGame = std::nullopt);
     AppMode mode() const override;
     void prepareForFirstFrame();
     void onExit() override;
@@ -41,6 +54,8 @@ class MainMenuScreen : public MenuDesignScreen
     {
         KeyboardAction action;
         std::string id, name, group;
+        // Where the key acts (catalog `context`, empty for play); keys of different contexts may be the same.
+        std::string context;
     };
     struct Section
     {
@@ -56,10 +71,16 @@ class MainMenuScreen : public MenuDesignScreen
     void drawHome();
     void drawSettings(float deltaSeconds);
     void drawKeyboard(const std::string &prefix, const Rect &viewport);
+    // The loot filter's window over Settings (MainMenuLootFilter.cpp, level_generation/ui/maw_loot_progress_20261025
+    // view A): it edits the ruleset draft's filter, applied with the other settings.
+    void drawLootFilter();
     void loadCatalog();
     void editSetting(const Setting &setting, const std::string &value);
     void chooseSetting(const Setting &setting);
     size_t dirtyCount() const;
+    // A row's value in the draft or as applied; the Rules tab's rows read the game's ruleset options.
+    std::string settingValue(const Setting &setting, bool applied = false) const;
+    bool settingEnabled(const Setting &setting) const;
     void leaveSettings();
     void applySettings(bool leaveAfter = false);
     void restoreDefaults();
@@ -77,6 +98,8 @@ class MainMenuScreen : public MenuDesignScreen
     const GameDataRepository &m_gameData;
     GameSettings m_committed;
     GameSettings m_draft;
+    std::optional<CurrentGame> m_currentGame;
+    RulesetOptions m_rulesetDraft;
     std::vector<Setting> m_settings;
     std::vector<Binding> m_bindings;
     std::vector<Section> m_sections;
@@ -94,6 +117,7 @@ class MainMenuScreen : public MenuDesignScreen
     bool m_displayPreview = false;
     bool m_leaveAfterApply = false;
     bool m_suppressEscape = false;
+    bool m_lootFilterOpen = false;
     float m_displaySeconds = 0;
     float m_scroll = 0;
     GameUpdater *m_pUpdater = nullptr;

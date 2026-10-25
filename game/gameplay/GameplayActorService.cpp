@@ -166,7 +166,6 @@ GameplayActorService::DirectSpellImpactResult GameplayActorService::resolveDirec
     uint32_t spellId,
     uint32_t skillLevel,
     int baseDamage,
-    int actorCurrentHp,
     bool actorLooksUndead) const
 {
     DirectSpellImpactResult result = {};
@@ -226,13 +225,12 @@ GameplayActorService::DirectSpellImpactResult GameplayActorService::resolveDirec
         return result;
     }
 
+    // The share of the target's hit points comes from the rules (CombatRules::spellDamageOnTarget) as baseDamage.
     if (spellName == "mass distortion")
     {
         result.disposition = DirectSpellImpactDisposition::ApplyDamage;
         result.visualKind = DirectSpellImpactVisualKind::ActorCenter;
-        result.damage = std::max(
-            1,
-            static_cast<int>(std::round(static_cast<float>(actorCurrentHp) * (0.25f + 0.02f * skillLevel))));
+        result.damage = std::max(1, baseDamage);
         return result;
     }
 
@@ -307,7 +305,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
     bool actorLooksUndead,
     bool defaultHostileToParty,
     int spellResistance,
-    GameplayActorSpellEffectState &state) const
+    GameplayActorSpellEffectState &state,
+    std::optional<float> rulesetSeconds) const
 {
     SharedSpellEffectResult result = {};
 
@@ -342,7 +341,14 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
         return result;
     }
 
-    if (damageType != CombatDamageType::Irresistible && spellResistance >= 200)
+    // A ruleset's crowd control (MAW) lands without the resistance roll and lasts what its rules say; 0 is no effect.
+    if (rulesetSeconds && *rulesetSeconds <= 0.0f)
+    {
+        result.disposition = SharedSpellDisposition::Rejected;
+        return result;
+    }
+
+    if (!rulesetSeconds && damageType != CombatDamageType::Irresistible && spellResistance >= 200)
     {
         result.disposition = SharedSpellDisposition::Rejected;
         return result;
@@ -350,7 +356,7 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
 
     if (spellName == "stun")
     {
-        if (!canApplyMmergeStatusSpell(skillLevel, skillMastery, spellResistance))
+        if (!rulesetSeconds && !canApplyMmergeStatusSpell(skillLevel, skillMastery, spellResistance))
         {
             result.disposition = SharedSpellDisposition::Rejected;
             return result;
@@ -359,7 +365,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
         state.stunRemainingSeconds = std::max(state.stunRemainingSeconds, 0.5f + 0.35f * skillLevel);
         state.paralyzeRemainingSeconds = std::max(
             state.paralyzeRemainingSeconds,
-            60.0f + static_cast<float>(skillLevel * std::max(1, static_cast<int>(skillMastery))));
+            rulesetSeconds.value_or(
+                60.0f + static_cast<float>(skillLevel * std::max(1, static_cast<int>(skillMastery)))));
         result.disposition = SharedSpellDisposition::Applied;
         result.effectKind = SharedSpellEffectKind::Stun;
         return result;
@@ -367,7 +374,7 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
 
     if (spellName == "slow")
     {
-        if (!canApplyMmergeStatusSpell(skillLevel, skillMastery, spellResistance))
+        if (!rulesetSeconds && !canApplyMmergeStatusSpell(skillLevel, skillMastery, spellResistance))
         {
             result.disposition = SharedSpellDisposition::Rejected;
             return result;
@@ -375,7 +382,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
 
         state.slowRemainingSeconds = std::max(
             state.slowRemainingSeconds,
-            skillMastery == SkillMastery::Grandmaster
+            rulesetSeconds ? *rulesetSeconds
+            : skillMastery == SkillMastery::Grandmaster
                 ? minutesToSeconds(5.0f * skillLevel)
                 : skillMastery == SkillMastery::Master
                 ? minutesToSeconds(5.0f * skillLevel)
@@ -397,7 +405,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
 
     if (spellName == "paralyze")
     {
-        state.paralyzeRemainingSeconds = std::max(state.paralyzeRemainingSeconds, minutesToSeconds(3.0f * skillLevel));
+        state.paralyzeRemainingSeconds = std::max(
+            state.paralyzeRemainingSeconds, rulesetSeconds.value_or(minutesToSeconds(3.0f * skillLevel)));
         result.disposition = SharedSpellDisposition::Applied;
         result.effectKind = SharedSpellEffectKind::Paralyze;
         return result;
@@ -422,6 +431,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
             durationSeconds = minutesToSeconds(3.0f + 5.0f * static_cast<float>(skillLevel));
         }
 
+        durationSeconds = rulesetSeconds.value_or(durationSeconds);
+
         state.fearRemainingSeconds = std::max(state.fearRemainingSeconds, durationSeconds);
         state.hasDetectedParty = false;
         result.disposition = SharedSpellDisposition::Applied;
@@ -439,7 +450,7 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
                 : (skillMastery == SkillMastery::Expert
                     ? minutesToSeconds(5.0f + static_cast<float>(skillLevel))
                     : minutesToSeconds(3.0f + static_cast<float>(skillLevel)));
-        state.fearRemainingSeconds = std::max(state.fearRemainingSeconds, durationSeconds);
+        state.fearRemainingSeconds = std::max(state.fearRemainingSeconds, rulesetSeconds.value_or(durationSeconds));
         state.hasDetectedParty = false;
         result.disposition = SharedSpellDisposition::Applied;
         result.effectKind = SharedSpellEffectKind::Fear;
@@ -478,7 +489,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
             return result;
         }
 
-        if (spellName == "control undead"
+        if (!rulesetSeconds
+            && spellName == "control undead"
             && spellResistance > static_cast<int>(skillLevel) * std::max(1, static_cast<int>(skillMastery)))
         {
             result.disposition = SharedSpellDisposition::Rejected;
@@ -487,7 +499,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
 
         state.controlRemainingSeconds = std::max(
             state.controlRemainingSeconds,
-            spellName == "charm"
+            rulesetSeconds ? *rulesetSeconds
+            : spellName == "charm"
                 ? (skillMastery == SkillMastery::Grandmaster
                     ? hoursToSeconds(24.0f)
                     : skillMastery == SkillMastery::Master
@@ -527,7 +540,7 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
     {
         state.shrinkRemainingSeconds = std::max(
             state.shrinkRemainingSeconds,
-            minutesToSeconds(5.0f * std::max<uint32_t>(1, skillLevel)));
+            rulesetSeconds.value_or(minutesToSeconds(5.0f * std::max<uint32_t>(1, skillLevel))));
         state.shrinkDamageMultiplier =
             skillMastery == SkillMastery::Grandmaster
                 ? 0.25f
@@ -546,7 +559,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
     {
         state.darkGraspRemainingSeconds = std::max(
             state.darkGraspRemainingSeconds,
-            skillMastery == SkillMastery::Grandmaster
+            rulesetSeconds ? *rulesetSeconds
+            : skillMastery == SkillMastery::Grandmaster
                 ? minutesToSeconds(10.0f * std::max<uint32_t>(1, skillLevel))
                 : minutesToSeconds(5.0f * std::max<uint32_t>(1, skillLevel)));
         state.slowRemainingSeconds = std::max(state.slowRemainingSeconds, state.darkGraspRemainingSeconds);

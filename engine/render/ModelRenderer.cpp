@@ -469,6 +469,8 @@ struct ModelRenderer::Draw
     float hitFlash = 0.0f;
     // The instance's burn (ModelInstanceSystem::burn), null when whole.
     const ModelBurn *pBurn = nullptr;
+    // The instance's energy shield shell (ModelInstanceSystem::shieldShell), null without one.
+    const ModelShieldShell *pShield = nullptr;
 };
 
 ModelBounds ModelStaticGroup::placementBounds(const ModelStaticPlacement &placement) const
@@ -876,6 +878,58 @@ void ModelRenderer::submitCreatureGlow(bgfx::ProgramHandle program, const ModelM
     m_glowDrawn = true;
     const float noGlow[4] = {};
     bgfx::setUniform(m_glowUniformHandle, noGlow);
+}
+
+bool ModelRenderer::ensureShieldShellProgram()
+{
+    if (!m_shieldShellProgramAttempted)
+    {
+        m_shieldShellProgramAttempted = true;
+        if (m_shieldShellProgramLoader)
+        {
+            m_shieldShellProgram = m_shieldShellProgramLoader();
+        }
+        if (bgfx::isValid(m_shieldShellProgram))
+        {
+            m_shieldShellUniformHandle = bgfx::createUniform("u_shieldShell", bgfx::UniformType::Vec4, 8);
+        }
+    }
+    return bgfx::isValid(m_shieldShellProgram) && bgfx::isValid(m_shieldShellUniformHandle);
+}
+
+void ModelRenderer::submitShieldShell(const Draw &draw, uint16_t viewId, const std::array<float, 3> &cameraPosition)
+{
+    const ModelShieldShell &shell = *draw.pShield;
+    std::array<std::array<float, 4>, 8> values = {};
+    values[0] = {shell.color[0], shell.color[1], shell.color[2], shell.strength};
+    values[1] = {shell.seconds, shell.breakSeconds, shell.raiseSeconds, shell.fraction};
+    values[2] = {shell.footZ, shell.bodyHeight, 0.0f, shell.thickness};
+    values[3] = {cameraPosition[0], cameraPosition[1], cameraPosition[2], 0.0f};
+    for (size_t hit = 0; hit < ModelShieldShell::MaxHits; ++hit)
+    {
+        values[4 + hit] = shell.hits[hit];
+    }
+    // Additive over the scene, depth-tested without depth writes and with both faces, like the ward dome.
+    constexpr uint64_t ShellState = BGFX_STATE_WRITE_RGB | BGFX_STATE_DEPTH_TEST_LEQUAL | BGFX_STATE_BLEND_ADD
+        | BGFX_STATE_MSAA;
+    const bool glow = m_glowView != UINT16_MAX && !m_portraitPass;
+    if (!bindGeometry(draw))
+    {
+        return;
+    }
+    bgfx::setUniform(m_shieldShellUniformHandle, values.data(), 8);
+    bgfx::setState(ShellState);
+    bgfx::submit(viewId, m_shieldShellProgram, 0, glow ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
+    if (glow)
+    {
+        // The same shell into the bloom view at a share of its brightness, so it blooms with the other emitters.
+        values[2][2] = 0.45f;
+        bgfx::setUniform(m_shieldShellUniformHandle, values.data(), 8);
+        bgfx::setState(ShellState);
+        bgfx::submit(m_glowView, m_shieldShellProgram);
+        m_glowDrawn = true;
+    }
+    m_lastSubmit = {};
 }
 
 void ModelRenderer::submitBurnFire(const Draw &draw, uint16_t viewId)
@@ -2084,10 +2138,14 @@ void ModelRenderer::shutdown(bool destroyGpu)
         {
             bgfx::destroy(m_shadowProgramHandle);
         }
+        if (bgfx::isValid(m_shieldShellUniformHandle))
+        {
+            bgfx::destroy(m_shieldShellUniformHandle);
+        }
         for (const bgfx::ProgramHandle handle :
             {m_staticProgramHandle, m_staticShadowProgramHandle, m_staticPrepassedProgramHandle,
                 m_staticCoverageProgramHandle, m_skinnedInstancedProgramHandle, m_emissivePrograms.single,
-                m_emissivePrograms.skinnedInstanced, m_emissivePrograms.staticInstanced})
+                m_emissivePrograms.skinnedInstanced, m_emissivePrograms.staticInstanced, m_shieldShellProgram})
         {
             if (bgfx::isValid(handle))
             {
@@ -2115,6 +2173,9 @@ void ModelRenderer::shutdown(bool destroyGpu)
     m_skinnedInstancedProgramHandle = BGFX_INVALID_HANDLE;
     m_emissivePrograms = {};
     m_emissiveProgramsAttempted = false;
+    m_shieldShellProgram = BGFX_INVALID_HANDLE;
+    m_shieldShellUniformHandle = BGFX_INVALID_HANDLE;
+    m_shieldShellProgramAttempted = false;
     m_emissiveSamplerHandle = BGFX_INVALID_HANDLE;
     m_staticUniformHandle = BGFX_INVALID_HANDLE;
     m_shadowSampler = BGFX_INVALID_HANDLE;
@@ -2576,10 +2637,12 @@ std::vector<ModelRenderer::Draw> ModelRenderer::collectDraws(const ModelInstance
             appendMeshDraws(draws, *asset, *pResources, *pPose, nodeIndex, meshIndex, variant,
                 instances.outlineColor(handle), handle);
             const float hitFlash = instances.hitFlash(handle);
+            const ModelShieldShell *pShield = shadow ? nullptr : instances.shieldShell(handle);
             for (size_t drawIndex = firstDraw; drawIndex < draws.size(); ++drawIndex)
             {
                 draws[drawIndex].hitFlash = hitFlash;
                 draws[drawIndex].pBurn = pBurn;
+                draws[drawIndex].pShield = pShield;
             }
         }
     }
@@ -2633,6 +2696,7 @@ void ModelRenderer::render(
     std::vector<Draw> opaqueDraws;
     std::vector<Draw> transparentDraws;
     std::vector<Draw> fireDraws;
+    std::vector<Draw> shieldDraws;
     // Scene consumers own the environment, even outside the camera. Loading renders prewarm it too.
     prepareEnvironment(pSkyEnvironment);
     std::vector<Draw> draws = collectDraws(instances, visibleBounds,
@@ -2652,6 +2716,11 @@ void ModelRenderer::render(
         {
             const float delta = center[axis] - cameraPosition[axis];
             draw.distanceSquared += delta * delta;
+        }
+        if (draw.pShield != nullptr && draw.pShield->strength > 0.0f && !m_reflectionPass
+            && (draw.pSkin != nullptr || draw.pVertices != nullptr))
+        {
+            shieldDraws.push_back(draw);
         }
         if (draw.pMaterial->alphaMode == ModelAlphaMode::Blend)
         {
@@ -2838,6 +2907,13 @@ void ModelRenderer::render(
     {
         submit(draw, transparentView == UINT16_MAX ? viewId : transparentView, *draw.pLighting);
     }
+    if (!shieldDraws.empty() && ensureShieldShellProgram())
+    {
+        for (const Draw &draw : shieldDraws)
+        {
+            submitShieldShell(draw, transparentView == UINT16_MAX ? viewId : transparentView, cameraPosition);
+        }
+    }
     for (const ModelInstanceHandle handle : instances.handles())
     {
         if (!m_reflectionPass && instances.isVisible(handle) && instances.areNodeMarkersVisible(handle))
@@ -2943,6 +3019,18 @@ void ModelRenderer::renderPortrait(const ModelInstanceSystem &instances, ModelIn
         if (draw.pMaterial->alphaMode == ModelAlphaMode::Blend)
         {
             submit(draw, viewId, lighting);
+        }
+    }
+    const ModelShieldShell *pShield = instances.shieldShell(handle);
+    if (pShield != nullptr && pShield->strength > 0.0f && ensureShieldShellProgram())
+    {
+        for (Draw &draw : draws)
+        {
+            if (draw.pSkin != nullptr || draw.pVertices != nullptr)
+            {
+                draw.pShield = pShield;
+                submitShieldShell(draw, viewId, cameraPosition);
+            }
         }
     }
     m_shadowParams = shadowParams;

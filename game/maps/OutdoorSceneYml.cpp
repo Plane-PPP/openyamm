@@ -3,6 +3,7 @@
 #include "game/FaceEnums.h"
 #include "game/StringUtils.h"
 #include "game/maps/MapItemSourceYml.h"
+#include "game/maps/SceneOverlayOperations.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -1452,10 +1453,12 @@ bool parseIntSequence(
     return true;
 }
 
+// An overlay may leave the index out to append after the scene's last entry (the caller sets it first).
 bool parseOutdoorSpawn(
     const YAML::Node &spawnNode,
     OutdoorSceneSpawn &spawn,
-    std::string &errorMessage)
+    std::string &errorMessage,
+    bool indexRequired = true)
 {
     if (!spawnNode.IsMap())
     {
@@ -1463,7 +1466,7 @@ bool parseOutdoorSpawn(
         return false;
     }
 
-    return readScalarNode(spawnNode, "spawn_index", spawn.spawnIndex, errorMessage)
+    return readScalarNode(spawnNode, "spawn_index", spawn.spawnIndex, errorMessage, indexRequired)
         && readScalarNode(spawnNode, "radius", spawn.spawn.radius, errorMessage)
         && readScalarNode(spawnNode, "type_id", spawn.spawn.typeId, errorMessage)
         && readScalarNode(spawnNode, "index", spawn.spawn.index, errorMessage)
@@ -1475,7 +1478,8 @@ bool parseOutdoorSpawn(
 bool parseOutdoorEntity(
     const YAML::Node &entityNode,
     OutdoorSceneEntity &entity,
-    std::string &errorMessage)
+    std::string &errorMessage,
+    bool indexRequired = true)
 {
     if (!entityNode.IsMap())
     {
@@ -1483,7 +1487,7 @@ bool parseOutdoorEntity(
         return false;
     }
 
-    return readScalarNode(entityNode, "entity_index", entity.entityIndex, errorMessage)
+    return readScalarNode(entityNode, "entity_index", entity.entityIndex, errorMessage, indexRequired)
         && readScalarNode(entityNode, "name", entity.entity.name, errorMessage)
         && readScalarNode(entityNode, "decoration_list_id", entity.entity.decorationListId, errorMessage)
         && readScalarNode(entityNode, "ai_attributes", entity.entity.aiAttributes, errorMessage)
@@ -2828,8 +2832,9 @@ bool OutdoorSceneYmlLoader::applyOverlayFromText(
             for (const YAML::Node &entityNode : entitiesNode)
             {
                 OutdoorSceneEntity entity = {};
+                entity.entityIndex = sceneData.entities.size();
 
-                if (!parseOutdoorEntity(entityNode, entity, errorMessage))
+                if (!parseOutdoorEntity(entityNode, entity, errorMessage, false))
                 {
                     return false;
                 }
@@ -2853,8 +2858,9 @@ bool OutdoorSceneYmlLoader::applyOverlayFromText(
             for (const YAML::Node &spawnNode : spawnsNode)
             {
                 OutdoorSceneSpawn spawn = {};
+                spawn.spawnIndex = sceneData.spawns.size();
 
-                if (!parseOutdoorSpawn(spawnNode, spawn, errorMessage))
+                if (!parseOutdoorSpawn(spawnNode, spawn, errorMessage, false))
                 {
                     return false;
                 }
@@ -2941,6 +2947,51 @@ bool OutdoorSceneYmlLoader::applyOverlayFromText(
         }
     }
 
+    // Removed decorations become nameless entries, so the other entity indices and their flags stay valid.
+    if (const YAML::Node removalsNode = rootNode["removals"])
+    {
+        if (const YAML::Node entityRemovals = removalsNode["entities"])
+        {
+            for (const YAML::Node &removal : entityRemovals)
+            {
+                int x = 0;
+                int y = 0;
+                int z = 0;
+                std::string name;
+
+                if (!readScalarNode(removal, "name", name, errorMessage)
+                    || !readSceneRemovalPosition(removal, x, y, z, errorMessage))
+                {
+                    return false;
+                }
+
+                const auto found = std::find_if(sceneData.entities.begin(), sceneData.entities.end(),
+                    [&](const OutdoorSceneEntity &entity)
+                    {
+                        return toLowerCopy(entity.entity.name) == toLowerCopy(name)
+                            && std::abs(entity.entity.x - x) <= 1 && std::abs(entity.entity.y - y) <= 1
+                            && std::abs(entity.entity.z - z) <= 1;
+                    });
+
+                if (found == sceneData.entities.end())
+                {
+                    errorMessage = "entity removal matches no " + name;
+                    return false;
+                }
+
+                found->entity = {};
+                found->entity.name = "null";
+                found->initialDecorationFlag = 0;
+            }
+        }
+
+        if (const YAML::Node spawnRemovals = removalsNode["spawns"];
+            spawnRemovals && !applySceneSpawnRemovals(spawnRemovals, sceneData.spawns, errorMessage))
+        {
+            return false;
+        }
+    }
+
     const YAML::Node initialStateNode = rootNode["initial_state"];
 
     if (initialStateNode)
@@ -2948,6 +2999,13 @@ bool OutdoorSceneYmlLoader::applyOverlayFromText(
         if (!initialStateNode.IsMap())
         {
             errorMessage = "initial_state must be a map";
+            return false;
+        }
+
+        if (const YAML::Node actorOverridesNode = initialStateNode["actor_overrides"];
+            actorOverridesNode
+            && !applySceneActorOverrides(actorOverridesNode, sceneData.initialState.actors, errorMessage))
+        {
             return false;
         }
 

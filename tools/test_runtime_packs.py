@@ -15,7 +15,8 @@ CONFIG = {
     "packages": {
         "engine": {"core": ["data_tables"], "domains": {"icons_x2": {"buckets": 4},
                                                         "models": {"buckets": 4, "group": "model"},
-                                                        "sprites_new": {"buckets": 3, "group": "first_dir"}}},
+                                                        "sprites_new": {"buckets": 3, "group": "first_dir"},
+                                                        "rulesets": {"buckets": 1}}},
         "world": {"core": ["events"], "domains": {
             "maps": {"buckets": 2, "split": {"lighting": {"extensions": [".lighting"], "buckets": 3}}},
             "textures_x4": {"buckets": {"desktop": 3, "android": 1}}}},
@@ -62,6 +63,14 @@ class RuntimePackTests(unittest.TestCase):
         self.assertEqual(sorted(virtual), sorted("/engine/" + name for name in self.engine_entries()))
         self.assertEqual(packs["engine.core"]["mount"], "/engine")
         self.assertIn("data_tables/items.txt", packs["engine.core"]["entries"])
+
+    def test_rulesets_mount_inside_the_engine(self):
+        # Releases up to 1.10 accept only /engine and /worlds/<id> mounts (AUDIT_20261024_PLAN.md, D15).
+        entries = {"rulesets/maw/ruleset.yml": b"id: maw", "rulesets/maw/data/items.yml": b"items"}
+        packs = assign_packs("engine", entries, self.config, "desktop")
+        self.assertEqual(list(packs), ["engine.rulesets"])
+        self.assertEqual(packs["engine.rulesets"]["mount"], "/engine/rulesets")
+        self.assertEqual(sorted(packs["engine.rulesets"]["entries"]), ["maw/data/items.yml", "maw/ruleset.yml"])
 
     def test_group_rules_keep_related_files_together(self):
         self.assertEqual(group_key("oute3.scene.1.yml", "stem", "", {}), "oute3")

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/items/ItemRulesetFields.h"
 #include "game/tables/ItemTable.h"
 #include "game/party/SkillData.h"
 
@@ -123,6 +124,8 @@ struct CharacterEquipment
     uint32_t ring4 = 0;
     uint32_t ring5 = 0;
     uint32_t ring6 = 0;
+
+    bool operator==(const CharacterEquipment &) const = default;
 };
 
 struct EquippedItemRuntimeState
@@ -139,6 +142,9 @@ struct EquippedItemRuntimeState
     uint16_t currentCharges = 0;
     uint16_t maxCharges = 0;
     float temporaryBonusRemainingSeconds = 0.0f;
+    ItemRulesetFields rulesetFields;
+
+    bool operator==(const EquippedItemRuntimeState &) const = default;
 };
 
 struct CharacterEquipmentRuntimeState
@@ -159,5 +165,7 @@ struct CharacterEquipmentRuntimeState
     EquippedItemRuntimeState ring4 = {};
     EquippedItemRuntimeState ring5 = {};
     EquippedItemRuntimeState ring6 = {};
+
+    bool operator==(const CharacterEquipmentRuntimeState &) const = default;
 };
 }

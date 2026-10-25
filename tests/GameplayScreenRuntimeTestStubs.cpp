@@ -23,6 +23,11 @@ const SpecialItemEnchantTable *GameplayScreenRuntime::specialItemEnchantTable() 
     return nullptr;
 }
 
+const SpellTable *GameplayScreenRuntime::spellTable() const
+{
+    return nullptr;
+}
+
 void GameplayScreenRuntime::playSpeechReaction(size_t memberIndex, SpeechId speechId, bool triggerFaceAnimation)
 {
     (void)memberIndex;
@@ -88,6 +93,11 @@ const GameSettings &GameplayScreenRuntime::settingsSnapshot() const
 {
     static GameSettings settings = {};
     return settings;
+}
+
+CombatLog &GameplayScreenRuntime::combatLog()
+{
+    return m_combatLog;
 }
 
 void GameplayScreenRuntime::stopAllAudioPlayback()

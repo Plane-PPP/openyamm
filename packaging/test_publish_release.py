@@ -204,6 +204,21 @@ class PublishTests(unittest.TestCase):
                          ["android-arm64.json.sig", "linux-x64.json.sig", "windows-x64.json.sig"])
         self.assertFalse((out / "site/downloads/0.8/OpenYAMM-0.8-macos-arm64.dmg").exists())
 
+    def test_old_updaters_must_accept_every_mount(self):
+        self.assertTrue(publish_release.released_updaters_accept("engine", "/engine/rulesets"))
+        self.assertTrue(publish_release.released_updaters_accept("mm6", "/worlds/mm6/maps"))
+        self.assertFalse(publish_release.released_updaters_accept("rulesets", "/rulesets/maw"))
+        self.assertFalse(publish_release.released_updaters_accept("engine", "/engines"))
+        content = self.root / "content"
+        (content / "packs").mkdir(parents=True)
+        (content / "packs" / "rulesets.maw.zip").write_bytes(b"maw")
+        (content / "index.json").write_text(json.dumps(
+            {"schema": 1, "release": "0.9", "build": "0.9", "profile": "desktop", "content_format": 1,
+             "store": "packs", "packs": [{"id": "rulesets.maw", "package": "rulesets", "mount": "/rulesets/maw",
+                                          "file": "rulesets.maw.zip", "size": 3, "content_id": "c", "sha256": "s"}]}))
+        with self.assertRaisesRegex(SystemExit, "1.8-1.10"):
+            publish_release.load_content(content, "0.9")
+
     def test_signing_needs_the_committed_key(self):
         out = self.prepare("0.8", {"engine.core": b"core"})
         with mock.patch.object(publish_release, "committed_public_keys", lambda: {1: "00" * 32}):

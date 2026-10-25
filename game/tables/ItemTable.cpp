@@ -215,6 +215,8 @@ bool parseContentEffect(
     effect.healthRegenPerSecond = parseFloat(getCell(row, startColumn + 25));
     effect.spellRegenPerSecond = parseFloat(getCell(row, startColumn + 26));
     effect.flags = splitPipeSeparated(getCell(row, startColumn + 27));
+    effect.energyResistance = parseInt(getCell(row, startColumn + 28));
+    effect.personalShield = std::max(0, parseInt(getCell(row, startColumn + 29)));
 
     for (const std::string &flag : effect.flags)
     {

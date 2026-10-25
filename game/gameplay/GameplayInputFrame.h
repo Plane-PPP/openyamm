@@ -64,6 +64,11 @@ struct GameplayInputFrame
             && keyboardHeld[scancode];
     }
 
+    bool altHeld() const
+    {
+        return isScancodeHeld(SDL_SCANCODE_LALT) || isScancodeHeld(SDL_SCANCODE_RALT);
+    }
+
     bool turboMovementHeld() const
     {
         return turboMovementEnabled

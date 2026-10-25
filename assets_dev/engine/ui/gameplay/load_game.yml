@@ -108,6 +108,17 @@ elements:
     visible: true
     interactive: false
     notes: 'Renderer primitive: 1px brass rule, #b5a47755, in the browser reference.'
+  - id: LoadGameRulesetFilters
+    anchor: top_left
+    offset_x: 441.6
+    offset_y: 76.0
+    width: 320.0
+    height: 24.0
+    z_index: 10
+    visible: true
+    interactive: false
+    notes: Ruleset filter buttons (All, then one per ruleset), right-aligned and drawn by the controller; shown only
+      when more than one ruleset is installed or saved.
   - id: LoadGameFooterRule
     anchor: top_left
     offset_x: 91.7333
@@ -315,6 +326,24 @@ elements:
       scale: 0.60235
       pad_x: 0.0
     notes: Controller supplies live text.
+  - id: LoadGameSelectedRuleset
+    anchor: top_left
+    offset_x: 438.4
+    offset_y: 357.6
+    width: 323.2
+    height: 12.0
+    z_index: 10
+    visible: true
+    interactive: false
+    text:
+      value: "{ruleset_badge}"
+      font: menu_lucida
+      color: '#b7bba9'
+      align_x: left
+      align_y: middle
+      scale: 0.60235
+      pad_x: 0.0
+    notes: The selected save's ruleset; empty for Standard saves.
   - id: LoadGameCancelButton
     anchor: top_left
     offset_x: 91.7333

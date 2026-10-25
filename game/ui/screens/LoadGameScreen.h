@@ -14,6 +14,14 @@
 
 namespace OpenYAMM::Game
 {
+// What saving costs in food here (MAW from Nightmare): now, with enemies near, and what the party carries.
+struct SaveFoodCost
+{
+    int food = 0;
+    int foodWithEnemiesNear = 0;
+    int carried = 0;
+};
+
 class LoadGameScreen : public MenuDesignScreen
 {
   public:
@@ -21,9 +29,10 @@ class LoadGameScreen : public MenuDesignScreen
     using CancelAction = std::function<void()>;
     using SaveAction = std::function<bool(const std::filesystem::path &, const std::string &)>;
 
+    // loadWarning: what loading from play costs now, said in the confirmation (MAW's pending Beyond Madness death).
     LoadGameScreen(const Engine::AssetFileSystem &assetFileSystem, const GameDataRepository &gameData,
                    LoadAction loadAction, CancelAction cancelAction, bool fromGameplay = false,
-                   GameAudioSystem *pAudio = nullptr);
+                   GameAudioSystem *pAudio = nullptr, std::string loadWarning = {});
 
     AppMode mode() const override;
     void prepareForFirstFrame();
@@ -31,7 +40,7 @@ class LoadGameScreen : public MenuDesignScreen
     static void invalidateCachedSaveSlots();
     static std::optional<std::filesystem::path> mostRecentSave(std::string &mapFileName);
     void configureSave(SaveAction action, const std::string &location, float gameMinutes,
-                       const std::vector<uint8_t> &previewBmp);
+                       const std::vector<uint8_t> &previewBmp, SaveFoodCost foodCost = {});
     void handleSdlEvent(const SDL_Event &event) override;
 
   private:
@@ -43,6 +52,9 @@ class LoadGameScreen : public MenuDesignScreen
         std::string weekdayClockText;
         std::string dateText;
         std::string worldName;
+        std::string rulesetId;
+        // "MAW · Hell difficulty · Horizontal progression"; empty for the Standard ruleset.
+        std::string rulesetBadge;
         std::string savedAt;
         bool populated = false;
         int previewWidth = 0;
@@ -50,7 +62,20 @@ class LoadGameScreen : public MenuDesignScreen
         std::vector<uint8_t> previewPixelsBgra;
     };
 
+    struct RulesetFilter
+    {
+        std::string id;
+        std::string name;
+    };
+
     void drawScreen(float deltaSeconds) override;
+    // The filter buttons, and whether the filter changed.
+    bool drawRulesetFilters(const std::string &prefix);
+    void refreshRulesetFilters();
+    // The slots the ruleset filter lets through, as indices into m_slots.
+    std::vector<size_t> shownSlots() const;
+    // The cached list while the saves folder is unchanged, else a fresh read.
+    void loadSaveSlots();
     void refreshSaveSlots();
     bool tryLoadSelectedSlot();
     void cancel();
@@ -65,18 +90,24 @@ class LoadGameScreen : public MenuDesignScreen
     uint64_t m_lastClickedSlotTicks = 0;
     size_t m_lastClickedSlotIndex = static_cast<size_t>(-1);
     std::vector<SaveSlotSummary> m_slots;
+    // The rulesets the saves were played with, Standard first; the filter is a ruleset id, empty for all.
+    std::vector<RulesetFilter> m_rulesetFilters;
+    std::string m_rulesetFilter;
     size_t m_newerSaveCount = 0;
     bool m_slotsLoaded = false;
+    uint64_t m_slotsSignature = 0;
     SaveAction m_saveAction;
     std::string m_saveName;
     std::string m_currentLocation;
     std::string m_currentDate;
     std::string m_currentClock;
     std::string m_error;
+    SaveFoodCost m_foodCost;
     bool m_newSave = true;
     bool m_nameEditing = false;
     bool m_commitRequested = false;
     bool m_fromGameplay = false;
+    std::string m_loadWarning;
     int m_previewWidth = 0;
     int m_previewHeight = 0;
     std::vector<uint8_t> m_previewPixels;
@@ -97,6 +128,7 @@ class LoadGameScreen : public MenuDesignScreen
 
     static std::vector<SaveSlotSummary> s_cachedSlots;
     static bool s_cachedSlotsValid;
+    static uint64_t s_cachedSignature;
     static size_t s_cachedNewerSaveCount;
 };
 } // namespace OpenYAMM::Game

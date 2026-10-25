@@ -23,6 +23,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <optional>
 #include <cmath>
 #include <iostream>
 #include <numbers>
@@ -33,6 +34,38 @@ namespace OpenYAMM::Game
 {
 namespace
 {
+// Seconds the shatter of a broken energy shield shows (fs_model_shield's break animation).
+constexpr float ShieldShellBreakSeconds = 0.75f;
+
+// The energy shield shell over an actor's model (GameplayActorShieldView), none while its shield is down and done
+// shattering. Hits keep their world points: footZ and the body height place the rise sweep.
+std::optional<Engine::ModelShieldShell> actorShieldShell(const GameplayActorShieldView &shield, float footZ,
+    float bodyHeight, float seconds, bool withHits)
+{
+    const bool shattering = shield.secondsSinceBreak >= 0.0f && shield.secondsSinceBreak < ShieldShellBreakSeconds;
+    if (!shield.present || (!shield.raised && !shattering))
+    {
+        return std::nullopt;
+    }
+    Engine::ModelShieldShell shell;
+    shell.color = shield.color;
+    shell.fraction = shield.fraction;
+    // Steadier and brighter the fuller the pool; full brightness while it shatters.
+    shell.strength = shield.intensity * (shield.raised ? 0.55f + 0.45f * shield.fraction : 1.0f);
+    shell.breakSeconds = shattering && !shield.raised ? shield.secondsSinceBreak : -1.0f;
+    shell.raiseSeconds = shield.raised ? shield.secondsSinceRaise : -1.0f;
+    shell.seconds = seconds;
+    shell.footZ = footZ;
+    shell.bodyHeight = std::max(bodyHeight, 1.0f);
+    shell.thickness = std::clamp(bodyHeight * 0.02f, 2.0f, 8.0f);
+    for (size_t hit = 0; hit < Engine::ModelShieldShell::MaxHits; ++hit)
+    {
+        shell.hits[hit] = withHits && hit < shield.hits.size() ? shield.hits[hit]
+            : std::array<float, 4>{0.0f, 0.0f, 0.0f, -1.0f};
+    }
+    return shell;
+}
+
 constexpr float ParticleUpdateStepSeconds = 1.0f / 30.0f;
 constexpr float MaxParticleUpdateAccumulationSeconds = 0.25f;
 constexpr float DefaultProjectileTrailCooldownSeconds = 1.0f / 30.0f;
@@ -1077,6 +1110,7 @@ void WorldFxSystem::resolveActorCharge(ActorModelInstance &model) const
     // The projectile the charge releases: the spell's, or the ranged attack's missile object.
     // A melee blow has none: it glows only in its event's colour.
     FxRecipes::ProjectileRecipe recipe = FxRecipes::ProjectileRecipe::None;
+    std::string chargeObjectName;
     if (model.chargeRole == ActorCharge::Cast)
     {
         recipe = FxRecipes::classifyProjectileRecipe(int(model.chargeSpellId), "", "", 0);
@@ -1094,6 +1128,7 @@ void WorldFxSystem::resolveActorCharge(ActorModelInstance &model) const
         {
             recipe = FxRecipes::classifyProjectileRecipe(0, pObject->internalName, pObject->spriteName,
                 pObject->flags);
+            chargeObjectName = pObject->internalName;
         }
     }
     const ActorModelBinding::ActionEvent &event = model.pBinding->actionEvents[size_t(model.chargeRole) - 1];
@@ -1106,7 +1141,7 @@ void WorldFxSystem::resolveActorCharge(ActorModelInstance &model) const
             && recipe != FxRecipes::ProjectileRecipe::FireArrow && recipe != FxRecipes::ProjectileRecipe::Cannonball));
     // The colour of the projectile's flight light when the enhanced style gives it one (a robot's plasma bolt, a
     // dragon's breath), else of its recipe.
-    const ProjectileEffectBinding *pProjectile = projectileEffectBinding(recipe, model.monsterId);
+    const ProjectileEffectBinding *pProjectile = projectileEffectBinding(recipe, model.monsterId, chargeObjectName);
     model.chargeColor = event.colorAbgr != 0 ? event.colorAbgr
         : pProjectile != nullptr && pProjectile->light
             ? makeAbgr(pProjectile->light->rgb[0], pProjectile->light->rgb[1], pProjectile->light->rgb[2], 255)
@@ -1122,6 +1157,8 @@ void WorldFxSystem::updateActorLook(ActorModelInstance &model, const GameplayRun
     constexpr float LookRange = 2048.0f;
     constexpr float BehindMargin = 0.35f;
     constexpr float EaseSeconds = 0.18f;
+    // An idle turret's scan pitch (and its return to it from a held aim) eases slowly.
+    constexpr float ScanEaseSeconds = 0.6f;
     const ActorModelBinding &binding = *model.pBinding;
     const float interval = partyDistance > 1500.0f ? 1.0f / 15.0f : 1.0f / 30.0f;
     if (!model.lookStarted)
@@ -1153,11 +1190,17 @@ void WorldFxSystem::updateActorLook(ActorModelInstance &model, const GameplayRun
             targetPitch = std::clamp(std::atan2(dz, std::hypot(dx, dy)), binding.lookMinPitch, binding.lookMaxPitch);
         }
     }
+    // An idle turret (tactics `scan`): the body sweeps, the look only wanders the barrel's pitch.
+    const bool scanning = canLook && binding.lookAtCombatTarget && !state.hasAimTarget && state.aimScanning;
+    if (scanning)
+    {
+        targetPitch = std::clamp(state.aimScanPitchRadians, binding.lookMinPitch, binding.lookMaxPitch);
+    }
     if (targetYaw == 0.0f && targetPitch == 0.0f && model.lookYaw == 0.0f && model.lookPitch == 0.0f)
     {
         return;
     }
-    const float follow = 1.0f - std::exp(-stepSeconds / EaseSeconds);
+    const float follow = 1.0f - std::exp(-stepSeconds / (scanning ? ScanEaseSeconds : EaseSeconds));
     model.lookYaw += (targetYaw - model.lookYaw) * follow;
     model.lookPitch += (targetPitch - model.lookPitch) * follow;
     if (std::abs(model.lookYaw) < 1.0e-4f && std::abs(model.lookPitch) < 1.0e-4f)
@@ -1264,6 +1307,9 @@ void WorldFxSystem::syncActorModels(const IGameplayWorldRuntime &world, float wo
         instance->second.syncPass = syncPass;
         m_models.setOutlineColor(instance->second.handle, 0);
         m_models.setHitFlash(instance->second.handle, state.hitFlash);
+        const std::optional<Engine::ModelShieldShell> shieldShell = actorShieldShell(state.shield, state.preciseZ,
+            float(state.bodyHeight > 0 ? state.bodyHeight : state.height), m_shieldDomeTimeSeconds, true);
+        m_models.setShieldShell(instance->second.handle, shieldShell ? &*shieldShell : nullptr);
         const size_t animationIndex = size_t(state.animationState);
         if (animationIndex >= binding.clips.size())
         {
@@ -1545,9 +1591,10 @@ void WorldFxSystem::syncActorModels(const IGameplayWorldRuntime &world, float wo
             }
         }
         // `look.hold_clip`: an actor tracking its combat target holds still instead of playing its idle (a turret's
-        // scan would swing the guns off the target).
-        if (binding.lookHoldClip != UINT32_MAX && state.hasAimTarget && !scripted && !continuingFollow
-            && state.animationState == ActorAiAnimationState::Standing)
+        // scan would swing the guns off the target), and so does an idle turret whose scan its tactics drive.
+        if (binding.lookHoldClip != UINT32_MAX && (state.hasAimTarget || state.aimScanning) && !scripted
+            && !continuingFollow && (state.animationState == ActorAiAnimationState::Standing
+                || state.animationState == ActorAiAnimationState::Bored))
         {
             clip = binding.lookHoldClip;
             time = 0.0f;
@@ -2209,6 +2256,10 @@ const WorldFxSystem::InspectPortrait *WorldFxSystem::syncInspectPortrait(const I
         : std::min(portrait.timeSeconds, duration);
     m_models.sampleBlended(portrait.portrait.handle, clipFor(portrait.animation), time, transform, deltaSeconds,
         portrait.started ? 0.15f : 0.0f, {}, restart || !portrait.started);
+    // The portrait shows a raised shield as it stands, without the world's hit ripples.
+    const std::optional<Engine::ModelShieldShell> shieldShell = actorShieldShell(state.shield, 0.0f,
+        float(state.bodyHeight > 0 ? state.bodyHeight : state.height), m_shieldDomeTimeSeconds, false);
+    m_models.setShieldShell(portrait.portrait.handle, shieldShell ? &*shieldShell : nullptr);
     if (portrait.portrait.effects)
     {
         EffectSystem &effects = *portrait.portrait.effects;
@@ -2704,12 +2755,14 @@ bool WorldFxSystem::loadNamedEffectLibrary(
 
 const ProjectileEffectBinding *WorldFxSystem::projectileEffectBinding(
     FxRecipes::ProjectileRecipe recipe,
-    int16_t monsterId) const
+    int16_t monsterId,
+    const std::string &objectName) const
 {
     const MonsterTable::MonsterStatsEntry *pStats = monsterId != 0 && m_pProjectileMonsterTable != nullptr
         ? m_pProjectileMonsterTable->findStatsById(monsterId)
         : nullptr;
-    return m_projectileEffectBindings.find(recipe, pStats != nullptr ? pStats->pictureName : std::string());
+    return m_projectileEffectBindings.find(recipe, pStats != nullptr ? pStats->pictureName : std::string(),
+        objectName);
 }
 
 bool WorldFxSystem::loadProjectileModels(const Engine::AssetFileSystem &assets, std::string &error)
@@ -3119,7 +3172,8 @@ bool WorldFxSystem::projectileShowsNativeSprite(const GameplayProjectilePresenta
             projectile.objectName,
             projectile.objectSpriteName,
             projectile.objectFlags),
-        projectile.sourceMonsterId);
+        projectile.sourceMonsterId,
+        projectile.objectName);
     return pBinding != nullptr && pBinding->nativeSprite ? *pBinding->nativeSprite : classic;
 }
 
@@ -3145,7 +3199,8 @@ bool WorldFxSystem::projectileImpactUsesNamedEffect(const GameplayProjectileImpa
     {
         return true;
     }
-    const ProjectileEffectBinding *pBinding = projectileEffectBinding(recipe, impact.sourceMonsterId);
+    const ProjectileEffectBinding *pBinding =
+        projectileEffectBinding(recipe, impact.sourceMonsterId, impact.sourceObjectName);
     return pBinding != nullptr && !pBinding->impact.empty();
 }
 
@@ -3889,7 +3944,8 @@ void WorldFxSystem::syncProjectileTrails(GameSession &session, bool refreshSpati
                 recipe,
                 projectile.radius,
                 projectile.height);
-        const ProjectileEffectBinding *pBinding = projectileEffectBinding(recipe, projectile.sourceMonsterId);
+        const ProjectileEffectBinding *pBinding =
+            projectileEffectBinding(recipe, projectile.sourceMonsterId, projectile.objectName);
         const bool flightEffect = syncProjectileFlightEffect(
             projectile.projectileId,
             pBinding,
@@ -4099,7 +4155,8 @@ void WorldFxSystem::syncProjectileImpacts(GameSession &session)
         // A debug rebind wins over a bound impact; a rebind also drops the impact light, a bound impact keeps it.
         const std::string *pEffectRebind = projectileImpactEffectRebind(recipe);
         const ProjectileEffectBinding *pBinding =
-            pEffectRebind == nullptr ? projectileEffectBinding(recipe, impact.sourceMonsterId) : nullptr;
+            pEffectRebind == nullptr
+                ? projectileEffectBinding(recipe, impact.sourceMonsterId, impact.sourceObjectName) : nullptr;
         const std::string *pImpactEffect = pEffectRebind != nullptr ? pEffectRebind
             : pBinding != nullptr && !pBinding->impact.empty() ? &pBinding->impact : nullptr;
         if (pImpactEffect == nullptr && !m_projectileEffectBindings.waterSplash().empty()
@@ -4194,7 +4251,9 @@ void WorldFxSystem::syncProjectileImpacts(GameSession &session)
             continue;
         }
 
-        const float lightRadius = impactLightRadius(recipe);
+        const std::optional<ProjectileEffectLight> boundLight =
+            pBinding != nullptr ? pBinding->impactLight : std::optional<ProjectileEffectLight>();
+        const float lightRadius = boundLight ? boundLight->radius : impactLightRadius(recipe);
         const float lightDuration = impactLightDurationSeconds(recipe, impact);
 
         if (isNewImpact && lightRadius > 0.0f && lightDuration > 0.0f)
@@ -4205,7 +4264,9 @@ void WorldFxSystem::syncProjectileImpacts(GameSession &session)
             light.z = impact.z + 16.0f;
             light.radius = lightRadius;
             light.durationSeconds = lightDuration;
-            light.colorAbgr = FxRecipes::projectileRecipeImpactColorAbgr(recipe);
+            light.colorAbgr = boundLight
+                ? makeAbgr(boundLight->rgb[0], boundLight->rgb[1], boundLight->rgb[2], 255)
+                : FxRecipes::projectileRecipeImpactColorAbgr(recipe);
             light.sectorId = impact.sectorId;
             m_persistentImpactLights[impact.effectId] = light;
         }

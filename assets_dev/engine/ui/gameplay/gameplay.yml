@@ -93,6 +93,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right live buff medallion; consumes click before portrait selection.
+      - id: ObsidianOverlayPc1Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianOverlayPc2
       anchor: top_left
       offset_x: 113
@@ -167,6 +181,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right live buff medallion; consumes click before portrait selection.
+      - id: ObsidianOverlayPc2Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianOverlayPc3
       anchor: top_left
       offset_x: 207
@@ -241,6 +269,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right live buff medallion; consumes click before portrait selection.
+      - id: ObsidianOverlayPc3Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianOverlayPc4
       anchor: top_left
       offset_x: 301
@@ -315,6 +357,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right live buff medallion; consumes click before portrait selection.
+      - id: ObsidianOverlayPc4Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianOverlayPc5
       anchor: top_left
       offset_x: 395
@@ -389,6 +445,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right live buff medallion; consumes click before portrait selection.
+      - id: ObsidianOverlayPc5Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
   - id: OutdoorStatusBar
     anchor: top_left
     offset_x: 14.4
@@ -457,6 +527,15 @@ elements:
   notes: 'Approved A split arcs. Dynamic width 46+80*n for 1..5 members, flush with screen bottom.
     Narrow frame and compact exterior ornaments; all portrait elements clear the border and corners.'
   children:
+  - id: MapProgressChannel
+    anchor: top_left
+    offset_x: 10.666667
+    offset_y: 1.6
+    width: 424.666667
+    height: 2.666667
+    notes: 'The map progress bar (MAW; level_generation/ui/maw_map_progress_20261025 option A): a 5 px channel in the
+      frame''s top stone band, its width following the frame (GameplayScreenRuntime). GameplayMapProgressBar draws it,
+      the numbers tab rising from the right corner and the hover popup; nothing here when the rules give no progress.'
   - id: OutdoorGameplayPartyStrip
     anchor: top_left
     offset_x: 0.0
@@ -538,6 +617,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right medallion; visible with individual effects; consumes click before portrait selection.
+      - id: ObsidianPc1Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianPc2
       anchor: top_left
       offset_x: 104
@@ -612,6 +705,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right medallion; visible with individual effects; consumes click before portrait selection.
+      - id: ObsidianPc2Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianPc3
       anchor: top_left
       offset_x: 184
@@ -686,6 +793,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right medallion; visible with individual effects; consumes click before portrait selection.
+      - id: ObsidianPc3Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianPc4
       anchor: top_left
       offset_x: 264
@@ -760,6 +881,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right medallion; visible with individual effects; consumes click before portrait selection.
+      - id: ObsidianPc4Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
     - id: ObsidianPc5
       anchor: top_left
       offset_x: 344
@@ -834,6 +969,20 @@ elements:
         interactive: true
         visible: false
         notes: Lower-right medallion; visible with individual effects; consumes click before portrait selection.
+      - id: ObsidianPc5Counter
+        anchor: top_left
+        offset_x: 1
+        offset_y: 1
+        width: 16
+        height: 14
+        text:
+          font: Lucida
+          color: '#f2d27a'
+          align_x: center
+          align_y: middle
+          scale: 0.75
+        notes: Text style of the class counter's number badge (MAW's Elementalist stacks); the counter's gems
+          are drawn beside the HP arc (GameplayPortraitGems).
   - id: OutdoorGameplayStatusBar
     anchor: center_above
     offset_x: 0.0
@@ -1375,6 +1524,31 @@ elements:
       align_x: center
       align_y: middle
       scale: 0.7
+  - id: ObsidianDeathTimerPlate
+    anchor: top_left
+    offset_x: 41.72
+    offset_y: 118
+    width: 42
+    height: 12
+    visible: false
+    asset:
+      default: obsidian_hud_clock_plate
+    notes: Under the minimap, the seconds until a pending death clears (MAW's Beyond Madness); drawn only then by
+      GameplayUiRenderer, so hidden from the layout pass.
+  - id: ObsidianDeathTimer
+    anchor: top_left
+    offset_x: 41.72
+    offset_y: 118
+    width: 42
+    height: 12
+    visible: false
+    text:
+      value: ''
+      font: Lucida
+      color: '#ff4a3d'
+      align_x: center
+      align_y: middle
+      scale: 0.6
   - id: OutdoorMinimap
     anchor: top_left
     offset_x: 6.72
@@ -1454,6 +1628,102 @@ elements:
     min: 0.5
     max: 8.0
   z_index: 200
+- id: CombatLogToggle
+  anchor: top_right
+  offset_x: -28
+  offset_y: 146
+  width: 26
+  height: 26
+  asset:
+    default: obsidian_follower_toggle_normal
+    hover: obsidian_follower_toggle_hover
+    pressed: obsidian_follower_toggle_pressed
+    selected: obsidian_follower_toggle_selected
+  children:
+  - id: CombatLogToggleIcon
+    anchor: top_left
+    offset_x: 3
+    offset_y: 3
+    width: 20
+    height: 20
+    asset:
+      default: obsidian_action_attack
+  interactive: true
+  anchor_space: screen
+  scale:
+    min: 0.5
+    max: 8.0
+  z_index: 220
+  notes: Opens and closes the docked combat log (GAPS H.3); shown while the combat_log setting is on. Drawn by
+    GameplayUiRenderer, not the layout pass.
+- id: CombatLogPanel
+  anchor: bottom_left
+  offset_x: 4
+  offset_y: -4
+  width: 176
+  height: 136
+  anchor_space: screen
+  scale:
+    min: 0.5
+    max: 8.0
+  z_index: 205
+  notes: The docked combat log (level_generation/ui/maw_combat_log_20261024/, layout A) in the bottom-left corner.
+    GameplayCombatLogPanel narrows it to end beside the party frame, and lifts it above the frame when less than 150
+    units are left there. It places the title, filter chips, lines and scrollbar itself; the children are text
+    styles.
+  children:
+  - id: CombatLogTitle
+    anchor: top_left
+    offset_x: 6
+    offset_y: 2
+    width: 70
+    height: 16
+    text:
+      value: Combat log
+      font: Fondamento
+      color: '#e6d1a8'
+      align_x: left
+      align_y: middle
+      scale: 0.4
+  - id: CombatLogChipText
+    anchor: top_left
+    offset_x: 0
+    offset_y: 0
+    width: 10
+    height: 10
+    text:
+      value: ''
+      font: Lucida
+      color: '#c8c7a7'
+      align_x: center
+      align_y: middle
+      scale: 0.55
+  - id: CombatLogText
+    anchor: top_left
+    offset_x: 0
+    offset_y: 0
+    width: 10
+    height: 10
+    text:
+      value: ''
+      font: Lucida
+      color: '#c8c7a7'
+      align_x: left
+      align_y: top
+      scale: 0.65
+  - id: CombatLogStageText
+    anchor: top_left
+    offset_x: 0
+    offset_y: 0
+    width: 10
+    height: 10
+    text:
+      value: ''
+      font: Lucida
+      color: '#b9c4b0'
+      align_x: left
+      align_y: top
+      scale: 0.58
 - id: OutdoorFollowerToggle
   anchor: top_right
   offset_x: 0

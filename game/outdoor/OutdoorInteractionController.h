@@ -165,7 +165,8 @@ private:
         size_t actorIndex,
         const GameplayPartyAttackFallbackQuery &query);
     static std::optional<size_t> resolveSpellActionHoveredActorIndex(const OutdoorGameView &view);
-    static std::optional<size_t> resolveClosestVisibleHostileActorIndex(
+    // The hostile actors on screen in line of sight of the source that have noticed the party, closest first.
+    static std::vector<size_t> resolveVisibleHostileActorIndices(
         const OutdoorGameView &view,
         float sourceX,
         float sourceY,

@@ -12,6 +12,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace OpenYAMM::Game
@@ -55,6 +56,12 @@ enum class LightGridQuality
     Low,
     High
 };
+
+// "off", "hold" or "always" (gameplay.rarity_glow).
+inline bool validRarityGlowValue(std::string_view value)
+{
+    return value == "off" || value == "hold" || value == "always";
+}
 
 bool parseLightGridQualityValue(const std::string &value, LightGridQuality &result);
 std::string lightGridQualityValue(LightGridQuality quality);
@@ -301,12 +308,16 @@ struct GameSettings
     int keyboardInteractionDepth = 512;
     int mouseInteractionDepth = 512;
     bool combatText = true;
+    // The combat log button and its docked log of hits (MAW GAPS H.3); off, nothing is recorded.
+    bool combatLog = true;
     std::string enemyHealthBarMode = "combat";
     std::string enemyHealthBarValues = "target";
     bool enemyHealthBarDamageTrail = true;
     bool questMarkers = false;
     // Obsidian basebar frame behind the gameplay party portraits; fullscreen overlays always draw their own strip.
     bool partyFrame = true;
+    // The round potion quick-slot button at each gameplay portrait; the Potion Wheel key opens the ring without it.
+    bool potionButtons = true;
     bool meleeHitBloodEffects = true;
     // Melee hit impact sound by struck material and a brief hitstop on the target (GameplayActorHitFeedback).
     bool meleeHitFeedback = true;
@@ -316,6 +327,10 @@ struct GameSettings
     bool meleeHitFlash = false;
     // Small camera turn along the blow on critical hits and kills.
     bool meleeCameraKick = false;
+    // A glow in the item's rarity colour around its icon in the inventory, chest and shop grids (rulesets with item
+    // rarities, such as MAW; Common items have none): "off", "hold" (while the Show Item Rarity key, Left Alt, is held)
+    // or "always".
+    std::string rarityGlow = "always";
 #if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     bool contextActionPopup = true;
 #else

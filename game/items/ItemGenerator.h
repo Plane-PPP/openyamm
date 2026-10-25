@@ -30,6 +30,13 @@ struct ItemGenerationRequest
     bool rareItemsOnly = false;
     // World of the map the item is generated for; world-gated items (ItemDefinition::worldIds) need a match.
     std::string worldId;
+    // What a ruleset that sizes items by level reads (MAW): the level of the monster that dropped it, or nothing for
+    // the map's own drop level; and whether a boss (or an Omnipotent one) dropped it.
+    std::optional<int> dropLevel;
+    bool boss = false;
+    bool omnipotent = false;
+    // The roll leaves a ruleset's bad-luck counters as they are (MAW: gear made for mercenaries on offer).
+    bool sparesLuck = false;
 };
 
 class ItemGenerator

@@ -1,0 +1,635 @@
+#include <doctest/doctest.h>
+
+#include "game/gameplay/ActorBehaviorCatalog.h"
+#include "game/gameplay/GameplayActorModifiers.h"
+#include "game/gameplay/GameplayProjectileService.h"
+#include "game/tables/MonsterModifiers.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <string>
+
+using namespace OpenYAMM::Game;
+
+namespace
+{
+constexpr float Pi = 3.14159265f;
+
+bool loadModifiers(MonsterModifierTable &table, const std::string &body, std::string &error)
+{
+    return table.loadWorldYaml("schema: openyamm.monsterModifiers.v1\nmonsters:\n" + body, "hesper", 10000, 10999,
+        error);
+}
+
+std::string modifierError(const std::string &body)
+{
+    MonsterModifierTable table;
+    std::string error;
+    CHECK_FALSE(loadModifiers(table, body, error));
+    return error;
+}
+
+float headingDegreesBetween(float ax, float ay, float az, float bx, float by, float bz)
+{
+    const float dot = ax * bx + ay * by + az * bz;
+    const float lengths = std::sqrt((ax * ax + ay * ay + az * az) * (bx * bx + by * by + bz * bz));
+    return std::acos(std::clamp(dot / lengths, -1.0f, 1.0f)) * 180.0f / Pi;
+}
+}
+
+TEST_CASE("monster modifiers load names, parameters with defaults and id ranges")
+{
+    MonsterModifierTable table;
+    std::string error;
+    REQUIRE_MESSAGE(loadModifiers(table,
+        "  10065: [{true_aim: {turn_degrees_per_second: 90, max_seconds: 3}}, never_staggers]\n"
+        "  10050-10052: [never_staggers]\n"
+        "  10102: [{kites_party: {min_distance: 1024, max_distance: 3072}}]\n"
+        "  10040: [{blink: {on_shield_break: true, cooldown_seconds: 8}}]\n"
+        "  10066: [true_aim]\n", error), error);
+
+    const MonsterModifierSet *pTurret = table.find(10065);
+    REQUIRE(pTurret != nullptr);
+    REQUIRE(pTurret->trueAim);
+    CHECK(pTurret->trueAim->turnRadiansPerSecond == doctest::Approx(Pi / 2.0f));
+    CHECK(pTurret->trueAim->maxSeconds == doctest::Approx(3.0f));
+    CHECK_FALSE(pTurret->trueAim->expireAfter);
+    CHECK(pTurret->neverStaggers);
+    CHECK(pTurret->names == std::vector<std::string>{"true_aim", "never_staggers"});
+
+    const MonsterModifierSet *pBastion = table.find(10066);
+    REQUIRE(pBastion != nullptr);
+    REQUIRE(pBastion->trueAim);
+    CHECK(pBastion->trueAim->turnRadiansPerSecond == doctest::Approx(Pi));
+    CHECK(pBastion->trueAim->maxSeconds == doctest::Approx(4.0f));
+    CHECK_FALSE(pBastion->neverStaggers);
+
+    for (int16_t id : {int16_t(10050), int16_t(10051), int16_t(10052)})
+    {
+        REQUIRE(table.find(id) != nullptr);
+        CHECK(table.find(id)->neverStaggers);
+        CHECK_FALSE(table.find(id)->trueAim);
+    }
+
+    REQUIRE(table.find(10102)->kitesParty);
+    CHECK(table.find(10102)->kitesParty->maxDistance == doctest::Approx(3072.0f));
+    const MonsterModifierSet *pNoble = table.find(10040);
+    REQUIRE(pNoble->blink);
+    CHECK(pNoble->blink->onShieldBreak);
+    CHECK(pNoble->blink->cooldownSeconds == doctest::Approx(8.0f));
+    CHECK(pNoble->blink->maxDistance == doctest::Approx(1024.0f));
+    CHECK(pNoble->blink->sound == "monster_blink");
+    CHECK(table.hasBlink());
+    CHECK(table.find(10053) == nullptr);
+    CHECK(table.find(307) == nullptr);
+}
+
+TEST_CASE("monster modifier errors name the file, the line and the problem")
+{
+    CHECK(modifierError("  10065: [tru_aim]\n").find("worlds/hesper/modifiers.yml:3: unknown modifier 'tru_aim'")
+        != std::string::npos);
+    CHECK(modifierError("  10065: [{true_aim: {turn_rate: 90}}]\n").find(":3: true_aim has no parameter 'turn_rate'")
+        != std::string::npos);
+    CHECK(modifierError("  10065: [{true_aim: {max_seconds: -1}}]\n").find("true_aim.max_seconds must be a number")
+        != std::string::npos);
+    CHECK(modifierError("  10065: [{true_aim: {then: bounce}}]\n").find("must be one of straight|expire")
+        != std::string::npos);
+    CHECK(modifierError("  10065: [{never_staggers: {seconds: 2}}]\n").find("(it takes none)") != std::string::npos);
+    CHECK(modifierError("  10081: [energy_immune]\n").find("belongs to shields.yml") != std::string::npos);
+    CHECK(modifierError("  10054: [stationary]\n").find("Movement column") != std::string::npos);
+    CHECK(modifierError("  10065: [never_staggers, never_staggers]\n").find("listed twice") != std::string::npos);
+    CHECK(modifierError("  10050-10052: [never_staggers]\n  10051: [true_aim]\n").find(":4: monster 10051 is listed")
+        != std::string::npos);
+    CHECK(modifierError("  307: [true_aim]\n").find("outside the world's monster id range") != std::string::npos);
+    CHECK(modifierError("  10040: [blink]\n").find("blink needs a trigger") != std::string::npos);
+    CHECK(modifierError("  10040: [{kites_party: {min_distance: 900, max_distance: 800}}]\n")
+        .find("below max_distance") != std::string::npos);
+    CHECK(modifierError("  ten: [true_aim]\n").find("is not a monster id") != std::string::npos);
+    CHECK(modifierError("  10065: true_aim\n").find("must list its modifiers") != std::string::npos);
+
+    MonsterModifierTable table;
+    std::string error;
+    CHECK_FALSE(table.loadWorldYaml("schema: openyamm.shields.v1\n", "hesper", 10000, 10999, error));
+    CHECK(error.find("expected schema openyamm.monsterModifiers.v1") != std::string::npos);
+}
+
+TEST_CASE("the catalogue lists every modifier with its parameters and defaults")
+{
+    const MonsterModifierInfo *pTrueAim = findMonsterModifierInfo("true_aim");
+    REQUIRE(pTrueAim != nullptr);
+    REQUIRE(pTrueAim->parameters.size() == 3);
+    CHECK(std::string(pTrueAim->parameters[0].pName) == "turn_degrees_per_second");
+    CHECK(pTrueAim->parameters[0].defaultNumber == doctest::Approx(180.0f));
+    CHECK(findMonsterModifierInfo("never_staggers") != nullptr);
+    CHECK(findMonsterModifierInfo("kites_party") != nullptr);
+    CHECK(findMonsterModifierInfo("blink") != nullptr);
+    CHECK(findMonsterModifierInfo("charge") != nullptr);
+    CHECK(findMonsterModifierInfo("energy_immune") == nullptr);
+    CHECK(monsterModifierCatalogue().size() == 5);
+}
+
+TEST_CASE("homing steering turns at most the turn rate, keeps the speed and settles on the target")
+{
+    float vx = 1000.0f;
+    float vy = 0.0f;
+    float vz = 0.0f;
+    // A target straight to the side: one step of 0.1 s at 180 degrees a second turns 18 degrees.
+    REQUIRE(GameplayProjectileService::steerVelocityToward(
+        vx, vy, vz, {0.0f, 0.0f, 0.0f}, {0.0f, 1000.0f, 0.0f}, 1000.0f, Pi * 0.1f));
+    CHECK(headingDegreesBetween(vx, vy, vz, 1.0f, 0.0f, 0.0f) == doctest::Approx(18.0f).epsilon(0.001));
+    CHECK(std::sqrt(vx * vx + vy * vy + vz * vz) == doctest::Approx(1000.0f));
+    CHECK(vy > 0.0f);
+
+    // Within the step's turn it points straight at the target.
+    vx = 1000.0f;
+    vy = 0.0f;
+    vz = 0.0f;
+    REQUIRE(GameplayProjectileService::steerVelocityToward(
+        vx, vy, vz, {0.0f, 0.0f, 0.0f}, {1000.0f, 50.0f, 20.0f}, 800.0f, Pi * 0.1f));
+    CHECK(headingDegreesBetween(vx, vy, vz, 1000.0f, 50.0f, 20.0f) == doctest::Approx(0.0f).epsilon(0.01));
+    CHECK(std::sqrt(vx * vx + vy * vy + vz * vz) == doctest::Approx(800.0f));
+
+    // Straight behind: it still turns (about any perpendicular axis), never flips at once.
+    vx = 1000.0f;
+    vy = 0.0f;
+    vz = 0.0f;
+    REQUIRE(GameplayProjectileService::steerVelocityToward(
+        vx, vy, vz, {0.0f, 0.0f, 0.0f}, {-1000.0f, 0.0f, 0.0f}, 1000.0f, Pi * 0.1f));
+    CHECK(headingDegreesBetween(vx, vy, vz, 1.0f, 0.0f, 0.0f) == doctest::Approx(18.0f).epsilon(0.001));
+    CHECK_FALSE(GameplayProjectileService::steerVelocityToward(
+        vx, vy, vz, {5.0f, 5.0f, 5.0f}, {5.0f, 5.0f, 5.0f}, 1000.0f, Pi));
+}
+
+TEST_CASE("a homing projectile follows a moving target, then flies straight or expires after its time")
+{
+    using ProjectileState = GameplayProjectileService::ProjectileState;
+    ProjectileState projectile = {};
+    projectile.velocityX = 1500.0f;
+    GameplayProjectileService::ProjectileHoming homing = {};
+    homing.turnRadiansPerSecond = Pi;
+    homing.maxSeconds = 1.0f;
+    homing.speed = 1500.0f;
+    projectile.homing = homing;
+
+    // The target walks sideways; the projectile ends up flying at it.
+    constexpr float Step = 1.0f / 128.0f;
+    GameplayWorldPoint target = {2000.0f, 0.0f, 0.0f};
+
+    for (int step = 0; step < 96; ++step)
+    {
+        target.y += 600.0f * Step;
+        REQUIRE_FALSE(GameplayProjectileService::steerHomingProjectile(projectile, &target, Step));
+        projectile.x += projectile.velocityX * Step;
+        projectile.y += projectile.velocityY * Step;
+        projectile.z += projectile.velocityZ * Step;
+    }
+
+    CHECK(headingDegreesBetween(projectile.velocityX, projectile.velocityY, projectile.velocityZ,
+        target.x - projectile.x, target.y - projectile.y, target.z - projectile.z) < 3.0f);
+    CHECK(std::hypot(projectile.velocityX, projectile.velocityY) == doctest::Approx(1500.0f));
+
+    // After max_seconds it keeps its heading.
+    for (int step = 0; step < 40; ++step)
+    {
+        GameplayProjectileService::steerHomingProjectile(projectile, &target, Step);
+    }
+
+    REQUIRE(projectile.homing->lost);
+    const float headingX = projectile.velocityX;
+    const float headingY = projectile.velocityY;
+    target = {-5000.0f, -5000.0f, 0.0f};
+    CHECK_FALSE(GameplayProjectileService::steerHomingProjectile(projectile, &target, Step));
+    CHECK(projectile.velocityX == headingX);
+    CHECK(projectile.velocityY == headingY);
+
+    // With `then: expire` the end of its time expires it; a lost target makes it fly straight.
+    ProjectileState expiring = {};
+    expiring.velocityX = 1000.0f;
+    homing.expireAfter = true;
+    homing.maxSeconds = 0.05f;
+    homing.speed = 1000.0f;
+    expiring.homing = homing;
+    bool expired = false;
+
+    for (int step = 0; step < 10 && !expired; ++step)
+    {
+        expired = GameplayProjectileService::steerHomingProjectile(expiring, &target, Step);
+    }
+
+    CHECK(expired);
+
+    ProjectileState orphan = {};
+    orphan.velocityX = 1000.0f;
+    homing.expireAfter = false;
+    homing.maxSeconds = 0.0f;
+    orphan.homing = homing;
+    CHECK_FALSE(GameplayProjectileService::steerHomingProjectile(orphan, nullptr, Step));
+    CHECK(orphan.homing->lost);
+    CHECK(orphan.velocityX == 1000.0f);
+}
+
+TEST_CASE("true aim is given only to the firing actor's new projectiles")
+{
+    GameplayProjectileService service;
+    GameplayProjectileService::ProjectileSpawnRequest request = {};
+    request.sourceKind = GameplayProjectileService::ProjectileState::SourceKind::Actor;
+    request.sourceId = 7;
+    request.definition.speed = 1200.0f;
+    request.definition.lifetimeTicks = 512;
+    request.targetX = 1000.0f;
+    service.spawnProjectile(request);
+    const uint32_t firstNew = service.nextProjectileId();
+    service.spawnProjectile(request);
+    request.sourceId = 8;
+    service.spawnProjectile(request);
+    request.sourceKind = GameplayProjectileService::ProjectileState::SourceKind::Party;
+    request.sourceId = 7;
+    service.spawnProjectile(request);
+
+    MonsterModifierSet modifiers = {};
+    modifiers.trueAim = TrueAimModifier{};
+    const std::optional<GameplayProjectileService::ProjectileHoming> homing = trueAimProjectileHoming(
+        &modifiers, GameplayProjectileService::ProjectileHoming::TargetKind::Party, static_cast<size_t>(-1), 0);
+    REQUIRE(homing);
+    CHECK(service.attachHoming(firstNew, 7, *homing) == 1);
+    REQUIRE(service.projectiles().size() == 4);
+    CHECK_FALSE(service.projectiles()[0].homing);
+    REQUIRE(service.projectiles()[1].homing);
+    CHECK(service.projectiles()[1].homing->speed == doctest::Approx(1200.0f));
+    CHECK_FALSE(service.projectiles()[2].homing);
+    CHECK_FALSE(service.projectiles()[3].homing);
+
+    CHECK_FALSE(trueAimProjectileHoming(nullptr, GameplayProjectileService::ProjectileHoming::TargetKind::Party,
+        static_cast<size_t>(-1), 0));
+    CHECK_FALSE(trueAimProjectileHoming(&modifiers, GameplayProjectileService::ProjectileHoming::TargetKind::Actor,
+        static_cast<size_t>(-1), 0));
+}
+
+TEST_CASE("blink triggers on hits, shield breaks and while fighting, within its cooldown")
+{
+    MonsterModifierTable table;
+    MonsterModifierSet always = {};
+    always.monsterId = 10040;
+    always.blink = BlinkModifier{};
+    always.blink->onHitChance = 1.0f;
+    always.blink->cooldownSeconds = 5.0f;
+    table.set(always);
+    MonsterModifierSet breaker = {};
+    breaker.monsterId = 10041;
+    breaker.blink = BlinkModifier{};
+    breaker.blink->onShieldBreak = true;
+    table.set(breaker);
+    MonsterModifierSet periodic = {};
+    periodic.monsterId = 10042;
+    periodic.blink = BlinkModifier{};
+    periodic.blink->everySeconds = 2.0f;
+    periodic.blink->cooldownSeconds = 0.0f;
+    table.set(periodic);
+
+    GameplayActorModifiers modifiers;
+    modifiers.bind(&table);
+    REQUIRE(modifiers.active());
+    const std::array<int16_t, 4> monsters = {10040, 10041, 10042, 307};
+    const auto facts = [&](size_t actorIndex)
+    {
+        return GameplayActorModifiers::ActorFacts{
+            .monsterId = monsters[actorIndex], .actorId = uint32_t(actorIndex + 100), .canAct = true,
+            .position = {float(actorIndex) * 1000.0f, 0.0f, 0.0f}};
+    };
+
+    // Nothing asked: no blinks; an MM monster is never tracked.
+    modifiers.observeHit(3, 307, 103, {0.0f, 0.0f, 0.0f}, true, false);
+    CHECK(modifiers.update(0.1f, 4, facts).empty());
+
+    modifiers.observeHit(0, 10040, 100, {0.0f, -500.0f, 0.0f}, true, false);
+    modifiers.observeHit(1, 10041, 101, {0.0f, -500.0f, 0.0f}, true, false);
+    std::vector<GameplayActorModifiers::BlinkRequest> requests = modifiers.update(0.1f, 4, facts);
+    REQUIRE(requests.size() == 1);
+    CHECK(requests[0].actorIndex == 0);
+    REQUIRE(requests[0].threat);
+    modifiers.finishBlink(requests[0], true);
+    CHECK(modifiers.blinkCount() == 1);
+
+    // Within the cooldown a new hit asks again but waits; the shield-break blinker answers its break.
+    modifiers.observeHit(0, 10040, 100, {0.0f, -500.0f, 0.0f}, true, false);
+    modifiers.observeHit(1, 10041, 101, {0.0f, -500.0f, 0.0f}, false, true);
+    requests = modifiers.update(0.1f, 4, facts);
+    REQUIRE(requests.size() == 1);
+    CHECK(requests[0].actorIndex == 1);
+    modifiers.finishBlink(requests[0], true);
+
+    // A periodic blinker blinks every 2 s while it fights, and stops once the fight is 5 s old.
+    modifiers.observeAttack(2, 10042, 102, {0.0f, 0.0f, 0.0f});
+    int periodicBlinks = 0;
+
+    for (int step = 0; step < 100; ++step)
+    {
+        for (const GameplayActorModifiers::BlinkRequest &request : modifiers.update(0.1f, 4, facts))
+        {
+            periodicBlinks += request.actorIndex == 2 ? 1 : 0;
+            modifiers.finishBlink(request, true);
+        }
+    }
+
+    CHECK(periodicBlinks == 2);
+}
+
+TEST_CASE("blink candidates lie within the jump range and turn away from the threat first")
+{
+    BlinkModifier blink = {};
+    blink.minDistance = 400.0f;
+    blink.maxDistance = 900.0f;
+    GameplayActorModifiers::BlinkRequest request = {};
+    request.pBlink = &blink;
+    request.origin = {1000.0f, 2000.0f, 64.0f};
+    request.threat = std::array<float, 3>{1000.0f, 0.0f, 64.0f};
+    request.seed = 1234;
+    const std::vector<std::array<float, 3>> candidates = GameplayActorModifiers::blinkCandidates(request, 16);
+    REQUIRE(candidates.size() == 16);
+    float firstHalfAway = 0.0f;
+    float secondHalfAway = 0.0f;
+
+    for (size_t index = 0; index < candidates.size(); ++index)
+    {
+        const float dx = candidates[index][0] - request.origin[0];
+        const float dy = candidates[index][1] - request.origin[1];
+        const float distance = std::hypot(dx, dy);
+        CHECK(distance >= 399.0f);
+        CHECK(distance <= 901.0f);
+        CHECK(candidates[index][2] == 64.0f);
+        (index < 8 ? firstHalfAway : secondHalfAway) += dy / distance;
+    }
+
+    CHECK(firstHalfAway > secondHalfAway);
+    CHECK(GameplayActorModifiers::blinkCandidates(request, 16) == candidates);
+}
+
+TEST_CASE("kites_party becomes the tactics ranged band and conflicts with one set there")
+{
+    MonsterModifierTable table;
+    MonsterModifierSet kiter = {};
+    kiter.monsterId = 10102;
+    kiter.kitesParty = KitesPartyModifier{1024.0f, 3072.0f};
+    table.set(kiter);
+
+    ActorBehaviorCatalog catalog;
+    std::string error;
+    REQUIRE(catalog.applyMonsterModifiers(table, error));
+    const ActorTacticsFacts *pTactics = catalog.tacticsForMonster(10102);
+    REQUIRE(pTactics != nullptr);
+    CHECK(pTactics->rangedMinDistance == doctest::Approx(1024.0f));
+    CHECK(pTactics->rangedMaxDistance == doctest::Approx(3072.0f));
+    CHECK(pTactics->traverseRadiansPerSecond == 0.0f);
+
+    ActorBehaviorCatalog conflicting;
+    ActorTacticsFacts band = {};
+    band.rangedMinDistance = 768.0f;
+    band.rangedMaxDistance = 2304.0f;
+    conflicting.setMonsterTactics(10102, band);
+    CHECK_FALSE(conflicting.applyMonsterModifiers(table, error));
+    CHECK(error.find("kites_party") != std::string::npos);
+}
+
+namespace
+{
+// A straight corridor along +x for a charge: the party at partyX, a wall at wallX (0: none).
+struct ChargeTestWorld
+{
+    float actorX = 0.0f;
+    float actorY = 0.0f;
+    float partyX = 1000.0f;
+    float wallX = 0.0f;
+    bool sight = true;
+    std::vector<GameplayActorModifiers::ChargeEventKind> events;
+
+    GameplayActorModifiers::ChargeWorld world()
+    {
+        GameplayActorModifiers::ChargeWorld chargeWorld = {};
+        chargeWorld.hasLineOfSightToParty = [this](size_t) { return sight; };
+        chargeWorld.step = [this](size_t, float x, float y, float, float)
+        {
+            if (std::abs(x - partyX) < 40.0f + 37.0f + 16.0f)
+            {
+                return GameplayActorModifiers::ChargeStepResult::Contact;
+            }
+            if (wallX != 0.0f && x + 40.0f > wallX)
+            {
+                return GameplayActorModifiers::ChargeStepResult::Blocked;
+            }
+            actorX = x;
+            actorY = y;
+            return GameplayActorModifiers::ChargeStepResult::Moved;
+        };
+        chargeWorld.handle = [this](const GameplayActorModifiers::ChargeEvent &event) { events.push_back(event.kind); };
+        return chargeWorld;
+    }
+
+    GameplayActorModifiers::ChargeActorFacts facts(bool canAct = true) const
+    {
+        GameplayActorModifiers::ChargeActorFacts actorFacts = {};
+        actorFacts.monsterId = 10082;
+        actorFacts.actorId = 7;
+        actorFacts.canAct = canAct;
+        actorFacts.engagesParty = true;
+        actorFacts.position = {actorX, actorY, 0.0f};
+        actorFacts.partyPosition = {partyX, 0.0f, 0.0f};
+        actorFacts.partyEdgeDistance = std::max(0.0f, std::abs(partyX - actorX) - 40.0f - 37.0f);
+        return actorFacts;
+    }
+};
+
+MonsterModifierTable chargeTable(const std::string &parameters)
+{
+    MonsterModifierTable table;
+    std::string error;
+    REQUIRE_MESSAGE(loadModifiers(table, "  10082: [{charge: {" + parameters + "}}]\n", error), error);
+    return table;
+}
+
+void stepCharge(GameplayActorModifiers &modifiers, ChargeTestWorld &test, float seconds, bool canAct = true)
+{
+    const GameplayActorModifiers::ChargeWorld world = test.world();
+    for (float elapsed = 0.0f; elapsed < seconds - 0.0001f; elapsed += 1.0f / 30.0f)
+    {
+        modifiers.updateCharges(1.0f / 30.0f, 1, [&](size_t) { return test.facts(canAct); }, world);
+    }
+}
+}
+
+TEST_CASE("charge modifier loads its parameters, defaults and errors")
+{
+    const MonsterModifierTable defaults = chargeTable("");
+    REQUIRE(defaults.find(10082)->charge);
+    const ChargeModifier &charge = *defaults.find(10082)->charge;
+    CHECK(defaults.hasCharge());
+    CHECK_FALSE(defaults.hasBlink());
+    CHECK(charge.triggerMinDistance == doctest::Approx(384.0f));
+    CHECK(charge.triggerMaxDistance == doctest::Approx(1280.0f));
+    CHECK(charge.windupSeconds == doctest::Approx(0.6f));
+    CHECK(charge.speed == doctest::Approx(1400.0f));
+    CHECK(charge.maxDistance == doctest::Approx(1536.0f));
+    CHECK(charge.useMelee);
+    CHECK(charge.knockback == doctest::Approx(256.0f));
+    CHECK(charge.cooldownSeconds == doctest::Approx(8.0f));
+    CHECK(charge.stumbleSeconds == doctest::Approx(1.2f));
+    CHECK(charge.windupSound == "monster_charge_windup");
+    CHECK(charge.hitSound == "monster_charge_hit");
+
+    // A damage given without use_melee replaces the melee attack.
+    const MonsterModifierTable fixed = chargeTable("damage: 30, speed: 2000, windup_seconds: 0.4");
+    CHECK_FALSE(fixed.find(10082)->charge->useMelee);
+    CHECK(fixed.find(10082)->charge->damage == doctest::Approx(30.0f));
+    CHECK(fixed.find(10082)->charge->speed == doctest::Approx(2000.0f));
+
+    CHECK(modifierError("  10082: [{charge: {trigger_min_distance: 900, trigger_max_distance: 800}}]\n")
+        .find("trigger_min_distance must be below trigger_max_distance") != std::string::npos);
+    CHECK(modifierError("  10082: [{charge: {use_melee: true, damage: 10}}]\n").find("melee attack")
+        != std::string::npos);
+    CHECK(modifierError("  10082: [{charge: {use_melee: false}}]\n").find("fixed damage") != std::string::npos);
+    CHECK(modifierError("  10082: [{charge: {speed: 50}}]\n").find("charge.speed must be a number in 100-8000")
+        != std::string::npos);
+    CHECK(modifierError("  10082: [{charge: {sped: 900}}]\n").find("charge has no parameter 'sped'")
+        != std::string::npos);
+}
+
+TEST_CASE("charge winds up, dashes onto the party, hits and cools down")
+{
+    const MonsterModifierTable table = chargeTable("windup_seconds: 0.5, speed: 1500, cooldown_seconds: 4");
+    GameplayActorModifiers modifiers;
+    modifiers.bind(&table);
+    ChargeTestWorld test;
+    test.partyX = 900.0f;
+
+    // In the band and in sight: the wind-up starts and holds the actor in place.
+    stepCharge(modifiers, test, 1.0f / 30.0f);
+    CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Windup);
+    CHECK(modifiers.chargeCount() == 1);
+    REQUIRE(test.events.size() == 1);
+    CHECK(test.events[0] == GameplayActorModifiers::ChargeEventKind::WindupStarted);
+    stepCharge(modifiers, test, 0.4f);
+    CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Windup);
+    CHECK(test.actorX == doctest::Approx(0.0f));
+
+    ActorAiFrameFacts frame = {};
+    ActorAiFacts actorFacts = {};
+    actorFacts.actorIndex = 0;
+    actorFacts.actorId = 7;
+    frame.activeActors.push_back(actorFacts);
+    modifiers.applyChargeHolds(frame);
+    CHECK(frame.activeActors[0].behavior.holdActive);
+
+    // The dash covers 1500 units a second and stops at the party with the hit.
+    stepCharge(modifiers, test, 0.2f);
+    CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Dash);
+    CHECK(test.actorX > 50.0f);
+    stepCharge(modifiers, test, 0.6f);
+    CHECK(modifiers.chargeHitCount() == 1);
+    CHECK(modifiers.chargeMissCount() == 0);
+    CHECK(std::find(test.events.begin(), test.events.end(), GameplayActorModifiers::ChargeEventKind::Hit)
+        != test.events.end());
+    CHECK(test.actorX < test.partyX - 40.0f);
+
+    // Recovery, then the cooldown: no second charge before it ends, one after.
+    stepCharge(modifiers, test, 1.0f);
+    CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Ready);
+    test.partyX = test.actorX + 800.0f;
+    stepCharge(modifiers, test, 3.0f);
+    CHECK(modifiers.chargeCount() == 1);
+    stepCharge(modifiers, test, 1.0f);
+    CHECK(modifiers.chargeCount() == 2);
+}
+
+TEST_CASE("charge stops at a wall, at its longest dash and outside its band")
+{
+    const MonsterModifierTable table = chargeTable("windup_seconds: 0.2, max_distance: 500, stumble_seconds: 1");
+    {
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        ChargeTestWorld test;
+        test.wallX = 300.0f;
+        stepCharge(modifiers, test, 1.0f);
+        CHECK(modifiers.chargeMissCount() == 1);
+        CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Recover);
+        CHECK(test.actorX <= 260.0f + 0.01f);
+
+        ActorAiFrameFacts frame = {};
+        ActorAiFacts actorFacts = {};
+        actorFacts.actorId = 7;
+        actorFacts.actorIndex = 0;
+        frame.activeActors.push_back(actorFacts);
+        modifiers.applyChargeHolds(frame);
+        CHECK(frame.activeActors[0].behavior.holdAnimation == ActorAiAnimationState::GotHit);
+    }
+    {
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        ChargeTestWorld test;
+        test.partyX = 1200.0f;
+        stepCharge(modifiers, test, 1.5f);
+        CHECK(modifiers.chargeMissCount() == 1);
+        CHECK(test.actorX == doctest::Approx(500.0f).epsilon(0.01));
+    }
+    {
+        // Too close, too far, out of sight, or not fighting the party: no charge.
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        ChargeTestWorld test;
+        test.partyX = 200.0f;
+        stepCharge(modifiers, test, 0.5f);
+        test.partyX = 3000.0f;
+        stepCharge(modifiers, test, 0.5f);
+        test.partyX = 900.0f;
+        test.sight = false;
+        stepCharge(modifiers, test, 0.5f);
+        CHECK(modifiers.chargeCount() == 0);
+    }
+    {
+        // A stun mid-dash ends it in place.
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        ChargeTestWorld test;
+        test.partyX = 1200.0f;
+        stepCharge(modifiers, test, 0.3f);
+        stepCharge(modifiers, test, 1.0f / 30.0f, false);
+        CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Ready);
+        CHECK(modifiers.chargeHitCount() + modifiers.chargeMissCount() == 0);
+    }
+}
+
+TEST_CASE("charge hit damage and knock-back")
+{
+    MonsterTable::MonsterStatsEntry brute = {};
+    brute.attack1Type = "Phys";
+    brute.attack1Damage = {2, 6, 3};
+    ChargeModifier fixed;
+    fixed.useMelee = false;
+    fixed.damage = 30.0f;
+    CHECK(GameplayActorModifiers::chargeHit(fixed, &brute, 1).damage == 30);
+    ChargeModifier melee;
+    for (uint32_t seed = 0; seed < 50; ++seed)
+    {
+        const GameplayActorModifiers::ChargeHit hit = GameplayActorModifiers::chargeHit(melee, &brute, seed);
+        CHECK(hit.damage >= 5);
+        CHECK(hit.damage <= 15);
+        CHECK(hit.ability == GameplayActorAttackAbility::Attack1);
+    }
+
+    // A Lancer's Attack1 is its beam: the charge thrusts with Attack2.
+    MonsterTable::MonsterStatsEntry lancer = brute;
+    lancer.attack1HasMissile = true;
+    lancer.attack1Type = "Ener";
+    lancer.attack1Damage = {10, 10, 0};
+    lancer.attack2Type = "Phys";
+    lancer.attack2Damage = {1, 4, 100};
+    const GameplayActorModifiers::ChargeHit thrust = GameplayActorModifiers::chargeHit(melee, &lancer, 3);
+    CHECK(thrust.ability == GameplayActorAttackAbility::Attack2);
+    CHECK(thrust.damage >= 101);
+    CHECK(thrust.damage <= 104);
+    CHECK(thrust.damageType == CombatDamageType::Physical);
+    const std::array<float, 3> impulse = GameplayActorModifiers::chargeKnockbackImpulse(0.0f, 1.0f, 256.0f, 1280.0f);
+    CHECK(impulse[0] == doctest::Approx(0.0f));
+    CHECK(impulse[2] > 0.0f);
+    // Up and down under gravity: 2 * vz / g seconds at the horizontal speed covers the distance.
+    CHECK(impulse[1] * 2.0f * impulse[2] / 1280.0f == doctest::Approx(256.0f));
+}

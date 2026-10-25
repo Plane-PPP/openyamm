@@ -215,6 +215,8 @@ struct MapCompanionLoadOptions
 {
     bool allowSceneYml = true;
     bool allowLegacyCompanion = true;
+    // The active ruleset's package directory: its maps/<map>_*.scene.yml overlays apply after the world's.
+    std::string rulesetRoot;
 };
 
 struct MapAssetBitmapPixelsResult
@@ -284,6 +286,12 @@ std::optional<OutdoorBitmapTexture> loadCookedSurfaceTexture(
     Engine::DirectoryAssetPathCache &directoryAssetPathsByPath,
     Engine::AssetPathLookupCache &assetPathByKey,
     Engine::BinaryAssetCache *pBinaryFilesByPath);
+// A world surface texture (Data/bitmaps) loaded by name after the map: its cooked file when the active tier has one,
+// else its source image. Empty when neither exists. For a face whose texture an event swaps in (evt.SetTexture) and
+// no face of the map uses.
+std::optional<OutdoorBitmapTexture> loadSurfaceTexture(
+    const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &textureName);
 // A summoned monster's frames, and those of the tier its model is sized from (pActorModels: scale_reference).
 bool ensureMonsterSpriteFramesLoaded(
     const Engine::AssetFileSystem &assetFileSystem,

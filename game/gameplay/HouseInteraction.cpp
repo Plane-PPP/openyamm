@@ -8,6 +8,8 @@
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
 #include "game/party/SpellIds.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/SpellRules.h"
 #include "game/party/Party.h"
 #include "game/items/PriceCalculator.h"
 #include "game/party/SkillData.h"
@@ -224,8 +226,14 @@ int templeDonationTriggerIndexFromGameMinutes(float currentGameMinutes)
     return dayOfMonthFromGameMinutes(currentGameMinutes) % 7;
 }
 
-void castTempleDonationSpell(IGameplayWorldRuntime &worldRuntime, uint32_t spellId, uint32_t spellLevel)
+void castTempleDonationSpell(
+    IGameplayWorldRuntime &worldRuntime,
+    Party &party,
+    uint32_t spellId,
+    uint32_t spellLevel)
 {
+    // The party's rules may hold the blessing as the temple's (MAW); the event cast still shows it.
+    party.rules().spells.castSourceBuff(party, spellId, BuffSource::Temple);
     worldRuntime.castEventSpell(
         spellId,
         spellLevel,
@@ -240,6 +248,7 @@ void castTempleDonationSpell(IGameplayWorldRuntime &worldRuntime, uint32_t spell
 
 void tryApplyTempleDonationBuffs(
     IGameplayWorldRuntime &worldRuntime,
+    Party &party,
     EventRuntimeState::DialogueRuntimeState &dialogueState,
     size_t activeMemberIndex)
 {
@@ -260,27 +269,27 @@ void tryApplyTempleDonationBuffs(
 
     if (reputation <= -5)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::Bless), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::Bless), spellLevel);
     }
 
     if (reputation <= -10)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::Preservation), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::Preservation), spellLevel);
     }
 
     if (reputation <= -15)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::ProtectionFromMagic), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::ProtectionFromMagic), spellLevel);
     }
 
     if (reputation <= -20)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::HourOfPower), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::HourOfPower), spellLevel);
     }
 
     if (reputation <= -25)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::DayOfProtection), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::DayOfProtection), spellLevel);
     }
 }
 
@@ -390,6 +399,11 @@ const Character *selectedMember(const Party *pParty)
 
 const Character *partyMerchantMember(const Party *pParty)
 {
+    if (const Character *pRulesMerchant = pParty != nullptr ? PriceCalculator::rulesMerchantMember(*pParty) : nullptr)
+    {
+        return pRulesMerchant;
+    }
+
     const Character *pMerchant = pParty != nullptr ? pParty->bestPartyWideUtilitySkillMember("Merchant") : nullptr;
     return pMerchant != nullptr ? pMerchant : selectedMember(pParty);
 }
@@ -792,21 +806,22 @@ int skillLearningCost(
 
 int trainingCost(const HouseEntry &houseEntry, const Party &party, int effectiveReputation = 0)
 {
-    return PriceCalculator::trainingPrice(
-        party.activeMember(),
-        partyMerchantMember(&party),
-        houseEntry,
-        effectiveReputation);
+    // The rules may price the hall by the trainee (MAW's Insanity).
+    HouseEntry pricedHouse = houseEntry;
+    const Character *pTrainee = party.activeMember();
+
+    if (pTrainee != nullptr)
+    {
+        pricedHouse.priceMultiplier =
+            party.rules().skills.trainingPriceMultiplier(*pTrainee, houseEntry.priceMultiplier);
+    }
+
+    return PriceCalculator::trainingPrice(pTrainee, partyMerchantMember(&party), pricedHouse, effectiveReputation);
 }
 
-uint64_t experienceRequiredForNextLevel(uint32_t currentLevel)
+std::optional<uint64_t> trainingExperienceShortfall(const Party &party, const Character &member)
 {
-    return 1000ull * currentLevel * (currentLevel + 1) / 2;
-}
-
-std::optional<uint64_t> trainingExperienceShortfall(const Character &member)
-{
-    const uint64_t requiredExperience = experienceRequiredForNextLevel(member.level);
+    const uint64_t requiredExperience = party.rules().experience.experienceForNextLevel(member.level);
 
     if (member.experience >= requiredExperience)
     {
@@ -852,8 +867,11 @@ std::vector<std::string> collectLearnableSkills(
     }
 
     std::unordered_set<std::string> seenSkills;
+    std::vector<std::string> offeredSkills = houseEntry.offeredSkills;
+    const std::vector<std::string> extraSkills = pParty->rules().skills.extraHouseSkills(houseEntry.type);
+    offeredSkills.insert(offeredSkills.end(), extraSkills.begin(), extraSkills.end());
 
-    for (const std::string &offeredSkill : houseEntry.offeredSkills)
+    for (const std::string &offeredSkill : offeredSkills)
     {
         const std::string canonicalSkill = canonicalSkillName(offeredSkill);
 
@@ -891,8 +909,7 @@ std::string selectedMemberLine(const Party *pParty)
         return "Selected: no character";
     }
 
-    const std::string className = !pMember->className.empty() ? pMember->className : pMember->role;
-    return "Selected: " + pMember->name + " the " + displayClassName(className);
+    return "Selected: " + pMember->name + " the " + pParty->rules().classes.displayName(*pParty, *pMember);
 }
 
 std::string houseWelcomeLine(const HouseEntry &houseEntry)
@@ -1280,16 +1297,16 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         if (pParty != nullptr && pParty->activeMember() != nullptr)
         {
             const Character &member = *pParty->activeMember();
+            const int trainingCap = pParty->rules().experience.trainingLevelCap(houseEntry.trainingMaxLevel);
 
-            if (houseEntry.trainingMaxLevel > 0
-                && member.level >= static_cast<uint32_t>(houseEntry.trainingMaxLevel))
+            if (trainingCap > 0 && member.level >= static_cast<uint32_t>(trainingCap))
             {
                 label = "With your skills, you should be working here as a teacher\n\n"
                     "Sorry, but we are unable to train you.";
                 trainingAvailable = false;
                 trainingUnavailableReason = label;
             }
-            else if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(member))
+            else if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(*pParty, member))
             {
                 label = "You need "
                     + std::to_string(*experienceShortfall)
@@ -1512,6 +1529,13 @@ std::vector<HouseActionOption> buildHouseActionOptions(
             noRoute.disabledReason = "Sorry, come back another day";
             options.push_back(std::move(noRoute));
         }
+    }
+
+    // A house of no MM service type whose row lists offered skills (house_data's last column, unused by MM data)
+    // teaches their Novice for gold, like a guild without membership: Hesper's service houses.
+    if (serviceType == HouseServiceType::None && !houseEntry.offeredSkills.empty())
+    {
+        options.push_back(makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
     }
 
     return finalizeHouseActionOptions(houseEntry, serviceType, menuId, pParty, pWorldRuntime, currentGameMinutes, std::move(options));
@@ -1738,6 +1762,7 @@ HouseActionResult performHouseAction(
                     const size_t activeMemberIndex = party.activeMemberIndex();
                     tryApplyTempleDonationBuffs(
                         *pWorldRuntime,
+                        party,
                         pEventRuntimeState->dialogueState,
                         activeMemberIndex);
 
@@ -1973,8 +1998,9 @@ HouseActionResult performHouseAction(
                 party,
                 effectiveReputationForWorld(pWorldRuntime));
 
-            if (houseEntry.trainingMaxLevel > 0
-                && pMember->level >= static_cast<uint32_t>(houseEntry.trainingMaxLevel))
+            const int trainingCap = party.rules().experience.trainingLevelCap(houseEntry.trainingMaxLevel);
+
+            if (trainingCap > 0 && pMember->level >= static_cast<uint32_t>(trainingCap))
             {
                 result.messages.push_back(
                     "With your skills, you should be working here as a teacher\n\n"
@@ -1984,7 +2010,7 @@ HouseActionResult performHouseAction(
                 return result;
             }
 
-            if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(*pMember))
+            if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(party, *pMember))
             {
                 result.messages.push_back(
                     "You need "
@@ -2008,7 +2034,7 @@ HouseActionResult performHouseAction(
             uint32_t skillPointsEarned = 0;
 
             if (!party.trainActiveMember(
-                    houseEntry.trainingMaxLevel > 0 ? static_cast<uint32_t>(houseEntry.trainingMaxLevel) : 0,
+                    trainingCap > 0 ? static_cast<uint32_t>(trainingCap) : 0,
                     newLevel,
                     skillPointsEarned))
             {
@@ -2040,7 +2066,8 @@ HouseActionResult performHouseAction(
 
                 if (pWorldRuntime != nullptr)
                 {
-                    const float trainingMinutes = oeTrainingDurationMinutes(houseEntry, pWorldRuntime->gameMinutes());
+                    const float trainingMinutes = party.rules().experience.trainingDurationMinutes(
+                        oeTrainingDurationMinutes(houseEntry, pWorldRuntime->gameMinutes()));
                     pWorldRuntime->advanceGameMinutes(trainingMinutes);
                     party.advanceTimedStates(trainingMinutes * 60.0f);
                 }

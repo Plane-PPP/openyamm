@@ -2,6 +2,8 @@
 
 #include "game/indoor/IndoorMapData.h"
 #include "game/outdoor/OutdoorMapData.h"
+#include "game/party/InventoryItem.h"
+#include "game/rules/ActorRulesetFacts.h"
 
 #include <array>
 #include <cstddef>
@@ -52,7 +54,7 @@ struct MapDeltaActor
     uint16_t initialYawUnits = 0;
     bool immobile = false;
     uint32_t attributes = 0;
-    int16_t hp = 0;
+    int32_t hp = 0;
     uint8_t hostilityType = 0;
     int16_t monsterInfoId = 0;
     int16_t monsterId = 0;
@@ -70,7 +72,13 @@ struct MapDeltaActor
     uint32_t ally = 0;
     int32_t uniqueNameIndex = 0;
     size_t diagnosticSourceActorIndex = static_cast<size_t>(-1);
+    // Created after the map's first fill (summons, death summons, later event spawns): MAW's Nightmare revival raises
+    // only the roster of the first fill.
+    bool spawnedAfterFill = false;
+    // The party member whose spell summoned it, -1 for none (MM8's Summoner field: a caster's summon limit counts it).
+    int32_t summonerMemberIndex = -1;
     float bolsterRewardMultiplier = 1.0f;
+    ActorRulesetFacts rulesetFacts;
 };
 
 struct MapDeltaSpriteObject
@@ -103,6 +111,9 @@ struct MapDeltaSpriteObject
     int initialZ = 0;
     float lifetimeTickAccumulator = 0.0f;
     std::vector<uint8_t> rawContainingItem;
+    // The item as the game made it (a drop, a monster's loot), with what the record's 0x24 bytes have no room for:
+    // charges and the ruleset fields (audit ITM-1). Map-authored items have only the record.
+    std::optional<InventoryItem> heldItem;
     std::string semanticSourceId;
     uint32_t semanticLootContainerId = 0;
     bool semanticPlacedPickup = false;

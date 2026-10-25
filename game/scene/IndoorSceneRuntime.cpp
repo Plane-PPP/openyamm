@@ -964,6 +964,8 @@ bool IndoorSceneRuntime::activateEvent(
     const std::optional<ScriptedEventProgram> emptyLocalProgram;
     const std::optional<ScriptedEventProgram> &effectiveLocalEventProgram =
         allowGlobalFallback ? emptyLocalProgram : m_localEventProgram;
+    const std::vector<int> statsBefore =
+        activeDecorationContext ? partyBaseStatSnapshot(m_partyRuntime.party()) : std::vector<int>{};
 
     const bool executed = m_eventRuntime.executeEventById(
         effectiveLocalEventProgram,
@@ -976,6 +978,12 @@ bool IndoorSceneRuntime::activateEvent(
         allowGlobalFallback
     );
     m_eventRuntimeState->activeDecorationContext.reset();
+
+    if (executed && activeDecorationContext)
+    {
+        reportDecorationStatGain(
+            m_partyRuntime.party(), *m_eventRuntimeState, activeDecorationContext->decorVarIndex, statsBefore);
+    }
 
     if (!executed)
     {

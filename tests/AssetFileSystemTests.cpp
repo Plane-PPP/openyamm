@@ -286,6 +286,7 @@ TEST_CASE("AssetFileSystem mounts the content packs of an index")
         {"mm6.videos.0", "mm6", "/worlds/mm6/videos", {{"Houses/sample.ogv", "0123456789"}}},
         {"mm8.core", "mm8", "/worlds/mm8", {{"textures/shared.bmp", "inactive-texture"}}},
         {"mm8.maps.1", "mm8", "/worlds/mm8/maps", {{"out01.odm", "inactive-map"}}},
+        {"engine.rulesets", "engine", "/engine/rulesets", {{"maw/ruleset.yml", "id: maw"}}},
     };
     std::string index = "{\"schema\": 1, \"release\": \"test\", \"build\": \"test\", \"profile\": \"desktop\", "
                         "\"content_format\": 1, \"store\": \"packs\", \"packs\": [";
@@ -355,6 +356,11 @@ TEST_CASE("AssetFileSystem mounts the content packs of an index")
         const std::vector<std::string> maps = assetFileSystem.enumerate("worlds/mm6/maps");
         CHECK(std::find(maps.begin(), maps.end(), "shared.odm") != maps.end());
         CHECK(std::find(maps.begin(), maps.end(), "shared.lighting") != maps.end());
+
+        // The rulesets' pack lists under engine/rulesets/, as the development tree does.
+        CHECK(assetFileSystem.readTextFile("engine/rulesets/maw/ruleset.yml") == std::optional<std::string>("id: maw"));
+        const std::vector<std::string> rulesets = assetFileSystem.enumerate("engine/rulesets");
+        CHECK(std::find(rulesets.begin(), rulesets.end(), "maw") != rulesets.end());
 
         REQUIRE(assetFileSystem.switchActiveWorld("mm8"));
 

@@ -916,3 +916,34 @@ items:
   - {icon: wand3, model: engine/world_items/models/item_wand3.glb, length: 76.7, bounds: [-3.6, -38.4, 0, 3.6, 38.4, 7.1]}   # Cruel Wand of Acid, Cruel Wand of Berzerking, Cruel Wand of Blades, Cruel Wand of Fireballs, Cruel Wand of Lightning
   - {icon: wand4, model: engine/world_items/models/item_wand4.glb, length: 104.8, bounds: [-5.8, -52.4, 0, 5.8, 52.4, 10]}   # Arcane Wand of Blasting, Arcane Wand of Clouds, Arcane Wand of Paralyzing, Arcane Wand of Rocks, Arcane Wand of the Fist
   - {icon: wand5, model: engine/world_items/models/item_wand5.glb, length: 83.2, bounds: [-11.6, -41.6, 0, 11.6, 41.6, 6.2]}   # Dragon Wand of Distortion, Dragon Wand of Implosion, Dragon Wand of Incineration, Dragon Wand of Shrapmetal, Dragon Wand of Shrinking
+  # MAW ruleset crafting items (level_generation/props/items_wip_maw):
+  - {icon: maw_craft_gem01, model: engine/world_items/models/item_maw_craft_gem01.glb, length: 20, bounds: [-10, -8.8, 0, 10, 8.8, 19.2]}   # Lunar Shard
+  - {icon: maw_craft_gem11, model: engine/world_items/models/item_maw_craft_gem11.glb, length: 22, bounds: [-11, -10.6, 0, 11, 10.6, 19.6]}   # Ascended Lunar Shard
+  - {icon: maw_craft_gem02, model: engine/world_items/models/item_maw_craft_gem02.glb, length: 20, bounds: [-8, -10, 0, 8, 10, 7]}   # Fire Topaz
+  - {icon: maw_craft_gem12, model: engine/world_items/models/item_maw_craft_gem12.glb, length: 22, bounds: [-11, -10.7, 0, 11, 10.7, 7.3]}   # Ascended Fire Topaz
+  - {icon: maw_craft_gem03, model: engine/world_items/models/item_maw_craft_gem03.glb, length: 22, bounds: [-11, -10.9, 0, 11, 10.9, 21.9]}   # Amethyst Chunk
+  - {icon: maw_craft_gem13, model: engine/world_items/models/item_maw_craft_gem13.glb, length: 24, bounds: [-12, -9.3, 0, 12, 9.3, 23.3]}   # Ascended Amethyst Chunk
+  - {icon: maw_craft_gem04, model: engine/world_items/models/item_maw_craft_gem04.glb, length: 20, bounds: [-7.3, -10, 0, 7.3, 10, 4.6]}   # Amber Droplet
+  - {icon: maw_craft_gem14, model: engine/world_items/models/item_maw_craft_gem14.glb, length: 22, bounds: [-11, -11, 0, 11, 11, 7.9]}   # Ascended Amber Droplet
+  - {icon: maw_craft_gem05, model: engine/world_items/models/item_maw_craft_gem05.glb, length: 20, bounds: [-10, -10, 0, 10, 10, 8.8]}   # Royal Amethyst
+  - {icon: maw_craft_gem15, model: engine/world_items/models/item_maw_craft_gem15.glb, length: 22, bounds: [-11, -11, 0, 11, 11, 19.2]}   # Ascended Royal Amethyst
+  - {icon: maw_craft_gem06, model: engine/world_items/models/item_maw_craft_gem06.glb, length: 20, bounds: [-10, -10, 0, 10, 10, 8.8]}   # Gemcutter's Ruby
+  - {icon: maw_craft_gem16, model: engine/world_items/models/item_maw_craft_gem16.glb, length: 22, bounds: [-11, -10.9, 0, 11, 10.9, 12.1]}   # Ascended Gemcutter's Ruby
+  - {icon: maw_craft_gem07, model: engine/world_items/models/item_maw_craft_gem07.glb, length: 20, bounds: [-10, -10, 0, 10, 10, 8.8]}   # Solarstone
+  - {icon: maw_craft_gem17, model: engine/world_items/models/item_maw_craft_gem17.glb, length: 22, bounds: [-11, -10.6, 0, 11, 10.6, 11.5]}   # Ascended Solarstone
+  - {icon: maw_craft_gem08, model: engine/world_items/models/item_maw_craft_gem08.glb, length: 24, bounds: [-4.2, -12, 0, 4.2, 12, 9.6]}   # Erudite Crystal
+  - {icon: maw_craft_gem18, model: engine/world_items/models/item_maw_craft_gem18.glb, length: 26, bounds: [-13, -8.5, 0, 13, 8.5, 22.6]}   # Ascended Erudite Crystal
+  - {icon: maw_craft_gem09, model: engine/world_items/models/item_maw_craft_gem09.glb, length: 20, bounds: [-10, -10, 0, 10, 10, 8.8]}   # Erathian Sapphire
+  - {icon: maw_craft_gem19, model: engine/world_items/models/item_maw_craft_gem19.glb, length: 22, bounds: [-11, -7.1, 0, 11, 7.1, 16.3]}   # Ascended Erathian Sapphire
+  - {icon: maw_craft_gem10, model: engine/world_items/models/item_maw_craft_gem10.glb, length: 20, bounds: [-10, -10, 0, 10, 10, 8.8]}   # Queen's Diamond
+  - {icon: maw_craft_gem20, model: engine/world_items/models/item_maw_craft_gem20.glb, length: 22, bounds: [-11, -10.3, 0, 11, 10.3, 10]}   # Ascended Queen's Diamond
+  - {icon: maw_craft_emerald_of_power, model: engine/world_items/models/item_maw_craft_emerald_of_power.glb, length: 36, bounds: [-3.8, -18, 0, 3.8, 18, 8.8]}   # Emerald of Power
+  - {icon: maw_craft_pearl_of_memory, model: engine/world_items/models/item_maw_craft_pearl_of_memory.glb, length: 24, bounds: [-12, -12, 0, 12, 12, 24]}   # Pearl of Memory
+  - {icon: maw_craft_endless_potion, model: engine/world_items/models/item_maw_craft_endless_potion.glb, length: 18, bounds: [-9, -8.4, 0, 9, 8.4, 59.7]}   # Endless Potion
+  - {icon: maw_craft_eye_of_void, model: engine/world_items/models/item_maw_craft_eye_of_void.glb, length: 36, bounds: [-18, -18, 0, 18, 18, 35.1]}   # Eye of Void
+  - {icon: maw_craft_hourglass, model: engine/world_items/models/item_maw_craft_hourglass.glb, length: 24, bounds: [-12, -12, 0, 12, 12, 44.9]}   # Creator's Hourglass
+  - {icon: maw_craft_mirror, model: engine/world_items/models/item_maw_craft_mirror.glb, length: 50, bounds: [-22.1, -25, 0, 22.1, 25, 26]}   # Archibald's Mirror
+  - {icon: maw_craft_orb_of_creation, model: engine/world_items/models/item_maw_craft_orb_of_creation.glb, length: 36, bounds: [-18, -17.8, 0, 18, 17.8, 35.6]}   # Orb of Creation
+  - {icon: maw_craft_pandoras_cube, model: engine/world_items/models/item_maw_craft_pandoras_cube.glb, length: 24, bounds: [-12, -12, 0, 12, 12, 24]}   # Pandora's Cube
+  - {icon: maw_craft_celestial_orb, model: engine/world_items/models/item_maw_craft_celestial_orb.glb, length: 34, bounds: [-15.5, -17, 0, 15.5, 17, 45.4]}   # Celestial Orb
+  - {icon: maw_craft_crafting_cube, model: engine/world_items/models/item_maw_craft_crafting_cube.glb, length: 28, bounds: [-14, -14, 0, 14, 14, 25.1]}   # Crafting Cube

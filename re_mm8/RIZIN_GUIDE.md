@@ -65,6 +65,9 @@ when the whole attack sprite animation has elapsed, not on a drawn contact frame
 condition exclusions and melee/projectile callers in original MM8, with a separately fingerprinted MM7 comparison.
 Its [MM8 annotations](mm8_rel_5326d564_party_targeting.rz) target the same original executable.
 
+[Party slope climbing](PARTY_SLOPE_CLIMBING.md) traces the party's outdoor and indoor slope rules (terrain slide,
+model-face and dungeon-slope responses), GrayFace's `ClimbBetter` byte patch, and the gaps in OpenEnroth and OpenYAMM.
+
 [Potion power](POTION_POWER.md) traces where a potion's power comes from (random treasure, map placement, monster
 loot, shops) and how each drink effect uses it, with the MMerge overrides.
 

@@ -1,7 +1,16 @@
 #include "game/scenario/ScenarioRuntimeDriver.h"
+
+#include "game/gameplay/GameplayMonsterSpawn.h"
+#include "game/gameplay/GameplayActionController.h"
 #include "game/gameplay/GameplayHeldItemController.h"
 
 #include "game/gameplay/GameplayInteractionController.h"
+#include "game/gameplay/GameplayItemService.h"
+#include "game/items/CraftingRuntime.h"
+#include "game/items/ItemGenerator.h"
+#include "game/party/PartySpellSystem.h"
+#include "game/party/SpellSchool.h"
+#include "game/ui/GameplayCraftingBenchView.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayInputController.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
@@ -16,6 +25,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <bitset>
 #include <cctype>
 #include <cmath>
 #include <sstream>
@@ -84,6 +94,8 @@ const char *scenarioDialogActionKindName(EventDialogActionKind kind)
             return "npc_btb";
         case EventDialogActionKind::MapTransitionConfirm:
             return "map_transition_confirm";
+        case EventDialogActionKind::MapTransitionReset:
+            return "map_transition_reset";
         case EventDialogActionKind::MapTransitionCancel:
             return "map_transition_cancel";
         case EventDialogActionKind::RosterJoinOffer:
@@ -188,6 +200,11 @@ struct ScenarioGameApplicationAccess
         return application.m_gameSession;
     }
 
+    static bool applyRulesetOptions(GameApplication &application, const RulesetOptions &options, std::string &error)
+    {
+        return application.applyRulesetOptions(options, error);
+    }
+
     static const GameSession &gameSession(const GameApplication &application)
     {
         return application.m_gameSession;
@@ -201,6 +218,24 @@ struct ScenarioGameApplicationAccess
     static const IMapSceneRuntime *mapSceneRuntime(const GameApplication &application)
     {
         return application.m_pMapSceneRuntime.get();
+    }
+
+    static bool runConsoleLine(GameApplication &application, const std::string &line, std::string &output)
+    {
+        application.registerDebugConsoleCommands();
+        const size_t before = application.m_debugConsole.totalMessageCount();
+        application.m_debugConsole.executeLine(line);
+        const std::vector<DebugConsole::Message> &messages = application.m_debugConsole.messages();
+        const size_t added = std::min(application.m_debugConsole.totalMessageCount() - before, messages.size());
+        bool success = true;
+
+        for (size_t index = messages.size() - added; index < messages.size(); ++index)
+        {
+            output += (output.empty() ? "" : "\n") + messages[index].text;
+            success = success && messages[index].kind != DebugConsole::MessageKind::Error;
+        }
+
+        return success;
     }
 
     static OutdoorPartyRuntime *outdoorPartyRuntime(GameApplication &application)
@@ -243,9 +278,12 @@ struct ScenarioGameApplicationAccess
         return application.processPendingMapMove();
     }
 
-    static bool quickSaveToPath(GameApplication &application, const std::filesystem::path &path)
+    static bool quickSaveToPath(
+        GameApplication &application,
+        const std::filesystem::path &path,
+        const std::string &saveName)
     {
-        return application.quickSaveToPath(path, "Scenario");
+        return application.quickSaveToPath(path, saveName);
     }
 
     static bool quickLoadFromPath(GameApplication &application, const std::filesystem::path &path)
@@ -253,9 +291,25 @@ struct ScenarioGameApplicationAccess
         return application.quickLoadFromPath(path, true);
     }
 
+    static bool pressQuickLoad(GameApplication &application)
+    {
+        application.m_pendingQuickLoad = true;
+        return application.processPendingQuickSaveInput();
+    }
+
+    static bool activateRuleset(GameApplication &application, const std::string &rulesetId, std::string &error)
+    {
+        return application.activateRuleset(rulesetId, error);
+    }
+
     static void captureCurrentSceneState(GameApplication &application)
     {
         application.captureCurrentSceneState();
+    }
+
+    static void applyRulesMapLeave(GameApplication &application)
+    {
+        application.applyRulesMapLeave();
     }
 
     static void bindPartyDependencies(const GameApplication &application, Party &party)
@@ -402,14 +456,35 @@ bool ScenarioRuntimeDriver::initialize(std::string &failure)
     return true;
 }
 
+void ScenarioRuntimeDriver::setMadnessLedgerFile(const std::filesystem::path &file)
+{
+    ScenarioGameApplicationAccess::gameSession(m_application).setMadnessLedgerFile(file);
+}
+
 bool ScenarioRuntimeDriver::startNewGame(
     uint32_t continentId,
     const std::string &startMapFileName,
     std::string &failure,
-    const PartySeed *pSeed)
+    const PartySeed *pSeed,
+    const RulesetSelection &ruleset)
 {
     if (!initialize(failure))
     {
+        return false;
+    }
+
+    // The same ruleset activation and option check as a new game from party creation.
+    if (!ScenarioGameApplicationAccess::activateRuleset(m_application, ruleset.id, failure))
+    {
+        return false;
+    }
+
+    const RulesetDefinition &activeRuleset =
+        ScenarioGameApplicationAccess::gameDataLoader(m_application).activeRuleset();
+
+    if (!activeRuleset.offers(ruleset.options))
+    {
+        failure = "the " + activeRuleset.name + " ruleset does not offer the scenario's options";
         return false;
     }
 
@@ -419,6 +494,10 @@ bool ScenarioRuntimeDriver::startNewGame(
     session.gameplayScreenRuntime().clearSharedUiRuntime();
     ScenarioGameApplicationAccess::shutdownRenderer(m_application);
     session.clear();
+    session.setRuleset(ruleset);
+    // A fixed root seed, so a scenario rolls the same bosses, affixes and loot on every run (audit ROB-2-8).
+    constexpr uint64_t ScenarioRandomRootSeed = 0x5eed20261024ull;
+    session.setRandomRootSeed(ScenarioRandomRootSeed);
     Party party;
     if (pSeed != nullptr)
     {
@@ -431,6 +510,9 @@ bool ScenarioRuntimeDriver::startNewGame(
         party.seed(Party::createDefaultSeed());
     }
     session.setPartyState(party);
+    // As a new game from party creation: the ruleset's own start.
+    Party &sessionParty = *session.partyState();
+    sessionParty.rules().experience.prepareNewParty(sessionParty);
     session.setGameMinutes(9.0f * 60.0f);
     static_cast<void>(continentId);
     return loadSelectedMapRuntime(startMapFileName, failure);
@@ -528,6 +610,7 @@ bool ScenarioRuntimeDriver::loadSelectedMapRuntime(const std::string &mapFileNam
 {
     if (ScenarioGameApplicationAccess::mapSceneRuntime(m_application) != nullptr)
     {
+        ScenarioGameApplicationAccess::applyRulesMapLeave(m_application);
         ScenarioGameApplicationAccess::captureCurrentSceneState(m_application);
     }
 
@@ -747,14 +830,17 @@ bool ScenarioRuntimeDriver::speakNpc(uint32_t npcId, std::string &failure)
     return true;
 }
 
-bool ScenarioRuntimeDriver::saveGameToPath(const std::filesystem::path &path, std::string &failure)
+bool ScenarioRuntimeDriver::saveGameToPath(
+    const std::filesystem::path &path,
+    const std::string &saveName,
+    std::string &failure)
 {
     if (!initialize(failure))
     {
         return false;
     }
 
-    if (!ScenarioGameApplicationAccess::quickSaveToPath(m_application, path))
+    if (!ScenarioGameApplicationAccess::quickSaveToPath(m_application, path, saveName))
     {
         failure = "could not save scenario game to '" + path.string() + "'";
         return false;
@@ -776,6 +862,49 @@ bool ScenarioRuntimeDriver::loadGameFromPath(const std::filesystem::path &path, 
         return false;
     }
 
+    return true;
+}
+
+bool ScenarioRuntimeDriver::pressQuickLoad(
+    const std::filesystem::path &savePath,
+    const std::filesystem::path &workDirectory,
+    bool &loaded,
+    std::string &status,
+    std::string &failure)
+{
+    if (!initialize(failure))
+    {
+        return false;
+    }
+
+    std::error_code error;
+    const std::filesystem::path quickSavePath = workDirectory / "saves" / "quicksave.oysav";
+    std::filesystem::create_directories(quickSavePath.parent_path(), error);
+
+    if (!error)
+    {
+        std::filesystem::copy_file(savePath, quickSavePath, std::filesystem::copy_options::overwrite_existing, error);
+    }
+
+    const std::filesystem::path previousDirectory = std::filesystem::current_path(error);
+
+    if (error || !std::filesystem::exists(quickSavePath))
+    {
+        failure = "quick_load could not prepare '" + quickSavePath.string() + "' from '" + savePath.string() + "'";
+        return false;
+    }
+
+    std::filesystem::current_path(workDirectory, error);
+
+    if (error)
+    {
+        failure = "quick_load could not enter '" + workDirectory.string() + "': " + error.message();
+        return false;
+    }
+
+    loaded = ScenarioGameApplicationAccess::pressQuickLoad(m_application);
+    std::filesystem::current_path(previousDirectory, error);
+    status = ScenarioGameApplicationAccess::gameSession(m_application).gameplayScreenRuntime().statusBarEventText();
     return true;
 }
 
@@ -865,6 +994,21 @@ bool setScenarioCameraAngles(GameApplication &application, float yawRadians, flo
     }
 
     return false;
+}
+
+const RulesetSelection &ScenarioRuntimeDriver::ruleset() const
+{
+    return ScenarioGameApplicationAccess::gameSession(m_application).ruleset();
+}
+
+const MawRules *ScenarioRuntimeDriver::mawRules() const
+{
+    return ScenarioGameApplicationAccess::gameSession(m_application).mawRules();
+}
+
+const CombatLog &ScenarioRuntimeDriver::combatLog() const
+{
+    return ScenarioGameApplicationAccess::gameSession(m_application).gameplayScreenRuntime().combatLog();
 }
 
 ScenarioPose ScenarioRuntimeDriver::currentPose() const
@@ -1025,7 +1169,131 @@ bool ScenarioRuntimeDriver::actorInspectState(
     return true;
 }
 
-bool ScenarioRuntimeDriver::damageActor(size_t actorIndex, int amount, std::string &failure)
+size_t ScenarioRuntimeDriver::mapActorCount() const
+{
+    const IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+    return pWorldRuntime != nullptr ? pWorldRuntime->mapActorCount() : 0;
+}
+
+bool ScenarioRuntimeDriver::fireActorProjectileAtParty(
+    size_t actorIndex, GameplayActorAttackAbility ability, int damage, std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+
+    if (pWorldRuntime == nullptr || actorIndex >= pWorldRuntime->mapActorCount()
+        || !pWorldRuntime->debugFireActorProjectileAtParty(actorIndex, ability, damage))
+    {
+        failure = "fire_actor_projectile: actor " + std::to_string(actorIndex) + " fired nothing";
+        return false;
+    }
+
+    return true;
+}
+
+bool ScenarioRuntimeDriver::blinkActor(size_t actorIndex, std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+
+    if (pWorldRuntime == nullptr || actorIndex >= pWorldRuntime->mapActorCount()
+        || !pWorldRuntime->blinkActor(actorIndex))
+    {
+        failure = "blink_actor: actor " + std::to_string(actorIndex) + " did not blink";
+        return false;
+    }
+
+    return true;
+}
+
+bool ScenarioRuntimeDriver::chargeActor(size_t actorIndex, std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+
+    if (pWorldRuntime == nullptr || actorIndex >= pWorldRuntime->mapActorCount()
+        || !pWorldRuntime->chargeActor(actorIndex))
+    {
+        failure = "charge_actor: actor " + std::to_string(actorIndex) + " did not start a charge";
+        return false;
+    }
+
+    return true;
+}
+
+std::optional<GameplayChargeCounts> ScenarioRuntimeDriver::chargeCounts() const
+{
+    const IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+    return pWorldRuntime != nullptr ? pWorldRuntime->chargeCounts() : std::nullopt;
+}
+
+const GameplayProjectileService *ScenarioRuntimeDriver::projectileService() const
+{
+    const IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+    return pWorldRuntime != nullptr ? pWorldRuntime->projectileServiceView() : nullptr;
+}
+
+bool ScenarioRuntimeDriver::spawnActor(int16_t monsterId, uint32_t count, float x, float y, float z, uint32_t group,
+    uint8_t bossAffix, bool partyAlly, std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+
+    // A party ally: summoned as a party spell's summon is, for a day, by no member.
+    if (partyAlly)
+    {
+        constexpr float AllySeconds = 24.0f * 60.0f * 60.0f;
+
+        if (pWorldRuntime == nullptr || bossAffix != 0
+            || !pWorldRuntime->summonFriendlyMonsterById(monsterId, count, AllySeconds, x, y, z, -1))
+        {
+            failure = "spawn_actor could not summon party ally " + std::to_string(monsterId);
+            return false;
+        }
+
+        return true;
+    }
+
+    if (pWorldRuntime != nullptr && bossAffix != 0)
+    {
+        GameplayMonsterSpawnRequest request;
+        request.monsterId = monsterId;
+        request.count = count;
+        request.x = x;
+        request.y = y;
+        request.z = z;
+        request.radius = 1.0f;
+        request.group = group;
+        request.boss = true;
+        request.bossAffix = bossAffix;
+
+        if (pWorldRuntime->spawnMonsters(request).size() == count)
+        {
+            return true;
+        }
+    }
+
+    if (pWorldRuntime == nullptr || bossAffix != 0
+        || !pWorldRuntime->summonHostileMonsterById(monsterId, count, x, y, z, group))
+    {
+        failure = "spawn_actor could not summon monster " + std::to_string(monsterId);
+        return false;
+    }
+
+    return true;
+}
+
+bool ScenarioRuntimeDriver::setRulesetOptions(const std::string &optionIds, std::string &failure)
+{
+    RulesetOptions options = ScenarioGameApplicationAccess::gameSession(m_application).ruleset().options;
+
+    if (!applyRulesetOptionIds(optionIds, options))
+    {
+        failure = "set_ruleset: unknown option in '" + optionIds + "'";
+        return false;
+    }
+
+    return ScenarioGameApplicationAccess::applyRulesetOptions(m_application, options, failure);
+}
+
+bool ScenarioRuntimeDriver::damageActor(
+    size_t actorIndex, int amount, ShieldAttackTier shieldTier, std::string &failure)
 {
     IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
     GameplayRuntimeActorState state = {};
@@ -1040,12 +1308,120 @@ bool ScenarioRuntimeDriver::damageActor(size_t actorIndex, int amount, std::stri
 
     const ScenarioPose pose = currentPose();
 
-    if (!pWorldRuntime->applyPartyAttackMeleeDamage(actorIndex, amount, GameplayWorldPoint{pose.x, pose.y, pose.z}))
+    if (!pWorldRuntime->applyPartyAttackMeleeDamage(
+            actorIndex, amount, GameplayWorldPoint{pose.x, pose.y, pose.z}, shieldTier))
     {
         failure = "damage_actor could not damage actor " + std::to_string(actorIndex);
         return false;
     }
 
+    return true;
+}
+
+bool ScenarioRuntimeDriver::partyAttack(
+    const ScenarioPartyAttackRequest &request, ScenarioPartyAttackResult &result, std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+    Party *pParty = party();
+    GameplayRuntimeActorState state = {};
+
+    if (pWorldRuntime == nullptr || pParty == nullptr || pParty->member(request.memberIndex) == nullptr
+        || !pWorldRuntime->actorRuntimeState(request.actorIndex, state) || state.isDead || request.count <= 0)
+    {
+        failure = "party_attack needs an active map, member " + std::to_string(request.memberIndex)
+            + ", a living actor " + std::to_string(request.actorIndex) + " and a positive count";
+        return false;
+    }
+
+    GameDataLoader &data = ScenarioGameApplicationAccess::gameDataLoader(m_application);
+    Character &member = *pParty->member(request.memberIndex);
+    const std::bitset<CharacterConditionCount> conditionsBefore = member.conditions;
+    const std::string attackSpellBefore = member.attackSpellName;
+    GameplayScreenRuntime &screenRuntime =
+        ScenarioGameApplicationAccess::gameSession(m_application).gameplayScreenRuntime();
+
+    for (CharacterCondition condition : request.conditions)
+    {
+        member.conditions.set(size_t(condition));
+    }
+
+    if (request.attackSpell)
+    {
+        member.attackSpellName = *request.attackSpell;
+    }
+
+    double damage = 0;
+    double applied = 0;
+    double recovery = 0;
+    result = {};
+
+    for (int attack = 0; attack < request.count; ++attack)
+    {
+        member.recoverySecondsRemaining = 0;
+        pParty->setActiveMemberIndex(request.memberIndex);
+        pWorldRuntime->actorRuntimeState(request.actorIndex, state);
+
+        if (state.isDead)
+        {
+            failure = "party_attack: actor " + std::to_string(request.actorIndex) + " died after "
+                + std::to_string(attack) + " attacks";
+            member.conditions = conditionsBefore;
+            member.attackSpellName = attackSpellBefore;
+            return false;
+        }
+        // Within reach of a blow, one step off the actor.
+        const GameplayActionController::PartyAttackExecutionResult outcome =
+            GameplayActionController::executePartyAttack(GameplayActionController::PartyAttackConfig{
+                .pRuntime = request.attackSpell ? &screenRuntime : nullptr,
+                .pSpellService = request.attackSpell ? &screenRuntime.spellService() : nullptr,
+                .pWorldRuntime = pWorldRuntime,
+                .pParty = pParty,
+                .pItemTable = &data.getItemTable(),
+                .pSpellTable = &data.getSpellTable(),
+                .pMonsterTable = &data.getMonsterTable(),
+                .pSpecialItemEnchantTable = &data.getSpecialItemEnchantTable(),
+                .directTargetActorIndex = request.actorIndex,
+                .partyPosition = {state.preciseX + 64.0f, state.preciseY, state.preciseZ},
+                .randomSeed = uint32_t(attack + 1) * 2654435761u,
+            });
+        GameplayRuntimeActorState after = {};
+        pWorldRuntime->actorRuntimeState(request.actorIndex, after);
+        const int lost = std::max(0, state.currentHp - after.currentHp);
+
+        // A blow that kills cannot be healed away: the run needs a sturdier target.
+        if (after.isDead || after.currentHp <= 0)
+        {
+            failure = "party_attack: actor " + std::to_string(request.actorIndex) + " died on attack "
+                + std::to_string(attack + 1) + "; use a sturdier target";
+            member.conditions = conditionsBefore;
+            member.attackSpellName = attackSpellBefore;
+            return false;
+        }
+
+        if (lost > 0)
+        {
+            pWorldRuntime->healMapActor(request.actorIndex, lost);
+        }
+
+        ++result.attacks;
+        result.weaponAttacks += outcome.actionPerformed ? 1 : 0;
+        recovery += outcome.attack.recoverySeconds;
+
+        if (outcome.attacked && outcome.attack.hit)
+        {
+            ++result.hits;
+            result.criticals += outcome.attack.criticalDamage ? 1 : 0;
+            damage += outcome.attack.damage;
+            applied += lost;
+        }
+    }
+
+    member.conditions = conditionsBefore;
+    member.attackSpellName = attackSpellBefore;
+    member.recoverySecondsRemaining = 0;
+    result.averageDamage = result.hits > 0 ? damage / result.hits : 0;
+    result.averageAppliedDamage = result.hits > 0 ? applied / result.hits : 0;
+    result.averageRecoverySeconds = recovery / result.attacks;
     return true;
 }
 
@@ -1119,12 +1495,14 @@ bool ScenarioRuntimeDriver::executeCombatLoot(
                 actorIndex,
                 ScenarioCombatLootDamage,
                 CombatDamageType::Irresistible,
-                source);
+                source,
+                ShieldAttackTier::Physical);
         }
         else
         {
             result.damageApplied =
-                pWorldRuntime->applyPartyAttackMeleeDamage(actorIndex, ScenarioCombatLootDamage, source);
+                pWorldRuntime->applyPartyAttackMeleeDamage(
+                    actorIndex, ScenarioCombatLootDamage, source, ShieldAttackTier::Physical);
         }
 
         if (!result.damageApplied)
@@ -1468,6 +1846,280 @@ bool ScenarioRuntimeDriver::placeHeldItemInInventory(std::string &failure)
         return false;
     }
     pParty->clearHeldItemForQueries();
+    return true;
+}
+
+MawRules *ScenarioRuntimeDriver::mawRules()
+{
+    return ScenarioGameApplicationAccess::gameSession(m_application).mawRules();
+}
+
+bool ScenarioRuntimeDriver::runConsoleLine(const std::string &line, std::string &output, std::string &failure)
+{
+    if (!ScenarioGameApplicationAccess::runConsoleLine(m_application, line, output))
+    {
+        failure = "console: " + line + ": " + output;
+        return false;
+    }
+
+    return true;
+}
+
+bool ScenarioRuntimeDriver::setRulesetBanks(const std::array<double, 4> &levels, std::string &failure)
+{
+    MawRules *pMawRules = ScenarioGameApplicationAccess::gameSession(m_application).mawRules();
+
+    if (pMawRules == nullptr)
+    {
+        failure = "ruleset_banks needs a MAW game";
+        return false;
+    }
+
+    MawGameState state = pMawRules->state();
+
+    for (size_t continent = 0; continent < levels.size() && continent < MawGameState::ContinentCount; ++continent)
+    {
+        state.continentLevels[continent] = levels[continent];
+    }
+
+    pMawRules->setState(state);
+    return true;
+}
+
+bool ScenarioRuntimeDriver::grantItem(
+    size_t memberIndex,
+    const InventoryItem &item,
+    uint32_t count,
+    std::optional<EquipmentSlot> equipSlot,
+    std::string &failure)
+{
+    Party *pParty = party();
+
+    if (pParty == nullptr || pParty->member(memberIndex) == nullptr)
+    {
+        failure = "grant_item needs a party member " + std::to_string(memberIndex);
+        return false;
+    }
+
+    if (equipSlot)
+    {
+        std::optional<InventoryItem> held;
+
+        if (!pParty->tryEquipItemOnMember(memberIndex, *equipSlot, item, std::nullopt, true, held))
+        {
+            failure = "grant_item: member " + std::to_string(memberIndex) + " cannot wear item "
+                + std::to_string(item.objectDescriptionId);
+            return false;
+        }
+
+        return true;
+    }
+
+    for (uint32_t index = 0; index < count; ++index)
+    {
+        if (!pParty->tryAutoPlaceItemInMemberInventory(memberIndex, item) && !pParty->tryGrantInventoryItem(item))
+        {
+            failure = "grant_item: no room for item " + std::to_string(item.objectDescriptionId);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ScenarioRuntimeDriver::useInventoryItem(size_t memberIndex, uint32_t itemId, bool &used, std::string &failure)
+{
+    GameplayScreenRuntime &runtime =
+        ScenarioGameApplicationAccess::gameSession(m_application).gameplayScreenRuntime();
+    Party *pParty = runtime.party();
+    const Character *pMember = pParty != nullptr ? pParty->member(memberIndex) : nullptr;
+    const auto found = pMember != nullptr
+        ? std::find_if(pMember->inventory.begin(), pMember->inventory.end(),
+              [itemId](const InventoryItem &item)
+              {
+                  return item.objectDescriptionId == itemId;
+              })
+        : std::vector<InventoryItem>::const_iterator{};
+
+    if (pMember == nullptr || found == pMember->inventory.end())
+    {
+        failure = "use_item: member " + std::to_string(memberIndex) + " carries no item " + std::to_string(itemId);
+        return false;
+    }
+
+    if (!takeInventoryItemToCursor(memberIndex, found->gridX, found->gridY, failure))
+    {
+        return false;
+    }
+
+    const InventoryItem before = runtime.heldInventoryItem().item;
+    runtime.itemService().tryUseHeldItemOnPartyMember(runtime, memberIndex, false);
+    used = !runtime.heldInventoryItem().active || !(runtime.heldInventoryItem().item == before);
+
+    // A bottle with drinks left, or a refused item, goes back to the pack.
+    if (runtime.heldInventoryItem().active && !placeHeldItemInInventory(failure))
+    {
+        return false;
+    }
+
+    // An item that travels (a MAW dimension map) takes the party along.
+    const EventRuntimeState *pEventRuntimeState = eventRuntimeState();
+
+    if (pEventRuntimeState != nullptr && pEventRuntimeState->pendingMapMove.has_value())
+    {
+        return processPendingMapMove(failure);
+    }
+
+    return true;
+}
+
+bool ScenarioRuntimeDriver::partyCharge(
+    std::optional<size_t> actorIndex,
+    std::optional<std::string> &status,
+    std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+    Party *pParty = party();
+
+    if (pWorldRuntime == nullptr || pParty == nullptr)
+    {
+        failure = "party_charge needs an active map and party";
+        return false;
+    }
+
+    status = GameplayActionController::tryPartyCharge(*pParty, *pWorldRuntime, actorIndex);
+    return true;
+}
+
+bool ScenarioRuntimeDriver::castSpell(const ScenarioSpellCastRequest &request, bool &cast, std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+    Party *pParty = party();
+    Character *pMember = pParty != nullptr ? pParty->member(request.memberIndex) : nullptr;
+    const SpellTable &spellTable = ScenarioGameApplicationAccess::gameDataLoader(m_application).getSpellTable();
+
+    if (pWorldRuntime == nullptr || pMember == nullptr || spellTable.findById(int(request.spellId)) == nullptr)
+    {
+        failure = "cast_spell needs an active map, member " + std::to_string(request.memberIndex) + " and spell "
+            + std::to_string(request.spellId);
+        return false;
+    }
+
+    const std::optional<std::string> school = resolveMagicSkillName(request.spellId);
+
+    if (request.skill > 0 && school && !request.scroll)
+    {
+        pMember->skills[*school] = {*school, request.skill, request.mastery};
+    }
+
+    pMember->knownSpellIds.insert(request.spellId);
+    pMember->spellPoints = Party::effectiveMaximumSpellPoints(*pMember);
+    pMember->recoverySecondsRemaining = 0;
+    pParty->setActiveMemberIndex(request.memberIndex);
+
+    PartySpellCastRequest castRequest;
+    castRequest.casterMemberIndex = request.memberIndex;
+    castRequest.spellId = request.spellId;
+    castRequest.targetActorIndex = request.actorIndex;
+    castRequest.targetCharacterIndex = request.targetMemberIndex;
+
+    if (request.scroll)
+    {
+        castRequest.skillLevelOverride = std::max(request.skill, 1u);
+        castRequest.skillMasteryOverride = request.mastery;
+        castRequest.bypassRequiredMastery = true;
+        castRequest.fromScroll = true;
+        castRequest.spendMana = false;
+    }
+
+    const PartySpellCastResult result = PartySpellSystem::castSpell(*pParty, *pWorldRuntime, spellTable, castRequest);
+    pWorldRuntime->applyPendingSpellCastWorldEffects(result);
+    cast = result.status == PartySpellCastStatus::Succeeded;
+    pMember->recoverySecondsRemaining = 0;
+    return true;
+}
+
+bool ScenarioRuntimeDriver::craftItem(
+    size_t memberIndex,
+    uint32_t targetItemId,
+    std::optional<EquipmentSlot> wornSlot,
+    uint32_t materialItemId,
+    bool all,
+    bool &crafted,
+    std::string &reason,
+    std::string &failure)
+{
+    GameplayScreenRuntime &runtime =
+        ScenarioGameApplicationAccess::gameSession(m_application).gameplayScreenRuntime();
+    Party *pParty = runtime.party();
+    const Character *pMember = pParty != nullptr ? pParty->member(memberIndex) : nullptr;
+
+    if (pMember == nullptr)
+    {
+        failure = "craft needs a party member " + std::to_string(memberIndex);
+        return false;
+    }
+
+    std::optional<CraftItemRef> target;
+
+    if (wornSlot)
+    {
+        if (pParty->equippedItemId(memberIndex, *wornSlot) == targetItemId)
+        {
+            target = CraftItemRef{memberIndex, true, 0, 0, *wornSlot};
+        }
+    }
+    else
+    {
+        for (const InventoryItem &item : pMember->inventory)
+        {
+            if (item.objectDescriptionId == targetItemId)
+            {
+                target = CraftItemRef{memberIndex, false, item.gridX, item.gridY, EquipmentSlot::MainHand};
+                break;
+            }
+        }
+    }
+
+    const std::vector<CraftMaterialEntry> materials =
+        CraftingRuntime::collectMaterials(*pParty, GameplayCraftingBenchView::rules(runtime));
+    const auto material = std::find_if(materials.begin(), materials.end(),
+        [materialItemId](const CraftMaterialEntry &entry)
+        {
+            return entry.key.itemId == materialItemId;
+        });
+
+    if (!target || material == materials.end())
+    {
+        failure = "craft: no item " + std::to_string(targetItemId) + " or material " + std::to_string(materialItemId);
+        return false;
+    }
+
+    GameplayUiController::CraftingBenchState &bench = runtime.characterScreen().alchemyBench.crafting;
+    bench.target = target;
+    bench.material = material->key;
+    const std::optional<CraftingTables> tables = GameplayCraftingBenchView::tables(runtime);
+    const CraftPlan preview = tables ? CraftingRuntime::plan(*pParty, *target, material->key, 1, false,
+                                           GameplayCraftingBenchView::rules(runtime), *tables)
+                                     : CraftPlan{};
+    reason = preview.result.reason;
+    crafted = runtime.itemService().applyCraft(runtime, all);
+    return true;
+}
+
+bool ScenarioRuntimeDriver::combineGems(uint32_t gemItemId, bool all, bool &combined, std::string &failure)
+{
+    GameplayScreenRuntime &runtime =
+        ScenarioGameApplicationAccess::gameSession(m_application).gameplayScreenRuntime();
+
+    if (runtime.party() == nullptr)
+    {
+        failure = "combine_gems needs a party";
+        return false;
+    }
+
+    runtime.characterScreen().alchemyBench.crafting.material = CraftMaterialKey{gemItemId, 0, 0};
+    combined = runtime.itemService().combineGems(runtime, all);
     return true;
 }
 
@@ -1988,6 +2640,13 @@ bool ScenarioRuntimeDriver::closeDialog(std::string &failure)
     return true;
 }
 
+std::optional<size_t> ScenarioRuntimeDriver::quickItemRingMember() const
+{
+    const GameplayOverlayInteractionState &state =
+        ScenarioGameApplicationAccess::gameSession(m_application).gameplayScreenRuntime().interactionState();
+    return state.quickItemRingOpen ? std::optional<size_t>(state.quickItemRingMember) : std::nullopt;
+}
+
 ScenarioDialogSnapshot ScenarioRuntimeDriver::activeDialogSnapshot() const
 {
     const GameplayScreenRuntime &screenRuntime =
@@ -2002,6 +2661,12 @@ ScenarioDialogSnapshot ScenarioRuntimeDriver::activeDialogSnapshot() const
     snapshot.houseTitle = dialog.houseTitle;
     snapshot.lineCount = dialog.lines.size();
     snapshot.textHash = dialogLinesHash(dialog);
+
+    for (const std::string &line : dialog.lines)
+    {
+        snapshot.text += snapshot.text.empty() ? line : "\n" + line;
+    }
+
     snapshot.actions.reserve(dialog.actions.size());
 
     for (size_t index = 0; index < dialog.actions.size(); ++index)
@@ -2128,7 +2793,9 @@ bool ScenarioRuntimeDriver::advanceGameMinutes(float minutes, std::string &failu
         return false;
     }
 
+    // As the game's own time skips (GameplayController::advanceGameMinutes): the party's buffs and timers run too.
     pSceneRuntime->advanceGameMinutes(minutes);
+    pSceneRuntime->party().advanceTimedStates(minutes * 60.0f);
     ScenarioGameApplicationAccess::gameSession(m_application).setGameMinutes(
         ScenarioGameApplicationAccess::gameSession(m_application).gameMinutes() + minutes);
     return true;

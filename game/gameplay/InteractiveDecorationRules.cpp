@@ -4,6 +4,8 @@
 #include "game/events/EventRuntime.h"
 #include "game/indoor/IndoorMapData.h"
 #include "game/outdoor/OutdoorMapData.h"
+#include "game/party/Party.h"
+#include "game/rules/GameRules.h"
 
 #include <algorithm>
 #include <cctype>
@@ -727,5 +729,29 @@ std::vector<bool> hiddenIndoorDecorationEntities(
     std::span<const IndoorEntity> entities, const DecorationTable &table, const EventRuntimeState &state)
 {
     return hiddenIndoorDecorationEntities(entities, indoorDecorationClearRules(entities, table), state);
+}
+
+std::vector<int> partyBaseStatSnapshot(const Party &party)
+{
+    std::vector<int> stats;
+
+    for (const Character &member : party.members())
+    {
+        stats.insert(stats.end(), {member.might, member.intellect, member.personality, member.endurance,
+            member.speed, member.accuracy, member.luck, member.baseResistances.fire, member.baseResistances.air,
+            member.baseResistances.water, member.baseResistances.earth, member.baseResistances.mind,
+            member.baseResistances.body});
+    }
+
+    return stats;
+}
+
+void reportDecorationStatGain(const Party &party, const EventRuntimeState &state, uint8_t decorVarIndex,
+    const std::vector<int> &statsBefore)
+{
+    if (decorVarIndex < state.decorVars.size() && partyBaseStatSnapshot(party) != statsBefore)
+    {
+        party.rules().monsters.decorationRaisedStats(state.mapFileName, decorVarIndex, state.decorVars[decorVarIndex]);
+    }
 }
 }

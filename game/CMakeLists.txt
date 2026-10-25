@@ -23,6 +23,7 @@ add_library(openyamm_game STATIC
     data/ActorNameResolver.cpp
     debug/DebugConsole.cpp
     debug/GameplayDebugTrace.cpp
+    debug/MawTestParties.cpp
     debug/GameImGuiBgfxRenderer.cpp
     debug/ScreenshotCaptureService.cpp
     debug/ScreenshotTour.cpp
@@ -64,9 +65,11 @@ add_library(openyamm_game STATIC
     gameplay/GameplayWorldItemPolicy.cpp
     gameplay/SearchableLootPropRuntime.cpp
     gameplay/LootContainerRuntime.cpp
+    gameplay/CombatLog.cpp
     gameplay/GameplayCombatController.cpp
     gameplay/GameplayController.cpp
     gameplay/CorpseLootRuntime.cpp
+    gameplay/GameplayLootFilter.cpp
     gameplay/ChestRuntime.cpp
     gameplay/BountyHuntRuntime.cpp
     gameplay/ArenaRuntime.cpp
@@ -76,6 +79,10 @@ add_library(openyamm_game STATIC
     gameplay/ActorBehaviorRuntime.cpp
     gameplay/GameplayActorAiSystem.cpp
     gameplay/GameplayActorHitFeedback.cpp
+    gameplay/GameplayActorShields.cpp
+    gameplay/GameplayActorModifiers.cpp
+    gameplay/GameplayMonsterSpawn.cpp
+    maps/SceneOverlayOperations.cpp
     gameplay/MeleeContactEffects.cpp
     gameplay/GameplayActorService.cpp
     gameplay/GameplayDialogController.cpp
@@ -92,6 +99,7 @@ add_library(openyamm_game STATIC
     gameplay/MercenaryRecruitmentRuntime.cpp
     gameplay/GameplayOverlayInputController.cpp
     gameplay/GameplayAlchemyBenchInputController.cpp
+    gameplay/GameplayCraftingBenchInputController.cpp
     gameplay/GameplayPartyOverlayInputController.cpp
     gameplay/GameplayProjectileService.cpp
     gameplay/GameplayScreenController.cpp
@@ -117,8 +125,13 @@ add_library(openyamm_game STATIC
     audio/HouseVideoPlayer.cpp
     content/ContentManifest.cpp
     content/ContentTableComposer.cpp
+    content/RulesetDefinition.cpp
+    content/RulesetOptions.cpp
     items/InventoryItemUseRuntime.cpp
     items/AlchemyBenchRuntime.cpp
+    items/CraftingRuntime.cpp
+    items/InventoryBags.cpp
+    items/QuickItemSlots.cpp
     items/InventoryItemMixingRuntime.cpp
     maps/IndoorSceneYml.cpp
     maps/MapItemSourceYml.cpp
@@ -170,7 +183,55 @@ add_library(openyamm_game STATIC
     gameplay/MasteryTeacherDialog.cpp
     tables/MonsterProjectileTable.cpp
     tables/MonsterTable.cpp
+    tables/MonsterShields.cpp
+    tables/MonsterModifiers.cpp
+    tables/MonsterRelationAddOns.cpp
     tables/MergedBaseTables.cpp
+    tables/PotionEffectTable.cpp
+    rules/CombatRules.cpp
+    rules/ExperienceRules.cpp
+    rules/GameRules.cpp
+    rules/ItemRules.cpp
+    rules/LootFilter.cpp
+    rules/MonsterRules.cpp
+    rules/maw/MawAuraReport.cpp
+    rules/maw/MawAuras.cpp
+    rules/maw/MawBalanceModel.cpp
+    rules/maw/MawCharacterSheet.cpp
+    rules/maw/MawCombatFormulas.cpp
+    rules/maw/MawCombatRules.cpp
+    rules/maw/MawExperienceCurve.cpp
+    rules/maw/MawExperienceRules.cpp
+    rules/maw/MawGameState.cpp
+    rules/maw/MawItemData.cpp
+    rules/maw/MawItemFormulas.cpp
+    rules/maw/MawItemRules.cpp
+    rules/maw/MawMadnessLedger.cpp
+    rules/maw/MawMonsterLevels.cpp
+    rules/maw/MawMonsterInspect.cpp
+    rules/maw/MawMonsterRules.cpp
+    rules/maw/MawProgress.cpp
+    rules/maw/MawNpcPresence.cpp
+    rules/maw/MawRules.cpp
+    rules/maw/MawRulesFactory.cpp
+    rules/maw/MawSkillFormulas.cpp
+    rules/maw/MawClassRules.cpp
+    rules/maw/MawClassSpells.cpp
+    rules/maw/MawCraftingData.cpp
+    rules/maw/MawDimensionMaps.cpp
+    rules/maw/MawCraftingRules.cpp
+    rules/maw/MawPotionRules.cpp
+    rules/maw/MawPromotions.cpp
+    rules/maw/MawSkillRules.cpp
+    rules/maw/MawSpellFormulas.cpp
+    rules/maw/MawSpellRules.cpp
+    rules/maw/MawTexts.cpp
+    rules/RandomStreams.cpp
+    rules/ClassRules.cpp
+    rules/CraftingRules.cpp
+    rules/PotionRules.cpp
+    rules/SkillRules.cpp
+    rules/SpellRules.cpp
     tables/NpcDialogTable.cpp
     tables/ObjectTable.cpp
     render/SpriteAtlasCook.cpp
@@ -242,7 +303,9 @@ add_library(openyamm_game STATIC
     ui/EnemyHealthBarRenderer.cpp
     ui/GameplayHudRenderer.cpp
     ui/GameplayUiSkin.cpp
+    ui/GameplayPortraitGems.cpp
     ui/GameplayBuffHud.cpp
+    ui/GameplayCombatLogPanel.cpp
     ui/GameplayHudCommon.cpp
     ui/GameplayHudOverlaySupport.cpp
     ui/GameplayHudOverlayRenderer.cpp
@@ -254,6 +317,13 @@ add_library(openyamm_game STATIC
     gameplay/GameplayScreenRuntime.cpp
     ui/GameplayAlchemyBenchRenderer.cpp
     ui/GameplayAlchemyBenchView.cpp
+    ui/GameplayCraftingBenchRenderer.cpp
+    ui/GameplayCraftingBenchView.cpp
+    ui/GameplayJournalAuras.cpp
+    ui/GameplayJournalProgress.cpp
+    ui/GameplayMapProgressBar.cpp
+    ui/GameplayMapProgressText.cpp
+    ui/GameplayQuickItems.cpp
     ui/GameplayPartyOverlayRenderer.cpp
     ui/GameplayUiOverlayOrchestrator.cpp
     ui/GameplayUiRuntime.cpp
@@ -263,6 +333,7 @@ add_library(openyamm_game STATIC
     ui/UiLayoutManager.cpp
     ui/MenuSettingsModel.cpp
     ui/MenuDesignScreen.cpp
+    ui/screens/MainMenuLootFilter.cpp
     ui/screens/MainMenuScreen.cpp
     ui/screens/ArcomageScreen.cpp
     ui/screens/CutsceneVideoScreen.cpp

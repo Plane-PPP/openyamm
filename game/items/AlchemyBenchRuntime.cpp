@@ -1,5 +1,6 @@
 #include "game/items/AlchemyBenchRuntime.h"
 
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MergedBaseTables.h"
 #include "game/tables/PotionMixingTable.h"
@@ -114,8 +115,24 @@ bool isNoteUnlocked(
     const AlchemyBenchTables &tables,
     const AlchemyBenchRuntime::AutonoteLookup &isAutonoteUnlocked)
 {
+    // Rules that know every recipe (MAW) need no note.
+    if (tables.potionSettingTable.effects().allRecipesKnown())
+    {
+        return true;
+    }
+
     const std::optional<uint32_t> autonoteId = tables.potionNoteTable.autonoteIdForMix(targetItemId, heldItemId);
     return autonoteId.has_value() && isAutonoteUnlocked(*autonoteId);
+}
+
+// The result potion's power requirement and drinks per bottle.
+void describeResultRules(AlchemyPreview &preview, const AlchemyBenchTables &tables)
+{
+    if (const PotionDefinition *pPotion = tables.potionSettingTable.effects().find(preview.resultItemId))
+    {
+        preview.minimumPower = pPotion->minimumPower;
+        preview.charges = pPotion->charges;
+    }
 }
 
 // The note for the reversed order also counts when both orders brew the same potion.
@@ -172,7 +189,11 @@ bool equalsIgnoringCase(const std::string &left, const std::string &right)
             });
 }
 
-uint16_t ingredientPower(const InventoryItem &item, AlchemyIngredientKind kind, const AlchemyBenchTables &tables)
+uint16_t ingredientPower(
+    const InventoryItem &item,
+    AlchemyIngredientKind kind,
+    const AlchemyBenchTables &tables,
+    const AlchemistInfo &alchemist)
 {
     if (kind != AlchemyIngredientKind::Reagent)
     {
@@ -180,7 +201,10 @@ uint16_t ingredientPower(const InventoryItem &item, AlchemyIngredientKind kind, 
     }
 
     const ItemDefinition *pDefinition = tables.itemTable.get(item.objectDescriptionId);
-    return pDefinition != nullptr ? InventoryItemMixingRuntime::reagentPower(*pDefinition) : 0;
+    return pDefinition != nullptr
+        ? uint16_t(std::max(0,
+            boundGameRules().potions.reagentPower(*pDefinition, item, alchemist.mastery, alchemist.level)))
+        : 0;
 }
 
 std::optional<AlchemyIngredientKind> ingredientKind(uint32_t itemId, const AlchemyBenchTables &tables)
@@ -214,7 +238,7 @@ AlchemistInfo AlchemyBenchRuntime::resolveAlchemist(const Party &party)
     if (pSkill != nullptr)
     {
         alchemist.mastery = pSkill->mastery;
-        alchemist.level = pSkill->level;
+        alchemist.level = gameRulesFor(&party).potions.mixingAlchemyLevel(*pMember);
     }
 
     return alchemist;
@@ -225,6 +249,7 @@ std::vector<AlchemyIngredient> AlchemyBenchRuntime::collectIngredients(
     const AlchemyBenchTables &tables)
 {
     std::vector<AlchemyIngredient> ingredients;
+    const AlchemistInfo alchemist = resolveAlchemist(party);
 
     for (const Character &member : party.members())
     {
@@ -237,7 +262,7 @@ std::vector<AlchemyIngredient> AlchemyBenchRuntime::collectIngredients(
                 continue;
             }
 
-            const uint16_t power = ingredientPower(item, *kind, tables);
+            const uint16_t power = ingredientPower(item, *kind, tables, alchemist);
             const auto found = std::find_if(ingredients.begin(), ingredients.end(),
                 [&item](const AlchemyIngredient &ingredient)
                 {
@@ -398,6 +423,34 @@ AlchemyBook AlchemyBenchRuntime::buildBook(
         entryFor(reagent.resultItemId, true).recipes.push_back({bottleItemId, reagent.itemId});
     }
 
+    // Rules that know every recipe (MAW) list the whole mixing table.
+    if (tables.potionSettingTable.effects().allRecipesKnown())
+    {
+        for (const auto &[heldItemId, targetItemId] : tables.potionMixingTable.brewingPairs())
+        {
+            const std::optional<uint32_t> resultItemId = potionRecipeResult(targetItemId, heldItemId, tables);
+
+            if (!resultItemId)
+            {
+                continue;
+            }
+
+            resultItemIds.insert(*resultItemId);
+            AlchemyBookEntry &entry = entryFor(*resultItemId, false);
+            const bool duplicate = std::any_of(entry.recipes.begin(), entry.recipes.end(),
+                [heldItemId, targetItemId](const AlchemyRecipe &known)
+                {
+                    return (known.targetItemId == targetItemId && known.heldItemId == heldItemId)
+                        || (known.targetItemId == heldItemId && known.heldItemId == targetItemId);
+                });
+
+            if (!duplicate)
+            {
+                entry.recipes.push_back({targetItemId, heldItemId});
+            }
+        }
+    }
+
     for (const PotionNoteTable::Entry &note : tables.potionNoteTable.entries())
     {
         const std::optional<NotedRecipe> noted = notedRecipe(note, tables);
@@ -409,7 +462,7 @@ AlchemyBook AlchemyBenchRuntime::buildBook(
 
         resultItemIds.insert(noted->resultItemId);
 
-        if (!isAutonoteUnlocked(note.autonoteId))
+        if (!tables.potionSettingTable.effects().allRecipesKnown() && !isAutonoteUnlocked(note.autonoteId))
         {
             continue;
         }
@@ -532,10 +585,10 @@ AlchemyPreview AlchemyBenchRuntime::preview(
 
     const std::optional<AlchemyIngredientKind> targetKind = ingredientKind(recipe.targetItemId, tables);
     const std::optional<AlchemyIngredientKind> heldKind = ingredientKind(recipe.heldItemId, tables);
-    preview.targetPower = ingredientPower(*pTarget, targetKind.value_or(AlchemyIngredientKind::Potion), tables);
-    preview.heldPower = ingredientPower(*pHeld, heldKind.value_or(AlchemyIngredientKind::Potion), tables);
-
     const AlchemistInfo alchemist = resolveAlchemist(party);
+    preview.targetPower =
+        ingredientPower(*pTarget, targetKind.value_or(AlchemyIngredientKind::Potion), tables, alchemist);
+    preview.heldPower = ingredientPower(*pHeld, heldKind.value_or(AlchemyIngredientKind::Potion), tables, alchemist);
     InventoryItem result = *pTarget;
     const InventoryItemMixResult mixResult = simulateMix(*pHeld, result, alchemist.mastery, alchemist.level, tables);
     const uint32_t catalystItemId = tables.potionSettingTable.catalystPotionItemId();
@@ -551,6 +604,7 @@ AlchemyPreview AlchemyBenchRuntime::preview(
         preview.resultItemId = result.objectDescriptionId;
         preview.resultPower = result.standardEnchantPower;
         preview.returnsBottle = mixResult.returnsBottle;
+        describeResultRules(preview, tables);
         return preview;
     }
 
@@ -583,6 +637,7 @@ AlchemyPreview AlchemyBenchRuntime::preview(
 
     preview.outcome = AlchemyPreviewOutcome::Known;
     preview.resultPower = result.standardEnchantPower;
+    describeResultRules(preview, tables);
     return preview;
 }
 
@@ -773,11 +828,11 @@ struct AlchemyChainPlanner::Search
 AlchemyChainPlanner::AlchemyChainPlanner(
     const Party &party,
     const AlchemyBook &book,
-    uint32_t alchemistLevel,
+    const AlchemistInfo &alchemist,
     const AlchemyBenchTables &tables)
     : m_book(book)
     , m_tables(tables)
-    , m_alchemistLevel(alchemistLevel)
+    , m_alchemistLevel(alchemist.level)
     , m_bottleItemId(tables.potionSettingTable.emptyBottleItemId())
 {
     for (const Character &member : party.members())
@@ -788,7 +843,7 @@ AlchemyChainPlanner::AlchemyChainPlanner(
 
             if (kind.has_value())
             {
-                m_carried.push_back({item.objectDescriptionId, ingredientPower(item, *kind, tables)});
+                m_carried.push_back({item.objectDescriptionId, ingredientPower(item, *kind, tables, alchemist)});
             }
         }
     }

@@ -1,4 +1,6 @@
 #include "game/outdoor/OutdoorInteractionController.h"
+#include "game/rules/GameRules.h"
+#include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/items/WorldItemShape.h"
 #include "game/items/ItemRuntime.h"
@@ -599,7 +601,7 @@ std::optional<size_t> OutdoorInteractionController::resolveSpellActionHoveredAct
     return actorIndex;
 }
 
-std::optional<size_t> OutdoorInteractionController::resolveClosestVisibleHostileActorIndex(
+std::vector<size_t> OutdoorInteractionController::resolveVisibleHostileActorIndices(
     const OutdoorGameView &view,
     float sourceX,
     float sourceY,
@@ -607,7 +609,7 @@ std::optional<size_t> OutdoorInteractionController::resolveClosestVisibleHostile
 {
     if (view.m_pOutdoorWorldRuntime == nullptr || view.m_lastRenderWidth <= 0 || view.m_lastRenderHeight <= 0)
     {
-        return std::nullopt;
+        return {};
     }
 
     const uint16_t viewWidth = static_cast<uint16_t>(std::max(view.m_lastRenderWidth, 1));
@@ -645,8 +647,7 @@ std::optional<size_t> OutdoorInteractionController::resolveClosestVisibleHostile
     );
     bx::mtxMul(viewProjectionMatrix, viewMatrix, projectionMatrix);
 
-    std::optional<size_t> nearestActorIndex;
-    float nearestDistanceSquared = std::numeric_limits<float>::max();
+    std::vector<std::pair<float, size_t>> visible;
 
     for (size_t actorIndex = 0; actorIndex < view.m_pOutdoorWorldRuntime->mapActorCount(); ++actorIndex)
     {
@@ -698,14 +699,19 @@ std::optional<size_t> OutdoorInteractionController::resolveClosestVisibleHostile
         const float dz = pActor->preciseZ - sourceZ;
         const float distanceSquared = dx * dx + dy * dy + dz * dz;
 
-        if (distanceSquared < nearestDistanceSquared)
-        {
-            nearestDistanceSquared = distanceSquared;
-            nearestActorIndex = actorIndex;
-        }
+        visible.emplace_back(distanceSquared, actorIndex);
     }
 
-    return nearestActorIndex;
+    std::sort(visible.begin(), visible.end());
+    std::vector<size_t> actorIndices;
+    actorIndices.reserve(visible.size());
+
+    for (const auto &[distanceSquared, actorIndex] : visible)
+    {
+        actorIndices.push_back(actorIndex);
+    }
+
+    return actorIndices;
 }
 
 std::optional<bx::Vec3> OutdoorInteractionController::resolveSpellActionActorTargetPoint(
@@ -2340,6 +2346,7 @@ std::optional<GameplayWorldPoint> OutdoorInteractionController::resolvePartyAtta
     {
         heightScale *= std::clamp(pActor->shrinkDamageMultiplier, 0.25f, 1.0f);
     }
+    heightScale *= boundGameRules().monsters.actorDrawScale(pActor->rulesetFacts, false);
     const float spriteScale = std::max(pFrame->scale * heightScale, 0.01f);
     const float worldWidth = pTexture->width * spriteScale;
     const float worldHeight = pTexture->height * spriteScale;
@@ -5135,10 +5142,11 @@ bool OutdoorInteractionController::tryActivateWorldItemInspectEvent(
         return true;
     }
 
-    size_t recipientMemberIndex = 0;
+    Party &party = view.m_pOutdoorPartyRuntime->party();
 
-    if (view.m_pOutdoorPartyRuntime->party().tryGrantInventoryItem(pWorldItem->item, &recipientMemberIndex))
+    if (const std::optional<StoredPickup> stored = storePickedUpItem(party, pWorldItem->item, &view.data().itemTable()))
     {
+        const size_t recipientMemberIndex = stored->memberIndex;
         OutdoorWorldRuntime::WorldItemState worldItem = {};
 
         if (!view.m_pOutdoorWorldRuntime->takeWorldItem(inspectHit.bModelIndex, worldItem))
@@ -5157,7 +5165,7 @@ bool OutdoorInteractionController::tryActivateWorldItemInspectEvent(
             recipientMemberIndex,
             SpeechId::FoundItem,
             true);
-        view.setStatusBarEvent(formatFoundItemStatusText(0, itemName));
+        view.setStatusBarEvent(formatFoundItemStatusText(0, itemName) + storedPickupOwnerSuffix(party, *stored));
 
         if (EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState())
         {

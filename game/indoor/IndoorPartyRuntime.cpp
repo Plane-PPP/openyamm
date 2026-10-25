@@ -102,6 +102,7 @@ void recordSteppedFloorFace(std::vector<size_t> &faces, const IndoorMoveState &s
 IndoorPartyRuntime::IndoorPartyRuntime(IndoorMovementController movementController, const ItemTable &itemTable)
     : m_movementController(std::move(movementController))
 {
+    m_movementController.setSlopeRule(IndoorSlopeRule::Party);
     m_party.setItemTable(&itemTable);
 }
 
@@ -119,6 +120,7 @@ void IndoorPartyRuntime::initializeEyePosition(float x, float y, float z, bool r
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_dashSeconds = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
     m_burningDamageTimerSeconds = 0.0f;
@@ -139,6 +141,7 @@ void IndoorPartyRuntime::teleportEyePosition(float x, float y, float z)
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_dashSeconds = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
     m_burningDamageTimerSeconds = 0.0f;
@@ -162,6 +165,16 @@ void IndoorPartyRuntime::translatePartyPosition(float deltaX, float deltaY, floa
     m_movementState.footZ += deltaZ;
     m_movementState.verticalVelocity = 0.0f;
     m_movementState.grounded = true;
+    m_movementState.landedThisFrame = false;
+    m_movementState.fallStartZ = m_movementState.footZ;
+    m_movementState.fallDistance = 0.0f;
+}
+
+void IndoorPartyRuntime::lift(float height)
+{
+    m_movementState.footZ += height;
+    m_movementState.verticalVelocity = 0.0f;
+    m_movementState.grounded = false;
     m_movementState.landedThisFrame = false;
     m_movementState.fallStartZ = m_movementState.footZ;
     m_movementState.fallDistance = 0.0f;
@@ -212,6 +225,9 @@ void IndoorPartyRuntime::update(
         m_pendingImpulseVelocityZ = 0.0f;
     }
 
+    // The settings' speed and a ruleset's slow (MAW's dimension affix 25).
+    const float speedMultiplier = m_movementSpeedMultiplier * m_party.rulesMovementMultiplier();
+
     while (m_movementAccumulatorSeconds >= IndoorMovementStepSeconds)
     {
         m_collisionTraceClockSeconds += IndoorMovementStepSeconds;
@@ -220,11 +236,13 @@ void IndoorPartyRuntime::update(
         const float jumpLiftThisStep = m_pendingJumpLift;
         IndoorMoveDebugInfo debugInfo = {};
         IndoorMoveDebugInfo *pDebugInfo = m_collisionTraceEnabled ? &debugInfo : nullptr;
+        const bool dashing = m_dashSeconds > 0.0f;
+        m_dashSeconds = std::max(0.0f, m_dashSeconds - IndoorMovementStepSeconds);
         m_movementState = m_movementController.resolveMove(
             m_movementState,
             body,
-            desiredVelocityX * m_movementSpeedMultiplier + impulseVelocityX,
-            desiredVelocityY * m_movementSpeedMultiplier + impulseVelocityY,
+            desiredVelocityX * speedMultiplier + impulseVelocityX + (dashing ? m_dashVelocityX : 0.0f),
+            desiredVelocityY * speedMultiplier + impulseVelocityY + (dashing ? m_dashVelocityY : 0.0f),
             m_pendingJumpRequested,
             IndoorMovementStepSeconds,
             &contactedActorIndices,
@@ -296,8 +314,8 @@ void IndoorPartyRuntime::update(
                     << " start_velocity_z=" << previousMovementState.verticalVelocity
                     << " end_velocity_z=" << m_movementState.verticalVelocity
                     << " requested_velocity=("
-                    << desiredVelocityX * m_movementSpeedMultiplier + impulseVelocityX
-                    << "," << desiredVelocityY * m_movementSpeedMultiplier + impulseVelocityY << ")"
+                    << desiredVelocityX * speedMultiplier + impulseVelocityX
+                    << "," << desiredVelocityY * speedMultiplier + impulseVelocityY << ")"
                     << " jump_requested=" << (m_pendingJumpRequested ? "true" : "false")
                     << " debug_block=" << indoorMoveBlockKindName(debugInfo.primaryBlockKind)
                     << " full_succeeded=" << (debugInfo.fullMoveSucceeded ? "true" : "false")
@@ -396,6 +414,7 @@ void IndoorPartyRuntime::update(
         m_burningDamageTimerSeconds = 0.0f;
     }
 
+    effects.indoor = true;
     m_party.applyMovementEffects(effects);
 }
 
@@ -538,6 +557,13 @@ void IndoorPartyRuntime::requestJump(std::optional<float> verticalVelocity, floa
     m_pendingJumpRequested = true;
     m_pendingJumpVelocity = verticalVelocity;
     m_pendingJumpLift = std::max(0.0f, lift);
+}
+
+void IndoorPartyRuntime::requestDash(float velocityX, float velocityY, float seconds)
+{
+    m_dashVelocityX = velocityX;
+    m_dashVelocityY = velocityY;
+    m_dashSeconds = seconds;
 }
 
 void IndoorPartyRuntime::requestSpecialJump(float velocityX, float velocityY, float velocityZ)

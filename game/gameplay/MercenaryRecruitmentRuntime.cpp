@@ -6,6 +6,9 @@
 #include "game/items/ItemRuntime.h"
 #include "game/StringUtils.h"
 #include "game/party/SpellSchool.h"
+#include "game/rules/ClassRules.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/ItemRules.h"
 #include "game/tables/CharacterDollTable.h"
 #include "game/tables/ClassMultiplierTable.h"
 #include "game/tables/ClassSkillTable.h"
@@ -155,6 +158,8 @@ std::string chooseClassName(
             classKinds.push_back(classKind);
         }
     }
+
+    classKinds = gameRulesFor(&party).classes.mercenaryClassKinds(continentId, std::move(classKinds));
 
     if (classKinds.empty())
     {
@@ -518,7 +523,11 @@ void ensureBasicSkill(Character &character, const ClassSkillTable *pClassSkillTa
     }
 }
 
-void applySkills(Character &character, const ClassSkillTable *pClassSkillTable, std::mt19937 &rng)
+void applySkills(
+    Character &character,
+    const ClassSkillTable *pClassSkillTable,
+    const ClassRules &classRules,
+    std::mt19937 &rng)
 {
     if (pClassSkillTable == nullptr)
     {
@@ -537,6 +546,12 @@ void applySkills(Character &character, const ClassSkillTable *pClassSkillTable, 
 
     for (const std::string &skillName : allCanonicalSkillNames())
     {
+        // Mercenaries are home-world hirelings: they never roll technology skills.
+        if (isTechnologySkill(skillName))
+        {
+            continue;
+        }
+
         if (pClassSkillTable->getEffectiveCap(character.className, character.raceId, skillName) != SkillMastery::None)
         {
             availableSkills.push_back(skillName);
@@ -549,7 +564,7 @@ void applySkills(Character &character, const ClassSkillTable *pClassSkillTable, 
     }
 
     std::shuffle(availableSkills.begin(), availableSkills.end(), rng);
-    uint32_t skillBudget = character.level > 0 ? character.level * 5 - 5 : 0;
+    uint32_t skillBudget = classRules.mercenarySkillPoints(character.level);
     const uint32_t desiredBucket = std::max<uint32_t>(1, (4 * std::max<uint32_t>(1, character.level) + 49) / 50);
     uint32_t baseOnlySkillCount = 0;
     uint32_t minimumBucket = 1;
@@ -725,6 +740,7 @@ void copyInventoryItemToEquipmentRuntime(const InventoryItem &item, EquippedItem
     runtimeState.currentCharges = item.currentCharges;
     runtimeState.maxCharges = item.maxCharges;
     runtimeState.temporaryBonusRemainingSeconds = item.temporaryBonusRemainingSeconds;
+    runtimeState.rulesetFields = item.rulesetFields;
 }
 
 bool tryEquipGeneratedItem(
@@ -774,6 +790,7 @@ std::optional<InventoryItem> generateEquipmentItem(
         .mode = ItemGenerationMode::Generic,
         .allowRareItems = false,
         .rareItemsOnly = false,
+        .sparesLuck = true,
     };
 
     std::optional<InventoryItem> item = ItemGenerator::generateRandomInventoryItem(
@@ -788,6 +805,7 @@ std::optional<InventoryItem> generateEquipmentItem(
     if (item)
     {
         item->identified = true;
+        gameRulesFor(&party).items.trimMercenaryItem(*item, rng);
     }
 
     return item;
@@ -1076,9 +1094,7 @@ EventRuntimeState::GeneratedMercenaryRecruit generateMercenary(
     const uint32_t baseLevel = averagePartyLevel(party);
     std::uniform_int_distribution<int> levelOffset(-5, 8);
     character.level = static_cast<uint32_t>(std::max<int>(1, static_cast<int>(baseLevel) + levelOffset(rng)));
-    character.experience = static_cast<uint32_t>(std::min<uint64_t>(
-        static_cast<uint64_t>(character.level) * static_cast<uint64_t>(character.level - 1) * 500u,
-        std::numeric_limits<uint32_t>::max()));
+    character.experience = static_cast<uint64_t>(character.level) * static_cast<uint64_t>(character.level - 1) * 500u;
 
     applyStartingStats(
         character,
@@ -1086,7 +1102,7 @@ EventRuntimeState::GeneratedMercenaryRecruit generateMercenary(
         tables.pRaceStartingStatsTable,
         character.raceId);
     character.name = chooseName(tables.pNpcNameTable, character.sexId, rng);
-    applySkills(character, tables.pClassSkillTable, rng);
+    applySkills(character, tables.pClassSkillTable, gameRulesFor(&party).classes, rng);
     applySpells(character, tables.pSpellTable);
     addGeneratedInventory(character, party, tables, pDoll, rng);
     applyClassResistances(character);
@@ -1189,7 +1205,7 @@ bool refreshMercenaryRecruitmentForCurrentMap(
     float gameMinutes,
     const MercenaryRecruitmentTables &tables)
 {
-    if (tables.pHouseTable == nullptr)
+    if (tables.pHouseTable == nullptr || !party.rules().classes.offersMercenaries())
     {
         return false;
     }

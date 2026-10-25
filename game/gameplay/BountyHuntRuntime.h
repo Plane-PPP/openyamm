@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/rules/ActorRulesetFacts.h"
 #include "game/tables/MonsterTable.h"
 #include "game/tables/MergedBaseTables.h"
 
@@ -16,6 +17,8 @@ struct BountyHuntEntry
     int16_t monsterId = 0;
     bool done = false;
     bool claimed = false;
+    // The affix of the boss the rules spawned (MAW), which the bounty texts name; 0 for a plain target.
+    uint8_t bossAffix = 0;
 };
 
 struct BountyHuntClaimResult
@@ -58,10 +61,14 @@ BountyHuntClaimResult claimBountyHuntReward(
     uint32_t currentMonth,
     bool awardGold);
 bool markRuntimeBountyHuntMonsterKilled(IGameplayWorldRuntime &worldRuntime, int16_t monsterId);
+// The rules may require more of the kill than the monster's id (MAW: the boss) and that a party member struck the
+// killing blow (MAW: any other death of the target drops the bounty).
 bool markRuntimeBountyHuntMonsterKilled(
     IGameplayWorldRuntime &worldRuntime,
     int16_t monsterId,
-    const MonsterTable *pMonsterTable);
+    const MonsterTable *pMonsterTable,
+    const ActorRulesetFacts &facts = {},
+    bool killedByParty = true);
 BountyHuntInteractionResult performBountyHuntInteraction(
     IGameplayWorldRuntime &worldRuntime,
     Party *pParty,

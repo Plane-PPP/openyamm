@@ -536,7 +536,8 @@ TEST_CASE("inventory item use potions and horseshoe apply the expected effects")
         0,
         cureWounds,
         gameData.itemTable,
-        &gameData.readableScrollTable);
+        &gameData.readableScrollTable,
+        &gameData.mergedPotionSettingTable);
 
     OpenYAMM::Game::InventoryItem magicPotion = {};
     magicPotion.objectDescriptionId = 223;
@@ -545,7 +546,8 @@ TEST_CASE("inventory item use potions and horseshoe apply the expected effects")
         0,
         magicPotion,
         gameData.itemTable,
-        &gameData.readableScrollTable);
+        &gameData.readableScrollTable,
+        &gameData.mergedPotionSettingTable);
 
     OpenYAMM::Game::InventoryItem blackPotion = {};
     blackPotion.objectDescriptionId = 266;
@@ -554,7 +556,8 @@ TEST_CASE("inventory item use potions and horseshoe apply the expected effects")
         0,
         blackPotion,
         gameData.itemTable,
-        &gameData.readableScrollTable);
+        &gameData.readableScrollTable,
+        &gameData.mergedPotionSettingTable);
 
     OpenYAMM::Game::InventoryItem horseshoe = {};
     horseshoe.objectDescriptionId = 656;

@@ -2,15 +2,18 @@
 
 #include "game/events/EventRuntime.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/gameplay/GameplayActorShields.h"
 #include "game/gameplay/GameplayWorldInteraction.h"
 #include "game/items/WorldItemShape.h"
 #include "game/party/Party.h"
 #include "game/party/SkillData.h"
+#include "game/rules/ActorRulesetFacts.h"
 #include "game/tables/MonsterTable.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -19,8 +22,11 @@ namespace OpenYAMM::Game
 {
 class ActorBehaviorRuntime;
 class GameplayActorHitFeedback;
+class GameplayProjectileService;
 class MergedBolsterMonsterTable;
 struct MapArenaDefinition;
+struct GameplayMonsterSpawnRequest;
+struct MapKillProgress;
 struct GameplayMinimapState;
 struct GameplayMinimapLineState;
 struct GameplayMinimapMarkerState;
@@ -120,6 +126,14 @@ enum class ActorAiAnimationState : uint8_t
     Bored = 7,
 };
 
+// Charges (MonsterModifiers charge) on a map since it loaded: started, and how they ended.
+struct GameplayChargeCounts
+{
+    uint32_t started = 0;
+    uint32_t hits = 0;
+    uint32_t misses = 0;
+};
+
 enum class ActorTurnBasedMode : uint8_t
 {
     // Real-time play: actors attack whenever their recovery cooldown allows.
@@ -128,6 +142,27 @@ enum class ActorTurnBasedMode : uint8_t
     MoveOnly,
     // Turn-based attack and movement stages: actors hold position and only granted actors take their action.
     Hold,
+};
+
+// What the rules read of an actor, without the presentation GameplayRuntimeActorState carries (animation, shield,
+// behaviour clips): cheap enough for a pass over every actor each frame (audit ROB-2-5).
+struct GameplayActorRulesView
+{
+    uint32_t actorId = 0;
+    int16_t monsterId = 0;
+    float preciseX = 0.0f;
+    float preciseY = 0.0f;
+    float preciseZ = 0.0f;
+    uint16_t radius = 0;
+    bool isDead = false;
+    bool isInvisible = false;
+    bool hostileToParty = false;
+    bool hasDetectedParty = false;
+    // Fights for the party (a summon, a reanimated or controlled monster: ally 999).
+    bool partyAlly = false;
+    int currentHp = 0;
+    int maxHp = 0;
+    ActorRulesetFacts rulesetFacts;
 };
 
 struct GameplayRuntimeActorState
@@ -167,25 +202,37 @@ struct GameplayRuntimeActorState
     bool hostileToParty = false;
     bool hasDetectedParty = false;
     bool combatTargetingParty = false;
+    // The party member whose spell summoned the actor, -1 for none.
+    int32_t summonerMemberIndex = -1;
     int currentHp = 0;
     int maxHp = 0;
+    // What the ruleset resolved for the actor (empty under Standard).
+    ActorRulesetFacts rulesetFacts;
     // A behaviour script's clip role (actors.yml `script_clips`) and its playback time; empty when none plays.
     std::string scriptedClip;
     float scriptedClipSeconds = 0.0f;
     // Hit flash mixed over the sprite or model (GameplayActorHitFeedback), 0 when none.
     float hitFlash = 0.0f;
+    // Energy shield (GameplayActorShields); `present` is false for every monster without a shield profile.
+    GameplayActorShieldView shield;
     // The target an actor with tactics is engaging (ActorBehaviorRuntime; its attack aim point), for a model whose
     // look follows its combat target (actors.yml `look.target: combat`). Unset for every other actor.
     bool hasAimTarget = false;
     float aimTargetX = 0.0f;
     float aimTargetY = 0.0f;
     float aimTargetZ = 0.0f;
+    // An idle turret scanning (tactics `scan`): its look holds `hold_clip` and pitches its nodes to aimScanPitchRadians
+    // (the body's yaw is the scan itself). Unset for every other actor.
+    bool aimScanning = false;
+    float aimScanPitchRadians = 0.0f;
 };
 
 struct GameplayCombatFeedbackEvent
 {
     size_t actorIndex = 0;
     int damage = 0;
+    // Points a raised energy shield took instead (the body took none): shown as a blue number.
+    int shieldDamage = 0;
     int experience = 0;
     float x = 0.0f;
     float y = 0.0f;
@@ -203,6 +250,14 @@ enum class GameplayActorControlMode : uint8_t
     ControlUndead = 4,
     Reanimated = 5,
 };
+
+// A monster that fights for the party for good (MAW's Ally 9999): a summon, controlled undead, the reanimated. A
+// charmed or berserk monster is only borrowed.
+inline bool gameplayActorFightsForParty(GameplayActorControlMode mode)
+{
+    return mode == GameplayActorControlMode::Enslaved || mode == GameplayActorControlMode::ControlUndead
+        || mode == GameplayActorControlMode::Reanimated;
+}
 
 enum class GameplayActorAiType : uint8_t
 {
@@ -249,6 +304,8 @@ struct GameplayActorInspectState
     float fearRemainingSeconds = 0.0f;
     float shrinkRemainingSeconds = 0.0f;
     float darkGraspRemainingSeconds = 0.0f;
+    // How long the actor's charm, berserk or enslavement (controlMode) still holds.
+    float controlRemainingSeconds = 0.0f;
     float dayOfProtectionRemainingSeconds = 0.0f;
     float hourOfPowerRemainingSeconds = 0.0f;
     float painReflectionRemainingSeconds = 0.0f;
@@ -261,6 +318,8 @@ struct GameplayActorInspectState
     float heroismRemainingSeconds = 0.0f;
     std::string pendingSelfBuffName;
     GameplayActorControlMode controlMode = GameplayActorControlMode::None;
+    // What the ruleset resolved for the actor (MAW: its level and boss affix); empty under Standard.
+    ActorRulesetFacts rulesetFacts;
 };
 
 struct GameplayActorSpellEffectState
@@ -350,6 +409,8 @@ struct GameplayPartySpellProjectileRequest
     uint32_t effectSoundIdOverride = 0;
     uint32_t impactSoundIdOverride = 0;
     bool turnBasedPendingAction = false;
+    // The actor the spell was aimed at, for rules whose missiles home (MAW).
+    std::optional<size_t> targetActorIndex;
 };
 
 enum class GameplayProjectileVisualMode
@@ -464,11 +525,19 @@ struct GameplayPartyAttackActorFacts
     int maxHp = 0;
     int effectiveArmorClass = 0;
     int hourOfPowerPower = 0;
+    ActorRulesetFacts rulesetFacts;
     bool isDead = false;
     bool isInvisible = false;
     bool hostileToParty = false;
     bool visibleForFallback = false;
     bool lineOfSightToParty = true;
+};
+
+// A debuff a party member's hit leaves on an actor (MAW's Death Grasp and Icy Touch).
+enum class GameplayActorHitDebuff : uint8_t
+{
+    DarkGrasp,
+    Slow,
 };
 
 struct GameplayCombatActorInfo
@@ -483,6 +552,10 @@ struct GameplayCombatActorInfo
     MonsterSpecialAttackKind specialAttackKind = MonsterSpecialAttackKind::None;
     int specialAttackLevel = 0;
     std::string displayName;
+    // Shrinking Ray or Dark Grasp holds the attacker; rules that recompute its damage cut it themselves.
+    bool damageDebuffed = false;
+    // What the ruleset resolved for the attacker (empty under Standard).
+    ActorRulesetFacts rulesetFacts;
 };
 
 struct GameplayPartyAttackSpellRequest
@@ -507,9 +580,16 @@ struct GameplayPartyAttackProjectileRequest
     int attackBonus = 0;
     bool useActorHitChance = false;
     CombatDamageType damageType = CombatDamageType::Physical;
+    ShieldAttackTier shieldTier = ShieldAttackTier::Physical;
+    // Resisted by the lower of the monster's physical and fire resistance (MAW's Grandmaster fire arrows).
+    bool weakerOfPhysicalAndFire = false;
+    // The radius the missile's damage reaches around its impact (Carnage arrows); 0 strikes only what it hits.
+    float explosionRadius = 0.0f;
     GameplayWorldPoint source = {};
     GameplayWorldPoint target = {};
     bool turnBasedPendingAction = false;
+    // The actor the shot was aimed at, for rules whose missiles home (MAW).
+    std::optional<size_t> targetActorIndex;
 };
 
 struct GameplayPartyAttackFallbackQuery
@@ -581,6 +661,12 @@ public:
     virtual void applyMapReentryReset()
     {
     }
+    // Resolves the living actors' ruleset numbers again (a difficulty change).
+    virtual void refreshRulesetMonsters() = 0;
+    // Restores up to `amount` HP of a living actor (ruleset effects such as MAW's Regenerating bosses).
+    virtual bool healMapActor(size_t actorIndex, int amount) = 0;
+    // The ruleset facts of a living actor for rules that change them as it is hit (MAW's Spear stacks), or null.
+    virtual ActorRulesetFacts *mutableActorRulesetFacts(size_t actorIndex) = 0;
     virtual int currentLocationReputation() const = 0;
     virtual void setCurrentLocationReputation(int reputation) = 0;
     virtual void applyEventRuntimeState(bool syncPersistentHostilityMasks = false)
@@ -727,8 +813,59 @@ public:
     }
     virtual size_t mapActorCount() const = 0;
     virtual bool actorRuntimeState(size_t actorIndex, GameplayRuntimeActorState &state) const = 0;
+    // The actor as the rules read it; a world may answer it without building the full runtime state.
+    virtual bool actorRulesView(size_t actorIndex, GameplayActorRulesView &view) const
+    {
+        GameplayRuntimeActorState state = {};
+
+        if (!actorRuntimeState(actorIndex, state))
+        {
+            return false;
+        }
+
+        view.actorId = state.actorId;
+        view.monsterId = state.monsterId;
+        view.preciseX = state.preciseX;
+        view.preciseY = state.preciseY;
+        view.preciseZ = state.preciseZ;
+        view.radius = state.radius;
+        view.isDead = state.isDead;
+        view.isInvisible = state.isInvisible;
+        view.hostileToParty = state.hostileToParty;
+        view.hasDetectedParty = state.hasDetectedParty;
+        view.currentHp = state.currentHp;
+        view.maxHp = state.maxHp;
+        view.rulesetFacts = state.rulesetFacts;
+        return true;
+    }
     virtual GameplayActorHitFeedback &actorHitFeedback() = 0;
     virtual const GameplayActorHitFeedback &actorHitFeedback() const = 0;
+    // The actors' energy shields (null for a world without actors).
+    virtual GameplayActorShields *actorShields()
+    {
+        return nullptr;
+    }
+    virtual const GameplayActorShields *actorShields() const
+    {
+        return nullptr;
+    }
+    // Stuns a living actor for at least `seconds`, without damage or knockback (the EMP grenade on machines).
+    virtual bool stunActor(size_t actorIndex, float seconds)
+    {
+        (void)actorIndex;
+        (void)seconds;
+        return false;
+    }
+    // Holds a living actor under a hit debuff for at least `seconds`; Slow divides its speed and multiplies its
+    // recovery by `power`, never weakening a stronger slow.
+    virtual bool debuffActor(size_t actorIndex, GameplayActorHitDebuff debuff, float seconds, float power)
+    {
+        (void)actorIndex;
+        (void)debuff;
+        (void)seconds;
+        (void)power;
+        return false;
+    }
     virtual ActorBehaviorRuntime *actorBehaviorRuntime()
     {
         return nullptr;
@@ -835,13 +972,111 @@ public:
         float x,
         float y,
         float z) = 0;
+    // `summonerMemberIndex`: the party member whose spell summons them, -1 for none (MM8's Summoner field).
     virtual bool summonFriendlyMonsterById(
         int16_t monsterId,
         uint32_t count,
         float durationSeconds,
         float x,
         float y,
-        float z) = 0;
+        float z,
+        int32_t summonerMemberIndex) = 0;
+    // Debug and scenarios: the actor fires its attack or spell at the party now, through the path of an AI shot (a
+    // true_aim monster's shot homes), with `damage`, regardless of range, recovery and sight. Worlds without support
+    // return false.
+    virtual bool debugFireActorProjectileAtParty(size_t actorIndex, GameplayActorAttackAbility ability, int damage)
+    {
+        (void)actorIndex;
+        (void)ability;
+        (void)damage;
+        return false;
+    }
+    // Blinks the actor now as its blink modifier would (MonsterModifiers); false without one or without a free spot.
+    virtual bool blinkActor(size_t actorIndex)
+    {
+        (void)actorIndex;
+        return false;
+    }
+    // Swaps the places of a living actor and another one, or the party without one (MAW's Swapper bosses); the
+    // actors keep their homes. False where the world cannot.
+    virtual bool swapActorPlaces(size_t actorIndex, std::optional<size_t> otherActorIndex)
+    {
+        (void)actorIndex;
+        (void)otherActorIndex;
+        return false;
+    }
+    // Indoors, marks the living actors within `radius` of the actor as having seen the party (MM's ShowOnMap: awake,
+    // and on the Wizard Eye map; MAW's Doom reveal); returns how many it marked. Outdoors: none.
+    virtual size_t revealActorsAround(size_t actorIndex, float radius)
+    {
+        (void)actorIndex;
+        (void)radius;
+        return 0;
+    }
+    // Pushes a living actor about `distance` units along the unit direction, staggering it whatever it was doing
+    // (MAW's dragon bites); false for a dead actor or where the world cannot.
+    virtual bool pushActor(size_t actorIndex, float directionX, float directionY, float distance)
+    {
+        (void)actorIndex;
+        (void)directionX;
+        (void)directionY;
+        (void)distance;
+        return false;
+    }
+    // Dashes the party `distance` units along the unit direction over a third of a second, with the world's collision
+    // (MAW's Knight Charge); false where the world cannot.
+    virtual bool dashParty(float directionX, float directionY, float distance)
+    {
+        (void)directionX;
+        (void)directionY;
+        (void)distance;
+        return false;
+    }
+    // Raises the party by `height` in place, to fall back from there (MAW's unstuck key); false where the world cannot.
+    virtual bool liftParty(float height)
+    {
+        (void)height;
+        return false;
+    }
+    // Moves at most `maxCount` lootable corpses to the party's feet (MAW's gather key); returns how many moved.
+    virtual size_t gatherCorpsesToParty(size_t maxCount)
+    {
+        (void)maxCount;
+        return 0;
+    }
+    // Moves at most `maxCount` ground items that `gathers` accepts to the party's feet; returns how many moved.
+    virtual size_t gatherWorldItemsToParty(size_t maxCount, const std::function<bool(const InventoryItem &)> &gathers)
+    {
+        (void)maxCount;
+        (void)gathers;
+        return 0;
+    }
+    // Launches the party as the event Jump does: a heading and horizontal and vertical speeds in the event's units
+    // (MAW's Puller bosses).
+    virtual bool launchParty(float headingRadians, float horizontalSpeed, float verticalSpeed)
+    {
+        (void)headingRadians;
+        (void)horizontalSpeed;
+        (void)verticalSpeed;
+        return false;
+    }
+    // Starts the actor's charge at the party now (its wind-up, then the dash), regardless of its trigger band, sight
+    // and cooldown; false without the charge modifier or while it charges already.
+    virtual bool chargeActor(size_t actorIndex)
+    {
+        (void)actorIndex;
+        return false;
+    }
+    // Charges on this map so far (scenario checks, console); empty for a world without charges.
+    virtual std::optional<GameplayChargeCounts> chargeCounts() const
+    {
+        return std::nullopt;
+    }
+    // The world's projectiles (scenario checks, debug); null for a world without them.
+    virtual const GameplayProjectileService *projectileServiceView() const
+    {
+        return nullptr;
+    }
     // Debug: the actor launches its attack or spell projectile at a point now, regardless of range, recovery and
     // targeting, for reviewing projectile visuals. Worlds without support return false.
     virtual bool debugFireActorProjectile(
@@ -853,6 +1088,27 @@ public:
         (void)ability;
         (void)target;
         return false;
+    }
+    // How far the party has cleared this map (slain and living hostile monsters); false for a world without monsters.
+    virtual bool mapKillProgress(MapKillProgress &progress) const
+    {
+        (void)progress;
+        return false;
+    }
+    // Raises the slain ordinary monsters (no bosses, named actors or NPCs) where they fell, at full health, as
+    // "Resurrected <name>", worth this share of their experience; those whose corpse was searched carry no loot
+    // (MAW's Nightmare). Returns how many rose; a world without support raises none.
+    virtual size_t reviveSlainMonsters(float experienceShare)
+    {
+        (void)experienceShare;
+        return 0;
+    }
+    // Places a script's monsters (GameplayMonsterSpawnRequest) and returns their actor indices; a world without
+    // support places none.
+    virtual std::vector<size_t> spawnMonsters(const GameplayMonsterSpawnRequest &request)
+    {
+        (void)request;
+        return {};
     }
     virtual bool summonHostileMonsterById(
         int16_t monsterId,
@@ -899,10 +1155,12 @@ public:
         (void)query;
         return std::nullopt;
     }
+    // shieldTier: what the blow is to an energy shield (GameplayActorShields).
     virtual bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
-        const GameplayWorldPoint &source) = 0;
+        const GameplayWorldPoint &source,
+        ShieldAttackTier shieldTier) = 0;
     virtual bool applyPartyAttackMeleeBModelDamage(size_t bModelIndex, int damage)
     {
         (void)bModelIndex;
@@ -940,7 +1198,9 @@ public:
     virtual GameplayPartyAttackFrameInput buildPartyAttackFrameInput(
         const GameplayWorldPickRequest &pickRequest) const = 0;
     virtual std::optional<size_t> spellActionHoveredActorIndex() const = 0;
-    virtual std::optional<size_t> spellActionClosestVisibleHostileActorIndex() const = 0;
+    // The hostile actors a party spell may take without a cursor target: on screen, in line of sight and aware of the
+    // party, closest first. Built only when a cast asks.
+    virtual std::vector<size_t> spellActionVisibleHostileActorIndices() const = 0;
     virtual std::optional<bx::Vec3> spellActionActorTargetPoint(size_t actorIndex) const = 0;
     virtual std::optional<bx::Vec3> spellActionGroundTargetPoint(float screenX, float screenY) const = 0;
     virtual GameplayPendingSpellWorldTargetFacts pickPendingSpellWorldTarget(

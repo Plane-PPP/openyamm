@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/app/NewGameOptions.h"
+#include "game/content/RulesetDefinition.h"
 #include "game/data/GameDataRepository.h"
 #include "game/party/Party.h"
 #include "game/ui/MenuDesignScreen.h"
@@ -9,14 +11,18 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace OpenYAMM::Game
 {
 class GameAudioSystem;
+class MawRules;
+struct GameRules;
 
 class NewGameScreen : public MenuDesignScreen
 {
@@ -47,7 +53,9 @@ public:
         std::array<std::string, 2> defaultOptionalSkills = {};
     };
 
-    using ContinueAction = std::function<void(const std::vector<Character> &, uint32_t, bool)>;
+    using ContinueAction = std::function<void(const std::vector<Character> &, const NewGameOptions &)>;
+    // Loads the common data under the chosen ruleset's tables before party creation reads them.
+    using ActivateRulesetAction = std::function<bool(const std::string &rulesetId, std::string &error)>;
     using BackAction = std::function<void()>;
 
     NewGameScreen(
@@ -58,7 +66,9 @@ public:
         bool includeGodLichCandidate,
         bool allowIncompleteCharacterCreation,
         ContinueAction continueAction,
+        ActivateRulesetAction activateRulesetAction,
         BackAction backAction);
+    ~NewGameScreen() override;
 
     AppMode mode() const override;
     void prepareForFirstFrame();
@@ -101,6 +111,19 @@ public:
 
     void drawScreen(float deltaSeconds) override;
     void drawContinentSelection(float deltaSeconds);
+    void drawRulesetSwitch();
+    void drawRulesPanel();
+    // One rule setting: name and control on a line, description below; returns the y after it.
+    float drawRulesSetting(const std::string &id, const std::string &name, const std::string &description,
+                           bool select, const std::string &value, bool enabled, bool last, float y, bool &activated);
+    // Text of a Rules panel element at content position y (logical units), word-wrapped; returns its height.
+    float drawRulesText(const std::string &id, const std::string &text, float y, uint32_t color = 0);
+    Rect rulesRect(const std::string &id, float y) const;
+    // A row of tabs inside a brass outline; returns the clicked tab.
+    std::optional<size_t> drawSegmentedSwitch(const std::string &id, const Rect &frame,
+                                              const std::vector<std::string> &labels, size_t selected, bool enabled);
+    const RulesetDefinition &chosenRulesetDefinition() const;
+    void loadRulesets();
     void selectContinent(const std::string &continentKey);
     void initializeCharacterCreationForSelectedContinent();
     void ensurePartyStates();
@@ -149,6 +172,12 @@ public:
     void cancelCreation();
     Character buildVoicePreviewCharacter() const;
     void showCreationCompletionError();
+    // The rules the creation popups read (a ruleset's skill texts, race card and skill matrix): a throwaway copy of the
+    // chosen ruleset's rules, never given to the party the game starts with; Standard's for Standard.
+    const GameRules &creationRules();
+    // The class/skill matrix of a character's class line with its race: the best cap of each skill, best first; a skill
+    // that needs a promotion for it carries a "*".
+    std::vector<std::pair<std::string, uint32_t>> creationSkillMatrixLines(const Character &character) const;
     std::optional<TexturePixelsBgra> buildCreationPreviewDollPixels(
         const CharacterDollEntry &entry,
         const CharacterDollTypeEntry *pDollType);
@@ -160,9 +189,24 @@ public:
     bool m_includeGodLichCandidate = false;
     bool m_allowIncompleteCharacterCreation = false;
     ContinueAction m_continueAction;
+    ActivateRulesetAction m_activateRulesetAction;
     BackAction m_backAction;
     FlowStage m_stage = FlowStage::ContinentSelection;
     SelectedContinent m_selectedContinent = {};
+    RulesetSelection m_ruleset;
+    std::unique_ptr<MawRules> m_pCreationRules;
+    RulesetSelection m_creationRulesSelection;
+    // Standard first, then the installed ruleset packages.
+    std::vector<RulesetDefinition> m_rulesets;
+    // The options last chosen for each ruleset in this run, so switching rulesets back and forth keeps them.
+    std::unordered_map<std::string, RulesetOptions> m_rulesetOptions;
+    bool m_rulesPanelOpen = false;
+    RulesetOptions m_rulesDraft;
+    // The difficulty and progression chosen before a challenge mode forced others, restored when it no longer does.
+    std::optional<RulesetDifficulty> m_unforcedDifficulty;
+    std::optional<RulesetProgression> m_unforcedProgression;
+    float m_rulesScroll = 0;
+    float m_rulesContentHeight = 0;
     std::vector<CreationCandidate> m_candidates;
     std::vector<CreationState> m_partyStates;
     std::array<std::vector<std::string>, 8> m_pcNameColumns;

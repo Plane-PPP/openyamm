@@ -32,6 +32,8 @@ public:
     void teleportEyePosition(float x, float y, float z);
     void teleportPartyPosition(float x, float y, float z);
     void translatePartyPosition(float deltaX, float deltaY, float deltaZ);
+    // Raises the party in place; it falls back from there (MAW's unstuck key).
+    void lift(float height);
     void update(
         float desiredVelocityX,
         float desiredVelocityY,
@@ -66,6 +68,8 @@ public:
     void syncSpellMovementStatesFromPartyBuffs();
     void requestJump(std::optional<float> verticalVelocity = std::nullopt, float lift = 0.0f);
     void requestSpecialJump(float velocityX, float velocityY, float velocityZ);
+    // Adds this horizontal velocity to every movement step for `seconds`, with the world's collision (a charge).
+    void requestDash(float velocityX, float velocityY, float seconds);
 
 private:
     IndoorMovementController m_movementController;
@@ -82,6 +86,9 @@ private:
     float m_pendingImpulseVelocityX = 0.0f;
     float m_pendingImpulseVelocityY = 0.0f;
     float m_pendingImpulseVelocityZ = 0.0f;
+    float m_dashVelocityX = 0.0f;
+    float m_dashVelocityY = 0.0f;
+    float m_dashSeconds = 0.0f;
     std::optional<float> m_pendingJumpVelocity;
     float m_pendingJumpLift = 0.0f;
     float m_burningDamageTimerSeconds = 0.0f;

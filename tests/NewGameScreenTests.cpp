@@ -126,11 +126,12 @@ TEST_CASE("party creation offers all starting characters with continent-specific
     std::vector<Character> createdParty;
     uint32_t startingContinentId = 0;
     NewGameScreen screen(assets, nullptr, data, false, false, true,
-        [&](const std::vector<Character> &characters, uint32_t continentId, bool preserveDebugLoadout)
+        [&](const std::vector<Character> &characters, const NewGameOptions &options)
         {
             createdParty = characters;
-            startingContinentId = continentId;
-            CHECK_FALSE(preserveDebugLoadout);
-        }, {});
+            startingContinentId = options.continentId;
+            CHECK_FALSE(options.preserveDebugLoadout);
+            CHECK(options.ruleset.isStandard());
+        }, {}, {});
     NewGameScreenTestAccess::checkAllContinents(screen, data, createdParty, startingContinentId);
 }

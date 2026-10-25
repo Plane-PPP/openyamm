@@ -121,9 +121,9 @@ elements:
   - id: ContinentSelectionEnrothButton
     anchor: top_left
     offset_x: 91.7333
-    offset_y: 136.9499
+    offset_y: 171.7333
     width: 215.1083
-    height: 257.1835
+    height: 222.4000
     z_index: 10
     visible: true
     interactive: true
@@ -133,10 +133,10 @@ elements:
     notes: Hover highlights the card; activation opens party creation for this continent immediately.
   - id: ContinentSelectionEnrothIllustration
     anchor: top_left
-    offset_x: 125.9499
-    offset_y: 157.2165
-    width: 146.6667
-    height: 146.6667
+    offset_x: 139.2875
+    offset_y: 183.4667
+    width: 120.0000
+    height: 120.0000
     z_index: 12
     visible: true
     interactive: false
@@ -145,7 +145,7 @@ elements:
   - id: ContinentSelectionEnrothName
     anchor: top_left
     offset_x: 103.7333
-    offset_y: 331.4832
+    offset_y: 325.5000
     width: 191.1083
     height: 23.6752
     z_index: 13
@@ -162,7 +162,7 @@ elements:
   - id: ContinentSelectionEnrothGame
     anchor: top_left
     offset_x: 145.0752
-    offset_y: 311.3499
+    offset_y: 309.5000
     width: 108.4251
     height: 11.6
     z_index: 13
@@ -196,9 +196,9 @@ elements:
   - id: ContinentSelectionAntagarichButton
     anchor: top_left
     offset_x: 319.1083
-    offset_y: 136.9499
+    offset_y: 171.7333
     width: 215.1083
-    height: 257.1835
+    height: 222.4000
     z_index: 10
     visible: true
     interactive: true
@@ -208,10 +208,10 @@ elements:
     notes: Hover highlights the card; activation opens party creation for this continent immediately.
   - id: ContinentSelectionAntagarichIllustration
     anchor: top_left
-    offset_x: 353.3248
-    offset_y: 157.2165
-    width: 146.6667
-    height: 146.6667
+    offset_x: 366.6624
+    offset_y: 183.4667
+    width: 120.0000
+    height: 120.0000
     z_index: 12
     visible: true
     interactive: false
@@ -220,7 +220,7 @@ elements:
   - id: ContinentSelectionAntagarichName
     anchor: top_left
     offset_x: 331.1083
-    offset_y: 331.4832
+    offset_y: 325.5000
     width: 191.1083
     height: 23.6752
     z_index: 13
@@ -237,7 +237,7 @@ elements:
   - id: ContinentSelectionAntagarichGame
     anchor: top_left
     offset_x: 370.2165
-    offset_y: 311.3499
+    offset_y: 309.5000
     width: 112.8832
     height: 11.6
     z_index: 13
@@ -271,9 +271,9 @@ elements:
   - id: ContinentSelectionJadameButton
     anchor: top_left
     offset_x: 546.4832
-    offset_y: 136.9499
+    offset_y: 171.7333
     width: 215.1168
-    height: 257.1835
+    height: 222.4000
     z_index: 10
     visible: true
     interactive: true
@@ -283,10 +283,10 @@ elements:
     notes: Hover highlights the card; activation opens party creation for this continent immediately.
   - id: ContinentSelectionJadameIllustration
     anchor: top_left
-    offset_x: 580.7083
-    offset_y: 157.2165
-    width: 146.6667
-    height: 146.6667
+    offset_x: 594.0416
+    offset_y: 183.4667
+    width: 120.0000
+    height: 120.0000
     z_index: 12
     visible: true
     interactive: false
@@ -295,7 +295,7 @@ elements:
   - id: ContinentSelectionJadameName
     anchor: top_left
     offset_x: 558.4832
-    offset_y: 331.4832
+    offset_y: 325.5000
     width: 191.1168
     height: 23.6752
     z_index: 13
@@ -312,7 +312,7 @@ elements:
   - id: ContinentSelectionJadameGame
     anchor: top_left
     offset_x: 595.3749
-    offset_y: 311.3499
+    offset_y: 309.5000
     width: 117.3333
     height: 11.6
     z_index: 13
@@ -382,3 +382,106 @@ elements:
       scale: 0.43333
       pad_x: 12.8
     notes: 'Live label; image padding, disabled and focus states: level_generation/ui/menu_study_20260928/runtime_stage/contracts/theme.yml.'
+  - id: ContinentSelectionRulesetLabel
+    anchor: top_left
+    offset_x: 91.7333
+    offset_y: 141.8667
+    width: 55.4667
+    height: 12.8000
+    z_index: 10
+    visible: true
+    interactive: false
+    text:
+      value: '{label}'
+      font: menu_lucida
+      color: '#c2b084'
+      align_x: left
+      align_y: middle
+      scale: 0.48941
+      pad_x: 0.0
+  - id: ContinentSelectionRulesetSwitch
+    anchor: top_left
+    offset_x: 150.4000
+    offset_y: 131.2000
+    width: 265.6000
+    height: 30.9333
+    z_index: 10
+    visible: true
+    interactive: false
+    notes: 'Renderer primitive: brass outline over a dark plate; one tab per available ruleset, inset 3 px.'
+  - id: ContinentSelectionRulesetSummary
+    anchor: top_left
+    offset_x: 441.6000
+    offset_y: 139.7333
+    width: 320.0000
+    height: 14.9333
+    z_index: 10
+    visible: true
+    interactive: false
+    text:
+      value: '{summary}'
+      font: menu_arrus
+      color: '#c8c7a7'
+      align_x: right
+      align_y: middle
+      scale: 0.67368
+      pad_x: 0.0
+    notes: 'Standard: the ruleset summary. Hidden while a ruleset with a Rules panel is chosen.'
+  - id: ContinentSelectionRulesetOptions
+    anchor: top_left
+    offset_x: 420.2667
+    offset_y: 139.7333
+    width: 234.6667
+    height: 14.9333
+    z_index: 10
+    visible: true
+    interactive: false
+    text:
+      value: '{options}'
+      font: menu_arrus
+      color: '#e3c185'
+      align_x: right
+      align_y: middle
+      scale: 0.67368
+      pad_x: 0.0
+    notes: 'Chosen options, such as "Hell difficulty · Free progression"; smaller when a challenge is added.'
+  - id: ContinentSelectionRulesButton
+    anchor: top_left
+    offset_x: 669.8667
+    offset_y: 133.3333
+    width: 91.7333
+    height: 26.6667
+    z_index: 10
+    visible: true
+    interactive: true
+    asset:
+      default: hud_x2/menus/omenu_button_small_default.png
+      highlighted: hud_x2/menus/omenu_button_small_hover.png
+      pressed: hud_x2/menus/omenu_button_small_pressed.png
+    text:
+      value: Rules…
+      font: fondamento
+      color: '#e8d1a4'
+      align_x: center
+      align_y: middle
+      scale: 0.36667
+      pad_x: 0.0
+    notes: 'Opens the Rules panel (ruleset_rules.yml).'
+  - id: ContinentSelectionFooterNote
+    anchor: top_left
+    offset_x: 170.6667
+    offset_y: 421.3333
+    width: 512.0000
+    height: 12.8000
+    z_index: 10
+    visible: true
+    interactive: false
+    text:
+      value: '{note}'
+      font: menu_lucida
+      color: '#b9bba9'
+      align_x: center
+      align_y: middle
+      scale: 0.60235
+      pad_x: 0.0
+    notes: 'Controller text: the chosen ruleset summary, or the continent hint for Standard.'

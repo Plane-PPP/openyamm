@@ -14348,7 +14348,7 @@ void EditorMainWindow::renderActorInspector(EditorSession &session, size_t actor
         {
             changed = editInt16Field(session, "Monster Info Id Raw", actor.monsterInfoId) || changed;
             changed = editInt16Field(session, "Monster Id Raw", actor.monsterId) || changed;
-            changed = editInt16Field(session, "HP Override", actor.hp) || changed;
+            changed = editIntField(session, "HP Override", actor.hp, -32768, 32767) || changed;
             changed = editUInt16Field(session, "Move Speed Override", actor.moveSpeed) || changed;
             changed = editUInt16Array4Field(session, "Sprite Id Overrides", actor.spriteIds) || changed;
             changed = editInt16Field(session, "Sector Id", actor.sectorId) || changed;

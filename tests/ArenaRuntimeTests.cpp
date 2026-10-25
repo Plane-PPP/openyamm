@@ -4,6 +4,7 @@
 #include "game/data/GameDataLoader.h"
 #include "game/gameplay/ArenaRuntime.h"
 #include "game/maps/IndoorSceneYml.h"
+#include "game/rules/maw/MawRules.h"
 #include "tests/HouseDialogueTestHarness.h"
 
 #include <array>
@@ -285,6 +286,41 @@ TEST_CASE("arena master offers four difficulties and awards a completed fight ex
             CHECK_EQ(harness.party().eventVariableValue(winVariable), 1);
             CHECK_EQ(harness.party().gold(), goldBefore + rewards[difficulty - 1]);
         }
+    }
+}
+
+TEST_CASE("MAW arena bouts past level 100 draw from the twelve types nearest the range (audit OVR2-2-2)")
+{
+    const Game::MonsterTable monsters = arenaMonsters();
+    Game::MawRules rules(Game::RulesetOptions{}, Game::MawMapLevels{});
+    Game::Party party;
+    Game::PartySeed seed = {};
+    seed.members.push_back(Game::Character{});
+    party.seed(seed);
+    party.member(0)->level = 200;
+
+    for (const ArenaWorld &world : Arenas)
+    {
+        CAPTURE(world.world);
+        const Game::MapStatsEntry map = arenaMap(world);
+        const auto typesDrawn = [&](const Game::Party &drawer)
+        {
+            std::set<int16_t> types;
+
+            for (uint32_t randomSeed = 0; randomSeed < 40; ++randomSeed)
+            {
+                const auto challenge = Game::generateArenaChallenge(
+                    monsters, *map.arena, drawer, Game::ArenaDifficulty::Lord, randomSeed);
+                REQUIRE(challenge.has_value());
+                types.insert(challenge->monsterIds.begin(), challenge->monsterIds.end());
+            }
+
+            return types.size();
+        };
+        const size_t standard = typesDrawn(party);
+        party.setRules(&rules.gameRules());
+        CHECK(typesDrawn(party) >= std::min<size_t>(6, standard + 2));
+        party.setRules(nullptr);
     }
 }
 

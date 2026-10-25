@@ -10,10 +10,11 @@ namespace OpenYAMM::Game
 GameplaySpellActionController::SpellActionResult GameplaySpellActionController::tryBeginQuickSpellCast(
     GameplayScreenRuntime &runtime,
     GameplaySpellService &spellService,
-    const TargetQueries &targetQueries)
+    const TargetQueries &targetQueries,
+    std::optional<size_t> extraSlot)
 {
     const GameplaySpellService::QuickSpellStartResolution resolution =
-        spellService.tryStartQuickSpellCast(runtime, targetQueries);
+        spellService.tryStartQuickSpellCast(runtime, targetQueries, extraSlot);
 
     if (resolution.disposition == GameplaySpellService::QuickSpellStartDisposition::AttackFallback)
     {

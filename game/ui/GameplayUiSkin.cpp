@@ -5,11 +5,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace OpenYAMM::Game::GameplayUiSkin
 {
 namespace
 {
+constexpr float Pi = 3.14159265358979f;
 constexpr std::array<std::array<uint32_t, 3>, 3> HealthColors = {{
     {{0xacd69b, 0x80ad77, 0x315834}},
     {{0xead28c, 0xc7a557, 0x766031}},
@@ -59,14 +61,17 @@ std::optional<GameplayHudTextureHandle> healthMeterTexture(const GameplayScreenR
 void renderArc(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
     float strokeWidth, float startDegrees, float sweepDegrees, ArcMaterial material, float begin, float end)
 {
-    constexpr std::array<std::array<uint32_t, 3>, 9> Colors = {{
+    constexpr std::array<std::array<uint32_t, 3>, 12> Colors = {{
         HealthColors[0], HealthColors[1], HealthColors[2],
         {{0xabcfd8, 0x73a4b7, 0x2d596a}},
         {{0xb6a47b, 0x938666, 0x544d3d}},
         {{0x15201d, 0x0a1312, 0x080e0c}},
         {{0xc2ad80, 0x938666, 0x665b44}},
         {{0xffedbc, 0xf0dca3, 0xc6af77}},
-        {{0xf2d8ad, 0xe4c793, 0xa88651}}
+        {{0xf2d8ad, 0xe4c793, 0xa88651}},
+        {{0xa8f3ff, 0x4ad2f0, 0x166a8a}},
+        {{0x243a4a, 0x1a2934, 0x101a22}},
+        {{0xffffff, 0xd8f8ff, 0x90dcf0}}
     }};
     GameplayUiRuntime &runtime = context.gameplayUiRuntime();
     const std::string name = "__obsidian_arc_" + std::to_string(int(material));
@@ -108,6 +113,82 @@ void renderArc(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutEl
         runtime.submitHudTexturedArc(texture->textureHandle, rect, strokeWidth * rect.scale,
             startDegrees, sweepDegrees, begin, end);
     }
+}
+
+void renderReservedArc(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
+    float strokeWidth, float startDegrees, float sweepDegrees, float begin, bool health)
+{
+    begin = std::clamp(begin, 0.0f, 1.0f);
+    if (begin >= 1 || rect.width <= 0 || rect.height <= 0)
+    {
+        return;
+    }
+    GameplayUiRuntime &runtime = context.gameplayUiRuntime();
+    const std::string name = health ? "__obsidian_reserved_hp__" : "__obsidian_reserved_sp__";
+    constexpr const char *pSignature = "reserved-hatch-v1";
+    std::optional<GameplayHudTextureHandle> texture = runtime.findCachedDynamicHudTexture(name, pSignature);
+    if (!texture)
+    {
+        // One square tile of two diagonal stripes over a dark base, with the arc materials' edge fade across the
+        // stroke; it wraps along the arc.
+        constexpr int Size = HudArcTextureHeight;
+        const uint32_t base = health ? 0x25301f : 0x1b2a36;
+        const uint32_t stripe = health ? 0x718a60 : 0x557a90;
+        std::vector<uint8_t> pixels(Size * Size * 4);
+        for (int y = 0; y < Size; ++y)
+        {
+            const float opacity = std::min(1.0f, std::min(y, Size - 1 - y) / HudArcEdgeTexels);
+            for (int x = 0; x < Size; ++x)
+            {
+                const uint32_t color = (x + y) % (Size / 2) < Size / 5 ? stripe : base;
+                const size_t pixel = size_t(y * Size + x) * 4;
+                for (int channel = 0; channel < 3; ++channel)
+                {
+                    pixels[pixel + channel] = static_cast<uint8_t>((color >> (channel * 8)) & 0xff);
+                }
+                pixels[pixel + 3] = static_cast<uint8_t>(255 * opacity);
+            }
+        }
+        texture = runtime.ensureDynamicHudTexture(name, Size, Size, pixels);
+        if (texture)
+        {
+            runtime.setDynamicHudTextureContentSignature(name, pSignature);
+        }
+    }
+    // The band's length on screen, so a tile spans one stroke width and the stripes stay at 45 degrees.
+    constexpr int Steps = 32;
+    float length = 0;
+    float previousX = 0;
+    float previousY = 0;
+    for (int step = 0; step <= Steps; ++step)
+    {
+        const float radians = (startDegrees + sweepDegrees * (begin + (1 - begin) * step / Steps)) * Pi / 180;
+        const float x = rect.width * 0.5f * std::cos(radians);
+        const float y = rect.height * 0.5f * std::sin(radians);
+        if (step > 0)
+        {
+            length += std::hypot(x - previousX, y - previousY);
+        }
+        previousX = x;
+        previousY = y;
+    }
+    const float stroke = strokeWidth * rect.scale;
+    if (texture)
+    {
+        runtime.submitHudTexturedArc(texture->textureHandle, rect, stroke, startDegrees, sweepDegrees, begin, 1,
+            std::max(1.0f, length / stroke));
+    }
+}
+
+void renderReservedMark(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect,
+    float strokeWidth, float startDegrees, float sweepDegrees, float at)
+{
+    // About 1.2 logical units along the arc, measured where the mark sits.
+    const float radians = (startDegrees + sweepDegrees * at) * Pi / 180;
+    const float radius = std::hypot(rect.width * 0.5f * std::sin(radians), rect.height * 0.5f * std::cos(radians));
+    const float span = radius > 0 ? 1.2f * rect.scale / (radius * std::abs(sweepDegrees) * Pi / 180) : 0;
+    renderArc(context, rect, strokeWidth * 1.6f, startDegrees, sweepDegrees, ArcMaterial::SelectedRim,
+        std::max(0.0f, at - span * 0.5f), std::min(1.0f, at + span * 0.5f));
 }
 
 GameplayResolvedHudLayoutElement scrollbarThumb(const GameplayResolvedHudLayoutElement &viewport,
@@ -164,7 +245,7 @@ void renderIconButton(GameplayScreenRuntime &context, const GameplayResolvedHudL
 }
 
 void renderButton(GameplayScreenRuntime &context, const std::string &id, int width, int height,
-    bool selected, bool enabled)
+    bool selected, bool enabled, const std::string *pLabel)
 {
     const UiLayoutManager::LayoutElement *pLayout = context.findHudLayoutElement(id);
     const std::optional<GameplayResolvedHudLayoutElement> rect =
@@ -192,9 +273,11 @@ void renderButton(GameplayScreenRuntime &context, const std::string &id, int wid
         labelRect.y += pressed ? rect->scale : 0.0f;
         context.renderLayoutLabel(label, labelRect, label.labelText, false);
     };
-    if (!pLayout->labelText.empty())
+    if (pLabel != nullptr || !pLayout->labelText.empty())
     {
-        drawLabel(*pLayout, *rect);
+        UiLayoutManager::LayoutElement labelled = *pLayout;
+        labelled.labelText = pLabel != nullptr ? *pLabel : pLayout->labelText;
+        drawLabel(labelled, *rect);
     }
     for (const std::string &childId : context.sortedHudLayoutIdsForScreen(pLayout->screen))
     {
@@ -320,6 +403,11 @@ void renderPanel(GameplayScreenRuntime &context, const GameplayResolvedHudLayout
     runtime.submitHudQuadBatch(quads);
 }
 
+float partyBasebarLeft(const GameplayResolvedHudLayoutElement &rect)
+{
+    return rect.x + 7 * rect.scale - rect.height * 0.293f;
+}
+
 void renderPartyBasebar(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &rect)
 {
     renderPanel(context, rect, false, 0.75f);
@@ -331,7 +419,6 @@ void renderPartyBasebar(GameplayScreenRuntime &context, const GameplayResolvedHu
     }
     const float height = rect.height;
     const float width = height * 0.293f;
-    const float inset = 7 * rect.scale;
     const float y = rect.y;
     // Registered foreground bounds of the unchanged generated RGBA sprite; mirror only the UVs.
     constexpr float U0 = 330.0f / 992;
@@ -348,10 +435,10 @@ void renderPartyBasebar(GameplayScreenRuntime &context, const GameplayResolvedHu
         quad.v0 = V0;
         quad.v1 = V1;
     }
-    ornaments[0].x = rect.x + inset - width;
+    ornaments[0].x = partyBasebarLeft(rect);
     ornaments[0].u0 = U0;
     ornaments[0].u1 = U1;
-    ornaments[1].x = rect.x + rect.width - inset;
+    ornaments[1].x = rect.x + rect.width - 7 * rect.scale;
     ornaments[1].u0 = U1;
     ornaments[1].u1 = U0;
     context.gameplayUiRuntime().submitHudQuadBatch(ornaments);

@@ -7,6 +7,8 @@
 #include "game/tables/ItemTable.h"
 #include "game/party/Party.h"
 #include "game/party/SkillData.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/ItemRules.h"
 
 #include <algorithm>
 #include <cmath>
@@ -133,6 +135,11 @@ int PriceCalculator::playerMerchant(const Character *pCharacter, int effectiveRe
         return 0;
     }
 
+    if (const std::optional<int> value = boundGameRules().items.merchantValue(*pCharacter))
+    {
+        return *value;
+    }
+
     const CharacterSkill *pMerchant = pCharacter->findSkill("Merchant");
     const int merchantBonus = std::max(0, pCharacter->merchantBonus);
     const int skillBonus = pCharacter->skillBonus("Merchant");
@@ -157,6 +164,26 @@ int PriceCalculator::playerMerchant(const Character *pCharacter, int effectiveRe
     }
 
     return std::min(bonus - effectiveReputation + 7, 100);
+}
+
+const Character *PriceCalculator::rulesMerchantMember(const Party &party)
+{
+    const ItemRules &rules = gameRulesFor(&party).items;
+    const Character *pBest = nullptr;
+    int bestValue = -1;
+
+    for (const Character &member : party.members())
+    {
+        const std::optional<int> value = rules.merchantValue(member);
+
+        if (value && *value > bestValue)
+        {
+            pBest = &member;
+            bestValue = *value;
+        }
+    }
+
+    return pBest;
 }
 
 int PriceCalculator::applyMerchantDiscount(const Character *pCharacter, int goldAmount, int effectiveReputation)
@@ -360,14 +387,7 @@ int PriceCalculator::trainingPrice(
         return 0;
     }
 
-    const uint64_t experienceForNextLevel =
-        1000ull * static_cast<uint64_t>(pCharacter->level) * static_cast<uint64_t>(pCharacter->level + 1) / 2ull;
-
-    if (pCharacter->experience < experienceForNextLevel)
-    {
-        return 0;
-    }
-
+    // Whether the character has the experience is the party's rules' call (HouseInteraction checks it first).
     const int classTier = std::max(1, classTierForClassName(canonicalClassName(pCharacter->className)));
     const int basePrice = std::max(
             1,

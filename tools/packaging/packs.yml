@@ -31,6 +31,9 @@ packages:
       sprites:           {buckets: 3}
       sprites_new:       {buckets: 1, group: first_dir}
       world_items:       {buckets: 3, group: model}
+      # The optional rulesets (engine/rulesets/<id>, devdocs/maw/HANDOFF.md): small text and YAML, one pack. They
+      # live in the engine package because releases up to 1.10 accept only /engine and /worlds/<id> mounts.
+      rulesets:          {buckets: 1}
   # Every world; a world entry below replaces single domains or the core list.
   world:
     core: [audio, behaviors, effects, events, terrain_decorations, terrain_materials, textures]

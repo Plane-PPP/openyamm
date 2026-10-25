@@ -137,6 +137,19 @@ bool parseCommonArguments(
             continue;
         }
 
+        if (argument == "--ruleset")
+        {
+            if (!config.startupRuleset.empty() || argumentIndex + 1 >= argc)
+            {
+                std::cerr << "Usage: --ruleset <id>[:<option>...], such as maw:hell:horizontal\n";
+                return false;
+            }
+
+            config.startupRuleset = argv[argumentIndex + 1];
+            ++argumentIndex;
+            continue;
+        }
+
         if (argument == "--world")
         {
             if (hasWorldArgument || argumentIndex + 1 >= argc)

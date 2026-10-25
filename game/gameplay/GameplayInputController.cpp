@@ -4,14 +4,18 @@
 #include "game/gameplay/GameplayActionController.h"
 #include "game/app/GameSettings.h"
 #include "game/gameplay/GameplayInputFrame.h"
+#include "game/gameplay/GameplayItemService.h"
+#include "game/gameplay/GameplayPartyOverlayInputController.h"
 #include "game/gameplay/GameplayScreenController.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/GameplaySpellActionController.h"
 #include "game/gameplay/GameplaySpellService.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
+#include "game/ui/GameplayQuickItems.h"
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <optional>
 
 namespace OpenYAMM::Game
@@ -194,9 +198,9 @@ void GameplayInputController::handleStandardUiHotkeys(
     const bool houseShopActive = context.houseShopOverlay().active;
     const bool houseBankInputActive = context.houseBankState().inputActive();
     const bool gameplayHudActive = context.currentHudScreenState() == GameplayHudScreenState::Gameplay;
-    const bool canOpenRestFromGameplay =
-        config.canOpenRest
-        && gameplayHudActive
+    // Play with nothing open: the rest key and MAW's play keys act.
+    const bool gameplayIdle =
+        gameplayHudActive
         && !activeEventDialog
         && !hasActiveLootView
         && !characterScreenOpen
@@ -215,6 +219,7 @@ void GameplayInputController::handleStandardUiHotkeys(
         && !context.utilitySpellOverlayReadOnly().active
         && !houseShopActive
         && !houseBankInputActive;
+    const bool canOpenRestFromGameplay = config.canOpenRest && gameplayIdle;
 
     if (isEscapeNewlyPressed(context, config.pKeyboardState))
     {
@@ -398,6 +403,74 @@ void GameplayInputController::handleStandardUiHotkeys(
         }
     }
 
+    // MAW's keys (devdocs/maw/GAPS.md §11 D.18), listed in the key bindings of a MAW game only.
+    if (Party *pParty = context.party(); gameplayIdle && pParty != nullptr && pWorldRuntime != nullptr)
+    {
+        if (isActionNewlyPressed(context, KeyboardAction::Unstuck, config.pInputFrame, config.pKeyboardState))
+        {
+            std::string statusText;
+
+            if (!GameplayActionController::tryUnstuckParty(*pParty, *pWorldRuntime, statusText) && !statusText.empty())
+            {
+                context.setStatusBarEvent(statusText);
+            }
+        }
+
+        if (isActionNewlyPressed(context, KeyboardAction::GatherLoot, config.pInputFrame, config.pKeyboardState))
+        {
+            if (const std::optional<std::string> status = GameplayActionController::gatherLoot(*pParty, *pWorldRuntime))
+            {
+                context.setStatusBarEvent(*status);
+            }
+        }
+    }
+
+    // MMMerge's follower keys (NPCFollowers.lua:345-351): the follower panel, and a word with each of the first four
+    // followers.
+    if (gameplayIdle)
+    {
+        if (isActionNewlyPressed(context, KeyboardAction::FollowerPanel, config.pInputFrame, config.pKeyboardState))
+        {
+            context.interactionState().followerPanelOpen = !context.interactionState().followerPanelOpen;
+        }
+
+        constexpr std::array<KeyboardAction, 4> FollowerActions = {KeyboardAction::Follower1,
+            KeyboardAction::Follower2, KeyboardAction::Follower3, KeyboardAction::Follower4};
+
+        for (size_t follower = 0; follower < FollowerActions.size(); ++follower)
+        {
+            if (isActionNewlyPressed(context, FollowerActions[follower], config.pInputFrame, config.pKeyboardState))
+            {
+                context.openFollowerNpcDialogueByIndex(follower);
+            }
+        }
+
+        // The potion radial's slots for the active member (GAPS.md H.6).
+        constexpr std::array<KeyboardAction, QuickItemSlotCount> QuickItemActions = {KeyboardAction::QuickItem1,
+            KeyboardAction::QuickItem2, KeyboardAction::QuickItem3, KeyboardAction::QuickItem4,
+            KeyboardAction::QuickItem5, KeyboardAction::QuickItem6};
+        const Party *pQuickParty = context.partyReadOnly();
+
+        for (size_t slot = 0; slot < QuickItemActions.size() && pQuickParty != nullptr; ++slot)
+        {
+            if (isActionNewlyPressed(context, QuickItemActions[slot], config.pInputFrame, config.pKeyboardState))
+            {
+                context.itemService().useQuickItemSlot(context, pQuickParty->activeMemberIndex(), slot);
+            }
+        }
+    }
+
+    if (isActionNewlyPressed(context, KeyboardAction::OpenWorkbench, config.pInputFrame, config.pKeyboardState)
+        && canToggleInventory && !hasActiveLootView && !houseShopActive)
+    {
+        if (!characterScreenOpen)
+        {
+            context.toggleCharacterInventoryScreen();
+        }
+
+        GameplayPartyOverlayInputController::openWorkbench(context);
+    }
+
     const bool canCyclePartyMember =
         !spellbookActive
         && !restActive
@@ -537,7 +610,9 @@ void GameplayInputController::handleSharedGameplayHotkeys(
         context.interactionState().turnBasedToggleLatch = false;
     }
 
-    if (config.canToggleAdventurersInn && config.pKeyboardState[SDL_SCANCODE_P])
+    if (config.canToggleAdventurersInn && config.pKeyboardState[SDL_SCANCODE_P]
+        && !(isActionHeld(context, KeyboardAction::SkillCover, config.pInputFrame, config.pKeyboardState)
+            && GameplayPartyOverlayInputController::skillSwitchForAction(context, KeyboardAction::SkillCover)))
     {
         if (!context.interactionState().adventurersInnToggleLatch)
         {
@@ -737,9 +812,32 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
             context.passTurnBasedTurn();
         }
 
-        const bool isQuickCastPressed =
+        // MMMerge's extra quick spells (ExtraQuickSpells.lua) share the quick spell's hold, repeat and attack fallback;
+        // the held key's slot decides the spell.
+        constexpr std::array<KeyboardAction, ExtraQuickSpellSlotCount> ExtraQuickSpellActions = {
+            KeyboardAction::QuickSpell1, KeyboardAction::QuickSpell2, KeyboardAction::QuickSpell3,
+            KeyboardAction::QuickSpell4};
+        std::optional<size_t> heldExtraSlot;
+
+        for (size_t slot = 0; slot < ExtraQuickSpellActions.size() && !heldExtraSlot; ++slot)
+        {
+            if (isActionHeld(context, ExtraQuickSpellActions[slot], config.pInputFrame, config.pKeyboardState)
+                && !GameplayQuickItems::takesPointerAction(context, ExtraQuickSpellActions[slot]))
+            {
+                heldExtraSlot = slot;
+            }
+        }
+
+        const bool mainQuickCastPressed =
             quickCastButtonRequested
-            || isActionHeld(context, KeyboardAction::CastReady, config.pInputFrame, config.pKeyboardState);
+            || (isActionHeld(context, KeyboardAction::CastReady, config.pInputFrame, config.pKeyboardState)
+                && !GameplayQuickItems::takesPointerAction(context, KeyboardAction::CastReady));
+        const bool isQuickCastPressed = mainQuickCastPressed || heldExtraSlot.has_value();
+
+        if (isQuickCastPressed && !quickSpellState.castLatch)
+        {
+            quickSpellState.extraSlot = mainQuickCastPressed ? std::nullopt : heldExtraSlot;
+        }
 
         const GameplayActionController::QuickCastActionDecision quickCastDecision =
             GameplayActionController::updateQuickCastAction(
@@ -776,7 +874,8 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
                     GameplaySpellActionController::tryBeginQuickSpellCast(
                         context,
                         spellService,
-                        buildSpellActionTargetQueries(screenState, config));
+                        buildSpellActionTargetQueries(screenState, config),
+                        quickSpellState.extraSlot);
 
                 if (spellActionResult == GameplaySpellActionController::SpellActionResult::AttackFallback)
                 {

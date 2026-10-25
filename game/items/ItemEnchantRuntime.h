@@ -70,6 +70,17 @@ public:
         const ItemDefinition &itemDefinition,
         const StandardItemEnchantTable *pStandardTable,
         const SpecialItemEnchantTable *pSpecialTable);
+    // Standard MMMerge's value: base value, +100 per standard enchant point, the special's price modifier.
+    static int standardItemValue(
+        const InventoryItem &item,
+        const ItemDefinition &itemDefinition,
+        const StandardItemEnchantTable *pStandardTable,
+        const SpecialItemEnchantTable *pSpecialTable,
+        int minimumValue);
+    // Adds what one special enchantment of `kind` gives `member` in Standard (stats, skills, immunities, flags).
+    static void applySpecialEnchantBonus(Character &member, SpecialItemEnchantKind kind);
+    // Adds one standard enchantment's bonus of `amount` to `member`.
+    static void applyStandardEnchantBonus(Character &member, StandardItemEnchantKind kind, int amount);
     static std::string buildEnchantDescription(
         const InventoryItem &item,
         const StandardItemEnchantTable *pStandardTable,

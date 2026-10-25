@@ -1137,3 +1137,46 @@ TEST_CASE("Every spell's projectile object classifies to the same recipe as the 
     CHECK(OpenYAMM::Game::FxRecipes::classifyProjectileRecipe(123, "Breath Weapon 2", "spell100", 0)
         == ProjectileRecipe::DragonBreath);
 }
+
+TEST_CASE("a Carnage arrow explodes like a fireball where it strikes")
+{
+    GameplayProjectileService service;
+    const auto strike = [&service](float explosionRadius)
+    {
+        GameplayProjectileService::ProjectileState projectile = makePartyProjectile(30);
+        projectile.lifetimeTicks = 1000;
+        projectile.explosionRadius = explosionRadius;
+        GameplayProjectileService::ProjectileFrameFacts facts = {};
+        facts.deltaSeconds = 1.0f / 128.0f;
+        facts.hasCollision = true;
+        facts.collision.kind = GameplayProjectileService::ProjectileFrameCollisionKind::Actor;
+        facts.collision.actorIndex = 0;
+        facts.collision.point = {0.0f, 0.0f, 64.0f};
+        facts.partyPosition = {4000.0f, 0.0f, 0.0f};
+        facts.partyCollisionRadius = 64.0f;
+        facts.partyCollisionHeight = 128.0f;
+        GameplayProjectileService::ProjectileAreaImpactActorFacts struck = {};
+        struck.actorIndex = 0;
+        struck.actorId = 100;
+        struck.radius = 32;
+        struck.height = 128;
+        struck.directImpactActor = true;
+        GameplayProjectileService::ProjectileAreaImpactActorFacts neighbour = struck;
+        neighbour.actorIndex = 1;
+        neighbour.actorId = 101;
+        neighbour.x = 200.0f;
+        neighbour.directImpactActor = false;
+        facts.areaActors = {struck, neighbour};
+        return service.updateProjectileFrame(projectile, facts);
+    };
+
+    const GameplayProjectileService::ProjectileFrameResult carnage =
+        strike(GameplayProjectileService::spellImpactDamageRadius(uint32_t(SpellId::Fireball)));
+    REQUIRE(carnage.areaImpact.has_value());
+    REQUIRE_EQ(carnage.areaImpact->impact.actorHits.size(), 1u);
+    CHECK_EQ(carnage.areaImpact->impact.actorHits[0].actorIndex, 1u);
+    CHECK_EQ(carnage.areaImpact->impact.actorHits[0].damage, 30);
+
+    // A plain arrow strikes only what it hits.
+    CHECK_FALSE(strike(0.0f).areaImpact.has_value());
+}

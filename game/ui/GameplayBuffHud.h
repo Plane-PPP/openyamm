@@ -8,6 +8,7 @@
 namespace OpenYAMM::Game
 {
 class GameplayScreenRuntime;
+class SpellTable;
 
 struct GameplayBuffHudEntry
 {
@@ -192,6 +193,28 @@ inline std::vector<PartyBuffId> sortedGameplaySpecialBuffs(const Party &party)
     return result;
 }
 std::vector<GameplayBuffHudEntry> gameplayBuffHudEntries(GameplayScreenRuntime &context, int width, int height);
+
+// What potions left on a member (a ruleset's timed immunities, aura copies, skill bonuses, regeneration), as
+// personal-buff lines: a name and the game seconds left.
+struct GameplayPotionEffectLine
+{
+    std::string name;
+    float remainingSeconds = 0;
+};
+
+std::vector<GameplayPotionEffectLine> gameplayPotionEffectLines(const Character &member, const SpellTable *pSpellTable);
+
+// An aura the rules hold without a buff slot (MAW's Empower Magic and Meditation), as every member's popup lists it.
+struct GameplayAuraLine
+{
+    std::string name;
+    std::string heldText;
+};
+
+std::vector<GameplayAuraLine> gameplayUnslottedAuraLines(
+    const Party &party,
+    const Character &member,
+    const SpellTable *pSpellTable);
 std::optional<GameplayBuffHudEntry> gameplayMovementBuffAtPoint(GameplayScreenRuntime &context,
     int width, int height, float x, float y);
 void renderGameplayBuffHud(GameplayScreenRuntime &context, int width, int height);

@@ -3,6 +3,8 @@
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/items/ItemEnchantRuntime.h"
 #include "game/party/SpellIds.h"
+#include "game/rules/ExperienceRules.h"
+#include "game/rules/GameRules.h"
 #include "game/party/SkillData.h"
 #include "game/tables/CharacterDollTable.h"
 #include "game/items/ItemRuntime.h"
@@ -21,7 +23,6 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr int GameStartingYear = 1168;
 constexpr float OeCharacterMeleeAttackDistance = 407.2f;
 constexpr float OeCharacterRangedAttackDistance = 5120.0f;
 constexpr float OeRealtimeRecoveryScale = 2.133333333333333f;
@@ -34,6 +35,8 @@ constexpr const char *ScatterBlasterContentFlag = "ScatterBlaster";
 constexpr uint8_t ScatterBlasterProjectileCount = 7;
 constexpr float ScatterBlasterSpreadArcRadians = 3.14159265358979323846f / 3.0f;
 constexpr int ScatterBlasterExtraRecoveryTicks = 20;
+// Hesper's Kreegan melee weapons: their classic weapon skill as usual, plus Energy Blades on top, like Armsmaster.
+constexpr const char *EnergyBladeContentFlag = "EnergyBlade";
 
 constexpr int ParameterBonusThresholds[29] = {
     500, 400, 350, 300, 275, 250, 225, 200, 175, 150, 125, 100, 75, 50, 40,
@@ -69,14 +72,9 @@ bool monsterHourOfPowerBoostsDamageResistance(CombatDamageType damageType)
     }
 }
 
-uint64_t experienceRequiredForNextLevel(uint32_t currentLevel)
+bool canTrainToNextLevel(const Character &character, const ExperienceRules &experienceRules)
 {
-    return 1000ull * currentLevel * (currentLevel + 1) / 2;
-}
-
-bool canTrainToNextLevel(const Character &character)
-{
-    return static_cast<uint64_t>(character.experience) >= experienceRequiredForNextLevel(character.level);
+    return static_cast<uint64_t>(character.experience) >= experienceRules.experienceForNextLevel(character.level);
 }
 
 std::string experienceInspectSubject(const Character &character)
@@ -108,7 +106,13 @@ struct EquippedItems
     const ItemDefinition *pRing4 = nullptr;
     const ItemDefinition *pRing5 = nullptr;
     const ItemDefinition *pRing6 = nullptr;
+    // The ruleset's numbers for each item in allEquippedItems order, where they replace the table's dice and armour.
+    std::array<std::optional<ItemBaseStats>, 16> rulesetStats = {};
 };
+
+constexpr size_t OffHandItemIndex = 0;
+constexpr size_t MainHandItemIndex = 1;
+constexpr size_t BowItemIndex = 2;
 
 uint32_t equippedItemId(const CharacterEquipment &equipment, EquipmentSlot slot)
 {
@@ -429,10 +433,6 @@ std::optional<std::pair<int, int>> dragonBasicAttackDamageRange(const Character 
     return {{minimumDamage, maximumDamage}};
 }
 
-float ticksToRecoverySeconds(int ticks)
-{
-    return std::max(0.0f, static_cast<float>(ticks) / 128.0f * OeRealtimeRecoveryScale);
-}
 
 int baseRecoveryTicksForSkillName(const std::string &skillName)
 {
@@ -466,7 +466,7 @@ int baseRecoveryTicksForSkillName(const std::string &skillName)
         return 100;
     }
 
-    if (skillName == "Blaster")
+    if (skillName == "Blaster" || skillName == "EnergyGuns")
     {
         return 30;
     }
@@ -564,13 +564,8 @@ float armorRecoveryMultiplier(const Character &character, const std::string &ski
     return 1.0f;
 }
 
-const ItemDefinition *getEquippedItem(const Character &character, EquipmentSlot slot, const ItemTable *pItemTable)
+const EquippedItemRuntimeState *equippedRuntimeState(const Character &character, EquipmentSlot slot)
 {
-    if (pItemTable == nullptr)
-    {
-        return nullptr;
-    }
-
     const EquippedItemRuntimeState *pRuntimeState = nullptr;
 
     switch (slot)
@@ -640,6 +635,18 @@ const ItemDefinition *getEquippedItem(const Character &character, EquipmentSlot 
             break;
     }
 
+    return pRuntimeState;
+}
+
+const ItemDefinition *getEquippedItem(const Character &character, EquipmentSlot slot, const ItemTable *pItemTable)
+{
+    if (pItemTable == nullptr)
+    {
+        return nullptr;
+    }
+
+    const EquippedItemRuntimeState *pRuntimeState = equippedRuntimeState(character, slot);
+
     const uint32_t itemId = equippedItemId(character.equipment, slot);
     const ItemDefinition *pItemDefinition = itemId != 0 ? pItemTable->get(itemId) : nullptr;
 
@@ -657,6 +664,8 @@ const ItemDefinition *getEquippedItem(const Character &character, EquipmentSlot 
 
     return pItemDefinition;
 }
+
+std::array<const ItemDefinition *, 16> allEquippedItems(const EquippedItems &equippedItems);
 
 EquippedItems resolveEquippedItems(const Character &character, const ItemTable *pItemTable)
 {
@@ -677,6 +686,23 @@ EquippedItems resolveEquippedItems(const Character &character, const ItemTable *
     equippedItems.pRing4 = getEquippedItem(character, EquipmentSlot::Ring4, pItemTable);
     equippedItems.pRing5 = getEquippedItem(character, EquipmentSlot::Ring5, pItemTable);
     equippedItems.pRing6 = getEquippedItem(character, EquipmentSlot::Ring6, pItemTable);
+    const std::array<const ItemDefinition *, 16> items = allEquippedItems(equippedItems);
+    const std::array<EquipmentSlot, 16> slots = {
+        EquipmentSlot::OffHand, EquipmentSlot::MainHand, EquipmentSlot::Bow, EquipmentSlot::Armor,
+        EquipmentSlot::Helm, EquipmentSlot::Belt, EquipmentSlot::Cloak, EquipmentSlot::Gauntlets,
+        EquipmentSlot::Boots, EquipmentSlot::Amulet, EquipmentSlot::Ring1, EquipmentSlot::Ring2,
+        EquipmentSlot::Ring3, EquipmentSlot::Ring4, EquipmentSlot::Ring5, EquipmentSlot::Ring6,
+    };
+
+    for (size_t index = 0; index < items.size(); ++index)
+    {
+        if (items[index] != nullptr)
+        {
+            equippedItems.rulesetStats[index] = boundGameRules().items.baseStats(
+                *items[index], equippedRuntimeState(character, slots[index])->rulesetFields, int(character.level));
+        }
+    }
+
     return equippedItems;
 }
 
@@ -737,11 +763,6 @@ bool isShieldItem(const ItemDefinition &itemDefinition)
     return itemDefinition.equipStat == "Shield";
 }
 
-bool isTwoHandedWeapon(const ItemDefinition &itemDefinition)
-{
-    return itemDefinition.equipStat == "Weapon2";
-}
-
 bool isSpearItem(const ItemDefinition &itemDefinition)
 {
     return canonicalSkillName(itemDefinition.skillGroup) == "Spear";
@@ -752,9 +773,16 @@ bool isWetsuitItem(const ItemDefinition &itemDefinition)
     return itemDefinition.itemId == Mm7WetsuitItemId;
 }
 
+// Classic blasters (Blaster skill) and Hesper's energy guns (Energy Guns skill) fire the same blaster bolt.
 bool isBlasterItem(const ItemDefinition &itemDefinition)
 {
-    return canonicalSkillName(itemDefinition.skillGroup) == "Blaster";
+    const std::string skillName = canonicalSkillName(itemDefinition.skillGroup);
+    return skillName == "Blaster" || skillName == "EnergyGuns";
+}
+
+bool isEnergyGunItem(const ItemDefinition &itemDefinition)
+{
+    return canonicalSkillName(itemDefinition.skillGroup) == "EnergyGuns";
 }
 
 bool isWeaponItem(const ItemDefinition &itemDefinition)
@@ -865,6 +893,25 @@ int weaponMaxDamage(const ItemDefinition &itemDefinition)
     return damageDice.rolls * damageDice.sides + itemDamageModifier(itemDefinition);
 }
 
+// An equipped weapon's attack bonus and damage: the ruleset's numbers where it has them, else the table's.
+int equippedAttackModifier(const EquippedItems &equippedItems, size_t index, const ItemDefinition &itemDefinition)
+{
+    const std::optional<ItemBaseStats> &stats = equippedItems.rulesetStats[index];
+    return stats ? stats->attackBonus : itemDamageModifier(itemDefinition);
+}
+
+int equippedMinDamage(const EquippedItems &equippedItems, size_t index, const ItemDefinition &itemDefinition)
+{
+    const std::optional<ItemBaseStats> &stats = equippedItems.rulesetStats[index];
+    return stats ? stats->minimumDamage : weaponMinDamage(itemDefinition);
+}
+
+int equippedMaxDamage(const EquippedItems &equippedItems, size_t index, const ItemDefinition &itemDefinition)
+{
+    const std::optional<ItemBaseStats> &stats = equippedItems.rulesetStats[index];
+    return stats ? stats->maximumDamage : weaponMaxDamage(itemDefinition);
+}
+
 bool isUnarmed(const EquippedItems &equippedItems)
 {
     const bool hasMainWeapon = equippedItems.pMainHand != nullptr && isMeleeWeapon(*equippedItems.pMainHand);
@@ -898,6 +945,23 @@ int resolveArmsmasterDamageBonus(const Character &character)
     return multiplier * level;
 }
 
+// Energy Guns: +1 damage per rank at every mastery (its shield and exposed-body bonuses come with shields).
+int resolveEnergyGunDamageSkillBonus(const Character &character)
+{
+    return std::max(0, skillLevel(character, "EnergyGuns"));
+}
+
+// Energy Blades: +1 damage per rank with an energy blade, on top of the blade's classic weapon skill.
+int resolveEnergyBladeDamageBonus(const Character &character, const ItemDefinition *pWeapon)
+{
+    if (pWeapon == nullptr || !pWeapon->hasContentFlag(EnergyBladeContentFlag))
+    {
+        return 0;
+    }
+
+    return std::max(0, skillLevel(character, "EnergyBlades"));
+}
+
 int resolveBlasterDamageSkillBonus(const Character &character, CharacterAttackTuning attackTuning)
 {
     if (attackTuning.blasterSkillScaling != BlasterSkillScalingMode::ScalingDamage)
@@ -920,7 +984,9 @@ std::pair<int, int> resolveBlasterDamageRange(
     const ItemDefinition *pBlasterItem,
     CharacterAttackTuning attackTuning)
 {
-    const int skillDamageBonus = resolveBlasterDamageSkillBonus(character, attackTuning);
+    const int skillDamageBonus = pBlasterItem != nullptr && isEnergyGunItem(*pBlasterItem)
+        ? resolveEnergyGunDamageSkillBonus(character)
+        : resolveBlasterDamageSkillBonus(character, attackTuning);
     const int minimumDamage = std::max(
         0,
         (pBlasterItem != nullptr ? weaponMinDamage(*pBlasterItem) : 0) + skillDamageBonus);
@@ -952,6 +1018,11 @@ int resolveMeleeAttackSkillBonus(const Character &character, const EquippedItems
             return multiplier * level;
         }
 
+        if (skillName == "EnergyGuns")
+        {
+            return level;
+        }
+
         if (skillName == "Staff" && skillMastery(character, "Staff") == SkillMastery::Grandmaster)
         {
             const int unarmedLevel = skillLevel(character, "Unarmed");
@@ -965,7 +1036,7 @@ int resolveMeleeAttackSkillBonus(const Character &character, const EquippedItems
     return armsmasterBonus;
 }
 
-int resolveMeleeDamageSkillBonus(
+int resolveClassicMeleeDamageSkillBonus(
     const Character &character,
     const EquippedItems &equippedItems,
     CharacterAttackTuning attackTuning)
@@ -1024,7 +1095,21 @@ int resolveMeleeDamageSkillBonus(
         return resolveBlasterDamageSkillBonus(character, attackTuning);
     }
 
+    if (skillName == "EnergyGuns")
+    {
+        return resolveEnergyGunDamageSkillBonus(character);
+    }
+
     return armsmasterBonus;
+}
+
+int resolveMeleeDamageSkillBonus(
+    const Character &character,
+    const EquippedItems &equippedItems,
+    CharacterAttackTuning attackTuning)
+{
+    return resolveClassicMeleeDamageSkillBonus(character, equippedItems, attackTuning)
+        + resolveEnergyBladeDamageBonus(character, equippedItems.pMainHand);
 }
 
 int resolveRangedAttackSkillBonus(const Character &character, const EquippedItems &equippedItems)
@@ -1162,14 +1247,15 @@ int resolvePassiveArmorBonus(const EquippedItems &equippedItems)
     int armorValue = 0;
     const std::array<const ItemDefinition *, 16> equipped = allEquippedItems(equippedItems);
 
-    for (const ItemDefinition *pItemDefinition : equipped)
+    for (size_t index = 0; index < equipped.size(); ++index)
     {
-        if (pItemDefinition == nullptr)
+        if (equipped[index] == nullptr)
         {
             continue;
         }
 
-        armorValue += passiveArmorValue(*pItemDefinition);
+        const std::optional<ItemBaseStats> &stats = equippedItems.rulesetStats[index];
+        armorValue += stats ? stats->armorClass : passiveArmorValue(*equipped[index]);
     }
 
     return armorValue;
@@ -1181,12 +1267,12 @@ int resolveMeleeAttackItemBonus(const EquippedItems &equippedItems)
 
     if (equippedItems.pMainHand != nullptr && isMeleeWeapon(*equippedItems.pMainHand))
     {
-        attackBonus += itemDamageModifier(*equippedItems.pMainHand);
+        attackBonus += equippedAttackModifier(equippedItems, MainHandItemIndex, *equippedItems.pMainHand);
     }
 
     if (equippedItems.pOffHand != nullptr && isMeleeWeapon(*equippedItems.pOffHand))
     {
-        attackBonus += itemDamageModifier(*equippedItems.pOffHand);
+        attackBonus += equippedAttackModifier(equippedItems, OffHandItemIndex, *equippedItems.pOffHand);
     }
 
     return attackBonus;
@@ -1203,7 +1289,7 @@ int resolveMeleeMinDamageItemBonus(const EquippedItems &equippedItems)
 
     if (equippedItems.pMainHand != nullptr && isMeleeWeapon(*equippedItems.pMainHand))
     {
-        damage += weaponMinDamage(*equippedItems.pMainHand);
+        damage += equippedMinDamage(equippedItems, MainHandItemIndex, *equippedItems.pMainHand);
 
         if (canonicalSkillName(equippedItems.pMainHand->skillGroup) == "Spear" && equippedItems.pOffHand == nullptr)
         {
@@ -1213,7 +1299,7 @@ int resolveMeleeMinDamageItemBonus(const EquippedItems &equippedItems)
 
     if (equippedItems.pOffHand != nullptr && isMeleeWeapon(*equippedItems.pOffHand))
     {
-        damage += weaponMinDamage(*equippedItems.pOffHand);
+        damage += equippedMinDamage(equippedItems, OffHandItemIndex, *equippedItems.pOffHand);
     }
 
     return damage;
@@ -1230,12 +1316,12 @@ int resolveMeleeMaxDamageItemBonus(const EquippedItems &equippedItems)
 
     if (equippedItems.pMainHand != nullptr && isMeleeWeapon(*equippedItems.pMainHand))
     {
-        damage += weaponMaxDamage(*equippedItems.pMainHand);
+        damage += equippedMaxDamage(equippedItems, MainHandItemIndex, *equippedItems.pMainHand);
     }
 
     if (equippedItems.pOffHand != nullptr && isMeleeWeapon(*equippedItems.pOffHand))
     {
-        damage += weaponMaxDamage(*equippedItems.pOffHand);
+        damage += equippedMaxDamage(equippedItems, OffHandItemIndex, *equippedItems.pOffHand);
     }
 
     return damage;
@@ -1252,7 +1338,7 @@ std::optional<int> resolveRangedAttack(const Character &character, const Equippe
         + character.permanentBonuses.accuracy
         + character.magicalBonuses.accuracy;
     const int attack = parameterBonus(accuracy)
-        + itemDamageModifier(*equippedItems.pBow)
+        + equippedAttackModifier(equippedItems, BowItemIndex, *equippedItems.pBow)
         + resolveRangedAttackSkillBonus(character, equippedItems)
         + character.permanentBonuses.rangedAttack
         + character.magicalBonuses.rangedAttack;
@@ -1321,11 +1407,12 @@ CharacterStatBonuses resolveEquippedItemStatBonuses(
                 return;
             }
 
-            ItemEnchantRuntime::applyEquippedEnchantEffects(
+            boundGameRules().items.applyEquippedEnchantEffects(
                 *pItemDefinition,
                 runtimeState,
                 pStandardItemEnchantTable,
                 pSpecialItemEnchantTable,
+                character,
                 bonusCharacter);
         };
 
@@ -1887,6 +1974,7 @@ void applyMeleeWeaponEffects(
     CharacterAttackResult &result,
     std::mt19937 &rng)
 {
+    result.itemStunTarget = result.stunTarget;
     const bool staffHit = weaponUsesSkill(equippedItems.pMainHand, "Staff");
     const int staffLevel = skillLevel(character, "Staff");
 
@@ -1940,21 +2028,18 @@ void applyMeleeWeaponEffects(
 }
 }
 
-uint64_t GameMechanics::experienceRequiredForNextLevel(uint32_t currentLevel)
-{
-    return OpenYAMM::Game::experienceRequiredForNextLevel(currentLevel);
-}
-
 void GameMechanics::bindClassMultiplierTable(const ClassMultiplierTable *pClassMultiplierTable)
 {
     g_pClassMultiplierTable = pClassMultiplierTable;
 }
 
-uint32_t GameMechanics::maximumTrainableLevelFromExperience(const Character &character)
+uint32_t GameMechanics::maximumTrainableLevelFromExperience(
+    const Character &character,
+    const ExperienceRules &experienceRules)
 {
     uint32_t trainableLevel = character.level;
 
-    while (static_cast<uint64_t>(character.experience) >= experienceRequiredForNextLevel(trainableLevel))
+    while (static_cast<uint64_t>(character.experience) >= experienceRules.experienceForNextLevel(trainableLevel))
     {
         ++trainableLevel;
     }
@@ -1974,6 +2059,11 @@ int GameMechanics::calculateBaseCharacterMaxHealth(
     {
         const int endurance = std::max(10, static_cast<int>(character.endurance));
         return std::max(1, 40 + endurance * 2 + static_cast<int>(character.level) * 5);
+    }
+
+    if (const std::optional<int> health = boundGameRules().classes.baseMaxHealth(character, *multiplier))
+    {
+        return *health;
     }
 
     const int enduranceBonus = parameterBonus(static_cast<int>(character.endurance));
@@ -1999,6 +2089,11 @@ int GameMechanics::calculateBaseCharacterMaxSpellPoints(
         return isCaster
             ? std::max(0, ((intellect + personality) / 2) + static_cast<int>(character.level) * 3)
             : 0;
+    }
+
+    if (const std::optional<int> mana = boundGameRules().classes.baseMaxSpellPoints(character, *multiplier))
+    {
+        return *mana;
     }
 
     int statBonus = 0;
@@ -2111,10 +2206,12 @@ void GameMechanics::refreshCharacterBaseResources(
     }
 }
 
-std::string GameMechanics::buildExperienceInspectSupplement(const Character &character)
+std::string GameMechanics::buildExperienceInspectSupplement(
+    const Character &character,
+    const ExperienceRules &experienceRules)
 {
     const std::string subject = experienceInspectSubject(character);
-    const uint64_t nextLevelExperience = experienceRequiredForNextLevel(character.level);
+    const uint64_t nextLevelExperience = experienceRules.experienceForNextLevel(character.level);
 
     if (static_cast<uint64_t>(character.experience) < nextLevelExperience)
     {
@@ -2128,7 +2225,7 @@ std::string GameMechanics::buildExperienceInspectSupplement(const Character &cha
 
     return subject
         + " is eligible to train up to level "
-        + std::to_string(maximumTrainableLevelFromExperience(character))
+        + std::to_string(maximumTrainableLevelFromExperience(character, experienceRules))
         + ".";
 }
 
@@ -2187,7 +2284,8 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     const ItemTable *pItemTable,
     const StandardItemEnchantTable *pStandardItemEnchantTable,
     const SpecialItemEnchantTable *pSpecialItemEnchantTable,
-    CharacterAttackTuning attackTuning)
+    CharacterAttackTuning attackTuning,
+    const ExperienceRules &experienceRules)
 {
     CharacterSheetSummary summary = {};
     const EquippedItems equippedItems = resolveEquippedItems(character, pItemTable);
@@ -2213,6 +2311,10 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     const int actualSpeed = resolveCharacterSheetActualPrimaryStatValue(character, 0x2B, equippedItemBonuses);
     const int actualLuck = resolveCharacterSheetActualPrimaryStatValue(character, 0x2D, equippedItemBonuses);
 
+    // Rules that build attack, damage, armour and resistance from items and skills themselves (MAW).
+    const std::optional<CharacterCombatRows> rulesetRows = boundGameRules().skills.combatRows(
+        character, pItemTable, CharacterStatValues{actualMight, actualAccuracy, actualLuck});
+
     summary.might = makeSheetValue(baseMight, actualMight);
     summary.intellect = makeSheetValue(baseIntellect, actualIntellect);
     summary.personality = makeSheetValue(basePersonality, actualPersonality);
@@ -2232,17 +2334,19 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     const int dragonArmorBonus = isDragonClass(character)
         ? 5 * std::max(0, skillLevel(character, "DragonAbility"))
         : 0;
-    const int armorBase = parameterBonus(actualSpeed)
-        + resolvePassiveArmorBonus(equippedItems)
-        + resolveArmorSkillBonus(character, equippedItems)
-        + dragonArmorBonus
-        + character.permanentBonuses.armorClass;
+    const int armorBase = rulesetRows
+        ? rulesetRows->armorClass + character.permanentBonuses.armorClass
+        : parameterBonus(actualSpeed)
+            + resolvePassiveArmorBonus(equippedItems)
+            + resolveArmorSkillBonus(character, equippedItems)
+            + dragonArmorBonus
+            + character.permanentBonuses.armorClass;
     const int armorActual = std::max(0, armorBase + character.magicalBonuses.armorClass);
     summary.armorClass = makeSheetValue(std::max(0, armorBase), armorActual);
 
     const int displayedActualLevel = character.levelModifier != 0
         ? static_cast<int>(levelWithModifier(character.level, character.levelModifier))
-        : static_cast<int>(maximumTrainableLevelFromExperience(character));
+        : static_cast<int>(maximumTrainableLevelFromExperience(character, experienceRules));
     summary.level = makeSheetValue(static_cast<int>(character.level), displayedActualLevel);
 
     const bool leatherGrandmaster =
@@ -2250,30 +2354,37 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
         && canonicalSkillName(equippedItems.pArmor->skillGroup) == "LeatherArmor"
         && skillMastery(character, "LeatherArmor") >= SkillMastery::Grandmaster;
     const int leatherElementalResistanceBonus =
-        leatherGrandmaster ? std::max(0, skillLevel(character, "LeatherArmor")) : 0;
+        leatherGrandmaster && !rulesetRows ? std::max(0, skillLevel(character, "LeatherArmor")) : 0;
+    const CharacterResistanceSet skillResistances = rulesetRows ? rulesetRows->resistances : CharacterResistanceSet{};
 
     const int fireBase = character.baseResistances.fire
         + character.permanentBonuses.resistances.fire
         + equippedItemBonuses.resistances.fire
-        + leatherElementalResistanceBonus;
+        + leatherElementalResistanceBonus
+        + skillResistances.fire;
     const int airBase = character.baseResistances.air
         + character.permanentBonuses.resistances.air
         + equippedItemBonuses.resistances.air
-        + leatherElementalResistanceBonus;
+        + leatherElementalResistanceBonus
+        + skillResistances.air;
     const int waterBase = character.baseResistances.water
         + character.permanentBonuses.resistances.water
         + equippedItemBonuses.resistances.water
-        + leatherElementalResistanceBonus;
+        + leatherElementalResistanceBonus
+        + skillResistances.water;
     const int earthBase = character.baseResistances.earth
         + character.permanentBonuses.resistances.earth
         + equippedItemBonuses.resistances.earth
-        + leatherElementalResistanceBonus;
+        + leatherElementalResistanceBonus
+        + skillResistances.earth;
     const int mindBase = character.baseResistances.mind
         + character.permanentBonuses.resistances.mind
-        + equippedItemBonuses.resistances.mind;
+        + equippedItemBonuses.resistances.mind
+        + skillResistances.mind;
     const int bodyBase = character.baseResistances.body
         + character.permanentBonuses.resistances.body
-        + equippedItemBonuses.resistances.body;
+        + equippedItemBonuses.resistances.body
+        + skillResistances.body;
 
     const int fireActual = fireBase
         + character.magicalBonuses.resistances.fire
@@ -2319,9 +2430,9 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
         bodyActual,
         character.permanentImmunities.body || character.magicalImmunities.body);
 
-    if (character.birthYear > 0 && character.birthYear <= static_cast<uint32_t>(GameStartingYear))
+    if (character.birthYear > 0 && character.birthYear <= static_cast<uint32_t>(CharacterAgeReferenceYear))
     {
-        summary.ageText = std::to_string(GameStartingYear - character.birthYear);
+        summary.ageText = std::to_string(CharacterAgeReferenceYear - character.birthYear);
     }
     else
     {
@@ -2329,17 +2440,21 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     }
 
     summary.experienceText = std::to_string(character.experience);
-    summary.canTrainToNextLevel = canTrainToNextLevel(character);
+    summary.canTrainToNextLevel = canTrainToNextLevel(character, experienceRules);
     summary.conditionText = resolveConditionText(character);
     summary.quickSpellText = character.quickSpellName.empty() ? "None" : character.quickSpellName;
 
-    const int meleeAttack = parameterBonus(actualAccuracy)
-        + resolveMeleeAttackItemBonus(equippedItems)
-        + resolveMeleeAttackSkillBonus(character, equippedItems)
+    const int meleeAttack = (rulesetRows
+            ? rulesetRows->meleeAttack
+            : parameterBonus(actualAccuracy)
+                + resolveMeleeAttackItemBonus(equippedItems)
+                + resolveMeleeAttackSkillBonus(character, equippedItems))
         + character.permanentBonuses.meleeAttack
         + character.magicalBonuses.meleeAttack;
     summary.combat.attack = meleeAttack;
-    const std::optional<std::pair<int, int>> dragonDamageRange = dragonBasicAttackDamageRange(character);
+    // A ruleset's rows hold its dragons' fangs and breath.
+    const std::optional<std::pair<int, int>> dragonDamageRange =
+        rulesetRows ? std::nullopt : dragonBasicAttackDamageRange(character);
 
     const int meleeMightBonus = parameterBonus(actualMight);
     const int meleeMinDamage = std::max(
@@ -2365,14 +2480,20 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     }
     else if (equippedItems.pMainHand != nullptr && isBlasterItem(*equippedItems.pMainHand))
     {
-        const std::pair<int, int> damageRange =
-            resolveBlasterDamageRange(character, equippedItems.pMainHand, attackTuning);
+        const std::pair<int, int> damageRange = rulesetRows && rulesetRows->blasterDamage
+            ? *rulesetRows->blasterDamage
+            : resolveBlasterDamageRange(character, equippedItems.pMainHand, attackTuning);
         summary.combat.meleeDamageText = formatDamageRange(damageRange.first, damageRange.second);
     }
     else if (dragonDamageRange.has_value())
     {
         summary.combat.attack = skillLevel(character, "DragonAbility");
         summary.combat.meleeDamageText = formatDamageRange(dragonDamageRange->first, dragonDamageRange->second);
+    }
+    else if (rulesetRows)
+    {
+        summary.combat.meleeDamageText =
+            formatDamageRange(rulesetRows->meleeMinimumDamage, rulesetRows->meleeMaximumDamage);
     }
     else
     {
@@ -2381,10 +2502,30 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
 
     summary.combat.shoot = resolveRangedAttack(character, equippedItems);
 
+    const bool bowIsBlasterItem = equippedItems.pBow != nullptr && isBlasterItem(*equippedItems.pBow);
+
+    if (rulesetRows && summary.combat.shoot && !bowIsBlasterItem)
+    {
+        summary.combat.shoot = rulesetRows->rangedAttack + character.permanentBonuses.rangedAttack
+            + character.magicalBonuses.rangedAttack;
+    }
+
     if (dragonDamageRange.has_value())
     {
         summary.combat.shoot = skillLevel(character, "DragonAbility");
         summary.combat.rangedDamageText = formatDamageRange(dragonDamageRange->first, dragonDamageRange->second);
+    }
+    else if (rulesetRows && isDragonClass(character))
+    {
+        summary.combat.shoot = rulesetRows->rangedAttack + character.permanentBonuses.rangedAttack
+            + character.magicalBonuses.rangedAttack;
+        summary.combat.rangedDamageText =
+            formatDamageRange(rulesetRows->rangedMinimumDamage, rulesetRows->rangedMaximumDamage);
+    }
+    else if (summary.combat.shoot && rulesetRows && !bowIsBlasterItem)
+    {
+        summary.combat.rangedDamageText =
+            formatDamageRange(rulesetRows->rangedMinimumDamage, rulesetRows->rangedMaximumDamage);
     }
     else if (summary.combat.shoot)
     {
@@ -2402,12 +2543,12 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
                     + character.magicalBonuses.rangedDamage;
         const int rangedMinDamage = std::max(
             0,
-            weaponMinDamage(*equippedItems.pBow)
+            equippedMinDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
                 + rangedSkillDamageBonus
                 + rangedFlatDamageBonus);
         const int rangedMaxDamage = std::max(
             0,
-            weaponMaxDamage(*equippedItems.pBow)
+            equippedMaxDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
                 + rangedSkillDamageBonus
                 + rangedFlatDamageBonus);
         summary.combat.rangedDamageText = formatDamageRange(rangedMinDamage, rangedMaxDamage);
@@ -2443,10 +2584,8 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
     profile.hasBow =
         !character.physicalAttackDisabled && equippedItems.pBow != nullptr && isRangedWeapon(*equippedItems.pBow);
     profile.hasWand = equippedItems.pMainHand != nullptr && isWandWeapon(*equippedItems.pMainHand);
-    const bool mainHandIsBlaster =
-        equippedItems.pMainHand != nullptr && canonicalSkillName(equippedItems.pMainHand->skillGroup) == "Blaster";
-    const bool bowIsBlaster =
-        equippedItems.pBow != nullptr && canonicalSkillName(equippedItems.pBow->skillGroup) == "Blaster";
+    const bool mainHandIsBlaster = equippedItems.pMainHand != nullptr && isBlasterItem(*equippedItems.pMainHand);
+    const bool bowIsBlaster = equippedItems.pBow != nullptr && isBlasterItem(*equippedItems.pBow);
     profile.hasBlaster =
         !character.physicalAttackDisabled && (mainHandIsBlaster || bowIsBlaster);
     const CharacterSkill *pDragonAbility = character.findSkill("DragonAbility");
@@ -2462,6 +2601,10 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         equippedItems.pMainHand != nullptr ? equippedItems.pMainHand->skillGroup : std::string("Unarmed"));
     profile.meleeSkillLevel = static_cast<uint32_t>(std::max(0, skillLevel(character, meleeSkillName)));
     profile.meleeSkillMastery = static_cast<uint32_t>(skillMastery(character, meleeSkillName));
+    const bool energyBlade =
+        equippedItems.pMainHand != nullptr && equippedItems.pMainHand->hasContentFlag(EnergyBladeContentFlag);
+    profile.meleeShieldTier = energyBlade ? ShieldAttackTier::KreeganEnergy : ShieldAttackTier::Physical;
+    profile.meleeShieldOverload = energyBlade && skillMastery(character, "EnergyBlades") == SkillMastery::Grandmaster;
     CharacterAttackMode rangedRecoveryMode = CharacterAttackMode::Bow;
 
     if (profile.hasDragonBreath)
@@ -2494,6 +2637,10 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         + character.permanentBonuses.might
         + character.magicalBonuses.might;
     const int meleeMightBonus = parameterBonus(actualMight);
+    const std::optional<CharacterCombatRows> rulesetRows = boundGameRules().skills.combatRows(
+        character,
+        pItemTable,
+        CharacterStatValues{summary.might.actual, summary.accuracy.actual, summary.luck.actual});
     profile.meleeMinDamage = std::max(
         1,
         meleeMightBonus
@@ -2511,11 +2658,30 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
 
+    if (rulesetRows)
+    {
+        profile.meleeMinDamage = rulesetRows->meleeMinimumDamage;
+        profile.meleeMaxDamage = rulesetRows->meleeMaximumDamage;
+    }
+
+    if (profile.hasDragonBreath || profile.hasWand)
+    {
+        profile.rangedShieldTier = ShieldAttackTier::Spell;
+    }
+    else if (profile.hasBlaster)
+    {
+        const ItemDefinition *pBlasterItem = mainHandIsBlaster ? equippedItems.pMainHand : equippedItems.pBow;
+        profile.rangedShieldTier = pBlasterItem != nullptr && isEnergyGunItem(*pBlasterItem)
+            ? ShieldAttackTier::KreeganEnergy : ShieldAttackTier::ClassicBlaster;
+    }
+
     if (profile.hasDragonBreath && pDragonAbility != nullptr)
     {
         const int dragonSkillLevel = skillLevel(character, "DragonAbility");
-        const std::optional<std::pair<int, int>> dragonDamageRange = dragonBasicAttackDamageRange(character);
-        profile.rangedAttackBonus = dragonSkillLevel;
+        const std::optional<std::pair<int, int>> dragonDamageRange = rulesetRows
+            ? std::optional<std::pair<int, int>>({rulesetRows->rangedMinimumDamage, rulesetRows->rangedMaximumDamage})
+            : dragonBasicAttackDamageRange(character);
+        profile.rangedAttackBonus = rulesetRows ? rulesetRows->rangedAttack : dragonSkillLevel;
         profile.rangedSkillLevel = static_cast<uint32_t>(std::max(0, dragonSkillLevel));
         profile.rangedSkillMastery = static_cast<uint32_t>(pDragonAbility->mastery);
         profile.rangedMinDamage = dragonDamageRange ? dragonDamageRange->first : std::max(1, dragonSkillLevel);
@@ -2549,20 +2715,11 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
             canonicalSkillName(pBlasterItem != nullptr ? pBlasterItem->skillGroup : std::string());
         profile.rangedSkillLevel = static_cast<uint32_t>(std::max(0, skillLevel(character, rangedSkillName)));
         profile.rangedSkillMastery = static_cast<uint32_t>(skillMastery(character, rangedSkillName));
-        if (mainHandIsBlaster)
-        {
-            const std::pair<int, int> damageRange =
-                resolveBlasterDamageRange(character, pBlasterItem, attackTuning);
-            profile.rangedMinDamage = damageRange.first;
-            profile.rangedMaxDamage = damageRange.second;
-        }
-        else
-        {
-            const std::pair<int, int> damageRange =
-                resolveBlasterDamageRange(character, pBlasterItem, attackTuning);
-            profile.rangedMinDamage = damageRange.first;
-            profile.rangedMaxDamage = damageRange.second;
-        }
+        const std::pair<int, int> damageRange = rulesetRows && rulesetRows->blasterDamage
+            ? *rulesetRows->blasterDamage
+            : resolveBlasterDamageRange(character, pBlasterItem, attackTuning);
+        profile.rangedMinDamage = damageRange.first;
+        profile.rangedMaxDamage = damageRange.second;
 
         if (pBlasterItem != nullptr && pBlasterItem->hasContentFlag(ScatterBlasterContentFlag))
         {
@@ -2590,17 +2747,27 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         {
             profile.rangedProjectileCount = std::max<uint8_t>(profile.rangedProjectileCount, 3);
         }
+        if (rulesetRows)
+        {
+            profile.rangedMinDamage = rulesetRows->rangedMinimumDamage;
+            profile.rangedMaxDamage = rulesetRows->rangedMaximumDamage;
+            return profile;
+        }
         profile.rangedMinDamage = std::max(
             0,
             resolveRangedDamageSkillBonus(character, equippedItems, attackTuning)
-                + (equippedItems.pBow != nullptr ? weaponMinDamage(*equippedItems.pBow) : 0)
+                + (equippedItems.pBow != nullptr
+                    ? equippedMinDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
+                    : 0)
                 + character.weaponEnchantmentDamageBonus
                 + character.permanentBonuses.rangedDamage
                 + character.magicalBonuses.rangedDamage);
         profile.rangedMaxDamage = std::max(
             profile.rangedMinDamage,
             resolveRangedDamageSkillBonus(character, equippedItems, attackTuning)
-                + (equippedItems.pBow != nullptr ? weaponMaxDamage(*equippedItems.pBow) : 0)
+                + (equippedItems.pBow != nullptr
+                    ? equippedMaxDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
+                    : 0)
                 + character.weaponEnchantmentDamageBonus
                 + character.permanentBonuses.rangedDamage
                 + character.magicalBonuses.rangedDamage);
@@ -2689,6 +2856,8 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
     }
 
     result.voiceHook = "attack";
+    result.shieldTier = result.mode == CharacterAttackMode::Melee ? profile.meleeShieldTier : profile.rangedShieldTier;
+    result.shieldOverload = result.mode == CharacterAttackMode::Melee && profile.meleeShieldOverload;
 
     if (!result.canAttack)
     {
@@ -2807,6 +2976,12 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
         result.skillLevel = profile.meleeSkillLevel;
         result.skillMastery = profile.meleeSkillMastery;
         applyMeleeWeaponEffects(character, equippedItems, result, rng);
+    }
+
+    if (result.mode == CharacterAttackMode::Bow && character.equippedItemEffectFlags.contains("ExplosiveArrows"))
+    {
+        result.explosiveArrow = true;
+        result.damageType = CombatDamageType::Fire;
     }
 
     if (!result.resolvesOnImpact)
@@ -3018,8 +3193,14 @@ IdentifyMonsterReveal GameMechanics::resolveIdentifyMonsterReveal(const Characte
 
 SpeechId GameMechanics::resolveIdentifyMonsterSpeech(const Character &character, int monsterLevel)
 {
-    const IdentifyMonsterReveal reveal = resolveIdentifyMonsterReveal(character, monsterLevel);
+    return resolveIdentifyMonsterSpeech(resolveIdentifyMonsterReveal(character, monsterLevel), character, monsterLevel);
+}
 
+SpeechId GameMechanics::resolveIdentifyMonsterSpeech(
+    const IdentifyMonsterReveal &reveal,
+    const Character &character,
+    int monsterLevel)
+{
     if (!reveal.hasSkill)
     {
         return SpeechId::None;
@@ -3127,6 +3308,11 @@ int GameMechanics::resolveCharacterIncomingDamage(
     else if (damageType == CombatDamageType::Dark)
     {
         resistance = directResistance(&CharacterResistanceSet::dark);
+    }
+    else if (damageType == CombatDamageType::Energy)
+    {
+        // Hesper gear only (item_effects energy_resistance); 0 for every other character.
+        resistance = character.energyResistance;
     }
 
     const int luckBonus = parameterBonus(static_cast<int>(character.luck)
@@ -3407,6 +3593,11 @@ bool GameMechanics::partyDetectsSecretFaces(const Party &party, const MapStatsEn
     return resolvePartyPerceptionValue(party) >= requiredPerception;
 }
 
+float ticksToRecoverySeconds(int ticks)
+{
+    return std::max(0.0f, static_cast<float>(ticks) / 128.0f * OeRealtimeRecoveryScale);
+}
+
 bool GameMechanics::canSelectInGameplay(const Character &character)
 {
     return canAct(character);
@@ -3548,8 +3739,9 @@ std::optional<CharacterEquipPlan> GameMechanics::resolveCharacterEquipPlan(
     const ItemDefinition *pMainHand = getEquippedItem(character, EquipmentSlot::MainHand, pItemTable);
     const bool hasMainItem = character.equipment.mainHand != 0;
     const bool hasOffHandItem = character.equipment.offHand != 0;
-    const bool hasTwoHandedMain =
-        pMainHand != nullptr ? isTwoHandedWeapon(*pMainHand) : false;
+    const ItemRules &itemRules = boundGameRules().items;
+    const bool hasTwoHandedMain = pMainHand != nullptr ? itemRules.wield(character, *pMainHand).twoHanded : false;
+    const ItemWield wield = itemRules.wield(character, itemDefinition);
     const auto finishPlan =
         [&](const CharacterEquipPlan &candidate) -> std::optional<CharacterEquipPlan>
         {
@@ -3745,7 +3937,7 @@ std::optional<CharacterEquipPlan> GameMechanics::resolveCharacterEquipPlan(
 
         return finishPlan(plan);
     }
-    else if (itemDefinition.equipStat == "Weapon2")
+    else if (itemDefinition.equipStat == "Weapon2" && wield.twoHanded)
     {
         plan.targetSlot = EquipmentSlot::MainHand;
 
@@ -3781,13 +3973,10 @@ std::optional<CharacterEquipPlan> GameMechanics::resolveCharacterEquipPlan(
 
         return finishPlan(plan);
     }
-    else if (itemDefinition.equipStat == "Weapon" || itemDefinition.equipStat == "WeaponW")
+    else if (itemDefinition.equipStat == "Weapon" || itemDefinition.equipStat == "WeaponW"
+        || itemDefinition.equipStat == "Weapon2")
     {
-        const std::string skillName = canonicalSkillName(itemDefinition.skillGroup);
-        const bool canUseOffHand =
-            !hasTwoHandedMain
-            && ((skillName == "Dagger" && skillMastery(character, "Dagger") >= SkillMastery::Expert)
-                || (skillName == "Sword" && skillMastery(character, "Sword") >= SkillMastery::Master));
+        const bool canUseOffHand = !hasTwoHandedMain && wield.offHand;
 
         if (preferOffHand && canUseOffHand)
         {

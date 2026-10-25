@@ -36,5 +36,11 @@ public:
         const ItemDefinition &itemDefinition,
         const StandardItemEnchantTable *pStandardEnchantTable,
         const SpecialItemEnchantTable *pSpecialEnchantTable);
+    // The name of an identified item without what the active rules add (Standard's own naming).
+    static std::string identifiedDisplayName(
+        const InventoryItem &item,
+        const ItemDefinition &itemDefinition,
+        const StandardItemEnchantTable *pStandardEnchantTable,
+        const SpecialItemEnchantTable *pSpecialEnchantTable);
 };
 }

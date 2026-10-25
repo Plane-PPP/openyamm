@@ -59,9 +59,12 @@ public:
 
     explicit GameplaySpellService(GameSession &session);
 
+    // The active member's quick spell, or with `extraSlot` one of MMMerge's four extra quick spells; an empty slot,
+    // like an empty quick spell, attacks instead.
     QuickSpellStartResolution tryStartQuickSpellCast(
         GameplayScreenRuntime &runtime,
-        const TargetQueries &targetQueries);
+        const TargetQueries &targetQueries,
+        std::optional<size_t> extraSlot = std::nullopt);
 
     MemberSpellCastResolution castSpellFromMember(
         GameplayScreenRuntime &runtime,

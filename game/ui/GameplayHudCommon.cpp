@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <optional>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -289,6 +290,42 @@ std::optional<GameplayHudFontData> buildColumnSeparatedHudFont(
     assignHudFontTintTexture(font, TextureFilterProfile::Text, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     font.mainAtlasPixels = std::vector<uint8_t>();
     return font;
+}
+
+constexpr size_t TextColorCodeLength = 6;
+
+// Might and Magic's inline text colour: "\f" and five digits of an R5G6B5 colour; "\f00000" returns to the line's
+// own colour. True when a code starts at `index`; `colorAbgr` is then its colour, or nothing for the line's own.
+bool readTextColorCode(const std::string &text, size_t index, std::optional<uint32_t> &colorAbgr)
+{
+    if (index + TextColorCodeLength > text.size() || text[index] != '\f')
+    {
+        return false;
+    }
+
+    uint32_t value = 0;
+
+    for (size_t digit = index + 1; digit < index + TextColorCodeLength; ++digit)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(text[digit])))
+        {
+            return false;
+        }
+
+        value = value * 10 + uint32_t(text[digit] - '0');
+    }
+
+    if (value == 0)
+    {
+        colorAbgr.reset();
+        return true;
+    }
+
+    const uint32_t red = ((value >> 11) & 31u) * 255u / 31u;
+    const uint32_t green = ((value >> 5) & 63u) * 255u / 63u;
+    const uint32_t blue = (value & 31u) * 255u / 31u;
+    colorAbgr = 0xff000000u | (blue << 16) | (green << 8) | red;
+    return true;
 }
 } // namespace
 
@@ -1712,12 +1749,22 @@ float GameplayHudCommon::measureHudTextWidth(const GameplayHudFontData &font, co
 {
     float widthPixels = 0.0f;
     uint8_t previous = 0;
+    std::optional<uint32_t> ignoredColor;
 
-    for (unsigned char character : text)
+    for (size_t index = 0; index < text.size(); ++index)
     {
+        const unsigned char character = static_cast<unsigned char>(text[index]);
+
         if (character == '\r' || character == '\n')
         {
             break;
+        }
+
+        // Colour codes take no room.
+        if (readTextColorCode(text, index, ignoredColor))
+        {
+            index += TextColorCodeLength - 1;
+            continue;
         }
 
         if (character < font.firstChar || character > font.lastChar)
@@ -1834,6 +1881,27 @@ std::vector<std::string> GameplayHudCommon::wrapHudTextToWidth(
         lines.push_back(currentLine);
     }
 
+    // A colour still open at the end of a line goes on with the next.
+    std::optional<uint32_t> openColor;
+    std::string openCode;
+
+    for (std::string &line : lines)
+    {
+        if (!openCode.empty())
+        {
+            line.insert(0, openCode);
+        }
+
+        for (size_t index = 0; index < line.size(); ++index)
+        {
+            if (readTextColorCode(line, index, openColor))
+            {
+                openCode = openColor ? line.substr(index, TextColorCodeLength) : std::string();
+                index += TextColorCodeLength - 1;
+            }
+        }
+    }
+
     return lines;
 }
 
@@ -1853,12 +1921,23 @@ void GameplayHudCommon::renderHudFontLayer(
 
     float penX = textX;
     uint8_t previous = 0;
+    // Colour codes recolour the main layer through the tint atlas; the shadow stays as it is.
+    const bool shadow = layer.textureHandle.idx == font.shadowTextureHandle.idx;
+    std::optional<uint32_t> runColor;
 
-    for (unsigned char character : text)
+    for (size_t index = 0; index < text.size(); ++index)
     {
+        const unsigned char character = static_cast<unsigned char>(text[index]);
+
         if (character == '\r' || character == '\n')
         {
             break;
+        }
+
+        if (readTextColorCode(text, index, runColor))
+        {
+            index += TextColorCodeLength - 1;
+            continue;
         }
 
         if (character < font.firstChar || character > font.lastChar)
@@ -1883,8 +1962,9 @@ void GameplayHudCommon::renderHudFontLayer(
             const float glyphWidth = static_cast<float>(glyphMetrics.width + 2 * font.atlasPadding) * fontScale;
             const float glyphHeight = static_cast<float>(font.fontHeight + 2 * font.atlasPadding) * fontScale;
 
+            const bool recolored = runColor && !shadow && bgfx::isValid(font.tintTextureHandle);
             submitTexturedQuad(
-                layer.textureHandle,
+                recolored ? font.tintTextureHandle : layer.textureHandle,
                 penX - font.atlasPadding * fontScale,
                 textY - font.atlasPadding * fontScale,
                 glyphWidth,
@@ -1894,7 +1974,7 @@ void GameplayHudCommon::renderHudFontLayer(
                 u1,
                 v1,
                 font.smooth ? TextureFilterProfile::SmoothText : TextureFilterProfile::Text,
-                layer.tintAbgr);
+                recolored ? *runColor : layer.tintAbgr);
         }
 
         penX += (glyphMetrics.advance() - glyphMetrics.leftSpacing) * fontScale;

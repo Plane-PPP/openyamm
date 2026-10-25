@@ -3853,24 +3853,39 @@ bool isSceneOverlayFileName(const std::string &entryName, const std::string &sce
     return lowerEntryName.starts_with(numberedOverlayPrefix);
 }
 
+// The world's overlays in name order, then the active ruleset's (`rulesetRoot`, empty for Standard).
 std::vector<std::string> buildSceneOverlayPathCandidates(
     const Engine::AssetFileSystem &assetFileSystem,
-    const std::string &sceneFileName)
+    const std::string &sceneFileName,
+    const std::string &rulesetRoot)
 {
     std::vector<std::string> candidates;
-
-    for (const std::string &entryName : assetFileSystem.enumerate("Data/games"))
+    const auto collect = [&](const std::string &directory)
     {
-        if (isSceneOverlayFileName(entryName, sceneFileName))
+        std::vector<std::string> found;
+
+        for (const std::string &entryName : assetFileSystem.enumerate(directory))
         {
-            candidates.push_back("Data/games/" + entryName);
+            if (isSceneOverlayFileName(entryName, sceneFileName))
+            {
+                found.push_back(directory + "/" + entryName);
+            }
         }
+
+        std::sort(found.begin(), found.end(), [](const std::string &left, const std::string &right)
+        {
+            return toLowerCopy(left) < toLowerCopy(right);
+        });
+        candidates.insert(candidates.end(), found.begin(), found.end());
+    };
+
+    collect("Data/games");
+
+    if (!rulesetRoot.empty())
+    {
+        collect(rulesetRoot + "maps");
     }
 
-    std::sort(candidates.begin(), candidates.end(), [](const std::string &left, const std::string &right)
-    {
-        return toLowerCopy(left) < toLowerCopy(right);
-    });
     return candidates;
 }
 }
@@ -3981,6 +3996,24 @@ std::optional<OutdoorBitmapTexture> loadCookedSurfaceTexture(
         cachedIt = pBinaryFilesByPath->emplace(*path, assetFileSystem.readBinaryFile(*path)).first;
     }
     return decodeCookedSurfaceTexture(textureName, *path, cachedIt->second);
+}
+
+std::optional<OutdoorBitmapTexture> loadSurfaceTexture(
+    const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &textureName)
+{
+    BitmapLoadCache bitmapLoadCache = {};
+    bitmapLoadCache.retainBinaryFiles = false;
+    bitmapLoadCache.retainDecodedPixels = false;
+    std::vector<OutdoorBitmapTexture> textures =
+        loadFaceTextures(assetFileSystem, {toLowerCopy(textureName)}, {}, bitmapLoadCache, {});
+
+    if (textures.empty())
+    {
+        return std::nullopt;
+    }
+
+    return std::move(textures.front());
 }
 
 namespace
@@ -4275,7 +4308,8 @@ std::optional<MapAssetInfo> MapAssetLoader::load(
                 assetInfo.sceneSize = sceneText->size();
                 logStageComplete("scene yml loaded");
 
-                for (const std::string &overlayPath : buildSceneOverlayPathCandidates(assetFileSystem, *sceneFileName))
+                for (const std::string &overlayPath : buildSceneOverlayPathCandidates(
+                         assetFileSystem, *sceneFileName, companionLoadOptions.rulesetRoot))
                 {
                     const std::optional<std::string> overlayText = assetFileSystem.readTextFile(overlayPath);
 

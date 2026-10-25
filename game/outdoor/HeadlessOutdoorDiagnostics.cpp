@@ -22329,7 +22329,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 if (!restoredWorld.applyPartyAttackMeleeDamage(
                         *attackedActorIndex,
                         1,
-                        GameplayWorldPoint{0.0f, 0.0f, 0.0f}))
+                        GameplayWorldPoint{0.0f, 0.0f, 0.0f}, ShieldAttackTier::Physical))
                 {
                     failure = "party attack did not apply to d17 dragon";
                     return false;
@@ -22446,15 +22446,15 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
                 resetActor(ActorAiMotionState::Standing);
-                scenario.world.applyPartyAttackMeleeDamage(index, 1, {});
-                scenario.world.applyPartyAttackMeleeDamage(index, 1, {});
+                scenario.world.applyPartyAttackMeleeDamage(index, 1, {}, ShieldAttackTier::Physical);
+                scenario.world.applyPartyAttackMeleeDamage(index, 1, {}, ShieldAttackTier::Physical);
                 if (voiceCount(pStats->winceSoundId) != 1 || voiceCount(pStats->deathSoundId) != 0)
                 {
                     failure = "indoor repeated hit did not share reaction eligibility";
                     return false;
                 }
                 resetActor(ActorAiMotionState::Attacking);
-                scenario.world.applyPartyAttackMeleeDamage(index, 1, {});
+                scenario.world.applyPartyAttackMeleeDamage(index, 1, {}, ShieldAttackTier::Physical);
                 if (voiceCount(pStats->winceSoundId) != 0)
                 {
                     failure = "attacking indoor actor cried on ordinary damage";
@@ -22476,7 +22476,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                         return false;
                     }
                     scenario.world.bindEventExecution(&scenario.eventRuntime, &hook, &noGlobal);
-                    scenario.world.applyPartyAttackMeleeDamage(index, 10000, {});
+                    scenario.world.applyPartyAttackMeleeDamage(index, 10000, {}, ShieldAttackTier::Physical);
                     if (scenario.mapDeltaData->actors[index].hp != 100 - damageOverride
                         || voiceCount(pStats->deathSoundId) != 0
                         || voiceCount(pStats->winceSoundId) != damageOverride)
@@ -22487,8 +22487,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 }
                 hook.reset();
                 resetActor(ActorAiMotionState::Standing);
-                scenario.world.applyPartyAttackMeleeDamage(index, 10000, {});
-                scenario.world.applyPartyAttackMeleeDamage(index, 10000, {});
+                scenario.world.applyPartyAttackMeleeDamage(index, 10000, {}, ShieldAttackTier::Physical);
+                scenario.world.applyPartyAttackMeleeDamage(index, 10000, {}, ShieldAttackTier::Physical);
                 scenario.world.updateTurnBasedPausedActorAnimations(0.01f);
                 if (voiceCount(pStats->deathSoundId) != 1 || voiceCount(pStats->winceSoundId) != 0)
                 {
@@ -23093,7 +23093,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
 
-                if (!scenario.world.summonFriendlyMonsterById(summonMonsterId, 1, 60.0f, -661.0f, -1059.0f, -39.0f))
+                if (!scenario.world.summonFriendlyMonsterById(summonMonsterId, 1, 60.0f, -661.0f, -1059.0f, -39.0f, -1))
                 {
                     failure = "indoor friendly summon did not materialize";
                     return false;
@@ -26464,7 +26464,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             MapDeltaActor &guard = modifiedMap.outdoorMapDeltaData->actors[4];
             civilian.attributes = 0;
             civilian.hostilityType = 0;
-            civilian.hp = std::max<int16_t>(20, civilian.hp);
+            civilian.hp = std::max(20, civilian.hp);
             civilian.monsterInfoId = 520;
             civilian.monsterId = 520;
             civilian.mm9SourceObjectIndex = 209;
@@ -26472,7 +26472,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             civilian.mm9Civilian = true;
             guard.attributes = 0;
             guard.hostilityType = 0;
-            guard.hp = std::max<int16_t>(20, guard.hp);
+            guard.hp = std::max(20, guard.hp);
             guard.monsterInfoId = civilian.monsterInfoId;
             guard.monsterId = civilian.monsterId;
             guard.x = civilian.x + 512;
@@ -26542,7 +26542,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             MapDeltaActor &guard = modifiedMap.outdoorMapDeltaData->actors[3];
             guard.attributes = 0;
             guard.hostilityType = 0;
-            guard.hp = std::max<int16_t>(20, guard.hp);
+            guard.hp = std::max(20, guard.hp);
             guard.mm9SourceObjectIndex = 300;
             guard.mm9CanReceiveDamage = true;
             guard.mm9Guard = true;
@@ -27256,7 +27256,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 [&](MapDeltaActor &actor, int offsetX)
                 {
                     actor.attributes = 0;
-                    actor.hp = std::max<int16_t>(20, firstActor.hp);
+                    actor.hp = std::max(20, firstActor.hp);
                     actor.hostilityType = 0;
                     actor.monsterInfoId = firstActor.monsterInfoId;
                     actor.monsterId = firstActor.monsterId;

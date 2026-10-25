@@ -706,7 +706,7 @@ function MM7.GiveScavengerAdvertisementIfNear(x, y, requireNoAdvertisementItem)
     end
 
     local enemyYellow, enemyRed = evt.GetEnemyDetectorState()
-    if IsFlying() or enemyYellow or enemyRed then
+    if isFlying() or enemyYellow or enemyRed then
         return
     end
 

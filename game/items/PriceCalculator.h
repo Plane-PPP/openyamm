@@ -5,6 +5,7 @@
 namespace OpenYAMM::Game
 {
 struct Character;
+class Party;
 struct HouseEntry;
 struct InventoryItem;
 struct ItemDefinition;
@@ -15,6 +16,9 @@ class PriceCalculator
 {
 public:
     static int playerMerchant(const Character *pCharacter, int effectiveReputation = 0);
+    // The member whose merchant value prices the party's deals when the rules compute it themselves (MAW: the best);
+    // null under Standard, whose callers choose by the Merchant skill.
+    static const Character *rulesMerchantMember(const Party &party);
     static int applyMerchantDiscount(const Character *pCharacter, int goldAmount, int effectiveReputation = 0);
     static int itemBuyingPrice(
         const Character *pCharacter,

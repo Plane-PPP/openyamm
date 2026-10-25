@@ -14,6 +14,8 @@ struct GameplayUiOverlayInputConfig
     bool mapShortcutPressed = false;
     bool storyShortcutPressed = false;
     bool notesShortcutPressed = false;
+    // MAW: opens the Journal on its Progress tab.
+    bool progressShortcutPressed = false;
     bool zoomInPressed = false;
     bool zoomOutPressed = false;
     float mouseWheelDelta = 0.0f;

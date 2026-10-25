@@ -96,6 +96,9 @@ struct AlchemyPreview
     uint16_t targetPower = 0;
     uint16_t heldPower = 0;
     bool returnsBottle = false;
+    // What the result's rules ask (potion_effects.yml): the power it needs to work and the drinks in its bottle.
+    int minimumPower = 0;
+    int charges = 1;
 };
 
 struct AlchemyMixOutcome
@@ -161,7 +164,7 @@ public:
     AlchemyChainPlanner(
         const Party &party,
         const AlchemyBook &book,
-        uint32_t alchemistLevel,
+        const AlchemistInfo &alchemist,
         const AlchemyBenchTables &tables);
 
     AlchemyChainPlan plan(uint32_t resultItemId, uint32_t maxBrews) const;

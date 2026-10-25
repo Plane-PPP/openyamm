@@ -2,8 +2,13 @@
 
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/ItemRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/ui/GameplayAlchemyBenchView.h"
+#include "game/ui/GameplayBenchPainter.h"
+#include "game/ui/GameplayCraftingBenchRenderer.h"
+#include "game/ui/GameplayCraftingBenchView.h"
 #include "game/ui/GameplayHudCommon.h"
 #include "game/ui/GameplayUiRuntime.h"
 #include "game/ui/GameplayUiSkin.h"
@@ -17,224 +22,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t WellFillColor = 0x60000000u;
-constexpr uint32_t WellBorderColor = 0xff36464du;
-constexpr uint32_t SelectedBorderColor = 0xff4890b8u;
-constexpr uint32_t SelectedRowColor = 0x5050a0c8u;
-constexpr uint32_t HoverColor = 0x18ffffffu;
-constexpr uint32_t DimTextColor = 0xff95abb7u;
-constexpr uint32_t HeaderTextColor = 0xff5a7d8fu;
-constexpr uint32_t DisabledTextColor = 0xff70808au;
-constexpr uint32_t WarningTextColor = 0xff4aa8e0u;
-constexpr uint32_t ChipOnColor = 0xff5ea6c9u;
-constexpr uint32_t ChipOnTextColor = 0xff0a141au;
-
+using namespace GameplayBenchColors;
 using Rect = GameplayResolvedHudLayoutElement;
-
-class BenchPainter
-{
-public:
-    BenchPainter(GameplayScreenRuntime &context, int width, int height)
-        : m_context(context)
-        , m_width(width)
-        , m_height(height)
-        , m_pInput(context.currentGameplayInputFrame())
-    {
-    }
-
-    std::optional<Rect> rect(const char *pLayoutId) const
-    {
-        return m_context.resolveHudLayoutElement(pLayoutId, m_width, m_height, 0, 0);
-    }
-
-    bool hovered(const Rect &area) const
-    {
-        return m_pInput != nullptr
-            && GameplayHudCommon::isPointerInsideResolvedElement(area, m_pInput->pointerX, m_pInput->pointerY);
-    }
-
-    bool pressed(const Rect &area) const
-    {
-        return hovered(area) && m_pInput->leftMouseButton.held;
-    }
-
-    void fill(const Rect &area, uint32_t colorAbgr) const
-    {
-        const std::string name = "__alchemy_bench_" + std::to_string(colorAbgr) + "__";
-        const std::optional<GameplayHudTextureHandle> texture =
-            m_context.gameplayUiRuntime().ensureSolidHudTextureLoaded(name, colorAbgr);
-
-        if (texture && area.width > 0 && area.height > 0)
-        {
-            m_context.submitHudTexturedQuad(*texture, area.x, area.y, area.width, area.height);
-        }
-    }
-
-    void frame(const Rect &area, uint32_t colorAbgr) const
-    {
-        const float line = std::max(1.0f, std::round(area.scale * 0.75f));
-        fill({area.x, area.y, area.width, line, area.scale}, colorAbgr);
-        fill({area.x, area.y + area.height - line, area.width, line, area.scale}, colorAbgr);
-        fill({area.x, area.y + line, line, area.height - 2 * line, area.scale}, colorAbgr);
-        fill({area.x + area.width - line, area.y + line, line, area.height - 2 * line, area.scale}, colorAbgr);
-    }
-
-    void well(const Rect &area, uint32_t borderAbgr = WellBorderColor) const
-    {
-        fill(area, WellFillColor);
-        frame(area, borderAbgr);
-    }
-
-    // Draws text with a layout element's font, scale and alignment in any rectangle.
-    void text(const char *pStyleId, const Rect &area, const std::string &value,
-        std::optional<uint32_t> colorAbgr = std::nullopt) const
-    {
-        const UiLayoutManager::LayoutElement *pStyle = m_context.findHudLayoutElement(pStyleId);
-
-        if (pStyle == nullptr || value.empty())
-        {
-            return;
-        }
-
-        UiLayoutManager::LayoutElement style = *pStyle;
-
-        if (colorAbgr)
-        {
-            style.textColorAbgr = *colorAbgr;
-        }
-
-        m_context.renderLayoutLabel(style, area, value, false);
-    }
-
-    void label(const char *pLayoutId, const std::string &value, std::optional<uint32_t> colorAbgr = std::nullopt) const
-    {
-        if (const std::optional<Rect> area = rect(pLayoutId))
-        {
-            text(pLayoutId, *area, value, colorAbgr);
-        }
-    }
-
-    // Wraps text to the element's width, one line per font height, starting at lineY.
-    float paragraph(const char *pLayoutId, const std::string &value, uint32_t colorAbgr, float lineY) const
-    {
-        const UiLayoutManager::LayoutElement *pStyle = m_context.findHudLayoutElement(pLayoutId);
-        const std::optional<Rect> area = rect(pLayoutId);
-
-        if (pStyle == nullptr || !area)
-        {
-            return lineY;
-        }
-
-        const float fontScale = area->scale * std::max(0.1f, pStyle->textScale);
-        const float lineHeight = static_cast<float>(m_context.hudFontHeight(pStyle->fontName)) * fontScale;
-
-        for (const std::string &line : m_context.wrapHudTextToWidth(pStyle->fontName, value, area->width / fontScale))
-        {
-            // Lines past the element's bottom would run into the buttons below.
-            if (lineY + lineHeight > area->y + area->height + 0.5f)
-            {
-                break;
-            }
-
-            text(pLayoutId, {area->x, lineY, area->width, lineHeight, area->scale}, line, colorAbgr);
-            lineY += lineHeight;
-        }
-
-        return lineY;
-    }
-
-    void button(const char *pLayoutId, const std::string &value, bool enabled, bool selected = false) const
-    {
-        const UiLayoutManager::LayoutElement *pLayout = m_context.findHudLayoutElement(pLayoutId);
-        const std::optional<Rect> area = rect(pLayoutId);
-
-        if (pLayout == nullptr || !area)
-        {
-            return;
-        }
-
-        const bool hover = enabled && hovered(*area);
-        const bool down = hover && m_pInput->leftMouseButton.held;
-        const std::string &asset = !enabled && !pLayout->disabledAsset.empty() ? pLayout->disabledAsset
-            : down && !pLayout->pressedAsset.empty() ? pLayout->pressedAsset
-            : hover && !pLayout->hoverAsset.empty() ? pLayout->hoverAsset
-            : selected && !pLayout->selectedAsset.empty() ? pLayout->selectedAsset : pLayout->primaryAsset;
-        GameplayUiSkin::renderTexture(m_context, asset, *area);
-        Rect labelArea = *area;
-        labelArea.y += down ? area->scale : 0.0f;
-        text(pLayoutId, labelArea, value,
-            !enabled ? 0xff7e8b96u : hover ? 0xffd4efffu : selected ? GameplayUiSkin::Gold : pLayout->textColorAbgr);
-    }
-
-    void chip(const char *pLayoutId, const std::string &value, bool active) const
-    {
-        const std::optional<Rect> area = rect(pLayoutId);
-
-        if (!area)
-        {
-            return;
-        }
-
-        if (active)
-        {
-            fill(*area, ChipOnColor);
-        }
-        else
-        {
-            well(*area);
-
-            if (hovered(*area))
-            {
-                fill(*area, HoverColor);
-            }
-        }
-
-        text(pLayoutId, *area, value, active ? ChipOnTextColor : DimTextColor);
-    }
-
-    void itemIcon(const ItemDefinition *pDefinition, const Rect &box, uint8_t alpha = 255) const
-    {
-        if (pDefinition == nullptr || pDefinition->iconName.empty())
-        {
-            return;
-        }
-
-        const std::optional<GameplayHudTextureHandle> texture =
-            m_context.gameplayUiRuntime().ensureItemIconTextureLoaded(pDefinition->iconName);
-
-        if (!texture || texture->width <= 0 || texture->height <= 0)
-        {
-            return;
-        }
-
-        const float fit = std::min(box.width / texture->width, box.height / texture->height);
-        const float iconWidth = std::round(texture->width * fit);
-        const float iconHeight = std::round(texture->height * fit);
-        const float x = std::round(box.x + (box.width - iconWidth) * 0.5f);
-        const float y = std::round(box.y + (box.height - iconHeight) * 0.5f);
-        if (alpha == 255)
-        {
-            m_context.submitHudTexturedQuad(*texture, x, y, iconWidth, iconHeight);
-            return;
-        }
-
-        // Faded icons are tinted at draw time rather than copied per alpha.
-        GameplayHudBatchQuad quad = {};
-        quad.textureHandle = texture->textureHandle;
-        quad.x = x;
-        quad.y = y;
-        quad.width = iconWidth;
-        quad.height = iconHeight;
-        quad.tintAbgr = (uint32_t(alpha) << 24) | 0x00ffffffu;
-        m_context.submitHudQuadBatch({quad});
-    }
-
-private:
-    GameplayScreenRuntime &m_context;
-    int m_width = 0;
-    int m_height = 0;
-    const GameplayInputFrame *m_pInput = nullptr;
-};
 
 std::string itemName(const ItemTable &itemTable, uint32_t itemId)
 {
@@ -286,6 +75,17 @@ std::string statusBody(const GameplayAlchemyBenchModel &model)
             {
                 body += " The empty bottle is returned.";
             }
+
+            if (model.preview.charges > 1)
+            {
+                body += " " + std::to_string(model.preview.charges) + " drinks.";
+            }
+
+            if (model.preview.resultPower < model.preview.minimumPower)
+            {
+                body += " Works from power " + std::to_string(model.preview.minimumPower) + ".";
+            }
+
             return body;
         }
         case AlchemyPreviewOutcome::TooDifficult:
@@ -389,7 +189,7 @@ void GameplayAlchemyBenchRenderer::render(GameplayScreenRuntime &context, int wi
     }
 
     const std::optional<GameplayAlchemyBenchModel> model = GameplayAlchemyBenchView::buildModel(context);
-    const BenchPainter painter(context, width, height);
+    const GameplayBenchPainter painter(context, width, height);
     const std::optional<Rect> panel = painter.rect("AlchemyBenchPanel");
 
     if (!model || !panel)
@@ -404,7 +204,22 @@ void GameplayAlchemyBenchRenderer::render(GameplayScreenRuntime &context, int wi
     context.gameplayUiRuntime().clearRenderedInspectableHudItems();
     GameplayUiSkin::renderPanel(context, *panel, false, 0.75f);
 
-    painter.label("AlchemyBenchTitle", "Alchemy Bench");
+    // With crafting the bench is the Workbench, with its Alchemy and Crafting tabs.
+    const bool workbench = GameplayCraftingBenchView::available(context);
+    painter.label("AlchemyBenchTitle", workbench ? "Workbench" : "Alchemy Bench");
+
+    if (workbench)
+    {
+        painter.button("WorkbenchTabAlchemy", "Alchemy", true, !state.craftingTab);
+        painter.button("WorkbenchTabCrafting", "Crafting", true, state.craftingTab);
+
+        if (state.craftingTab)
+        {
+            GameplayCraftingBenchRenderer::render(context, painter);
+            return;
+        }
+    }
+
     painter.label("AlchemyBenchRecipeHeader", "Recipes");
     painter.label("AlchemyBenchRecipeCount", std::to_string(model->book.entries.size()) + " / "
         + std::to_string(model->book.totalResultCount) + " known");
@@ -670,7 +485,7 @@ void GameplayAlchemyBenchRenderer::render(GameplayScreenRuntime &context, int wi
             painter.text("AlchemyBenchSlotPowerLabel", {nameArea.x, nameArea.y + 10 * s, nameArea.width, 10 * s, s},
                 tooDifficult ? "needs " + GameplayAlchemyBenchView::masteryName(preview.requiredMastery)
                     : preview.resultPower > 0 ? "power " + std::to_string(preview.resultPower) : "",
-                tooDifficult ? GameplayUiSkin::Penalty : DimTextColor);
+                tooDifficult || preview.resultPower < preview.minimumPower ? GameplayUiSkin::Penalty : DimTextColor);
         }
         else if (preview.outcome == AlchemyPreviewOutcome::Unknown)
         {
@@ -704,7 +519,57 @@ void GameplayAlchemyBenchRenderer::render(GameplayScreenRuntime &context, int wi
         {
             const float lineY = painter.paragraph("AlchemyBenchStatus", statusHeadline(*model),
                 statusColor(preview.outcome), status->y);
-            painter.paragraph("AlchemyBenchStatus", statusBody(*model), DimTextColor, lineY + 3 * status->scale);
+            const float bodyY =
+                painter.paragraph("AlchemyBenchStatus", statusBody(*model), DimTextColor, lineY + 3 * status->scale);
+
+            // What the potion will do at the power it comes out with, when the rules describe it (MAW).
+            if (preview.outcome == AlchemyPreviewOutcome::Known && preview.resultItemId != 0)
+            {
+                InventoryItem result;
+                result.objectDescriptionId = preview.resultItemId;
+                result.standardEnchantPower = preview.resultPower;
+
+                const std::optional<std::string> effect = boundGameRules().items.itemDescription(result, nullptr);
+                float effectY = bodyY;
+
+                if (effect)
+                {
+                    effectY = painter.paragraph("AlchemyBenchStatus", *effect, DimTextColor, bodyY + 3 * status->scale);
+                }
+
+                // A best-step potion (MAW's black potions): the step it reaches and who it would raise.
+                const std::optional<AlchemyBenchTables> benchTables = GameplayAlchemyBenchView::tables(context);
+                const PotionDefinition *pPotion = benchTables
+                    ? benchTables->potionSettingTable.effects().find(preview.resultItemId)
+                    : nullptr;
+                const auto bestStepEffect = pPotion != nullptr
+                    ? std::find_if(pPotion->effects.begin(), pPotion->effects.end(),
+                        [](const PotionEffect &potionEffect)
+                        {
+                            return potionEffect.limit == PotionLimit::BestStep && potionEffect.amount.divisor > 0;
+                        })
+                    : std::vector<PotionEffect>::const_iterator {};
+
+                if (pPotion != nullptr && bestStepEffect != pPotion->effects.end()
+                    && context.partyReadOnly() != nullptr)
+                {
+                    const int step = preview.resultPower / bestStepEffect->amount.divisor;
+                    std::string ladder = "Step " + std::to_string(step) + ":";
+
+                    for (const Character &member : context.partyReadOnly()->members())
+                    {
+                        const auto best = member.rulesetState.potionSteps.find(preview.resultItemId);
+                        const int bestStep = best != member.rulesetState.potionSteps.end() ? best->second : 0;
+                        ladder += " " + member.name
+                            + (bestStep >= step ? " already at step " + std::to_string(bestStep)
+                                                : " +" + std::to_string(step - bestStep) + " steps")
+                            + ",";
+                    }
+
+                    ladder.pop_back();
+                    painter.paragraph("AlchemyBenchStatus", ladder, DimTextColor, effectY + 3 * status->scale);
+                }
+            }
         }
     }
 

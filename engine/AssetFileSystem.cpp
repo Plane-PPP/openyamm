@@ -86,6 +86,12 @@ const std::string &AssetReadStream::virtualPath() const
 
 namespace
 {
+// Where a package's files live in the virtual tree: the engine at the root, a world under worlds/.
+std::string packageMountFolder(const std::string &package)
+{
+    return package == "engine" ? package : "worlds/" + package;
+}
+
 constexpr const char *EditorDevelopmentRootName = "assets_editor_dev";
 constexpr const char *EngineDevelopmentRootName = "engine";
 constexpr const char *WorldsDevelopmentRootName = "worlds";
@@ -886,7 +892,7 @@ bool AssetFileSystem::mountAndroidApkAssetRoot(const std::string &activeWorldId)
             SearchMount packMount;
             packMount.root = mountName;
             packMount.mountPoint = normalizeVirtualPath(pack.mount);
-            packMount.packageMountPoint = pack.package == "engine" ? "engine" : "worlds/" + pack.package;
+            packMount.packageMountPoint = packageMountFolder(pack.package);
             packMount.archive = true;
             recordSearchMount(std::move(packMount), appendToPath);
             return true;
@@ -943,7 +949,7 @@ bool AssetFileSystem::mountPackagedAssetRoot(
         activeWorldId,
         [this, &storeRoot](const AssetPackRecord &pack, bool appendToPath)
         {
-            const std::string packageMount = pack.package == "engine" ? "/engine" : "/worlds/" + pack.package;
+            const std::string packageMount = "/" + packageMountFolder(pack.package);
             return mountSearchRootAt(storeRoot / pack.file, pack.mount, appendToPath, packageMount);
         });
 }

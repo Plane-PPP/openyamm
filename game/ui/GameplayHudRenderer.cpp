@@ -341,6 +341,36 @@ void renderContextAction(GameplayScreenRuntime &context, int width, int height)
     }
 }
 
+// The hovered ground item's name on a status plate above the pointer, in its rarity colour (MAW).
+void renderWorldItemHoverLabel(GameplayScreenRuntime &context, int width, int height)
+{
+    const GameplayUiController::StatusBarState &statusBar = context.statusBarState();
+    const UiLayoutManager::LayoutElement *pLayout = context.findHudLayoutElement("OutdoorGameplayStatusBar");
+    const std::optional<GameplayResolvedHudLayoutElement> statusRect =
+        context.resolveHudLayoutElement("OutdoorGameplayStatusBar", width, height, 0, 0);
+
+    if (statusBar.worldItemLabel.empty() || pLayout == nullptr || !statusRect)
+    {
+        return;
+    }
+
+    UiLayoutManager::LayoutElement label = *pLayout;
+    label.textColorAbgr = statusBar.worldItemLabelColorAbgr;
+    label.textAlignX = UiLayoutManager::TextAlignX::Center;
+    label.textAlignY = UiLayoutManager::TextAlignY::Middle;
+    const float scale = statusRect->scale;
+    const float textWidth = context.measureHudTextWidth(label.fontName, statusBar.worldItemLabel) * scale
+        * label.textScale;
+    GameplayResolvedHudLayoutElement rect = {};
+    rect.width = textWidth + 16 * scale;
+    rect.height = 18 * scale;
+    rect.x = std::clamp(statusBar.worldItemLabelX - rect.width * 0.5f, 0.0f, std::max(0.0f, width - rect.width));
+    rect.y = std::max(0.0f, statusBar.worldItemLabelY - rect.height - 14 * scale);
+    rect.scale = scale;
+    GameplayUiSkin::renderTexture(context, "obsidian_hud_status_plate", rect);
+    context.renderLayoutLabel(label, rect, statusBar.worldItemLabel);
+}
+
 void renderPassTurnButton(GameplayScreenRuntime &context, int width, int height)
 {
     const std::optional<GameplayResolvedHudLayoutElement> buttonRect =
@@ -495,6 +525,10 @@ void GameplayHudRenderer::renderGameplayHud(GameplayScreenRuntime &context, int 
                 context.renderLayoutLabel(*pLayout, *rect, std::to_string(gold ? pParty->gold() : pParty->food()));
             }
         }
+    }
+    if (state == GameplayHudScreenState::Gameplay)
+    {
+        renderWorldItemHoverLabel(context, width, height);
     }
     if (context.settingsSnapshot().contextActionPopup && state == GameplayHudScreenState::Gameplay)
     {

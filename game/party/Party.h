@@ -1,12 +1,16 @@
 #pragma once
 
-#include "game/party/CharacterState.h"
-#include "game/gameplay/NpcFollowerTypes.h"
-#include "game/tables/ClassSkillTable.h"
-#include "game/outdoor/OutdoorMovementDriver.h"
-#include "game/tables/PortraitEnums.h"
 #include "game/audio/SoundIds.h"
+#include "game/gameplay/NpcFollowerTypes.h"
+#include "game/outdoor/OutdoorMovementDriver.h"
+#include "game/party/CharacterRulesetState.h"
+#include "game/party/CharacterState.h"
+#include "game/party/InventoryItem.h"
+#include "game/party/QuickItemSlot.h"
 #include "game/party/SpeechIds.h"
+#include "game/tables/ClassSkillTable.h"
+#include "game/tables/MonsterShields.h"
+#include "game/tables/PortraitEnums.h"
 
 #include <array>
 #include <bitset>
@@ -21,6 +25,8 @@
 namespace OpenYAMM::Game
 {
 class ItemTable;
+struct GameRules;
+struct MonsterKillReward;
 struct ItemDefinition;
 class CharacterDollTable;
 class ClassMultiplierTable;
@@ -40,29 +46,6 @@ struct JournalMapNote
     std::string text;
     // Teacher pins without an autonote of their own also appear in the journal's trainer notes.
     bool listedWithTrainerNotes = false;
-};
-
-struct InventoryItem
-{
-    uint32_t objectDescriptionId = 0;
-    uint32_t quantity = 1;
-    uint8_t width = 1;
-    uint8_t height = 1;
-    uint8_t gridX = 0;
-    uint8_t gridY = 0;
-    bool identified = true;
-    bool broken = false;
-    bool stolen = false;
-    // Set by the Harden Item potion: the item can no longer break.
-    bool hardened = false;
-    uint16_t standardEnchantId = 0;
-    uint16_t standardEnchantPower = 0;
-    uint16_t specialEnchantId = 0;
-    uint16_t artifactId = 0;
-    ItemRarity rarity = ItemRarity::Common;
-    uint16_t currentCharges = 0;
-    uint16_t maxCharges = 0;
-    float temporaryBonusRemainingSeconds = 0.0f;
 };
 
 struct LloydBeacon
@@ -85,6 +68,11 @@ struct TimedPrimaryStatBonus
     float remainingSeconds = 0.0f;
 };
 
+// Ages are counted from this year: a character born in it is 0 years old (birthYear).
+constexpr int CharacterAgeReferenceYear = 1168;
+// MMMerge's extra quick spell slots per character (ExtraQuickSpells.lua SlotsAmount).
+constexpr size_t ExtraQuickSpellSlotCount = 4;
+
 struct Character
 {
     static constexpr int InventoryWidth = 14;
@@ -106,9 +94,12 @@ struct Character
     uint32_t birthYear = 0;
     uint32_t sexId = 0;
     uint32_t raceId = 0;
-    uint32_t experience = 0;
+    // 64 bits: MAW levels need more than 4 billion (level 1064); the rules cap it (ExperienceRules::maximumExperience).
+    uint64_t experience = 0;
     uint32_t level = 1;
     uint32_t skillPoints = 0;
+    // Raises technology skills only (Engrams add them); skill points cannot raise technology skills.
+    uint32_t techPoints = 0;
     uint32_t might = 0;
     uint32_t intellect = 0;
     uint32_t personality = 0;
@@ -122,6 +113,10 @@ struct Character
     int spellPoints = 0;
     uint8_t armageddonCastsToday = 0;
     std::string quickSpellName;
+    // MMMerge's four extra quick spells (ExtraQuickSpells.lua), set in the spellbook, cast by Quick Spell 1-4.
+    std::array<std::string, ExtraQuickSpellSlotCount> extraQuickSpellNames;
+    // The potion radial's six slots (QuickItemSlots): a kind of potion or scroll each.
+    std::array<QuickItemSlot, QuickItemSlotCount> quickItemSlots = {};
     std::string attackSpellName;
     std::unordered_set<uint32_t> knownSpellIds;
     CharacterResistanceSet baseResistances = {};
@@ -155,6 +150,13 @@ struct Character
     int missileArmorClassBonus = 0;
     int magicArmorClassBonus = 0;
     float physicalDamageTakenMultiplier = 1.0f;
+    // The share of physical hits Mist Form lets through where the rules make it a cut, not immunity (MAW 0.25).
+    float mistFormPhysicalShare = 1.0f;
+    // Ruleset item immunities to monster attacks that are not conditions (MAW's paired immunity specials).
+    bool manaDrainImmune = false;
+    bool agingImmune = false;
+    // Rulesets that keep item resistance enchantments apart from the resistances (MAW): the best one per element.
+    CharacterResistanceSet itemResistanceEnchants = {};
     float experienceGainMultiplier = 1.0f;
     float randomEncounterChanceMultiplier = 1.0f;
     bool waterWalking = false;
@@ -163,6 +165,21 @@ struct Character
     float spellRegenPerSecond = 0.0f;
     float healthRegenAccumulator = 0.0f;
     float spellRegenAccumulator = 0.0f;
+    // Personal energy shield (COMBAT.md, Party shields): pool points from equipped items' personal_shield, emitters
+    // (Shield Tech items) apart as they grow with Shield Tech. Runtime only: recomputed with the equipment and full
+    // after a load.
+    int armorShieldPoints = 0;
+    int emitterShieldPoints = 0;
+    int personalShieldCapacity = 0;
+    float personalShield = 0.0f;
+    float personalShieldSecondsSinceDamage = 0.0f;
+    float personalShieldSecondsSinceBreak = -1.0f;
+    bool personalShieldInitialized = false;
+    // A Shield Cell's temporary shield on a member without one: its points (part of the capacity) and time left.
+    int temporaryShieldPoints = 0;
+    float temporaryShieldSecondsRemaining = 0.0f;
+    // Energy resistance from equipped items (item_effects energy_resistance); runtime, rebuilt with the equipment.
+    int energyResistance = 0;
     int attackRecoveryReductionTicks = 0;
     float recoveryProgressMultiplier = 1.0f;
     std::unordered_map<std::string, int> itemSkillBonuses;
@@ -190,6 +207,9 @@ struct Character
     CharacterSkill *findSkill(const std::string &skillName);
     CharacterSkill *findSkillByCanonicalName(const std::string &canonicalSkillName);
     int skillBonus(const std::string &skillName) const;
+    // The pool that raises this skill: tech points for technology skills, skill points otherwise.
+    uint32_t pointsForRaisingSkill(const std::string &skillName) const;
+    bool hasTechnologySkill() const;
     bool setSkillMastery(const std::string &skillName, SkillMastery mastery);
     void synchronizeInnateAbilitySpells();
     bool knowsSpell(uint32_t spellId) const;
@@ -198,6 +218,7 @@ struct Character
 
     std::vector<InventoryItem> inventory;
     std::array<TimedPrimaryStatBonus, 6> timedPrimaryStatBonuses = {};
+    CharacterRulesetState rulesetState;
 };
 
 struct AdventurersInnMember
@@ -391,6 +412,24 @@ public:
     static PartySeed createDefaultSeed();
 
     void setItemTable(const ItemTable *pItemTable);
+    // Regeneration and Shield Tech rules of the personal energy shields (the worlds' shields.yml; defaults without).
+    void setPersonalShieldRules(const PartyShieldRules *pRules);
+    const PartyShieldRules &personalShieldRules() const;
+
+    struct PersonalShieldHit
+    {
+        // Damage left once the shield breaks (none while it holds).
+        int passedDamage = 0;
+        bool absorbed = false;
+        bool broke = false;
+    };
+    // The member's raised personal shield takes the hit first; a member without one passes the whole damage.
+    PersonalShieldHit absorbPersonalShieldHit(size_t memberIndex, int damage);
+    // Shield Cell: refills the member's personal shield; a member without one gets the rules' temporary shield
+    // (PartyShieldRules::shieldCellPoints for shieldCellSeconds). Runtime only, like the shields themselves.
+    bool chargePersonalShield(size_t memberIndex);
+    // Shield Burst Cell: every member's shield gains the rules' share of its pool; false when nobody has a shield.
+    bool burstPersonalShields();
     void setJournalQuestTable(const JournalQuestTable *pJournalQuestTable);
     void setCharacterDollTable(const CharacterDollTable *pCharacterDollTable);
     void setItemEnchantTables(
@@ -413,6 +452,13 @@ public:
     void setClassMultiplierTable(const ClassMultiplierTable *pClassMultiplierTable);
     const ClassMultiplierTable *classMultiplierTable() const;
     void setClassSkillTable(const ClassSkillTable *pClassSkillTable);
+    // The active ruleset's rules, owned by the session; Standard until set.
+    void setRules(const GameRules *pRules);
+    // A ruleset's slow on the party's movement, set each frame (MAW's dimension affix 25 while enemies are near).
+    // 1: none; not saved.
+    void setRulesMovementMultiplier(float multiplier);
+    float rulesMovementMultiplier() const;
+    const GameRules &rules() const;
     const ClassSkillTable *classSkillTable() const;
     Snapshot snapshot() const;
     void restoreSnapshot(const Snapshot &snapshot);
@@ -430,9 +476,11 @@ public:
     bool applyDamageToActiveMember(int damage, const std::string &status);
     bool applyPotionExplosionToMember(size_t memberIndex, uint8_t damageLevel);
     bool applyDamageToAllLivingMembers(int damage, const std::string &status);
-    uint32_t addExperienceToMember(size_t memberIndex, int64_t amount);
-    uint32_t setMemberExperience(size_t memberIndex, uint32_t experience);
+    uint64_t addExperienceToMember(size_t memberIndex, int64_t amount);
+    uint64_t setMemberExperience(size_t memberIndex, uint64_t experience);
     uint32_t grantSharedExperience(uint32_t totalExperience);
+    // Shares the experience for killing a monster under the experience rules; returns the amount before sharing.
+    uint32_t grantMonsterKillExperience(const MonsterKillReward &kill);
     std::optional<size_t> chooseMonsterAttackTarget(uint32_t attackPreferences, uint32_t seedHint);
     void addGold(int amount);
     void addFood(int amount);
@@ -450,6 +498,8 @@ public:
     const JournalMapNote *findJournalMapNote(const std::string &mapFileName, uint32_t noteId) const;
     // Adds the note, or replaces the one with the same map and id.
     void setJournalMapNote(const JournalMapNote &note);
+    // Removes the note with this map and id; false when there is none.
+    bool removeJournalMapNote(const std::string &mapFileName, uint32_t noteId);
     uint64_t dialogueEligibilityRevision() const;
     void applyGlobalNpcStateTo(EventRuntimeState &runtimeState) const;
     void setNpcTopicOverride(uint32_t npcId, uint32_t topicSlotIndex, uint32_t topicId);
@@ -463,6 +513,9 @@ public:
     void removeHiredNpcFollower(uint32_t npcId);
     void setHiredNpcFollowerAbilityUsedDay(uint32_t npcId, uint32_t day);
     bool tryGrantItem(uint32_t objectDescriptionId, uint32_t quantity = 1);
+    // tryGrantItem, tryGrantInventoryItem and tryGrantInventoryItemStartingAt give to the first member with room, from
+    // the active one (or the first named) on, in any of their bags (MAW has four; the open bag first);
+    // tryGrantInventoryItemToMember uses that member's open bag only.
     bool tryGrantInventoryItem(const InventoryItem &item, size_t *pRecipientMemberIndex = nullptr);
     bool tryGrantInventoryItemToMember(size_t memberIndex, const InventoryItem &item);
     bool tryGrantInventoryItemStartingAt(
@@ -493,6 +546,10 @@ public:
     bool learnActiveMemberSkill(const std::string &skillName);
     bool canIncreaseActiveMemberSkillLevel(const std::string &skillName) const;
     bool increaseActiveMemberSkillLevel(const std::string &skillName);
+    // The rules' price for resetting the active member's skills, or nothing when the rules have no reset.
+    std::optional<int> activeMemberSkillResetCost() const;
+    // Pays for and resets the active member's skills (MAW's respec); lastStatus() says what happened.
+    bool resetActiveMemberSkills();
     int depositGoldToBank(int amount);
     int withdrawBankGold(int amount);
     int depositAllGoldToBank();
@@ -534,6 +591,8 @@ public:
         uint8_t gridY,
         std::optional<InventoryItem> &replacedItem);
     bool takeEquippedItemFromMember(size_t memberIndex, EquipmentSlot slot, InventoryItem &item);
+    // Puts a changed copy of a worn item back in its slot (crafting); nothing about wearing it is checked again.
+    bool replaceEquippedItem(size_t memberIndex, EquipmentSlot slot, const InventoryItem &item);
     bool tryEquipItemOnMember(
         size_t memberIndex,
         EquipmentSlot targetSlot,
@@ -597,7 +656,11 @@ public:
         size_t memberIndex,
         EquipmentSlot slot,
         std::string &statusText);
-    bool setMemberClassName(size_t memberIndex, const std::string &className);
+    // Sets the class; becoming a Lich also makes the member undead unless `classOnly` (MAW's promotions change the
+    // class alone).
+    bool setMemberClassName(size_t memberIndex, const std::string &className, bool classOnly = false);
+    // Recomputes a member's maximum HP and SP from their class (after the rules' class numbers changed).
+    void refreshMemberResources(size_t memberIndex);
     bool applyLichTransformation(size_t memberIndex);
     const Character *member(size_t memberIndex) const;
     Character *member(size_t memberIndex);
@@ -610,6 +673,8 @@ public:
     bool spendSpellPointsOnActiveMember(int amount);
     void advanceTimedStates(float deltaSeconds);
     void updateRecovery(float deltaSeconds, float progressScale = 1.0f);
+    // Personal shields regenerate after their delay without damage (part of updateRecovery).
+    void updatePersonalShields(float deltaSeconds);
     bool applyRecoveryToMember(size_t memberIndex, float recoverySeconds);
     bool applyRecoveryToActiveMember(float recoverySeconds);
     bool switchToNextReadyMember();
@@ -644,6 +709,8 @@ public:
     bool clearMemberCondition(size_t memberIndex, CharacterCondition condition);
     bool hasMemberConditionImmunity(size_t memberIndex, CharacterCondition condition) const;
     bool healMember(size_t memberIndex, int amount);
+    // Changes a member's HP outside combat (drains, shared life), up to full: no shields, no speech; conditions follow.
+    void adjustMemberHealth(size_t memberIndex, int amount);
     bool reviveMember(size_t memberIndex, int health, bool applyWeak);
 
     const std::vector<Character> &members() const;
@@ -704,12 +771,14 @@ private:
     SoundId resolveDamageImpactSoundForMember(size_t memberIndex) const;
 
     const ItemTable *m_pItemTable = nullptr;
+    const PartyShieldRules *m_pPersonalShieldRules = nullptr;
     const JournalQuestTable *m_pJournalQuestTable = nullptr;
     const CharacterDollTable *m_pCharacterDollTable = nullptr;
     const StandardItemEnchantTable *m_pStandardItemEnchantTable = nullptr;
     const SpecialItemEnchantTable *m_pSpecialItemEnchantTable = nullptr;
     const ClassMultiplierTable *m_pClassMultiplierTable = nullptr;
     const ClassSkillTable *m_pClassSkillTable = nullptr;
+    const GameRules *m_pRules = nullptr;
     std::vector<Character> m_members;
     std::vector<AdventurersInnMember> m_adventurersInnMembers;
     size_t m_activeMemberIndex = 0;
@@ -745,6 +814,7 @@ private:
     uint32_t m_arcomageWinCount = 0;
     uint32_t m_arcomageLossCount = 0;
     bool m_debugDamageImmune = false;
+    float m_rulesMovementMultiplier = 1.0f;
     bool m_debugUnlimitedMana = false;
     std::unordered_map<uint32_t, HouseStockState> m_houseStockStates;
     std::unordered_map<uint16_t, int32_t> m_eventVariables;

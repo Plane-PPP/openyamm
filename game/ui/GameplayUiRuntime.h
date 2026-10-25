@@ -306,9 +306,10 @@ public:
     void submitHudTexturedEllipse(
         bgfx::TextureHandle textureHandle, float x, float y, float width, float height,
         float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) const;
+    // `uRepeat` tiles the texture that many times along the drawn range (a wrapping pattern such as hatching).
     void submitHudTexturedArc(bgfx::TextureHandle textureHandle,
         const GameplayResolvedHudLayoutElement &rect, float strokeWidth, float startDegrees, float sweepDegrees,
-        float begin = 0, float end = 1) const;
+        float begin = 0, float end = 1, float uRepeat = 1) const;
     uint32_t actorInspectAnimationTicks(bool visible, uint32_t nowTicks);
     // The inspected actor's 3D portrait when it has a model, otherwise its sprite (name, palette).
     void renderActorInspectPreview(const IGameplayWorldRuntime &world, size_t actorIndex, uint32_t animationTicks,

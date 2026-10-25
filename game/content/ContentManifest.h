@@ -8,6 +8,11 @@
 #include <string>
 #include <vector>
 
+namespace YAML
+{
+class Node;
+}
+
 namespace OpenYAMM::Game
 {
 struct WorldStartDefinition
@@ -44,6 +49,8 @@ enum class TableContributionMode
     Append,
     Override,
     Distribution,
+    // Whole-table replacement; ruleset packages only.
+    Replace,
 };
 
 struct ContentIdRangeDefinition
@@ -52,6 +59,17 @@ struct ContentIdRangeDefinition
     uint32_t begin = 0;
     uint32_t end = 0;
 };
+
+// Parses a manifest's idRanges map (domain: {begin, end}) into ranges; `owner` names the file in errors.
+bool parseContentIdRanges(
+    const YAML::Node &node,
+    const std::string &owner,
+    std::vector<ContentIdRangeDefinition> &ranges,
+    std::string &errorMessage);
+// The first domain whose ranges in the two lists overlap, if any.
+std::optional<std::string> overlappingContentIdRange(
+    const std::vector<ContentIdRangeDefinition> &left,
+    const std::vector<ContentIdRangeDefinition> &right);
 
 struct TableContributionDefinition
 {

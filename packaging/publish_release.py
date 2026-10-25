@@ -259,6 +259,13 @@ def final_index(index, published, release):
     return document, new, identical
 
 
+def released_updaters_accept(package, mount):
+    """Whether the updaters of releases 1.8-1.10 accept a pack's mount. They validate every pack of a manifest before
+    its min_updater_schema, so one mount outside /engine or /worlds/<package> stops them updating at all."""
+    root = "/engine" if package == "engine" else f"/worlds/{package}"
+    return mount == root or mount.startswith(root + "/")
+
+
 def load_content(directory, release):
     index_path = Path(directory) / "index.json"
     if not index_path.is_file():
@@ -271,6 +278,9 @@ def load_content(directory, release):
         path = index_path.parent / index["store"] / pack["file"]
         if not path.is_file() or path.stat().st_size != pack["size"]:
             fail(f"{path} is missing or does not match its index record")
+        if not released_updaters_accept(pack["package"], pack["mount"]):
+            fail(f"{pack['id']} mounts at {pack['mount']}: the updaters of releases 1.8-1.10 accept only /engine and "
+                 f"/worlds/<package> mounts, so they could not update to this release")
     return index
 
 

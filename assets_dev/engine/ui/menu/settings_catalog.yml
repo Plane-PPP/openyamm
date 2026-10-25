@@ -4,6 +4,10 @@
 # sliders that follow their own toggle; `depends` rows are indented under the setting they depend on.
 # An `action` row stores no setting: the game fills its label, description and button (update_now: the installed
 # version, the update status and Check Now). `updater_only` sections and rows exist only where the game updates itself.
+# `ruleset_desc` replaces a row's description in the pause menu of a game with a ruleset (keep it no longer than `desc`,
+# whose length the layout measures).
+# The `game` section's rows are the ruleset options of the game in progress, not settings.ini values: the menu fills
+# their choices from the ruleset and leaves out what it does not offer.
 sections:
 - id: gameplay
   name: Gameplay
@@ -17,9 +21,15 @@ sections:
   name: Controls
 - id: keyboard
   name: Keyboard
+# The rules of the game in progress: only in the pause menu of a game with a ruleset. It never shows beside Updates
+# (main menu only), so both use the seventh tab.
+- id: game
+  name: Rules
+  game_only: true
 - id: updates
   name: Updates
   updater_only: true
+  slot: 6
 settings:
 - id: bolster_monsters
   section: gameplay
@@ -27,6 +37,7 @@ settings:
   name: Monster scaling
   type: toggle
   desc: Monsters keep pace with the party's level. Takes effect on entering an area.
+  ruleset_desc: Standard games only; this game's ruleset scales its monsters itself.
 - id: melee_hit_feedback
   section: gameplay
   group: Combat
@@ -51,6 +62,13 @@ settings:
   name: Floating combat text
   type: toggle
   desc: Show damage numbers and combat messages in the world.
+- id: combat_log
+  section: interface
+  group: Combat messages
+  name: Combat log
+  type: toggle
+  desc: A button beside the followers' head opens a log of recent hits, each with its damage steps.
+  desktop_only: true
 - id: show_hits
   section: interface
   group: Combat messages
@@ -102,6 +120,23 @@ settings:
   name: Portrait frame
   type: toggle
   desc: Draw the frame behind the party portraits during play. Other screens always keep it.
+- id: potion_buttons
+  section: interface
+  group: Party
+  name: Potion buttons
+  type: toggle
+  desc: Show the round potion quick-slot button at each portrait. The Potion Wheel key opens the ring either way.
+- id: rarity_glow
+  section: interface
+  group: Items
+  name: Item rarity glow
+  type: select
+  options:
+  - ['off', 'Off']
+  - [hold, Hold key]
+  - [always, Always]
+  desc: Outline items in their rarity colour (rulesets with rarities, such as MAW).
+  game_ruleset: maw
 - id: update_now
   section: updates
   group: Version
@@ -456,6 +491,85 @@ settings:
   name: Always run
   type: toggle
   desc: Run by default instead of walking.
+- id: ruleset_name
+  section: game
+  group: Ruleset
+  name: Ruleset
+  type: select
+  desc: Chosen at the start of the adventure. The rules of each part follow below.
+- id: ruleset_difficulty
+  section: game
+  group: Ruleset
+  name: Difficulty
+  type: select
+  options:
+  - [easy, Easy]
+  - [normal, Normal]
+  - [maw, MAW]
+  - [hard, Hard]
+  - [hell, Hell]
+  - [nightmare, Nightmare]
+  desc: Monster health and damage, how many come, loot and bosses. Nightmare can never be lowered again.
+- id: ruleset_progression
+  section: game
+  group: Ruleset
+  name: Progression
+  type: select
+  options:
+  - [free, Free]
+  - [horizontal, Horizontal]
+  desc: Free lets monsters grow with the levels you gain elsewhere; Horizontal fixes each map's level.
+- id: ruleset_challenge
+  section: game
+  group: Ruleset
+  name: Challenge mode
+  type: select
+  options:
+  - [none, None]
+  - [doom, Doom]
+  - [road_to_insanity, Road to Insanity]
+  - [beyond_madness, Beyond Madness]
+  - [austerity, Austerity]
+  desc: Chosen once at the start; fixed for the whole adventure.
+- id: ruleset_randomizer
+  section: game
+  group: Ruleset
+  name: Randomizer
+  type: toggle
+  desc: Chosen once at the start; fixed for the whole adventure.
+- id: ruleset_homing
+  section: game
+  group: Preferences
+  name: Homing projectiles
+  type: toggle
+  desc: Your missiles follow their target.
+- id: ruleset_friendly_fire
+  section: game
+  group: Preferences
+  name: Friendly fire
+  type: toggle
+  desc: Your attacks and spells can hurt peaceful townsfolk and guards.
+- id: ruleset_loot_filter
+  section: game
+  group: Preferences
+  name: Loot filter
+  type: window
+  options:
+  - ['off', 'Off']
+  - [soft, Soft]
+  - [regular, Regular]
+  - [strict, Strict]
+  - [very_strict, Very strict]
+  - [custom, Custom]
+  desc: Drops you would rather not carry turn into gold. Opens the filter with its presets.
+# Shown only in Road to Insanity and Beyond Madness, where it happens; last, so the rows
+# above keep their places when it is hidden.
+- id: ruleset_disintegrate
+  section: game
+  group: Preferences
+  name: Disintegration
+  type: toggle
+  desc: A companion slain far past death leaves the party for the Adventurer's Inn.
 bindings:
 - id: forward
   name: Forward
@@ -505,6 +619,18 @@ bindings:
 - id: cast_ready
   name: Cast quick spell
   group: Combat
+- id: quick_spell_1
+  name: Cast quick spell 1
+  group: Combat
+- id: quick_spell_2
+  name: Cast quick spell 2
+  group: Combat
+- id: quick_spell_3
+  name: Cast quick spell 3
+  group: Combat
+- id: quick_spell_4
+  name: Cast quick spell 4
+  group: Combat
 - id: cast
   name: Open spellbook
   group: Combat
@@ -535,6 +661,119 @@ bindings:
 - id: rest
   name: Rest
   group: Party & books
+- id: follower_panel
+  name: Follower panel
+  group: Party & books
+- id: follower_1
+  name: Speak with follower 1
+  group: Party & books
+- id: follower_2
+  name: Speak with follower 2
+  group: Party & books
+- id: follower_3
+  name: Speak with follower 3
+  group: Party & books
+- id: follower_4
+  name: Speak with follower 4
+  group: Party & books
 - id: double_speed
   name: Toggle double speed
   group: System
+# MAW's keys (devdocs/maw/GAPS.md §11 D.18): listed only in a MAW game's pause menu. `context` is the page a key acts
+# on; keys of different contexts may share a key (A picks the alchemist on the inventory page and moves left in play;
+# MAW's E closes our character screen).
+- id: unstuck
+  name: Get unstuck
+  group: MAW
+  ruleset: maw
+- id: open_workbench
+  name: Open Workbench
+  group: MAW
+  ruleset: maw
+- id: gather_loot
+  name: Gather corpses and crafting items
+  group: MAW
+  ruleset: maw
+- id: alchemist_pick
+  name: Alchemist takes alchemy items
+  group: MAW
+  ruleset: maw
+  context: inventory
+- id: skill_cover
+  name: Switch Cover
+  group: MAW
+  ruleset: maw
+  context: skills
+- id: skill_mana_shield
+  name: Switch Mana Shield
+  group: MAW
+  ruleset: maw
+  context: skills
+- id: skill_rotation
+  name: Switch Elementalist rotation
+  group: MAW
+  ruleset: maw
+  context: skills
+- id: knight_charge
+  name: Knight Charge (a lone Knight)
+  group: MAW
+  ruleset: maw
+- id: show_item_rarity
+  name: Show item rarity (hold)
+  group: MAW
+  ruleset: maw
+  context: inventory
+- id: bag_1
+  name: Open bag 1 (Shift + number selects a member)
+  group: MAW
+  ruleset: maw
+  context: inventory
+- id: bag_2
+  name: Open bag 2 (Shift + number selects a member)
+  group: MAW
+  ruleset: maw
+  context: inventory
+- id: bag_3
+  name: Open bag 3 (Shift + number selects a member)
+  group: MAW
+  ruleset: maw
+  context: inventory
+- id: bag_4
+  name: Open bag 4 (Shift + number selects a member)
+  group: MAW
+  ruleset: maw
+  context: inventory
+- id: crafting_bag
+  name: Crafting bag (with Shift; tags or untags the open bag)
+  group: MAW
+  ruleset: maw
+  context: inventory
+- id: open_progress
+  name: Open the Journal's Progress tab
+  group: MAW
+  ruleset: maw
+- id: open_auras
+  name: Open the aura panel
+  group: MAW
+  ruleset: maw
+- id: quick_item_wheel
+  name: Potion wheel (the active member's ring)
+  group: Potions
+- id: quick_item_1
+  name: Quick potion (the active member's slot 1)
+  group: Potions
+- id: quick_item_2
+  name: Use potion slot 2
+  group: Potions
+- id: quick_item_3
+  name: Use potion slot 3
+  group: Potions
+- id: quick_item_4
+  name: Use potion slot 4
+  group: Potions
+- id: quick_item_5
+  name: Use potion slot 5
+  group: Potions
+- id: quick_item_6
+  name: Use potion slot 6
+  group: Potions

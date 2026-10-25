@@ -355,6 +355,20 @@ public:
         setCurrentGameMinutes(currentGameMinutes() + minutes);
     }
 
+    void refreshRulesetMonsters() override
+    {
+    }
+
+    bool healMapActor(size_t, int) override
+    {
+        return false;
+    }
+
+    OpenYAMM::Game::ActorRulesetFacts *mutableActorRulesetFacts(size_t) override
+    {
+        return nullptr;
+    }
+
     int currentLocationReputation() const override
     {
         return 0;
@@ -637,11 +651,13 @@ public:
         float durationSeconds,
         float x,
         float y,
-        float z) override
+        float z,
+        int32_t summonerMemberIndex) override
     {
         (void)monsterId;
         (void)count;
         (void)durationSeconds;
+        (void)summonerMemberIndex;
         (void)x;
         (void)y;
         (void)z;
@@ -707,11 +723,13 @@ public:
     bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
-        const OpenYAMM::Game::GameplayWorldPoint &source) override
+        const OpenYAMM::Game::GameplayWorldPoint &source,
+        OpenYAMM::Game::ShieldAttackTier shieldTier) override
     {
         (void)actorIndex;
         (void)damage;
         (void)source;
+        (void)shieldTier;
         return false;
     }
 
@@ -768,9 +786,9 @@ public:
         return std::nullopt;
     }
 
-    std::optional<size_t> spellActionClosestVisibleHostileActorIndex() const override
+    std::vector<size_t> spellActionVisibleHostileActorIndices() const override
     {
-        return std::nullopt;
+        return {};
     }
 
     std::optional<bx::Vec3> spellActionActorTargetPoint(size_t actorIndex) const override
@@ -7087,7 +7105,7 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
         OpenYAMM::Game::EventRuntime eventRuntime = {};
         REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 61, runtimeState, &party));
         CHECK(party.hasQuestBit(1300));
-        CHECK_EQ(runtimeState.textureOverrides[2927], "trekscon");
+        CHECK_EQ(runtimeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(2927)], "trekscon");
         REQUIRE_FALSE(runtimeState.messages.empty());
         CHECK(
             runtimeState.messages.back().find("Blaster weapons provide an effective, accurate ranged attack")
@@ -7278,7 +7296,7 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
         CHECK_EQ(party.member(1)->personality, 17);
         CHECK_EQ(party.member(2)->personality, 13);
         CHECK(party.hasQuestBit(1047));
-        CHECK_EQ(runtimeState.textureOverrides[949], "d6flora");
+        CHECK_EQ(runtimeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(949)], "d6flora");
 
         OpenYAMM::Game::PartySeed mapVarPartySeed = {};
         mapVarPartySeed.members.push_back(makeScriptedRegressionMember());
@@ -7395,7 +7413,7 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
             4));
         for (uint32_t faceIndex : {4298u, 4299u, 4300u, 4301u, 4302u})
         {
-            CHECK_EQ(cubeState.textureOverrides[faceIndex], "lavatyl");
+            CHECK_EQ(cubeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
             CHECK((cubeState.facetSetMasks[faceIndex] & fluidMask) != 0);
         }
 
@@ -7403,7 +7421,7 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
         CHECK_EQ(cubeState.mapVars[4], 0u);
         for (uint32_t faceIndex : {4298u, 4299u, 4300u, 4301u, 4302u})
         {
-            CHECK_EQ(cubeState.textureOverrides[faceIndex], "orwtrtyl");
+            CHECK_EQ(cubeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "orwtrtyl");
         }
 
         OpenYAMM::Game::EventRuntimeState clearedWayState = {};
@@ -7420,15 +7438,15 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
         REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 58, onLoadState, &party));
         for (uint32_t faceIndex : {4219u, 4220u, 4221u, 4222u, 4223u})
         {
-            CHECK_EQ(onLoadState.textureOverrides[faceIndex], "lavatyl");
+            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
         }
         for (uint32_t faceIndex : {4265u, 4266u, 4267u, 4268u, 4269u})
         {
-            CHECK_EQ(onLoadState.textureOverrides[faceIndex], "lavatyl");
+            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
         }
         for (uint32_t faceIndex : {4298u, 4299u, 4300u, 4301u, 4302u})
         {
-            CHECK_EQ(onLoadState.textureOverrides[faceIndex], "lavatyl");
+            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
         }
         CHECK((onLoadState.facetSetMasks[4522] & untouchableMask) != 0);
         CHECK((onLoadState.facetSetMasks[4575] & untouchableMask) != 0);
@@ -8695,7 +8713,8 @@ TEST_CASE("mm8 Ogre actor bindings resolve merged monster ids and the fitted clu
         CHECK_EQ(entry["attachments"][0]["node"].as<std::string>(), "Club");
         CHECK_EQ(entry["attachments"][0]["model"].as<std::string>(), "worlds/mm8/models/mm8_m440_club.glb");
         CHECK(entry["scale"].as<float>() == doctest::Approx(154.312274f));
-        CHECK(entry["animation"]["events"]["attack_melee"]["impact"].as<float>() == doctest::Approx(26.0f / 30.0f));
+        // The MM8 creature post-process (2026-10-21) retimed the impact to the club's contact.
+        CHECK(entry["animation"]["events"]["attack_melee"]["impact"].as<float>() == doctest::Approx(0.955f));
     }
 }
 
@@ -8724,14 +8743,14 @@ TEST_CASE("mm8 Vampire actor bindings resolve all tiers and dual palm spell rele
         CHECK_NE(animation["cast"].as<std::string>(), entry["clips"]["attack_melee"].as<std::string>());
         CHECK_EQ(animation["sockets"]["palm_left"].as<std::string>(), "Socket_Palm_Left");
         CHECK_EQ(animation["sockets"]["palm_right"].as<std::string>(), "Socket_Palm_Right");
-        CHECK(animation["events"]["attack_melee"]["impact"].as<float>() == doctest::Approx(77.0f / 60.0f));
+        CHECK(animation["events"]["attack_melee"]["impact"].as<float>() == doctest::Approx(1.482f));
         CHECK(animation["events"]["cast"]["impact"].as<float>() == doctest::Approx(35.0f / 30.0f));
         CHECK_EQ(animation["events"]["cast"]["glow"].as<std::vector<std::string>>(),
             std::vector<std::string>{"palm_left", "palm_right"});
     }
 }
 
-TEST_CASE("mm6 darkmoor actor previews build encounter tiers as models and load their sprites for no monster")
+TEST_CASE("mm6 darkmoor actor previews build encounter tiers and summoned wisps as models without sprites")
 {
     const OpenYAMM::Tests::RegressionMapLoader &mapLoader = requireRegressionMapLoader();
     const OpenYAMM::Game::MonsterTable &monsterTable = mapLoader.gameDataLoader.getMonsterTable();
@@ -8742,7 +8761,9 @@ TEST_CASE("mm6 darkmoor actor previews build encounter tiers as models and load 
     std::shared_ptr<OpenYAMM::Game::ActorModelManifest> pActorModels =
         std::make_shared<OpenYAMM::Game::ActorModelManifest>();
     std::string error;
-    REQUIRE_MESSAGE(pActorModels->load(mapLoader.assetFileSystem, {"worlds/mm6/models/actors.yml"}, {},
+    // Every world's bindings, as the game loads them: the summoned wisps are bound by MM8's.
+    REQUIRE_MESSAGE(pActorModels->load(mapLoader.assetFileSystem,
+        {"worlds/mm6/models/actors.yml", "worlds/mm7/models/actors.yml", "worlds/mm8/models/actors.yml"}, {},
         monsterTable, error), error);
 
     const OpenYAMM::Game::MapAssetLoader loader = {};
@@ -8793,11 +8814,8 @@ TEST_CASE("mm6 darkmoor actor previews build encounter tiers as models and load 
         CHECK(billboard.modelled);
     }
 
-    // No sprite of a modelled monster is requested; the only decoded textures are the unbound summoned wisps'.
-    for (const OpenYAMM::Game::OutdoorBitmapTexture &texture : billboardSet.textures)
-    {
-        CHECK_FALSE(OpenYAMM::Engine::parseSpriteAtlasReference(texture.textureName).has_value());
-    }
+    // Every monster the map can show is modelled, so no sprite is decoded.
+    CHECK(billboardSet.textures.empty());
 
     constexpr std::array<int16_t, 3> SummonWispMonsterIds = {97, 98, 99};
 
@@ -8805,30 +8823,7 @@ TEST_CASE("mm6 darkmoor actor previews build encounter tiers as models and load 
     {
         const OpenYAMM::Game::MonsterEntry *pMonsterEntry = monsterTable.findById(summonMonsterId);
         REQUIRE(pMonsterEntry != nullptr);
-        REQUIRE_FALSE(billboardSet.drawsModel(pMonsterEntry));
-
-        for (const std::string &spriteName : pMonsterEntry->spriteNames)
-        {
-            if (spriteName.empty() || spriteName == "null")
-            {
-                continue;
-            }
-
-            const std::optional<uint16_t> spriteFrameIndex =
-                billboardSet.spriteFrameTable.findFrameIndexBySpriteName(spriteName);
-            REQUIRE(spriteFrameIndex.has_value());
-            const OpenYAMM::Game::SpriteFrameEntry *pFrame =
-                billboardSet.spriteFrameTable.getFrame(*spriteFrameIndex, 0);
-            REQUIRE(pFrame != nullptr);
-            const OpenYAMM::Game::ResolvedSpriteTexture resolvedTexture =
-                OpenYAMM::Game::SpriteFrameTable::resolveTexture(*pFrame, 0);
-            CHECK(std::any_of(billboardSet.textures.begin(), billboardSet.textures.end(),
-                [&](const OpenYAMM::Game::OutdoorBitmapTexture &texture)
-                {
-                    return texture.textureName == resolvedTexture.textureName
-                        && texture.paletteId == pFrame->paletteId;
-                }));
-        }
+        CHECK(billboardSet.drawsModel(pMonsterEntry));
     }
 }
 
@@ -9495,7 +9490,9 @@ TEST_CASE("mm8 Nightmare slime actor bindings resolve all tiers without ranged s
         CHECK_EQ(entry["skin"].as<std::string>(), "nightmare_" + std::string(1, char('a' + id - 151)));
         CHECK_FALSE(entry["attachments"].IsDefined());
         CHECK_FALSE(entry["animation"]["cast"].IsDefined());
-        CHECK_FALSE(entry["animation"]["events"].IsDefined());
+        // The bite glows at the jaws; there is no cast event.
+        CHECK_FALSE(entry["animation"]["events"]["cast"].IsDefined());
+        CHECK(entry["animation"]["events"]["attack_melee"]["impact"].as<float>() == doctest::Approx(0.563f));
         CHECK_EQ(entry["clips"]["attack_melee"].as<std::string>(), "Attack");
         CHECK_EQ(entry["clips"]["dying"].as<std::string>(), "Death");
         CHECK_EQ(entry["clips"]["dead"].as<std::string>(), "Dead");

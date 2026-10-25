@@ -115,6 +115,7 @@ function(openyamm_compile_bgfx_shader_for_target sourcePath shaderType outputNam
             "${CMAKE_SOURCE_DIR}/game/shaders/outdoor_lighting.sh"
             "${CMAKE_SOURCE_DIR}/game/shaders/sky_common.sh"
             "${CMAKE_SOURCE_DIR}/game/shaders/weather_wetness.sh"
+            "${CMAKE_SOURCE_DIR}/game/shaders/shield_common.sh"
             "${OPENYAMM_BGFX_SOURCE_DIR}/examples/common/shaderlib.sh"
             openyamm_shaderc
         VERBATIM
@@ -570,6 +571,11 @@ function(openyamm_configure_runtime_shaders)
         "${CMAKE_SOURCE_DIR}/game/shaders/vs_shield_dome.sc" "vertex" "vs_shield_dome.bin")
     openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/fs_shield_dome.sc" "fragment" "fs_shield_dome.bin")
+    # Energy shield shells over creatures (loaded the first time a shielded creature draws).
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/vs_model_shield.sc" "vertex" "vs_model_shield.bin")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_model_shield.sc" "fragment" "fs_model_shield.bin")
     openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/vs_model.sc"
         "vertex"
@@ -698,6 +704,7 @@ function(openyamm_configure_runtime_shaders)
         fs_particle.bin
         vs_effect_ribbon.bin fs_effect_ribbon.bin
         vs_shield_dome.bin fs_shield_dome.bin
+        vs_model_shield.bin fs_model_shield.bin
         vs_model.bin
         fs_model.bin
         vs_model_shadow.bin fs_model_shadow.bin

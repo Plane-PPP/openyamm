@@ -70,7 +70,13 @@ end)
 
 ReplaceGlobalEvent(789, "MMMerge Dragon Hatchling", function()
     if MM7.GetCrossVar("DragonJoined", 0) ~= 0 then
-        evt.SimpleMessage("The dragon is already traveling with you.")
+        -- A dragon dismissed from the followers joins again.
+        if HasFollowerNpc(396) then
+            evt.SimpleMessage("The dragon is already traveling with you.")
+        else
+            AddFollowerNpc(396)
+            evt.SimpleMessage("The dragon joins your company again.")
+        end
         return
     end
 

@@ -310,6 +310,9 @@ def main():
     packages = {"engine": collect_entries(
         args.assets_root / "engine", sprites=sprites, profile=args.profile, dependencies=dependencies,
         model_textures=profile_root / "engine" if profile_root else None, surface_profile=args.profile)}
+    # The rulesets the release offers (engine/rulesets, MAW) ship without their documentation.
+    packages["engine"] = {name: source for name, source in packages["engine"].items()
+                          if not (name.startswith("rulesets/") and name.endswith(".md"))}
     if not args.engine_only:
         worlds = args.assets_root / "worlds"
         for name in args.world or config.worlds:

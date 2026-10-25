@@ -126,7 +126,7 @@ public:
         }
 
         const OpenYAMM::Game::GameplayActorService::DirectSpellImpactResult impact =
-            m_actorService.resolveDirectSpellImpact(spellId, skillLevel, damage, m_targetHp, false);
+            m_actorService.resolveDirectSpellImpact(spellId, skillLevel, damage, false);
 
         if (impact.disposition != OpenYAMM::Game::GameplayActorService::DirectSpellImpactDisposition::ApplyDamage)
         {
@@ -185,12 +185,13 @@ TEST_CASE("party spell mana cost query matches the cost a cast spends")
 
     const uint32_t fireBoltId = OpenYAMM::Game::spellIdValue(OpenYAMM::Game::SpellId::FireBolt);
     pCaster->skills.erase("FireMagic");
-    CHECK_FALSE(OpenYAMM::Game::PartySpellSystem::manaCost(*pCaster, gameData.spellTable, fireBoltId).has_value());
+    CHECK_FALSE(
+        OpenYAMM::Game::PartySpellSystem::manaCost(party, *pCaster, gameData.spellTable, fireBoltId).has_value());
 
     pCaster->skills["FireMagic"] = {"FireMagic", 5, OpenYAMM::Game::SkillMastery::Normal};
     pCaster->spellPoints = 100;
     const std::optional<uint32_t> manaCost =
-        OpenYAMM::Game::PartySpellSystem::manaCost(*pCaster, gameData.spellTable, fireBoltId);
+        OpenYAMM::Game::PartySpellSystem::manaCost(party, *pCaster, gameData.spellTable, fireBoltId);
     REQUIRE(manaCost.has_value());
     CHECK(*manaCost > 0);
 
@@ -931,7 +932,6 @@ TEST_CASE("sunray resolves as direct light damage")
             OpenYAMM::Game::spellIdValue(OpenYAMM::Game::SpellId::Sunray),
             10,
             137,
-            400,
             false);
 
     CHECK(
@@ -1636,7 +1636,7 @@ TEST_CASE("party spell backend recharge item rejects invalid and already charged
     CHECK_EQ(chargedWandResult.statusText, "Wand already charged!");
 }
 
-TEST_CASE("party spell backend summon wisp adds one friendly summon per cast up to the active limit")
+TEST_CASE("party spell backend summon wisp keeps each caster's own summons to the mastery's limit (MM8-Rel)")
 {
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
     OpenYAMM::Game::Party party = OpenYAMM::Tests::makeSpellRegressionParty(gameData);
@@ -1650,31 +1650,60 @@ TEST_CASE("party spell backend summon wisp adds one friendly summon per cast up 
     request.skillMasteryOverride = OpenYAMM::Game::SkillMastery::Grandmaster;
     request.spendMana = false;
     request.applyRecovery = false;
+    const auto cast = [&]()
+    {
+        return OpenYAMM::Game::PartySpellSystem::castSpell(party, worldRuntime, gameData.spellTable, request);
+    };
 
+    // Grandmaster: five wisps C, 15 game minutes a point.
     for (size_t castIndex = 0; castIndex < 5; ++castIndex)
     {
-        const OpenYAMM::Game::PartySpellCastResult result = OpenYAMM::Game::PartySpellSystem::castSpell(
-            party,
-            worldRuntime,
-            gameData.spellTable,
-            request);
-
-        REQUIRE(result.succeeded());
+        REQUIRE(cast().succeeded());
         REQUIRE_EQ(worldRuntime.friendlySummonRequests().size(), castIndex + 1);
         CHECK_EQ(worldRuntime.friendlySummonRequests().back().monsterId, 99);
         CHECK_EQ(worldRuntime.friendlySummonRequests().back().count, 1u);
-        CHECK_EQ(worldRuntime.friendlySummonRequests().back().durationSeconds, 3.0f * 60.0f * 60.0f);
+        CHECK_EQ(worldRuntime.friendlySummonRequests().back().durationSeconds, 3.0f * 15.0f * 60.0f);
+        CHECK_EQ(worldRuntime.friendlySummonRequests().back().summonerMemberIndex, 0);
     }
 
-    const OpenYAMM::Game::PartySpellCastResult limitResult = OpenYAMM::Game::PartySpellSystem::castSpell(
-        party,
-        worldRuntime,
-        gameData.spellTable,
-        request);
-
+    // The sixth is refused: no SP spent, no recovery, nothing replaced.
+    request.spendMana = true;
+    request.applyRecovery = true;
+    OpenYAMM::Game::Character &caster = *party.member(0);
+    caster.spellPoints = 100;
+    const OpenYAMM::Game::PartySpellCastResult limitResult = cast();
     CHECK(limitResult.status == OpenYAMM::Game::PartySpellCastStatus::Failed);
     CHECK_EQ(limitResult.statusText, "This character can't summon any more monsters!");
+    CHECK_EQ(limitResult.recoverySeconds, 0.0f);
+    CHECK_EQ(caster.spellPoints, 100);
     CHECK_EQ(worldRuntime.friendlySummonRequests().size(), 5u);
+    request.spendMana = false;
+    request.applyRecovery = false;
+
+    // The limit is the caster's own: another member still summons, at Master three wisps B for 15 minutes a point.
+    request.casterMemberIndex = 1;
+    request.skillMasteryOverride = OpenYAMM::Game::SkillMastery::Master;
+
+    for (size_t castIndex = 0; castIndex < 3; ++castIndex)
+    {
+        REQUIRE(cast().succeeded());
+        CHECK_EQ(worldRuntime.friendlySummonRequests().back().monsterId, 98);
+        CHECK_EQ(worldRuntime.friendlySummonRequests().back().durationSeconds, 3.0f * 15.0f * 60.0f);
+    }
+
+    CHECK_FALSE(cast().succeeded());
+
+    // Expert: one wisp A for 5 minutes a point.
+    request.casterMemberIndex = 2;
+    request.skillMasteryOverride = OpenYAMM::Game::SkillMastery::Expert;
+    REQUIRE(cast().succeeded());
+    CHECK_EQ(worldRuntime.friendlySummonRequests().back().monsterId, 97);
+    CHECK_EQ(worldRuntime.friendlySummonRequests().back().durationSeconds, 3.0f * 5.0f * 60.0f);
+    CHECK_FALSE(cast().succeeded());
+
+    // A dead wisp no longer counts.
+    worldRuntime.actor(worldRuntime.mapActorCount() - 1).isDead = true;
+    CHECK(cast().succeeded());
 }
 
 TEST_CASE("party spell backend enforces indoor outdoor spell gates in shared spell rules")
@@ -1800,7 +1829,6 @@ TEST_CASE("shared actor direct spell visuals match indoor area spell sprites")
             OpenYAMM::Game::spellIdValue(OpenYAMM::Game::SpellId::Inferno),
             7,
             26,
-            100,
             false);
 
     CHECK(
@@ -1817,7 +1845,6 @@ TEST_CASE("shared actor direct spell visuals match indoor area spell sprites")
             OpenYAMM::Game::spellIdValue(OpenYAMM::Game::SpellId::PrismaticLight),
             7,
             32,
-            100,
             false);
 
     CHECK(

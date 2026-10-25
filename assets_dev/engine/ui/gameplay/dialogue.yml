@@ -267,6 +267,27 @@ elements:
       align_x: center
       align_y: middle
       scale: 0.416667
+  - id: DialogueShopRerollButton
+    anchor: bottom_right
+    offset_x: -4
+    offset_y: -62
+    width: 150
+    height: 30
+    z_index: 300
+    interactive: true
+    asset:
+      default: obsidian_button_rest_normal
+      highlighted: obsidian_button_rest_hover
+      pressed: obsidian_button_rest_pressed
+      selected: obsidian_button_rest_selected
+    notes: 'Shop stock reroll of a ruleset that has one (MAW); drawn by the shop overlay with its live price.'
+    text:
+      value: New stock
+      font: Fondamento
+      color: '#e8d1a4'
+      align_x: center
+      align_y: middle
+      scale: 0.416667
   - id: DialogueOkButton
     anchor: bottom_right
     offset_x: -37

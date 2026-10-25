@@ -1,7 +1,11 @@
 #include "game/ui/MenuSettingsModel.h"
 #include <doctest/doctest.h>
 #include <algorithm>
+#include <array>
 #include <fstream>
+#include <iterator>
+#include <string>
+#include <utility>
 
 using namespace OpenYAMM::Game;
 
@@ -62,12 +66,16 @@ TEST_CASE("menu settings validate input and preserve unrelated game configuratio
 
 TEST_CASE("menu binding reservation and equality follow native single input bindings")
 {
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_ESCAPE)));
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F9)));
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F10)));
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_5)));
-    CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F2)));
-    CHECK_FALSE(reservedMenuBinding(mouseButtonInputBinding(SDL_BUTTON_LEFT)));
+    constexpr KeyboardAction Jump = KeyboardAction::Jump;
+    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_ESCAPE), Jump));
+    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F9), Jump));
+    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F10), Jump));
+    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_5), Jump));
+    CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F2), Jump));
+    CHECK_FALSE(reservedMenuBinding(mouseButtonInputBinding(SDL_BUTTON_LEFT), Jump));
+    // The bag keys may take the party's numbers: they use them only on the inventory pages.
+    CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_3), KeyboardAction::Bag3));
+    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_ESCAPE), KeyboardAction::Bag3));
     CHECK(sameMenuBinding(mouseButtonInputBinding(SDL_BUTTON_LEFT), mouseButtonInputBinding(SDL_BUTTON_LEFT)));
     CHECK_FALSE(sameMenuBinding(mouseButtonInputBinding(SDL_BUTTON_LEFT), keyboardInputBinding(SDL_SCANCODE_A)));
     CHECK_FALSE(sameMenuBinding(mouseButtonInputBinding(SDL_BUTTON_LEFT), mouseButtonInputBinding(SDL_BUTTON_RIGHT)));
@@ -78,8 +86,8 @@ TEST_CASE("mouse wheel bindings distinguish directions and survive settings save
     const InputBinding up = mouseWheelInputBinding(1.0f);
     const InputBinding down = mouseWheelInputBinding(-1.0f);
     CHECK(mouseWheelInputBinding(0.0f).kind == InputBindingKind::None);
-    CHECK_FALSE(reservedMenuBinding(up));
-    CHECK_FALSE(reservedMenuBinding(down));
+    CHECK_FALSE(reservedMenuBinding(up, KeyboardAction::Jump));
+    CHECK_FALSE(reservedMenuBinding(down, KeyboardAction::Jump));
     CHECK(sameMenuBinding(up, parseInputBindingName("MouseWheelUp")));
     CHECK(sameMenuBinding(down, parseInputBindingName("Wheel Down")));
     CHECK(sameMenuBinding(up, parseInputBindingName(inputBindingName(up))));
@@ -375,4 +383,34 @@ TEST_CASE("party portrait frame defaults on and persists menu changes")
     CHECK(loaded->partyFrame);
     CHECK(loaded->questMarkers);
     std::filesystem::remove(path);
+}
+
+TEST_CASE("MMMerge's follower keys default to 0 and 6-9, clash with no other key and are in the bindings menu")
+{
+    const std::array<std::pair<KeyboardAction, SDL_Scancode>, 5> followerKeys = {{
+        {KeyboardAction::FollowerPanel, SDL_SCANCODE_0}, {KeyboardAction::Follower1, SDL_SCANCODE_6},
+        {KeyboardAction::Follower2, SDL_SCANCODE_7}, {KeyboardAction::Follower3, SDL_SCANCODE_8},
+        {KeyboardAction::Follower4, SDL_SCANCODE_9}}};
+    std::ifstream input(std::string(OPENYAMM_SOURCE_DIR) + "/assets_dev/engine/ui/menu/settings_catalog.yml");
+    const std::string catalog{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+
+    for (const auto &[action, scancode] : followerKeys)
+    {
+        const KeyboardBindingDefinition &definition = keyboardBindingDefinition(action);
+        CAPTURE(definition.iniKey);
+        CHECK(definition.implemented);
+        CHECK_EQ(definition.defaultBinding.kind, InputBindingKind::Keyboard);
+        CHECK_EQ(definition.defaultBinding.scancode, scancode);
+        CHECK_NE(catalog.find("- id: " + std::string(definition.iniKey) + "\n"), std::string::npos);
+
+        for (const KeyboardBindingDefinition &other : keyboardBindingDefinitions())
+        {
+            if (other.action != action)
+            {
+                CAPTURE(other.iniKey);
+                CHECK_FALSE((other.defaultBinding.kind == InputBindingKind::Keyboard
+                    && other.defaultBinding.scancode == scancode));
+            }
+        }
+    }
 }

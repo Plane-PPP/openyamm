@@ -4,6 +4,7 @@
 #include "game/audio/SoundIds.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/gameplay/GameplayMonsterSpawn.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/ReputationRuntime.h"
@@ -11,6 +12,9 @@
 #include "game/party/Party.h"
 #include "game/party/SkillData.h"
 #include "game/outdoor/OutdoorMechanismRuntime.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/ExperienceRules.h"
+#include "game/rules/MonsterRules.h"
 #include "game/tables/ClassSkillTable.h"
 #include "game/tables/HouseTable.h"
 #include "game/tables/JournalQuestTable.h"
@@ -22,6 +26,7 @@
 #include <cstdio>
 #include <iostream>
 #include <limits>
+#include <random>
 #include <string_view>
 #include <unordered_map>
 
@@ -37,7 +42,6 @@ namespace
 constexpr int OeDaysPerWeek = 7;
 constexpr int OeDaysPerMonth = 28;
 constexpr int OeDaysPerYear = 12 * OeDaysPerMonth;
-constexpr int OeGameStartingYear = 1168;
 constexpr uint32_t DefaultEventPortraitDurationTicks = 96;
 constexpr uint32_t MaxBitfieldFlagIndex = 31;
 constexpr uint32_t DefaultHistoryContinentId = 1;
@@ -323,6 +327,9 @@ bool matchesRandomGiveItemType(const ItemDefinition &itemDefinition, uint32_t tr
                 || equipStat == "0"
                 || equipStat == "N / A"
                 || equipStat.empty();
+
+        case 12: // const.ItemType.Amulet
+            return equipStat == "Amulet";
 
         case 40: // const.ItemType.Ring_
             return equipStat == "Ring";
@@ -1200,6 +1207,10 @@ std::optional<std::string> skillNameForEvtVariable(EvtVariable variableId)
         case EvtVariable::StealingSkill: return "Stealing";
         case EvtVariable::AlchemySkill: return "Alchemy";
         case EvtVariable::LearningSkill: return "Learning";
+        case EvtVariable::EnergyGunsSkill: return "EnergyGuns";
+        case EvtVariable::EnergyBladesSkill: return "EnergyBlades";
+        case EvtVariable::ShieldTechSkill: return "ShieldTech";
+        case EvtVariable::HackingSkill: return "Hacking";
         default: return std::nullopt;
     }
 }
@@ -1506,9 +1517,9 @@ SkillMastery normalizeCheckSkillMastery(uint32_t rawMastery)
 
 int resolveCharacterAge(const Character &member)
 {
-    if (member.birthYear > 0 && member.birthYear <= static_cast<uint32_t>(OeGameStartingYear))
+    if (member.birthYear > 0 && member.birthYear <= static_cast<uint32_t>(CharacterAgeReferenceYear))
     {
-        return std::max(0, OeGameStartingYear - static_cast<int>(member.birthYear) + member.ageModifier);
+        return std::max(0, CharacterAgeReferenceYear - static_cast<int>(member.birthYear) + member.ageModifier);
     }
 
     return std::max(0, member.ageModifier);
@@ -2233,6 +2244,10 @@ EventRuntime::VariableRef EventRuntime::decodeVariable(uint64_t rawId)
         case EvtVariable::StealingSkill:
         case EvtVariable::AlchemySkill:
         case EvtVariable::LearningSkill:
+        case EvtVariable::EnergyGunsSkill:
+        case EvtVariable::EnergyBladesSkill:
+        case EvtVariable::ShieldTechSkill:
+        case EvtVariable::HackingSkill:
             variable.kind = VariableKind::Skill;
             break;
 
@@ -2421,7 +2436,7 @@ int32_t EventRuntime::getVariableValue(
 
         const Character *pMember = pParty->member(*memberIndex);
         return pMember != nullptr
-            ? static_cast<int32_t>(std::min<uint32_t>(pMember->experience, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())))
+            ? static_cast<int32_t>(std::min<uint64_t>(pMember->experience, uint64_t(std::numeric_limits<int32_t>::max())))
             : 0;
     }
 
@@ -3780,7 +3795,10 @@ void EventRuntime::addVariableValue(
 
         for (size_t memberIndex : targetMemberIndices)
         {
-            pParty->addExperienceToMember(memberIndex, value);
+            pParty->addExperienceToMember(memberIndex, runtimeState.unscaledExperience
+                    ? int64_t(value)
+                    : pParty->rules().experience.eventExperience(
+                        *pParty, value, runtimeState.activeHistoryContinentId));
         }
 
         if (value > 0)
@@ -5769,6 +5787,25 @@ int luaApplyLichTransformation(lua_State *pLuaState)
     return 1;
 }
 
+// The active member's skill reset price under the rules, 0 when they have no reset.
+int luaSkillResetCost(lua_State *pLuaState)
+{
+    const Party *pParty = readableParty(pLuaState);
+    const std::optional<int> cost = pParty != nullptr ? pParty->activeMemberSkillResetCost() : std::nullopt;
+    lua_pushinteger(pLuaState, cost.value_or(0));
+    return 1;
+}
+
+// Pays for and resets the active member's skills; returns whether it happened and the status text.
+int luaResetSkills(lua_State *pLuaState)
+{
+    Party *pParty = writableParty(pLuaState);
+    const bool reset = pParty != nullptr && pParty->resetActiveMemberSkills();
+    lua_pushboolean(pLuaState, reset);
+    lua_pushstring(pLuaState, pParty != nullptr ? pParty->lastStatus().c_str() : "");
+    return 2;
+}
+
 std::optional<EquipmentSlot> equipmentSlotFromLua(lua_State *pLuaState, int index)
 {
     if (lua_isnoneornil(pLuaState, index))
@@ -6117,6 +6154,38 @@ int luaRandomBetween(lua_State *pLuaState)
     return 1;
 }
 
+// The engine's damage kinds as evt.DamagePlayer names them (MM8 const.Damage).
+CombatDamageType evtDamageType(uint32_t kind)
+{
+    switch (kind)
+    {
+        case 0:
+            return CombatDamageType::Fire;
+        case 1:
+            return CombatDamageType::Air;
+        case 2:
+            return CombatDamageType::Water;
+        case 3:
+            return CombatDamageType::Earth;
+        case 4:
+            return CombatDamageType::Physical;
+        case 6:
+            return CombatDamageType::Spirit;
+        case 7:
+            return CombatDamageType::Mind;
+        case 8:
+            return CombatDamageType::Body;
+        case 9:
+            return CombatDamageType::Light;
+        case 10:
+            return CombatDamageType::Dark;
+        case 12:
+            return CombatDamageType::Energy;
+        default:
+            return CombatDamageType::Irresistible;
+    }
+}
+
 int luaDamagePlayer(lua_State *pLuaState)
 {
     Party *pParty = writableParty(pLuaState);
@@ -6137,10 +6206,14 @@ int luaDamagePlayer(lua_State *pLuaState)
 
     const std::string status = damageStatusForEvtVariable(targets);
     const bool allowUnconscious = selector.kind == PartySelectorKind::All;
+    const CombatDamageType type = evtDamageType(static_cast<uint32_t>(luaL_checkinteger(pLuaState, 2)));
+    const EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
+    const bool indoor = pRuntimeState != nullptr && pRuntimeState->mapFileName.ends_with(".blv");
 
     for (size_t memberIndex : targets)
     {
-        pParty->applyDamageToMember(memberIndex, damage, status, allowUnconscious);
+        const int memberDamage = pParty->rules().combat.environmentDamage(*pParty, memberIndex, damage, type, indoor);
+        pParty->applyDamageToMember(memberIndex, memberDamage, status, allowUnconscious);
     }
 
     return 0;
@@ -6206,10 +6279,13 @@ int luaSetOutdoorFog(lua_State *pLuaState)
     return 0;
 }
 
+// evt.OpenDimensionDoor([withoutQuest]): opens the Dimension Door destinations; `true` offers them before the Cross
+// Continents quest does.
 int luaOpenDimensionDoor(lua_State *pLuaState)
 {
     EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
     pRuntimeState->pendingDimensionDoorOverlay = true;
+    pRuntimeState->pendingDimensionDoorWithoutQuest = lua_toboolean(pLuaState, 1) != 0;
     pRuntimeState->lastActivationResult = "You feel high magic presence here.";
     return 0;
 }
@@ -6218,6 +6294,7 @@ int luaClearDimensionDoorOverlay(lua_State *pLuaState)
 {
     EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
     pRuntimeState->pendingDimensionDoorOverlay = false;
+    pRuntimeState->pendingDimensionDoorWithoutQuest = false;
     return 0;
 }
 
@@ -6531,6 +6608,18 @@ int luaCheckItemsCount(lua_State *pLuaState)
         itemId,
         singleTargetMemberIndex(selectedTargetMemberIndices(pLuaState)));
     lua_pushboolean(pLuaState, currentCount >= requiredCount);
+    return 1;
+}
+
+// evt.CountItems(minItemId, maxItemId): how many items of the range the party carries.
+int luaCountItems(lua_State *pLuaState)
+{
+    const EventRuntimeState *pRuntimeState = readableRuntimeState(pLuaState);
+    const Party *pParty = readableParty(pLuaState);
+    const uint32_t minimumItemId = static_cast<uint32_t>(std::max<lua_Integer>(0, luaL_checkinteger(pLuaState, 1)));
+    const uint32_t maximumItemId = static_cast<uint32_t>(std::max<lua_Integer>(0, luaL_checkinteger(pLuaState, 2)));
+    lua_pushinteger(
+        pLuaState, inventoryItemCountInRange(*pRuntimeState, pParty, minimumItemId, maximumItemId, std::nullopt));
     return 1;
 }
 
@@ -7698,6 +7787,81 @@ int luaSummonMonsters(lua_State *pLuaState)
     return 0;
 }
 
+// evt.SummonMonstersById{monster, x, y, z, count = n | {min, max}, tiers = {A, B, C}, radius, group, name,
+// hpScale, levelBonus, boss, speed, item, hostile, loot, seed}: MAW's pseudoSpawnpoint. Returns the count placed.
+int luaSummonMonstersById(lua_State *pLuaState)
+{
+    LuaExecutionContext *pExecutionContext = executionContextFromLua(pLuaState);
+    luaL_checktype(pLuaState, 1, LUA_TTABLE);
+
+    if (pExecutionContext == nullptr || pExecutionContext->pSceneEventContext == nullptr)
+    {
+        lua_pushinteger(pLuaState, 0);
+        return 1;
+    }
+
+    GameplayMonsterSpawnRequest request;
+    request.monsterId = int16_t(luaIntegerField(pLuaState, 1, "monster", 0));
+    request.x = float(luaIntegerField(pLuaState, 1, "x", 0));
+    request.y = float(luaIntegerField(pLuaState, 1, "y", 0));
+    request.z = float(luaIntegerField(pLuaState, 1, "z", 0));
+    request.radius = float(luaIntegerField(pLuaState, 1, "radius", 256));
+    request.group = luaUnsignedField(pLuaState, 1, "group", 0);
+    request.uniqueNameIndex = luaIntegerField(pLuaState, 1, "name", 0);
+    request.levelBonus = luaIntegerField(pLuaState, 1, "levelBonus", 0);
+    request.boss = luaBooleanField(pLuaState, 1, "boss", false);
+    request.hostile = luaBooleanField(pLuaState, 1, "hostile", true);
+    request.dropsLoot = luaBooleanField(pLuaState, 1, "loot", true);
+    request.carriedItemId = luaUnsignedField(pLuaState, 1, "item", 0);
+    request.seed = uint64_t(luaIntegerField(pLuaState, 1, "seed", 0));
+
+    if (const int32_t speed = luaIntegerField(pLuaState, 1, "speed", -1); speed >= 0)
+    {
+        request.moveSpeed = uint16_t(speed);
+    }
+
+    lua_getfield(pLuaState, 1, "hpScale");
+    request.healthMultiplier = lua_isnil(pLuaState, -1) ? 1.0f : float(luaL_checknumber(pLuaState, -1));
+    lua_pop(pLuaState, 1);
+
+    lua_getfield(pLuaState, 1, "tiers");
+
+    if (lua_istable(pLuaState, -1))
+    {
+        for (int tier = 0; tier < 3; ++tier)
+        {
+            lua_rawgeti(pLuaState, -1, tier + 1);
+            request.tierWeights[size_t(tier)] = lua_isnil(pLuaState, -1) ? 0 : int(luaL_checkinteger(pLuaState, -1));
+            lua_pop(pLuaState, 1);
+        }
+    }
+
+    lua_pop(pLuaState, 1);
+    lua_getfield(pLuaState, 1, "count");
+
+    if (lua_istable(pLuaState, -1))
+    {
+        lua_rawgeti(pLuaState, -1, 1);
+        const int minimum = int(luaL_checkinteger(pLuaState, -1));
+        lua_pop(pLuaState, 1);
+        lua_rawgeti(pLuaState, -1, 2);
+        const int maximum = int(luaL_checkinteger(pLuaState, -1));
+        lua_pop(pLuaState, 1);
+        std::mt19937_64 rng = gameplaySpawnRng(request);
+        request.count = uint32_t(std::uniform_int_distribution<int>(minimum, std::max(minimum, maximum))(rng));
+    }
+    else
+    {
+        request.count =
+            lua_isnil(pLuaState, -1) ? 1 : uint32_t(std::max<lua_Integer>(0, luaL_checkinteger(pLuaState, -1)));
+    }
+
+    lua_pop(pLuaState, 1);
+    const std::vector<size_t> spawned = pExecutionContext->pSceneEventContext->spawnMonsters(request);
+    lua_pushinteger(pLuaState, lua_Integer(spawned.size()));
+    return 1;
+}
+
 int luaChangeEvent(lua_State *pLuaState)
 {
     EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
@@ -7724,6 +7888,70 @@ int luaChangeEvent(lua_State *pLuaState)
         context.currentEventId = targetEventId;
     }
 
+    return 0;
+}
+
+// evt.RulesetInfo(): {id, difficulty, bolsterLevel, dimensionRun, challengeMode} of the party's rules on this continent
+// and map.
+int luaRulesetInfo(lua_State *pLuaState)
+{
+    const EventRuntimeState *pRuntimeState = readableRuntimeState(pLuaState);
+    const Party *pParty = readableParty(pLuaState);
+    const RulesetScriptInfo info = gameRulesFor(pParty).monsters.scriptInfo(
+        pRuntimeState != nullptr ? pRuntimeState->activeHistoryContinentId : 0);
+    lua_createtable(pLuaState, 0, 5);
+    lua_pushstring(pLuaState, info.rulesetId.c_str());
+    lua_setfield(pLuaState, -2, "id");
+    lua_pushinteger(pLuaState, info.difficulty);
+    lua_setfield(pLuaState, -2, "difficulty");
+    lua_pushinteger(pLuaState, info.bolsterLevel);
+    lua_setfield(pLuaState, -2, "bolsterLevel");
+    lua_pushboolean(pLuaState, info.dimensionRun);
+    lua_setfield(pLuaState, -2, "dimensionRun");
+    lua_pushstring(pLuaState, info.challengeMode.c_str());
+    lua_setfield(pLuaState, -2, "challengeMode");
+    return 1;
+}
+
+// evt.ArenaMonster(wave): the monster family the rules' Endless Arena brings in this wave, or 0.
+int luaArenaMonster(lua_State *pLuaState)
+{
+    const LuaExecutionContext *pExecutionContext = executionContextFromLua(pLuaState);
+    const IGameplayWorldRuntime *pWorld =
+        dynamic_cast<const IGameplayWorldRuntime *>(readonlySceneEventContext(pExecutionContext));
+    const MonsterTable *pMonsterTable = pWorld != nullptr ? pWorld->monsterTable() : nullptr;
+    lua_pushinteger(pLuaState, pMonsterTable != nullptr
+            ? gameRulesFor(readableParty(pLuaState)).monsters.arenaWaveMonster(
+                int(luaL_checkinteger(pLuaState, 1)), *pMonsterTable)
+            : 0);
+    return 1;
+}
+
+// evt.RulesTopic(topic): what the NPC says for a topic the party's rules run (MAW's Dimensional Maps), or nil.
+int luaRulesTopic(lua_State *pLuaState)
+{
+    Party *pParty = writableParty(pLuaState);
+    const std::optional<std::string> text = pParty != nullptr
+        ? gameRulesFor(pParty).monsters.rulesTopic(luaL_checkstring(pLuaState, 1), *pParty)
+        : std::nullopt;
+
+    if (text)
+    {
+        lua_pushstring(pLuaState, text->c_str());
+    }
+    else
+    {
+        lua_pushnil(pLuaState);
+    }
+
+    return 1;
+}
+
+// evt.SetUnscaledExperience(on): AddValue(Experience) gives exact amounts until switched off.
+int luaSetUnscaledExperience(lua_State *pLuaState)
+{
+    EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
+    pRuntimeState->unscaledExperience = luaEventBoolean(pLuaState, 1);
     return 0;
 }
 
@@ -7834,37 +8062,53 @@ int luaGiveItem(lua_State *pLuaState)
         return 0;
     }
 
-    const int argumentCount = lua_gettop(pLuaState);
+    int argumentCount = lua_gettop(pLuaState);
+    // A trailing options table: {identified = true} grants the item identified.
+    std::optional<bool> identified;
+
+    if (argumentCount > 0 && lua_istable(pLuaState, argumentCount))
+    {
+        lua_getfield(pLuaState, argumentCount, "identified");
+
+        if (!lua_isnil(pLuaState, -1))
+        {
+            identified = luaEventBoolean(pLuaState, -1);
+        }
+
+        lua_pop(pLuaState, 1);
+        --argumentCount;
+    }
 
     if (argumentCount <= 0)
     {
         return 0;
     }
 
+    std::optional<InventoryItem> item;
+
     if (argumentCount == 1)
     {
         const uint32_t itemId = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 1));
-        const std::optional<InventoryItem> item = createGrantedEventItem(*pRuntimeState, pParty, 0, 1, 0, itemId);
-
-        if (item)
-        {
-            pRuntimeState->grantedItems.push_back(*item);
-        }
-
-        return 0;
+        item = createGrantedEventItem(*pRuntimeState, pParty, 0, 1, 0, itemId);
     }
-
-    const uint32_t treasureLevel = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 1));
-    const uint32_t treasureType = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 2));
-    const uint32_t itemId =
-        argumentCount >= 3 ? static_cast<uint32_t>(luaL_checkinteger(pLuaState, 3)) : 0;
-    LuaExecutionContext *pExecutionContext = executionContextFromLua(pLuaState);
-    const uint16_t eventId = pExecutionContext != nullptr ? pExecutionContext->currentEventId : 0;
-    const std::optional<InventoryItem> item =
-        createGrantedEventItem(*pRuntimeState, pParty, eventId, treasureLevel, treasureType, itemId);
+    else
+    {
+        const uint32_t treasureLevel = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 1));
+        const uint32_t treasureType = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 2));
+        const uint32_t itemId =
+            argumentCount >= 3 ? static_cast<uint32_t>(luaL_checkinteger(pLuaState, 3)) : 0;
+        LuaExecutionContext *pExecutionContext = executionContextFromLua(pLuaState);
+        const uint16_t eventId = pExecutionContext != nullptr ? pExecutionContext->currentEventId : 0;
+        item = createGrantedEventItem(*pRuntimeState, pParty, eventId, treasureLevel, treasureType, itemId);
+    }
 
     if (item)
     {
+        if (identified)
+        {
+            item->identified = *identified;
+        }
+
         pRuntimeState->grantedItems.push_back(*item);
     }
 
@@ -8057,18 +8301,26 @@ int luaStopDoor(lua_State *pLuaState)
     return 0;
 }
 
+// evt.SetTexture(reference, name): a positive reference is a cog number and swaps every face of that cog, as MM7's and
+// MM8's SetTexture; a negative one names one face by its index (MMerge's MM6 maps: "the facet itself").
 int luaSetTexture(lua_State *pLuaState)
 {
     EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
-    const uint32_t cogNumber = eventReferenceId(luaL_checkinteger(pLuaState, 1));
+    const lua_Integer rawReference = luaL_checkinteger(pLuaState, 1);
+    const bool namesFace = rawReference < 0
+        || (rawReference > std::numeric_limits<int32_t>::max()
+            && rawReference <= static_cast<lua_Integer>(std::numeric_limits<uint32_t>::max()));
+    const uint32_t key = namesFace
+        ? EventRuntime::indoorFaceTextureOverrideKey(eventReferenceId(rawReference))
+        : eventReferenceId(rawReference);
 
     if (lua_gettop(pLuaState) >= 2 && lua_type(pLuaState, 2) == LUA_TSTRING)
     {
-        pRuntimeState->textureOverrides[cogNumber] = sanitizeEventString(lua_tostring(pLuaState, 2));
+        pRuntimeState->textureOverrides[key] = sanitizeEventString(lua_tostring(pLuaState, 2));
     }
     else
     {
-        pRuntimeState->textureOverrides.erase(cogNumber);
+        pRuntimeState->textureOverrides.erase(key);
     }
 
     markOutdoorSurfaceStateChanged(*pRuntimeState);
@@ -8428,6 +8680,8 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "PartyMemberKnowsSpell", luaPartyMemberKnowsSpell);
     registerLuaFunction(pLuaState, "RemovePartyMemberItem", luaRemovePartyMemberItem);
     registerLuaFunction(pLuaState, "ApplyLichTransformation", luaApplyLichTransformation);
+    registerLuaFunction(pLuaState, "SkillResetCost", luaSkillResetCost);
+    registerLuaFunction(pLuaState, "ResetSkills", luaResetSkills);
     registerLuaFunction(pLuaState, "PartyMemberHasEquippedItem", luaPartyMemberHasEquippedItem);
     registerLuaFunction(pLuaState, "GetHookContext", luaGetHookContext);
     registerLuaFunction(pLuaState, "SetHookBlocked", luaSetHookBlocked);
@@ -8475,6 +8729,7 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "Subtract", luaSubtract);
     registerLuaFunction(pLuaState, "Set", luaSet);
     registerLuaFunction(pLuaState, "SummonMonsters", luaSummonMonsters);
+    registerLuaFunction(pLuaState, "SummonMonstersById", luaSummonMonstersById);
     registerLuaFunction(pLuaState, "CastSpell", luaCastSpell);
     registerLuaFunction(pLuaState, "SpeakNPC", luaSpeakNpc);
     registerLuaFunction(pLuaState, "OpenMm9Rude", luaOpenMm9Rude);
@@ -8483,6 +8738,11 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "SetMonsterBit", luaSetMonsterBit);
     registerLuaFunction(pLuaState, "Question", luaQuestion);
     registerLuaFunction(pLuaState, "StatusText", luaStatusText);
+    registerLuaFunction(pLuaState, "SetUnscaledExperience", luaSetUnscaledExperience);
+    registerLuaFunction(pLuaState, "RulesetInfo", luaRulesetInfo);
+    registerLuaFunction(pLuaState, "CountItems", luaCountItems);
+    registerLuaFunction(pLuaState, "ArenaMonster", luaArenaMonster);
+    registerLuaFunction(pLuaState, "RulesTopic", luaRulesTopic);
     registerLuaFunction(pLuaState, "SetMessage", luaSetMessage);
     registerLuaFunction(pLuaState, "SetLight", luaSetLight);
     registerLuaFunction(pLuaState, "SimpleMessage", luaSimpleMessage);
@@ -9018,6 +9278,11 @@ const NpcDialogTable *EventRuntime::npcDialogTable() const
 uint32_t EventRuntime::outdoorModelFacetTextureOverrideKey(uint32_t modelIndex, uint32_t faceIndex)
 {
     return (modelIndex << 16) | (faceIndex & 0xFFFFu);
+}
+
+uint32_t EventRuntime::indoorFaceTextureOverrideKey(uint32_t faceIndex)
+{
+    return 0x80000000u | faceIndex;
 }
 
 uint32_t EventRuntime::monsterRelationOverrideKey(uint32_t leftMonsterId, uint32_t rightMonsterId)

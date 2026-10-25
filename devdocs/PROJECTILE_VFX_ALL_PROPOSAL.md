@@ -10,7 +10,8 @@ review in game. Since 2026-10-16 there is no classic style and no projectile or 
 projectiles are 3D models (`engine/models/projectiles.yml`, `level_generation/props/projectiles_claude/`), Sparks'
 effect draws its whole crackling ball, a projectile falling into water plays `water_splash`, and the regression case
 `projectile_visuals_draw_no_native_sprites` (suite `projectiles`) keeps it so; references to the classic style below
-are history.
+are history. Since 2026-10-23 a world can add its own missiles, bound to effects by object name
+(section 12, Hesper's palette).
 
 Fire has its own, more detailed proposal: [PROJECTILE_VFX_FIRE_PROPOSAL.md](plans/PROJECTILE_VFX_FIRE_PROPOSAL.md). The
 background (layered projectiles, ribbons, the first test) is in
@@ -331,3 +332,43 @@ per kind, and spells by id.
 
 Dispel Magic on creatures now has an aura (it had no visual; the classic style still shows none). A debuff bolt's
 impact stands in for its aura (Shrinking Ray). The portrait animations (`spell_fx.txt`) are unchanged.
+
+## 12. World missiles and object bindings (2026-10-23)
+
+A world can give its monsters missiles of its own, with their own objects, shield tiers and effects, without touching
+MM's tokens, objects or bindings. Hesper is the first (design: `design/kreegan_world/PROJECTILES.md`; staged by
+`level_generation/projects/hesper_stage/stage.py` from its `projectiles.yml`). A world without these files loads,
+plays and renders exactly as before.
+
+- **Missile tokens:** `worlds/<world>/monster_projectiles.yml` (schema `openyamm.monsterProjectiles.v1`), read by
+  `GameDataLoader::loadMonsterProjectileTable` after `monster_projectiles.txt`
+  (`MonsterProjectileTable::loadWorldYaml`):
+
+  ```yaml
+  schema: openyamm.monsterProjectiles.v1
+  missiles:
+    HesBolt: {object: 21000, impact_object: 556, tier: classic_blaster}   # tier optional
+  ```
+
+  A token must be new (MM's `Ener`, `Fire`... cannot be redefined), its object must lie in the world's
+  `idRanges.objects`, `tier` is a shield tier (`physical`, `classic_blaster`, `kreegan_energy`, `spell`). A monster row
+  naming a world token is ranged like one naming an engine token (`MonsterTable::acceptWorldMissileTokens`: the
+  engine's token list in `isSupportedMonsterMissileToken` stays MM's).
+- **Objects:** the world's `object_descriptors` table contribution (as MM9's), e.g. a copy of the laser object 555
+  with its own name and speed.
+- **Shield tier:** a token's `tier` rides on the projectile (`ResolvedProjectileDefinition::shieldTier`, indoor and
+  outdoor, into `ProjectileState::shieldTier`); without one the tier follows the attack's damage type as before
+  (`GameplayProjectileService::projectileShieldTier`). Not saved, like the party's tiers.
+- **Effects by object:** `engine/effects/projectiles.yml` takes a top-level `objects` map, object name (object_list
+  `Name`) to a binding with `flight`, `impact` (both required), `sprite`, `light`, `impact_follows_target` and
+  `impact_light {rgb, radius}`. An object binding wins over the recipe and its monster variants, whatever the
+  recipe (`ProjectileEffectBindings::find(recipe, picture, objectName)`; every `WorldFxSystem` lookup of a flying
+  projectile, an impact or an actor's charge colour passes the object's name). `impact_light` replaces the recipe's
+  impact light colour and radius; the recipe's duration stays. MM's file has no `objects`, so every MM lookup is as
+  before. The Hesper stage appends its `objects` to its copy of the file and adds its effect library to its copy of
+  `engine/effects/library.yml` (`imports`); a packaged world would want a world-level binding file (not done).
+- **Not done:** the party's guns still fire the blaster object 555 (a per-item missile is designed in
+  PROJECTILES.md); a missile's own fire and impact sounds (named in PROJECTILES.md; a shot plays its monster's
+  attack sound).
+- **Checks:** `./build/tests/openyamm_unit_tests --test-case='*world missile*,*MM*s monster missiles*,*by object
+  name*,*staged Hesper missiles*'` (`tests/WorldMissileTests.cpp`; the last runs only against a built Hesper stage).

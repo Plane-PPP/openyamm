@@ -1,0 +1,251 @@
+# MAW test parties for the debug console (game/debug/MawTestParties.h), so MAW's authors can reach any part of a
+# MAW game without grinding. Enable the console (Settings, or `console = true` in the ini) and type:
+#
+#   testparty                                  list the stages, parties and kits
+#   testparty <stage> [party] [+kit ...] [options]
+#                                              a new MAW game with the party at the stage; options are ruleset
+#                                              option ids: a difficulty (easy normal maw hard hell nightmare), a
+#                                              progression (free horizontal), a challenge mode (doom insanity
+#                                              madness austerity), friendlyfire
+#   testparty apply <stage> [party] [+kit ...] the same party in the MAW game being played (keeps the world)
+#   testparty kit <kit ...>                    a kit's items into the current party's bags
+#
+# Examples: `testparty mid newclasses hell`, `testparty endgame classic +legendary nightmare horizontal`,
+# `testparty late specials doom`, `testparty kit crafting`.
+#
+# A stage sets every member's level and experience, all seven stats, every skill the class can learn at
+# skill_level (within MAW's level caps, at the highest mastery the class and the level allow), every spell of the
+# schools it has (classes that learn from books), and MAW gear of one rarity rolled at gear.level in every slot the
+# member can wear (the top-rung base item of its best weapon and armour skill, a shield beside a one-handed weapon,
+# a bow with Bow, helm, belt, cloak, gauntlets, boots, amulet and six rings). It then sets MAW's level banks (MM8,
+# MM7, MM6, other; they size the monsters and the item levels), gold and food, quest bits and completed maps, and
+# puts its kits and the kits named with + into the bags, spread over the members. `promoted: true` plays each
+# member's promoted class. Members get full HP and SP.
+#
+# Kits: `items: id` or `items: [first, last]` (count of each, potion power, level for reagents); `legendary_affixes:
+# [first, last]` (one Legendary amulet, ring, belt or cloak per affix at the level); `dimension_maps: n` (n maps of
+# the power, from the completed dungeons); `artifacts: true` (every MAW artifact).
+
+# Town Portal and Lloyd's Beacon destinations of the three continents.
+town_portal_bits: &town_portal [301, 302, 303, 304, 305, 306, 310, 311, 312, 313, 314, 315, 718, 719, 720, 721, 722, 723]
+
+stages:
+  - id: start
+    title: "Start (level 1, the first map)"
+    level: 1
+    skill_level: 1
+    stats: 15
+    gear: {level: 1, rarity: common}
+    banks: [0, 0, 0, 0]
+    gold: 1000
+    food: 20
+    kits: [healing]
+    map: out01.odm
+    party: classic
+
+  - id: early
+    title: "Early (level 20, Expert, rare gear)"
+    level: 20
+    skill_level: 10
+    stats: 25
+    gear: {level: 20, rarity: rare}
+    banks: [19, 0, 0, 0]
+    gold: 20000
+    food: 40
+    kits: [healing, potions]
+    quest_bits: *town_portal
+    map: out03.odm
+    party: classic
+
+  - id: mid
+    title: "Mid (level 50, promoted, Master, epic gear)"
+    level: 50
+    skill_level: 20
+    stats: 50
+    promoted: true
+    gear: {level: 50, rarity: epic}
+    banks: [25, 15, 9, 0]
+    gold: 200000
+    food: 60
+    kits: [healing, potions, reagents, gems]
+    quest_bits: *town_portal
+    map: out05.odm
+    party: classic
+
+  - id: late
+    title: "Late (level 100, Grandmaster, ancient gear)"
+    level: 100
+    skill_level: 35
+    stats: 90
+    promoted: true
+    gear: {level: 100, rarity: ancient}
+    banks: [40, 35, 24, 0]
+    gold: 1000000
+    food: 80
+    kits: [healing, potions, reagents, gems, crafting]
+    quest_bits: *town_portal
+    map: pbp.odm
+    party: classic
+
+  - id: endgame
+    title: "Endgame (level 200, legendary gear, every map completed, dimension maps)"
+    level: 200
+    skill_level: 50
+    stats: 150
+    promoted: true
+    gear: {level: 200, rarity: legendary}
+    banks: [80, 70, 49, 0]
+    gold: 10000000
+    food: 100
+    kits: [healing, strong_potions, reagents, gems, crafting, dimension]
+    quest_bits: *town_portal
+    complete_all_maps: true
+    dimension_quest_done: true
+    map: pbp.odm
+    party: classic
+
+  - id: extreme
+    title: "Extreme (level 500, celestial gear: Doom and Beyond Madness numbers)"
+    level: 500
+    skill_level: 60
+    stats: 300
+    promoted: true
+    gear: {level: 500, rarity: celestial}
+    banks: [200, 180, 119, 0]
+    gold: 100000000
+    food: 200
+    kits: [healing, strong_potions, gems, crafting, dimension]
+    quest_bits: *town_portal
+    complete_all_maps: true
+    dimension_quest_done: true
+    map: pbp.odm
+    party: classic
+
+  - id: op
+    title: "Overpowered (level 1000, celestial gear, every kit: for quick playthroughs)"
+    level: 1000
+    skill_level: 100
+    stats: 500
+    promoted: true
+    gear: {level: 1000, rarity: celestial}
+    banks: [400, 400, 199, 0]
+    gold: 1000000000
+    food: 250
+    kits: [healing, strong_potions, crafting, legendary, artifacts]
+    quest_bits: *town_portal
+    complete_all_maps: true
+    dimension_quest_done: true
+    party: classic
+
+parties:
+  - id: classic
+    title: "Classic MMMerge party"
+    members:
+      - {name: Aldric, class: Knight, promoted: Champion}
+      - {name: Elowen, class: Paladin, promoted: Hero}
+      - {name: Brannoc, class: Archer, promoted: MasterArcher}
+      - {name: Sefa, class: Cleric, promoted: PriestLight}
+      - {name: Ravel, class: Sorcerer, promoted: ArchMage}
+
+  - id: newclasses
+    title: "MAW's new and reworked classes"
+    members:
+      - {name: Seraph, class: Seraphim, promoted: Archangel}
+      - {name: Mordred, class: DeathKnight, promoted: LichKing}
+      - {name: Oruna, class: Shaman, promoted: Marabou}
+      - {name: Ixa, class: Elementalist, promoted: MasterOfElements}
+      - {name: Shade, class: Thief, promoted: Assassin}
+
+  - id: specials
+    title: "Dragon, vampire, minotaur, troll and dark elf"
+    members:
+      - {name: Kaltharax, class: Dragon, promoted: GreatWyrm}
+      - {name: Vesna, class: Vampire, promoted: Nosferatu}
+      - {name: Grund, class: Minotaur, promoted: MinotaurLord}
+      - {name: Ogg, class: Troll, promoted: WarTroll}
+      - {name: Ilyth, class: DarkElf, promoted: Patriarch}
+
+  - id: hybrids
+    title: "Monk, ranger, druid, lich and dark priest"
+    members:
+      - {name: Tenzo, class: Monk, promoted: Master}
+      - {name: Hawke, class: Ranger, promoted: RangerLord}
+      - {name: Mirelle, class: Druid, promoted: ArchDruid}
+      - {name: Vorn, class: Sorcerer, promoted: Lich}
+      - {name: Nyx, class: Cleric, promoted: PriestDark}
+
+  - id: casters
+    title: "Five casters, for buff auras and their reserved mana"
+    members:
+      - {name: Ravel, class: Sorcerer, promoted: ArchMage}
+      - {name: Sefa, class: Cleric, promoted: PriestLight}
+      - {name: Mirelle, class: Druid, promoted: ArchDruid}
+      - {name: Oruna, class: Shaman, promoted: Marabou}
+      - {name: Ixa, class: Elementalist, promoted: MasterOfElements}
+
+  - id: solo
+    title: "A party of one (MAW's solo rules)"
+    members:
+      - {name: Lone, class: Knight, promoted: Champion}
+
+  - id: solo_caster
+    title: "A party of one caster"
+    members:
+      - {name: Lone, class: Sorcerer, promoted: ArchMage}
+
+kits:
+  - id: healing
+    title: "Cure Wounds and Magic Potions"
+    items:
+      - {items: 222, count: 6, power: 20}
+      - {items: 223, count: 6, power: 20}
+
+  - id: potions
+    title: "One of each MAW potion at power 50"
+    items:
+      - {items: [222, 263], power: 50}
+
+  - id: strong_potions
+    title: "One of each MAW potion at power 500 (the cap)"
+    items:
+      - {items: [222, 263], power: 500}
+
+  - id: reagents
+    title: "Three of each reagent at the stage's level, bottles and catalysts"
+    items:
+      - {items: [200, 219], count: 3}
+      - {items: 220, count: 10}
+      - {items: 221, count: 5}
+
+  - id: gems
+    title: "Two of each crafting gem, plain and ascended"
+    items:
+      - {items: [1041, 1060], count: 2}
+
+  - id: crafting
+    title: "Every crafting item: gems, Eye of Void, Hourglass, Cube, Mirror, Emerald, Pearl, Orbs, Endless Potion"
+    items:
+      - {items: [1041, 1060], count: 2}
+      - {items: [1061, 1070], count: 2}
+
+  - id: legendary
+    title: "One Legendary item per legendary affix (11-35) at the stage's level"
+    items:
+      - {legendary_affixes: [11, 35]}
+
+  - id: dimension
+    title: "Dimension maps at power 1, 10 and 30 (needs completed maps)"
+    items:
+      - {dimension_maps: 2, power: 1}
+      - {dimension_maps: 2, power: 10}
+      - {dimension_maps: 2, power: 30}
+
+  - id: artifacts
+    title: "Every MAW artifact"
+    items:
+      - {artifacts: true}
+
+  - id: scrolls
+    title: "Spell scrolls, for the potion radial"
+    items:
+      - {items: [300, 330], count: 2}

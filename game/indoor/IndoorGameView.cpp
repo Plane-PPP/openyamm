@@ -1277,6 +1277,23 @@ void IndoorGameView::updateCombatFeedback(float deltaSeconds)
                         .fontScale = combatDamageFontScale(event.damage),
                     });
             }
+            else if (event.shieldDamage > 0 && m_settings.combatText)
+            {
+                // A hit a raised energy shield took whole: its number in shield blue, apart from body damage.
+                m_combatFloatingTexts.push_back(
+                    CombatFloatingText{
+                        .actorIndex = event.actorIndex,
+                        .amount = event.shieldDamage,
+                        .text = std::to_string(event.shieldDamage),
+                        .x = event.x,
+                        .y = event.y,
+                        .z = GameplayUiSkin::combatDamageTextOriginZ(event.z, event.height),
+                        .remainingSeconds = 0.6f,
+                        .durationSeconds = 0.6f,
+                        .colorAbgr = makeCombatHudColor(150, 220, 255, 255),
+                        .fontScale = combatDamageFontScale(event.shieldDamage),
+                    });
+            }
         }
     }
 }
@@ -2123,6 +2140,7 @@ void IndoorGameView::updateActorInspectOverlayState(int width, int height, const
 
     actorInspectOverlay.active = true;
     actorInspectOverlay.runtimeActorIndex = pick->runtimeActorIndex;
+    actorInspectOverlay.rawNumbers = input.altHeld();
     actorInspectOverlay.sourceX = pick->sourceX;
     actorInspectOverlay.sourceY = pick->sourceY;
     actorInspectOverlay.sourceWidth = pick->sourceWidth;
@@ -2193,7 +2211,15 @@ void IndoorGameView::updateActorInspectOverlayState(int width, int height, const
 
         if (pParty != nullptr && pMember != nullptr && pStats != nullptr)
         {
-            const SpeechId speechId = GameMechanics::resolveIdentifyMonsterSpeech(*pMember, pStats->level);
+            GameplayRuntimeActorState actorState = {};
+            const int monsterLevel = pWorldRuntime->actorRuntimeState(pick->runtimeActorIndex, actorState)
+                    && actorState.rulesetFacts.level > 0
+                ? actorState.rulesetFacts.level
+                : pStats->level;
+            const SpeechId speechId = GameMechanics::resolveIdentifyMonsterSpeech(
+                pParty->rules().skills.identifyMonsterReveal(*pParty, monsterLevel),
+                *pMember,
+                monsterLevel);
 
             if (speechId != SpeechId::None)
             {

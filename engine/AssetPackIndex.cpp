@@ -35,6 +35,7 @@ bool isSimpleName(const std::string &name)
 }
 
 // The mount of a pack lies inside its package: "/engine" or "/worlds/<package>", optionally followed by folders.
+// Releases up to 1.10 accept nothing else, so new content goes below one of these (the rulesets: /engine/rulesets).
 bool isPackageMount(const std::string &mount, const std::string &package)
 {
     const std::string root = package == "engine" ? "/engine" : "/worlds/" + package;

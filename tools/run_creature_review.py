@@ -28,11 +28,13 @@ def command(project, mode, port, shots, tier=None):
         raise ValueError('Viewer must remain inside the project')
     manifest = json.loads((viewer / 'manifest.json').read_text())
     url = f'http://127.0.0.1:{port}/{quote(viewer.relative_to(REPO).as_posix())}/'
+    clips = {name: clip['duration'] for name, clip in manifest['clips'].items()}
     if tier:
         model = next((model for model in manifest['models'] if model['id'] == tier), None)
         if model is None:
             raise ValueError(f'Unknown model tier: {tier}')
         url += '#' + quote(json.dumps({'clip': manifest['default_clip'], 'model_sha256': model['sha256']}))
+        clips = {name: clip['duration'] for name, clip in model.get('clips', manifest['clips']).items()}
     output = (project / 'review' / mode).resolve()
     if not output.is_relative_to(project):
         raise ValueError('Capture output must remain inside the project')
@@ -47,8 +49,8 @@ def command(project, mode, port, shots, tier=None):
         if len(parts) != 5:
             raise ValueError('Each shot is name:clip:seconds:view:focus')
         name, clip, seconds, view, focus = parts
-        if (not re.fullmatch(r'[A-Za-z0-9_-]+', name) or clip not in manifest['clips']
-                or not 0 <= float(seconds) <= manifest['clips'][clip]['duration']
+        if (not re.fullmatch(r'[A-Za-z0-9_-]+', name) or clip not in clips
+                or not 0 <= float(seconds) <= clips[clip]
                 or view not in ('front', 'right', 'left', 'back', 'quarter', 'rear')
                 or focus not in ('body', 'head', 'arms', 'shoulders', 'skirt', 'feet')):
             raise ValueError(f'Invalid shot: {shot}')

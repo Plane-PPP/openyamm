@@ -244,6 +244,27 @@ elements:
       scale: 0.43333
       pad_x: 8.5333
     notes: Switch section without losing draft values. Selected state follows current section.
+  - id: SettingsInterfaceTabGame
+    anchor: top_left
+    offset_x: 91.7333
+    offset_y: 361.3837
+    width: 97.6
+    height: 34.1333
+    z_index: 10
+    visible: true
+    interactive: true
+    asset:
+      default: hud_x2/menus/omenu_tab.png
+      selected: hud_x2/menus/omenu_tab_selected.png
+    text:
+      value: Rules
+      font: fondamento
+      color: '#bfc1b2'
+      align_x: left
+      align_y: middle
+      scale: 0.43333
+      pad_x: 8.5333
+    notes: Switch section without losing draft values. Selected state follows current section.
   - id: SettingsInterfaceTabUpdates
     anchor: top_left
     offset_x: 91.7333
@@ -420,7 +441,7 @@ elements:
     - id: SettingsInterfaceGroup1
       anchor: top_left
       offset_x: 0.0
-      offset_y: 107.7173
+      offset_y: 146.6426
       width: 525.3333
       height: 18.1333
       z_index: 10
@@ -437,7 +458,7 @@ elements:
     - id: SettingsInterfaceGroup2
       anchor: top_left
       offset_x: 0.0
-      offset_y: 254.3599
+      offset_y: 293.2852
       width: 525.3333
       height: 18.1333
       z_index: 10
@@ -454,7 +475,7 @@ elements:
     - id: SettingsInterfaceGroup3
       anchor: top_left
       offset_x: 0.0
-      offset_y: 362.0772
+      offset_y: 401.0025
       width: 525.3333
       height: 18.1333
       z_index: 10
@@ -462,6 +483,23 @@ elements:
       interactive: false
       text:
         value: Party
+        font: fondamento
+        color: '#e0c990'
+        align_x: left
+        align_y: middle
+        scale: 0.4
+        pad_x: 0.0
+    - id: SettingsInterfaceGroup4
+      anchor: top_left
+      offset_x: 0.0
+      offset_y: 512.9865
+      width: 525.3333
+      height: 18.1333
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Items
         font: fondamento
         color: '#e0c990'
         align_x: left
@@ -514,10 +552,56 @@ elements:
       asset:
         default: hud_x2/menus/omenu_toggle_off.png
         selected: hud_x2/menus/omenu_toggle_on.png
-    - id: SettingsInterfaceShowHitsLabel
+    - id: SettingsInterfaceCombatLogLabel
       anchor: top_left
       offset_x: 1.6
       offset_y: 64.5253
+      width: 435.7333
+      height: 14.0752
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Combat log
+        font: menu_arrus
+        color: '#eadfc6'
+        align_x: left
+        align_y: middle
+        scale: 0.74105
+        pad_x: 0.0
+    - id: SettingsInterfaceCombatLogDescription
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 80.7338
+      width: 435.7333
+      height: 11.5168
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: A button beside the followers' head opens a log of recent hits, each with its damage steps.
+        font: menu_lucida
+        color: '#aeb5a5'
+        align_x: left
+        align_y: middle
+        scale: 0.60235
+        pad_x: 0.0
+    - id: SettingsInterfaceCombatLogControl
+      anchor: top_left
+      offset_x: 453.3333
+      offset_y: 62.309
+      width: 70.4
+      height: 32.158
+      z_index: 10
+      visible: true
+      interactive: true
+      asset:
+        default: hud_x2/menus/omenu_toggle_off.png
+        selected: hud_x2/menus/omenu_toggle_on.png
+    - id: SettingsInterfaceShowHitsLabel
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 103.4506
       width: 435.7333
       height: 14.0752
       z_index: 10
@@ -534,7 +618,7 @@ elements:
     - id: SettingsInterfaceShowHitsDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 80.7338
+      offset_y: 119.6591
       width: 435.7333
       height: 11.5168
       z_index: 10
@@ -551,7 +635,7 @@ elements:
     - id: SettingsInterfaceShowHitsControl
       anchor: top_left
       offset_x: 453.3333
-      offset_y: 62.309
+      offset_y: 101.2343
       width: 70.4
       height: 32.158
       z_index: 10
@@ -563,7 +647,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarsLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 133.3173
+      offset_y: 172.2426
       width: 395.2
       height: 14.0752
       z_index: 10
@@ -580,7 +664,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarsDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 149.5258
+      offset_y: 188.4511
       width: 395.2
       height: 11.5168
       z_index: 10
@@ -597,7 +681,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarsControl
       anchor: top_left
       offset_x: 412.8
-      offset_y: 135.4466
+      offset_y: 174.3719
       width: 110.9333
       height: 23.4667
       z_index: 10
@@ -616,7 +700,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarValuesLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 172.2426
+      offset_y: 211.1679
       width: 395.2
       height: 14.0752
       z_index: 10
@@ -633,7 +717,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarValuesDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 188.4511
+      offset_y: 227.3764
       width: 395.2
       height: 11.5168
       z_index: 10
@@ -650,7 +734,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarValuesControl
       anchor: top_left
       offset_x: 412.8
-      offset_y: 174.3719
+      offset_y: 213.2972
       width: 110.9333
       height: 23.4667
       z_index: 10
@@ -669,7 +753,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarDamageTrailLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 211.1679
+      offset_y: 250.0932
       width: 435.7333
       height: 14.0752
       z_index: 10
@@ -686,7 +770,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarDamageTrailDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 227.3764
+      offset_y: 266.3017
       width: 435.7333
       height: 11.5168
       z_index: 10
@@ -703,7 +787,7 @@ elements:
     - id: SettingsInterfaceEnemyHealthBarDamageTrailControl
       anchor: top_left
       offset_x: 453.3333
-      offset_y: 208.9515
+      offset_y: 247.8768
       width: 70.4
       height: 32.158
       z_index: 10
@@ -715,7 +799,7 @@ elements:
     - id: SettingsInterfaceQuestMarkersLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 279.9599
+      offset_y: 318.8852
       width: 435.7333
       height: 14.0752
       z_index: 10
@@ -732,7 +816,7 @@ elements:
     - id: SettingsInterfaceQuestMarkersDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 296.1684
+      offset_y: 335.0937
       width: 435.7333
       height: 11.5168
       z_index: 10
@@ -749,7 +833,7 @@ elements:
     - id: SettingsInterfaceQuestMarkersControl
       anchor: top_left
       offset_x: 453.3333
-      offset_y: 277.7435
+      offset_y: 316.6689
       width: 70.4
       height: 32.158
       z_index: 10
@@ -761,7 +845,7 @@ elements:
     - id: SettingsInterfaceContextActionPopupLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 318.8852
+      offset_y: 357.8105
       width: 435.7333
       height: 14.0752
       z_index: 10
@@ -778,7 +862,7 @@ elements:
     - id: SettingsInterfaceContextActionPopupDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 335.0937
+      offset_y: 374.019
       width: 435.7333
       height: 11.5168
       z_index: 10
@@ -795,7 +879,7 @@ elements:
     - id: SettingsInterfaceContextActionPopupControl
       anchor: top_left
       offset_x: 453.3333
-      offset_y: 316.6688
+      offset_y: 355.5942
       width: 70.4
       height: 32.158
       z_index: 10
@@ -807,7 +891,7 @@ elements:
     - id: SettingsInterfacePartyFrameLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 387.6772
+      offset_y: 426.6025
       width: 435.7333
       height: 14.0752
       z_index: 10
@@ -824,7 +908,7 @@ elements:
     - id: SettingsInterfacePartyFrameDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 403.8857
+      offset_y: 442.811
       width: 435.7333
       height: 11.5168
       z_index: 10
@@ -841,7 +925,7 @@ elements:
     - id: SettingsInterfacePartyFrameControl
       anchor: top_left
       offset_x: 453.3333
-      offset_y: 385.4608
+      offset_y: 424.3862
       width: 70.4
       height: 32.158
       z_index: 10
@@ -850,6 +934,105 @@ elements:
       asset:
         default: hud_x2/menus/omenu_toggle_off.png
         selected: hud_x2/menus/omenu_toggle_on.png
+    - id: SettingsInterfacePotionButtonsLabel
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 469.7945
+      width: 435.7333
+      height: 14.0752
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Potion buttons
+        font: menu_arrus
+        color: '#eadfc6'
+        align_x: left
+        align_y: middle
+        scale: 0.74105
+        pad_x: 0.0
+    - id: SettingsInterfacePotionButtonsDescription
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 486.003
+      width: 435.7333
+      height: 11.5168
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Show the round potion quick-slot button at each portrait. The Potion Wheel key opens the ring either way.
+        font: menu_lucida
+        color: '#aeb5a5'
+        align_x: left
+        align_y: middle
+        scale: 0.60235
+        pad_x: 0.0
+    - id: SettingsInterfacePotionButtonsControl
+      anchor: top_left
+      offset_x: 453.3333
+      offset_y: 467.5782
+      width: 70.4
+      height: 32.158
+      z_index: 10
+      visible: true
+      interactive: true
+      asset:
+        default: hud_x2/menus/omenu_toggle_off.png
+        selected: hud_x2/menus/omenu_toggle_on.png
+    - id: SettingsInterfaceRarityGlowLabel
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 538.5865
+      width: 395.2
+      height: 14.0752
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Item rarity glow
+        font: menu_arrus
+        color: '#eadfc6'
+        align_x: left
+        align_y: middle
+        scale: 0.74105
+        pad_x: 0.0
+    - id: SettingsInterfaceRarityGlowDescription
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 554.795
+      width: 395.2
+      height: 11.5168
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Outline items in their rarity colour (rulesets with rarities, such as MAW).
+        font: menu_lucida
+        color: '#aeb5a5'
+        align_x: left
+        align_y: middle
+        scale: 0.60235
+        pad_x: 0.0
+    - id: SettingsInterfaceRarityGlowControl
+      anchor: top_left
+      offset_x: 412.8
+      offset_y: 540.7158
+      width: 110.9333
+      height: 23.4667
+      z_index: 10
+      visible: true
+      interactive: true
+      asset:
+        default: hud_x2/menus/omenu_text_field.png
+      text:
+        value: '{rarity_glow}'
+        font: menu_lucida
+        color: '#e9dcc0'
+        align_x: left
+        align_y: middle
+        scale: 0.71529
+        pad_x: 6.9333
   - id: SettingsInterfaceNavigationRule
     anchor: top_left
     offset_x: 201.6

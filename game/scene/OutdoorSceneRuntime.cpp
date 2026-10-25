@@ -1,4 +1,5 @@
 #include "game/scene/OutdoorSceneRuntime.h"
+#include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/FaceEnums.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/TravelRuntime.h"
@@ -594,6 +595,8 @@ bool OutdoorSceneRuntime::executeEventById(
     const std::optional<ScriptedEventProgram> emptyLocalProgram;
     const std::optional<ScriptedEventProgram> &effectiveLocalEventProgram =
         activeDecorationContext.has_value() && allowGlobalFallback ? emptyLocalProgram : localEventProgram;
+    const std::vector<int> statsBefore =
+        activeDecorationContext ? partyBaseStatSnapshot(m_pPartyRuntime->party()) : std::vector<int>{};
 
     const bool executed = m_eventRuntime.executeEventById(
         effectiveLocalEventProgram,
@@ -606,6 +609,12 @@ bool OutdoorSceneRuntime::executeEventById(
         allowGlobalFallback
     );
     pEventRuntimeState->activeDecorationContext.reset();
+
+    if (executed && activeDecorationContext)
+    {
+        reportDecorationStatGain(
+            m_pPartyRuntime->party(), *pEventRuntimeState, activeDecorationContext->decorVarIndex, statsBefore);
+    }
 
     if (!executed)
     {
