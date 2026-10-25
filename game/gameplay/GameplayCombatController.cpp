@@ -1837,8 +1837,19 @@ void GameplayCombatController::handlePendingCombatEvents(
                         if (pCoverer != nullptr && pCovered != nullptr)
                         {
                             showHitStatus(context.pRuntime, cover->halved
-                                ? pCoverer->name + " covers"
+                                ? pCoverer->name + " covers the blow"
                                 : pCoverer->name + " covers " + pCovered->name);
+                        }
+
+                        // As MAW shows it (zzMaw-Monsters.lua:3970-3971): the Shield spell's portrait flash on the
+                        // member the blow was meant for (SetPlayerBuffAnim, Shield) and the skill-increase face on
+                        // the coverer (ShowFaceAnimation(14)).
+                        if (context.pRuntime != nullptr)
+                        {
+                            context.pRuntime->triggerPortraitEventFxWithoutSpeech(
+                                *targetMemberIndex, PortraitFxEventKind::Cover);
+                            triggerPortraitFaceAnimation(
+                                context.pRuntime, cover->memberIndex, FaceAnimationId::SkillIncreased);
                         }
 
                         targetMemberIndex = cover->memberIndex;

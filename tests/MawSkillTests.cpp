@@ -7,6 +7,7 @@
 #include "game/rules/maw/MawSkillFormulas.h"
 #include "tests/RegressionGameData.h"
 #include "game/rules/maw/MawTexts.h"
+#include "game/tables/PortraitFxEventTable.h"
 
 #include <cstdio>
 #include <random>
@@ -559,4 +560,33 @@ TEST_CASE("MAW teachers say MAW's requirement and price")
         "fee of 8000.");
     // Only the horizontal skills' speeches are rewritten (S:1886-1889).
     CHECK_EQ(skills.teacherSpeech("fee of 8000.", "Merchant", SkillMastery::Grandmaster, 20, 20000), "fee of 8000.");
+}
+
+TEST_CASE("a cover flashes the Shield spell on the protected member's portrait, as MAW shows it")
+{
+    // MAW plays the Shield buff animation (SetPlayerBuffAnim, icon spell17) on the member the blow was meant for and
+    // face animation 14 on the coverer (zzMaw-Monsters.lua:3970-3971).
+    std::ifstream file(std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/engine/data_tables/portrait_fx_events.txt");
+    REQUIRE(file.good());
+    std::vector<std::vector<std::string>> rows;
+
+    for (std::string line; std::getline(file, line);)
+    {
+        std::vector<std::string> row;
+        std::stringstream fields(line);
+
+        for (std::string field; std::getline(fields, field, '\t');)
+        {
+            row.push_back(field);
+        }
+
+        rows.push_back(row);
+    }
+
+    PortraitFxEventTable table;
+    REQUIRE(table.loadFromRows(rows));
+    const PortraitFxEventEntry *pCover = table.findByKind(PortraitFxEventKind::Cover);
+    REQUIRE(pCover != nullptr);
+    CHECK_EQ(pCover->animationName, "spell17");
+    CHECK_FALSE(pCover->faceAnimationId.has_value());
 }
