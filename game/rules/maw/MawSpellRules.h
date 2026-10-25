@@ -50,6 +50,11 @@ public:
     SpellTooltipText spellTooltip(const Party &party, const Character &caster, const SpellEntry &spell) const override;
     // An Assassin's damage spells need combo points as well as energy (MCC:239-292).
     std::optional<std::string> castRefusal(const Party &party, size_t casterIndex, uint32_t spellId) const override;
+    // MAW marks class spells known by its own mastery steps and the original engine casts any known spell: the
+    // Assassin's and Death Knight's at their class step (Shield unskilled, Stone Skin and Water Walk at Novice;
+    // MCC:595-625), an Elementalist's known element spells without a mastery (its four starters even without the school;
+    // MCC:495-506).
+    std::optional<SkillMastery> classSpellMastery(const Character &caster, uint32_t spellId) const override;
     // A spellbook cast of an offensive spell starts an Elementalist's stacks over (MCC:541-553).
     void afterCast(
         Party &party,

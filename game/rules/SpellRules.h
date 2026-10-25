@@ -75,6 +75,9 @@ public:
     virtual int manaCost(const CharacterSpellCast &cast, int tableCost) const;
     // Why the member cannot cast the spell now beyond mana (MAW: an Assassin's combo points), or nothing.
     virtual std::optional<std::string> castRefusal(const Party &party, size_t casterIndex, uint32_t spellId) const;
+    // The school mastery a class spell of the caster needs, in place of the spell table's; None: castable without the
+    // school skill. Nothing for any other spell (Standard: always nothing).
+    virtual std::optional<SkillMastery> classSpellMastery(const Character &caster, uint32_t spellId) const;
     // After a cast that spent its cost: what else it uses up or changes (MAW: combo points, the Elementalist's stacks
     // and rotation). `fromSpellbook`: chosen in the spellbook, not a quick or attack spell. Standard: nothing.
     virtual void afterCast(

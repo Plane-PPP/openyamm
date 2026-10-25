@@ -19,6 +19,11 @@ std::optional<std::string> SpellRules::castRefusal(const Party &, size_t, uint32
     return std::nullopt;
 }
 
+std::optional<SkillMastery> SpellRules::classSpellMastery(const Character &, uint32_t) const
+{
+    return std::nullopt;
+}
+
 void SpellRules::afterCast(Party &, size_t, uint32_t, const SpellTable &, bool, bool) const
 {
 }

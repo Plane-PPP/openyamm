@@ -436,6 +436,22 @@ std::optional<bool> MawSpellRules::toggleSpellRotation(Character &member) const
     return !disabled;
 }
 
+std::optional<SkillMastery> MawSpellRules::classSpellMastery(const Character &caster, uint32_t spellId) const
+{
+    if (const MawClassSpell *pSpell = mawClassSpell(caster.className, spellId))
+    {
+        return SkillMastery(pSpell->mastery);
+    }
+
+    if (mawClassLine(caster.className) == "elementalist" && spellId >= 1 && spellId <= 44
+        && caster.knownSpellIds.contains(spellId))
+    {
+        return SkillMastery::None;
+    }
+
+    return std::nullopt;
+}
+
 std::optional<std::string> MawSpellRules::castRefusal(const Party &party, size_t casterIndex, uint32_t spellId) const
 {
     const Character *pCaster = party.member(casterIndex);

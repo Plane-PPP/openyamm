@@ -1383,8 +1383,21 @@ PartySpellCastResult PartySpellSystem::castSpell(
 
     uint32_t skillLevel = 0;
     SkillMastery skillMastery = SkillMastery::None;
+    // A class spell the rules mark known at their own mastery step needs that step, not the table's; one needing none
+    // casts without the school skill, at skill 0 and Novice, as the original engine casts any known spell.
+    const std::optional<SkillMastery> classMastery = request.skillLevelOverride == 0
+        ? party.rules().spells.classSpellMastery(*pCaster, request.spellId)
+        : std::nullopt;
+    const bool unskilledClassSpell = classMastery == SkillMastery::None && pCaster->knowsSpell(request.spellId);
 
-    if (!resolveSpellSkill(*pCaster, request.spellId, request, skillLevel, skillMastery))
+    const bool skilled = resolveSpellSkill(*pCaster, request.spellId, request, skillLevel, skillMastery);
+
+    if (!skilled && unskilledClassSpell)
+    {
+        skillLevel = 0;
+        skillMastery = SkillMastery::Normal;
+    }
+    else if (!skilled)
     {
         return makeFailure(
             request.spellId,
@@ -1411,7 +1424,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
     result.skillLevel = skillLevel;
     result.skillMastery = skillMastery;
 
-    if (!request.bypassRequiredMastery && skillMastery < pSpellEntry->requiredMastery)
+    if (!request.bypassRequiredMastery && skillMastery < classMastery.value_or(pSpellEntry->requiredMastery))
     {
         return makeFailure(
             request.spellId,

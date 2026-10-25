@@ -1477,3 +1477,62 @@ TEST_CASE("Mass Distortion hits a monster for the ruleset's share of its hit poi
         CHECK_EQ(impact.damage, damage);
     }
 }
+
+TEST_CASE("MAW class spells cast at their class mastery step, as the original engine casts any known spell")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    Party party = OpenYAMM::Tests::makeSpellRegressionParty(gameData);
+    party.setRules(&rules.gameRules());
+    OpenYAMM::Tests::PartySpellTestWorldRuntime world;
+    world.bindParty(&party);
+    GameplayRuntimeActorState actor;
+    actor.preciseX = 1024;
+    actor.radius = 48;
+    actor.height = 160;
+    actor.currentHp = 50;
+    actor.maxHp = 50;
+    actor.hostileToParty = true;
+    actor.hasDetectedParty = true;
+    const size_t target = world.addActor(actor);
+
+    Character *pCaster = party.member(0);
+    REQUIRE(pCaster != nullptr);
+    pCaster->maxSpellPoints = 1000;
+    pCaster->spellPoints = 1000;
+    const auto cast = [&](uint32_t spellId)
+    {
+        PartySpellCastRequest request;
+        request.casterMemberIndex = 0;
+        request.spellId = spellId;
+        request.targetActorIndex = target;
+        return PartySpellSystem::castSpell(party, world, gameData.spellTable, request).status;
+    };
+
+    // A Thief knows Stone Skin and Water Walk at Novice and Shield without Air (the table wants Expert for all three).
+    pCaster->className = "Thief";
+    pCaster->skills.clear();
+    pCaster->skills["EarthMagic"] = {"EarthMagic", 3, SkillMastery::Normal};
+    pCaster->knownSpellIds = {38, 17};
+    CHECK(rules.gameRules().spells.classSpellMastery(*pCaster, 38) == SkillMastery::Normal);
+    CHECK(rules.gameRules().spells.classSpellMastery(*pCaster, 17) == SkillMastery::None);
+    CHECK(cast(38) == PartySpellCastStatus::Succeeded);
+    CHECK(cast(17) == PartySpellCastStatus::Succeeded);
+
+    // An Elementalist's rotation casts its known Deadly Swarm without Earth.
+    pCaster->className = "Elementalist";
+    pCaster->skills.clear();
+    pCaster->skills["FireMagic"] = {"FireMagic", 3, SkillMastery::Normal};
+    pCaster->knownSpellIds = {2, 15, 24, 37};
+    pCaster->recoverySecondsRemaining = 0.0f;
+    CHECK(cast(37) == PartySpellCastStatus::Succeeded);
+
+    // Standard keeps the table's masteries.
+    pCaster->className = "Thief";
+    pCaster->skills.clear();
+    pCaster->skills["EarthMagic"] = {"EarthMagic", 3, SkillMastery::Normal};
+    pCaster->knownSpellIds = {38};
+    party.setRules(&standardGameRules());
+    CHECK(cast(38) == PartySpellCastStatus::NotSkilledEnough);
+}
