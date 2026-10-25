@@ -1,5 +1,6 @@
 #include "game/ui/MenuDesignScreen.h"
 
+#include "engine/FontAsset.h"
 #include "game/audio/GameAudioSystem.h"
 #include "game/audio/SoundIds.h"
 #include "game/render/WaterMath.h"
@@ -18,16 +19,11 @@ constexpr float CanvasHeight = 480.0f;
 constexpr float BrowserToLogical = 8.0f / 15.0f;
 const std::string ArtRoot = "hud_x2/menus/omenu_";
 
+// SDL_iconv knows WINDOWS-1252 only when SDL is built on the system's iconv; its own converter lacks it, which left
+// UTF-8 bytes drawn as CP1252 glyphs ("Ã—0.50") on some builds. Imported game names may already be CP1252.
 std::string menuEncoding(const std::string &text)
 {
-    char *pEncoded = SDL_iconv_string("WINDOWS-1252", "UTF-8", text.c_str(), text.size() + 1);
-    if (pEncoded == nullptr)
-    {
-        return text; // Existing imported game names may already be CP1252.
-    }
-    const std::string result(pEncoded);
-    SDL_free(pEncoded);
-    return result;
+    return Engine::utf8ToCp1252(text);
 }
 } // namespace
 

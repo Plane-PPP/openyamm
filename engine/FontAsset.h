@@ -53,6 +53,10 @@ struct FontAtlasImage
     std::vector<uint8_t> shadowPixels;
 };
 
+// UTF-8 text in the CP1252 bytes the legacy faces index, independent of the platform's iconv. A character CP1252
+// lacks becomes '?'; text that is not valid UTF-8 is taken as CP1252 already and returned unchanged.
+std::string utf8ToCp1252(const std::string &text);
+
 // A legacy face: its outlines come from fonts/truetype/<name>.yml and the font file it names, while the original FNT
 // supplies the layout metrics and the reserved symbol glyphs (CP1252 bytes without a character). A missing or invalid
 // replacement returns an explicit error.

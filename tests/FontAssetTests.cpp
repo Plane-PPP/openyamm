@@ -426,3 +426,17 @@ TEST_CASE("legacy font atlas requires its TTF replacement and reports broken des
     CHECK_FALSE(Engine::loadFontAtlas(fixture.assets, {0, 1, 2}, "Arrus", error));
     CHECK(error == "invalid legacy FNT");
 }
+
+TEST_CASE("UTF-8 text converts to the CP1252 bytes of the legacy faces without the platform's iconv")
+{
+    // The MAW Rules panel: times, en dash, em dash and middle dot.
+    CHECK(Engine::utf8ToCp1252("\xC3\x97" "0.50") == "\xD7" "0.50");
+    CHECK(Engine::utf8ToCp1252("1\xE2\x80\x93" "3") == "1\x96" "3");
+    CHECK(Engine::utf8ToCp1252("\xE2\x80\x94") == "\x97");
+    CHECK(Engine::utf8ToCp1252("once \xC2\xB7 fixed") == "once \xB7 fixed");
+    CHECK(Engine::utf8ToCp1252("engine\xE2\x80\x99s \xE2\x82\xAC") == "engine\x92s \x80");
+    CHECK(Engine::utf8ToCp1252("plain") == "plain");
+    // CP1252 has no arrow; a name imported as CP1252 is not valid UTF-8 and stays as it is.
+    CHECK(Engine::utf8ToCp1252("a \xE2\x86\x92 b") == "a ? b");
+    CHECK(Engine::utf8ToCp1252("Caf\xE9") == "Caf\xE9");
+}
