@@ -3415,7 +3415,13 @@ bool Party::tryGrantItem(uint32_t objectDescriptionId, uint32_t quantity)
         }
     }
 
-    m_members = std::move(testMembers);
+    // Member by member, so pointers to the members stay valid: an attack holds its attacker while a kill's reward
+    // (MAW's map completion) reaches the party.
+    for (size_t memberIndex = 0; memberIndex < testMembers.size(); ++memberIndex)
+    {
+        m_members[memberIndex] = std::move(testMembers[memberIndex]);
+    }
+
     const InventoryItem recordedItem = makeInventoryItem(m_pItemTable, objectDescriptionId);
     markArtifactItemFoundIfRelevant(recordedItem);
     recordEverOwnedItemIfRelevant(recordedItem);
@@ -3468,7 +3474,8 @@ bool Party::tryGrantInventoryItemStartingAt(
 
         if (addToAnyBag(member, item, bagCount))
         {
-            m_members = std::move(testMembers);
+            // Only the member who took it, so pointers to the members stay valid (see tryGrantItem).
+            m_members[memberIndex] = std::move(member);
             markArtifactItemFoundIfRelevant(item);
             recordEverOwnedItemIfRelevant(item);
 

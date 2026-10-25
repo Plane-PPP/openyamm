@@ -122,3 +122,30 @@ TEST_CASE("sorting every bag sends crafting and alchemy items to the bags tagged
     REQUIRE_EQ(InventoryBags::itemsInBag(member, 3).size(), 1u);
     CHECK_EQ(InventoryBags::itemsInBag(member, 3)[0].objectDescriptionId, 1050u);
 }
+
+TEST_CASE("giving the party an item keeps every pointer to its members valid")
+{
+    using OpenYAMM::Game::Party;
+    using OpenYAMM::Game::PartySeed;
+
+    // An attack holds its attacker while the kill's reward (MAW's map completion) gives the party items; replacing
+    // the member list there freed the attacker and crashed the attack.
+    PartySeed seed;
+    seed.members = {Character{}, Character{}};
+    Party party;
+    party.seed(seed);
+    const Character *pFirst = party.member(0);
+    const Character *pSecond = party.member(1);
+    InventoryItem gem;
+    gem.objectDescriptionId = 1050;
+    gem.width = 1;
+    gem.height = 1;
+
+    size_t recipient = 99;
+    REQUIRE(party.tryGrantInventoryItemStartingAt(1, gem, &recipient));
+    CHECK_EQ(recipient, 1u);
+    CHECK_EQ(party.member(0), pFirst);
+    CHECK_EQ(party.member(1), pSecond);
+    CHECK_EQ(pSecond->inventory.size(), 1u);
+    CHECK(pFirst->inventory.empty());
+}
