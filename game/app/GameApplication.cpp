@@ -10756,6 +10756,7 @@ bool GameApplication::startNewSession(std::optional<uint32_t> rosterId, bool ini
         seedDebugWandsIntoParty(party, m_gameDataLoader.getItemTable());
         setDebugTownPortalUnlocks(party, true);
         // The ruleset's own start (MAW's challenge modes), as a new game from the menu gets it (audit CHM-5).
+        party.setRules(m_gameSession.rulesetGameRules());
         party.rules().experience.prepareNewParty(party);
     }
 
@@ -10896,6 +10897,9 @@ bool GameApplication::startNewSessionFromCharacterCreation(
 
     Party &sessionParty = ensureSessionPartyState();
     sessionParty.seed(seed);
+    // Seeding leaves a party on Standard's rules: the ruleset's own start (MAW's challenge modes: 5000 gold, bonus
+    // experience) needs the session's rules back first.
+    sessionParty.setRules(m_gameSession.rulesetGameRules());
     sessionParty.rules().experience.prepareNewParty(sessionParty);
     setDebugTownPortalUnlocks(sessionParty, false);
     renderLoadingOverlayProgress(15);

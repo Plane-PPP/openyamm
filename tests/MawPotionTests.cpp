@@ -302,3 +302,28 @@ TEST_CASE("MAW's alchemy bag tag takes bottles, reagents and MM6's herbs; crafti
     CHECK(tagOf(1050, "Misc") == BagTag::Crafting);
     CHECK_FALSE(tagOf(1, "Weapon").has_value());
 }
+
+TEST_CASE("a seeded party needs its ruleset's rules back before MAW's challenge-mode start (Doom: 5000 gold)")
+{
+    RulesetOptions options;
+    options.challengeMode = RulesetChallengeMode::Doom;
+    MawRules rules(options, MawMapLevels{});
+    PartySeed seed;
+    seed.gold = 200;
+    seed.members = {Character{}, Character{}};
+    Party party;
+    party.setRules(&rules.gameRules());
+
+    // Seeding drops the rules: the start then runs Standard's (nothing), as a new game from party creation did.
+    party.seed(seed);
+    party.rules().experience.prepareNewParty(party);
+    CHECK_EQ(party.gold(), 200);
+
+    // GameApplication::startNewSessionFromCharacterCreation installs the session's rules after seeding.
+    party.seed(seed);
+    party.setRules(&rules.gameRules());
+    party.rules().experience.prepareNewParty(party);
+    CHECK_EQ(party.gold(), 5000);
+    CHECK_EQ(party.members()[0].experience, 5000u);
+    CHECK_EQ(party.members()[1].experience, 5000u);
+}
