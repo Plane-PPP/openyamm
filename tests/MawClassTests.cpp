@@ -371,6 +371,18 @@ TEST_CASE("MAW's Vampiric Aura and Fire Aura show on every member while held")
     spells.updateAuras(party, 0.5f);
     CHECK(party.characterBuff(1, CharacterBuffId::VampiricWeapon) == nullptr);
 
+    // Day of the Gods raises the stats on the update that applies it, not only when its buff is next refreshed.
+    party.member(0)->might = 100;
+    party.member(1)->might = 100;
+    party.member(0)->skills["LightMagic"] = {"LightMagic", 200, SkillMastery::Grandmaster};
+    REQUIRE(spells.castAura(party, 0, 83) == AuraCastResult::Held);
+    spells.updateAuras(party, 0.5f);
+    CHECK_EQ(party.members()[0].magicalBonuses.might, 20);
+    CHECK_EQ(party.members()[1].magicalBonuses.might, 20);
+    REQUIRE(spells.castAura(party, 0, 83) == AuraCastResult::Released);
+    spells.updateAuras(party, 0.5f);
+    CHECK_EQ(party.members()[1].magicalBonuses.might, 0);
+
     // Empower Magic has no buff slot: the rules list it while it is held.
     CHECK(spells.heldAurasWithoutBuffSlot(party).empty());
     rules.state().auraHolders[28] = 0;

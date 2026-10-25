@@ -1222,6 +1222,10 @@ void MawSpellRules::updateAuras(Party &party, float) const
         ++it;
     }
 
+    // The rules know the held auras before any buff below is applied: applying one rebuilds the members' stats, and
+    // Day of the Gods and the stat auras read the sources there (MawSkillRules::applyStatBonuses).
+    m_rules.setActiveAuras(sources);
+
     const auto source = [&sources](uint32_t spellId) -> const MawAuraSource *
     {
         const auto it = sources.find(spellId);
@@ -1489,7 +1493,6 @@ void MawSpellRules::updateAuras(Party &party, float) const
 
     m_appliedPartyBuffs = std::move(appliedPartyBuffs);
     m_appliedCharacterBuffs = std::move(appliedCharacterBuffs);
-    m_rules.setActiveAuras(std::move(sources));
 
     // Each member's staff resists for the whole party (zzMaw-Items.lua:3294-3316).
     int staffResistance = 0;
