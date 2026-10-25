@@ -604,8 +604,9 @@ InventoryItem chestItemAsInventoryItem(const GameplayChestItemState &chestItem)
     return item;
 }
 
-// Takes all gold, then every item that fits somewhere in the party (largest first); the rest stays in the chest.
-void takeAllActiveChestItems(GameplayScreenRuntime &view)
+// Takes all gold, then (unless goldOnly) every item that fits somewhere in the party (largest first); the rest stays
+// in the chest.
+void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
 {
     IGameplayWorldRuntime *pWorldRuntime = view.worldRuntime();
     Party *pParty = view.party();
@@ -637,7 +638,7 @@ void takeAllActiveChestItems(GameplayScreenRuntime &view)
         {
             const GameplayChestItemState &candidate = pChestView->items[itemIndex];
 
-            if (isLeftBehind(candidate))
+            if (isLeftBehind(candidate) || (goldOnly && !candidate.isGold))
             {
                 continue;
             }
@@ -4144,56 +4145,32 @@ void GameplayOverlayInputController::handleLootOverlayInput(
         const auto findChestPointerTarget =
             [&view, screenWidth, screenHeight](float mouseX, float mouseY) -> GameplayChestPointerTarget
             {
-                const GameplayScreenRuntime::HudLayoutElement *pCloseLayout =
-                    view.findHudLayoutElement("ChestCloseButton");
+                static constexpr std::array<std::pair<const char *, GameplayChestPointerTargetType>, 3> Buttons = {{
+                    {"ChestTakeAllButton", GameplayChestPointerTargetType::TakeAllButton},
+                    {"ChestTakeGoldButton", GameplayChestPointerTargetType::TakeGoldButton},
+                    {"ChestCloseButton", GameplayChestPointerTargetType::CloseButton},
+                }};
 
-                const GameplayScreenRuntime::HudLayoutElement *pTakeAllLayout =
-                    view.findHudLayoutElement("ChestTakeAllButton");
-
-                if (pTakeAllLayout != nullptr)
+                for (const auto &[pId, type] : Buttons)
                 {
-                    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedTakeAll =
-                        view.resolveHudLayoutElement(
-                            "ChestTakeAllButton",
-                            screenWidth,
-                            screenHeight,
-                            pTakeAllLayout->width,
-                            pTakeAllLayout->height);
+                    const GameplayScreenRuntime::HudLayoutElement *pLayout = view.findHudLayoutElement(pId);
 
-                    if (resolvedTakeAll
-                        && mouseX >= resolvedTakeAll->x
-                        && mouseX < resolvedTakeAll->x + resolvedTakeAll->width
-                        && mouseY >= resolvedTakeAll->y
-                        && mouseY < resolvedTakeAll->y + resolvedTakeAll->height)
+                    if (pLayout == nullptr)
                     {
-                        return {GameplayChestPointerTargetType::TakeAllButton};
+                        continue;
                     }
-                }
 
-                if (pCloseLayout == nullptr)
-                {
-                    return {};
-                }
+                    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolved =
+                        view.resolveHudLayoutElement(pId, screenWidth, screenHeight, pLayout->width, pLayout->height);
 
-                const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedClose =
-                    view.resolveHudLayoutElement(
-                        "ChestCloseButton",
-                        screenWidth,
-                        screenHeight,
-                        pCloseLayout->width,
-                        pCloseLayout->height);
-
-                if (!resolvedClose)
-                {
-                    return {};
-                }
-
-                if (mouseX >= resolvedClose->x
-                    && mouseX < resolvedClose->x + resolvedClose->width
-                    && mouseY >= resolvedClose->y
-                    && mouseY < resolvedClose->y + resolvedClose->height)
-                {
-                    return {GameplayChestPointerTargetType::CloseButton};
+                    if (resolved
+                        && mouseX >= resolved->x
+                        && mouseX < resolved->x + resolved->width
+                        && mouseY >= resolved->y
+                        && mouseY < resolved->y + resolved->height)
+                    {
+                        return {type};
+                    }
                 }
 
                 return {};
@@ -4355,9 +4332,10 @@ void GameplayOverlayInputController::handleLootOverlayInput(
             findChestPointerTarget,
             [&view](const GameplayChestPointerTarget &target)
             {
-                if (target.type == GameplayChestPointerTargetType::TakeAllButton)
+                if (target.type == GameplayChestPointerTargetType::TakeAllButton
+                    || target.type == GameplayChestPointerTargetType::TakeGoldButton)
                 {
-                    takeAllActiveChestItems(view);
+                    takeAllActiveChestItems(view, target.type == GameplayChestPointerTargetType::TakeGoldButton);
                     return;
                 }
 

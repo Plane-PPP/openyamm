@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace OpenYAMM::Game
 {
@@ -13,6 +14,9 @@ struct GameplayHudTextureHandle;
 class GameplayHudOverlaySupport
 {
 public:
+    // Time left on a buff or effect for popups: "1h 5m", "3m 20s", "45s", or "Constant".
+    static std::string formatRemainingDuration(float remainingSeconds);
+
     static bool tryPopulateItemInspectOverlayFromRenderedHudItems(
         GameplayScreenRuntime &context,
         int width,

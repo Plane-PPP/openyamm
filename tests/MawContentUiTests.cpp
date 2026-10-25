@@ -317,7 +317,6 @@ TEST_CASE("MAW's inspect panel: level, 95 % damage ranges after the viewer's def
     const double halfWidth = std::sqrt(std::pow(fireball * 0.5, 2) / 24) * 1.96;
     CHECK_EQ(raw.spellDamage, std::to_string(int(mawRound(fireball - halfWidth))) + "-"
             + std::to_string(int(mawRound(fireball + halfWidth))));
-    CHECK(raw.effectTimers);
 
     // Special attack, the viewer's share of the kill (one member: all of it, by HP over a member-level monster's),
     // and the spear stack.

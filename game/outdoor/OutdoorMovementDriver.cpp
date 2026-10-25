@@ -19,6 +19,8 @@ constexpr float MaxAccumulatedMovementSeconds = 0.1f;
 constexpr float HardLandingDistance = 512.0f;
 constexpr float EventHoldSeconds = 0.75f;
 constexpr float DamageTickSeconds = 1.0f;
+// The original's flight ceiling, for maps whose scene sets none.
+constexpr float DefaultFlightCeiling = 4000.0f;
 
 const char *supportKindName(OutdoorSupportKind supportKind)
 {
@@ -104,8 +106,10 @@ OutdoorMovementDriver::OutdoorMovementDriver(
         outdoorDecorationCollisionSet,
         outdoorActorCollisionSet,
         outdoorSpriteObjectCollisionSet
-    )
+    ),
+    m_flightCeiling(outdoorMapData.flightCeiling.value_or(DefaultFlightCeiling))
 {
+    m_tuning.maxFlightHeight = m_flightCeiling;
 }
 
 void OutdoorMovementDriver::initialize(float x, float y, float footZHint)
@@ -113,6 +117,7 @@ void OutdoorMovementDriver::initialize(float x, float y, float footZHint)
     m_state = m_movementController.initializeStateForBody(x, y, footZHint, m_bodyDimensions.radius);
     m_partyMovementState = {};
     m_tuning = {};
+    m_tuning.maxFlightHeight = m_flightCeiling;
     m_lastEvents = {};
     m_lastConsequences = {};
     m_pendingEffects = {};
@@ -153,6 +158,7 @@ void OutdoorMovementDriver::restoreState(
     m_state = state;
     m_partyMovementState = partyMovementState;
     m_tuning = {};
+    m_tuning.maxFlightHeight = m_flightCeiling;
     m_lastEvents = {};
     m_lastConsequences = {};
     m_pendingEffects = {};

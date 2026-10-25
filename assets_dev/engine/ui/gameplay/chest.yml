@@ -254,6 +254,26 @@ elements:
       align_y: middle
       color: '#e8d1a4'
       scale: 0.41666665625
+  - id: ChestTakeGoldButton
+    anchor: top_right
+    offset_x: -42
+    offset_y: 220
+    width: 83
+    height: 30
+    z_index: 300
+    interactive: true
+    asset:
+      default: obsidian_button_close_normal
+      highlighted: obsidian_button_close_hover
+      pressed: obsidian_button_close_pressed
+    notes: Takes only the chest's gold; items stay.
+    text:
+      value: Take Gold
+      font: Fondamento
+      align_x: center
+      align_y: middle
+      color: '#e8d1a4'
+      scale: 0.41666665625
   - id: ChestCloseButton
     anchor: bottom_right
     offset_x: -42

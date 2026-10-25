@@ -239,6 +239,45 @@ bool parseOptionalRendering(
     return true;
 }
 
+bool parseOptionalMovement(
+    const YAML::Node &rootNode,
+    OutdoorSceneMovement &movement,
+    std::string &errorMessage)
+{
+    const YAML::Node movementNode = rootNode["movement"];
+
+    if (!movementNode)
+    {
+        return true;
+    }
+
+    if (!movementNode.IsMap())
+    {
+        errorMessage = "movement must be a map";
+        return false;
+    }
+
+    if (!movementNode["flight_ceiling"])
+    {
+        return true;
+    }
+
+    float flightCeiling = movement.flightCeiling.value_or(0.0f);
+    if (!readScalarNode(movementNode, "flight_ceiling", flightCeiling, errorMessage, false))
+    {
+        return false;
+    }
+
+    if (!std::isfinite(flightCeiling) || flightCeiling <= 0.0f)
+    {
+        errorMessage = "movement.flight_ceiling must be finite and greater than zero";
+        return false;
+    }
+
+    movement.flightCeiling = flightCeiling;
+    return true;
+}
+
 bool readOptionalBoolFlag(
     const YAML::Node &flagsNode,
     const char *key,
@@ -1797,6 +1836,11 @@ std::optional<OutdoorSceneData> OutdoorSceneYmlLoader::loadFromText(
         return std::nullopt;
     }
 
+    if (!parseOptionalMovement(rootNode, sceneData.movement, errorMessage))
+    {
+        return std::nullopt;
+    }
+
     const YAML::Node sourceNode = rootNode["source"];
 
     if (!sourceNode || !sourceNode.IsMap())
@@ -2521,6 +2565,11 @@ bool OutdoorSceneYmlLoader::applyOverlayFromText(
         return false;
     }
 
+    if (!parseOptionalMovement(rootNode, sceneData.movement, errorMessage))
+    {
+        return false;
+    }
+
     const YAML::Node sourceNode = rootNode["source"];
 
     if (sourceNode)
@@ -3131,6 +3180,7 @@ bool buildOutdoorMapStateFromScene(
     outdoorMapData.sceneProfile = sceneData.sceneProfile;
     outdoorMapData.locationType = sceneData.environment.locationType;
     outdoorMapData.lightmapBrightnessScale = sceneData.lighting.lightmapBrightnessScale;
+    outdoorMapData.flightCeiling = sceneData.movement.flightCeiling;
     outdoorMapData.viewDistanceScale = sceneData.rendering.viewDistanceScale.value_or(
         sceneData.sceneProfile == OutdoorSceneProfile::BModelWorld
                 && sceneData.environment.locationType == OutdoorLocationType::Enclosed

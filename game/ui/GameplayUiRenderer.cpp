@@ -39,7 +39,7 @@ constexpr int EventNpcPortraitNativeWidth = 63;
 constexpr int EventNpcPortraitNativeHeight = 73;
 constexpr float EventNpcPortraitUvCropX = 2.0f;
 constexpr float EventNpcPortraitUvCropY = 2.0f;
-constexpr uint32_t MistformPortraitModulationAbgr = 0x80ffffffu;
+constexpr uint32_t TranslucentPortraitModulationAbgr = 0x80ffffffu;
 
 enum class PortraitAggroIndicator
 {
@@ -467,10 +467,11 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
         if (portrait && face)
         {
             bgfx::TextureHandle texture = portrait->textureHandle;
-            if (party.hasCharacterBuff(i, CharacterBuffId::Mistform))
+            // Mistform and party invisibility both show the portrait at half opacity.
+            if (party.hasCharacterBuff(i, CharacterBuffId::Mistform) || party.hasPartyBuff(PartyBuffId::Invisibility))
             {
                 texture = context.gameplayUiRuntime().ensureHudTextureColorModulated(
-                    *portrait, MistformPortraitModulationAbgr);
+                    *portrait, TranslucentPortraitModulationAbgr);
             }
             if (!GameMechanics::canAct(member))
             {

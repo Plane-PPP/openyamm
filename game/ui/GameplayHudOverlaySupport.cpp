@@ -162,40 +162,6 @@ std::string attackRecoveryInspectSupplement(
     return "Recovery time: " + std::to_string(recoveryTicksFromSeconds(profile.rangedRecoverySeconds));
 }
 
-std::string formatRemainingDuration(float remainingSeconds)
-{
-    if (std::isinf(remainingSeconds))
-    {
-        return "Constant";
-    }
-    const int totalSeconds = std::max(0, int(std::lround(remainingSeconds)));
-    const int hours = totalSeconds / 3600;
-    const int minutes = (totalSeconds % 3600) / 60;
-    const int seconds = totalSeconds % 60;
-
-    if (hours > 0)
-    {
-        if (minutes > 0)
-        {
-            return std::to_string(hours) + "h " + std::to_string(minutes) + "m";
-        }
-
-        return std::to_string(hours) + "h";
-    }
-
-    if (minutes > 0)
-    {
-        if (seconds > 0 && minutes < 5)
-        {
-            return std::to_string(minutes) + "m " + std::to_string(seconds) + "s";
-        }
-
-        return std::to_string(minutes) + "m";
-    }
-
-    return std::to_string(seconds) + "s";
-}
-
 // A member buff's name: the rules' name for its spell when they rename it (MAW's Vampiric Aura), else the slot's.
 std::string personalBuffName(
     const SpellTable *pSpellTable,
@@ -493,6 +459,40 @@ int skillMasteryAvailability(
 
     return 2;
 }
+}
+
+std::string GameplayHudOverlaySupport::formatRemainingDuration(float remainingSeconds)
+{
+    if (std::isinf(remainingSeconds))
+    {
+        return "Constant";
+    }
+    const int totalSeconds = std::max(0, int(std::lround(remainingSeconds)));
+    const int hours = totalSeconds / 3600;
+    const int minutes = (totalSeconds % 3600) / 60;
+    const int seconds = totalSeconds % 60;
+
+    if (hours > 0)
+    {
+        if (minutes > 0)
+        {
+            return std::to_string(hours) + "h " + std::to_string(minutes) + "m";
+        }
+
+        return std::to_string(hours) + "h";
+    }
+
+    if (minutes > 0)
+    {
+        if (seconds > 0 && minutes < 5)
+        {
+            return std::to_string(minutes) + "m " + std::to_string(seconds) + "s";
+        }
+
+        return std::to_string(minutes) + "m";
+    }
+
+    return std::to_string(seconds) + "s";
 }
 
 bool GameplayHudOverlaySupport::tryPopulateItemInspectOverlayFromRenderedHudItems(

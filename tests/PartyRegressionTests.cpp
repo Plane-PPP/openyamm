@@ -6,6 +6,7 @@
 #include "game/gameplay/JournalQuestRuntime.h"
 #include "game/items/ItemRuntime.h"
 #include "game/maps/SaveGame.h"
+#include "engine/TextTable.h"
 #include "game/party/Party.h"
 #include "game/party/SpellIds.h"
 #include "game/tables/CharacterDollTable.h"
@@ -16,6 +17,8 @@
 #include <array>
 #include <filesystem>
 #include <optional>
+#include <sstream>
+#include <fstream>
 #include <unordered_set>
 
 namespace
@@ -546,6 +549,44 @@ TEST_CASE("current quest journal entries come from party qbits and non-empty que
 
     REQUIRE_EQ(questTexts.size(), 1u);
     CHECK_EQ(questTexts[0], "Recover the crystal.");
+}
+
+TEST_CASE("the price fixing quest lists the stables that have not yet agreed")
+{
+    std::ifstream stream(std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/engine/data_tables/english/quests.txt");
+    REQUIRE(stream.is_open());
+    std::ostringstream contents;
+    contents << stream.rdbuf();
+    const std::optional<OpenYAMM::Engine::TextTable> table =
+        OpenYAMM::Engine::TextTable::parseTabSeparated(contents.str());
+    REQUIRE(table.has_value());
+    std::vector<std::vector<std::string>> rows;
+
+    for (size_t index = 0; index < table->getRowCount(); ++index)
+    {
+        rows.push_back(table->getRow(index));
+    }
+
+    OpenYAMM::Game::JournalQuestTable questTable = {};
+    REQUIRE(questTable.loadFromRows(rows));
+
+    OpenYAMM::Game::Party party = {};
+    party.seed(createRegressionPartySeed());
+    const auto stableLines = [&]()
+    {
+        const std::vector<std::string> questTexts = OpenYAMM::Game::buildCurrentQuestTexts(questTable, party);
+        return std::count_if(questTexts.begin(), questTexts.end(),
+            [](const std::string &text) { return text.starts_with("Price fixing: "); });
+    };
+
+    CHECK_EQ(stableLines(), 0);
+    party.setQuestBit(1140, true);
+    CHECK_EQ(stableLines(), 9);
+    party.setQuestBit(1515, true);
+    party.setQuestBit(1523, true);
+    CHECK_EQ(stableLines(), 7);
+    party.setQuestBit(1140, false);
+    CHECK_EQ(stableLines(), 0);
 }
 
 TEST_CASE("journal quest table rejects malformed qbit ids")

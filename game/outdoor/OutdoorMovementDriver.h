@@ -158,6 +158,8 @@ private:
     OutdoorPartyMovementState m_partyMovementState;
     OutdoorMovementTuning m_tuning;
     OutdoorBodyDimensions m_bodyDimensions;
+    // The map's flight ceiling (its scene's movement.flight_ceiling), restored into m_tuning whenever it resets.
+    float m_flightCeiling = 0.0f;
     OutdoorMovementEvents m_lastEvents;
     OutdoorMovementConsequences m_lastConsequences;
     OutdoorMovementEffects m_pendingEffects;

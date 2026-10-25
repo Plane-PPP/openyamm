@@ -42,7 +42,5 @@ struct MonsterInspectNumbers
     // Lines the Effects box shows before the monster's effects: its special attack, the experience a kill gives the
     // viewer, the rules' stacks on it.
     std::vector<std::string> effectLines;
-    // Timed effects show the seconds they have left.
-    bool effectTimers = false;
 };
 }

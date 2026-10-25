@@ -11186,18 +11186,16 @@ void GameplayPartyOverlayRenderer::renderActorInspectOverlay(GameplayScreenRunti
             return std::max<size_t>(1, lineCount);
         };
     std::vector<std::string> activeEffects;
-    const bool effectTimers = rulesNumbers && rulesNumbers->effectTimers;
     const auto addTimedEffect =
-        [&activeEffects, effectTimers](const char *pName, float remainingSeconds)
+        [&activeEffects](const char *pName, float remainingSeconds)
         {
             if (remainingSeconds <= 0.0f)
             {
                 return;
             }
 
-            activeEffects.push_back(effectTimers
-                    ? std::string(pName) + " " + std::to_string(int(std::ceil(remainingSeconds))) + "s"
-                    : std::string(pName));
+            activeEffects.push_back(std::string(pName) + " "
+                + GameplayHudOverlaySupport::formatRemainingDuration(std::ceil(remainingSeconds)));
         };
 
     if (actorState.isDead)

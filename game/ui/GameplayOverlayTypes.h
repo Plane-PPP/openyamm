@@ -299,6 +299,7 @@ enum class GameplayChestPointerTargetType
 {
     None,
     TakeAllButton,
+    TakeGoldButton,
     CloseButton
 };
 

@@ -130,7 +130,6 @@ MonsterInspectNumbers mawMonsterInspectNumbers(const MawRules &rules, const Mons
     const MonsterTable::MonsterStatsEntry &stats = *query.pStats;
     const ActorRulesetFacts &facts = *query.pFacts;
     numbers.level = facts.level;
-    numbers.effectTimers = true;
 
     // A dimension map's monster damage affix shows in the numbers (zzMaw-Monsters.lua:1989-1991).
     const double mapDamage = 1 + rules.mapAffix(MawMapAffix::MonsterDamage).value_or(0) / 100;

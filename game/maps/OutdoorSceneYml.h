@@ -72,6 +72,12 @@ struct OutdoorSceneRendering
     std::optional<float> viewDistanceScale;
 };
 
+struct OutdoorSceneMovement
+{
+    // The highest the party may fly (movement.flight_ceiling); the original's 4000 when absent.
+    std::optional<float> flightCeiling;
+};
+
 struct OutdoorSceneTerrainAttributeOverride
 {
     int x = 0;
@@ -164,6 +170,7 @@ struct OutdoorSceneData
     OutdoorSceneEnvironment environment = {};
     OutdoorSceneLighting lighting = {};
     OutdoorSceneRendering rendering = {};
+    OutdoorSceneMovement movement = {};
     std::vector<OutdoorSceneTerrainAttributeOverride> terrainAttributeOverrides;
     std::vector<OutdoorSceneTerrainFootstepSoundOverride> terrainFootstepSoundOverrides;
     std::vector<OutdoorSceneSurfaceAnimation> surfaceAnimations;

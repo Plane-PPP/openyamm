@@ -2189,6 +2189,28 @@ TEST_CASE("merged in-house plain NPC followers can be hired and leave their hous
 
 TEST_CASE("Naomi Wind in-house hire requires start gold and leaves house after hire")
 {
+TEST_CASE("a map's saved unavailable flag does not hide a resident the party has let go")
+{
+    // Sir Charles Quixote: Erathia's saved state kept him unavailable from the Crusader quest after the promotion in
+    // Wromthrax's cave sent him home, so his residence stayed empty.
+    constexpr uint32_t QuixoteNpcId = 356;
+    constexpr uint32_t QuixoteResidenceHouseId = 941;
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    const OpenYAMM::Game::HouseEntry *pHouse = gameData.houseTable.get(QuixoteResidenceHouseId);
+    REQUIRE(pHouse != nullptr);
+
+    OpenYAMM::Game::Party party = {};
+    party.setNpcHouseOverride(QuixoteNpcId, QuixoteResidenceHouseId);
+    OpenYAMM::Game::EventRuntimeState erathiaState = {};
+    erathiaState.unavailableNpcIds.insert(QuixoteNpcId);
+    party.applyGlobalNpcStateTo(erathiaState);
+
+    CHECK_FALSE(erathiaState.unavailableNpcIds.contains(QuixoteNpcId));
+    const std::vector<uint32_t> residentIds =
+        OpenYAMM::Game::collectSelectableResidentNpcIds(*pHouse, gameData.npcDialogTable, erathiaState);
+    CHECK(std::find(residentIds.begin(), residentIds.end(), QuixoteNpcId) != residentIds.end());
+}
+
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
 
     const OpenYAMM::Game::HouseEntry *pHouse = gameData.houseTable.get(NaomiWindHouseId);
@@ -7442,7 +7464,9 @@ TEST_CASE("repeat promotion events include first member")
             }
         }
 
+    // As a departure does: the party's set is the one the map's state is rebuilt from.
         CHECK(harness.party().hasQuestBit(testCase.completionQBit));
+    harness.party().setNpcUnavailable(FredrickNpcId, true);
         CHECK(portraitFxContainsMember(
             harness.eventRuntimeState(),
             OpenYAMM::Game::PortraitFxEventKind::AwardGain,

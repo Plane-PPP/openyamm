@@ -66,7 +66,6 @@ constexpr std::array<CharacterBuffId, 24> DispellableCharacterBuffs = {
 };
 
 constexpr uint32_t ArcomageChampionAwardId = 41;
-constexpr size_t ArcomageTavernCount = 11;
 constexpr uint32_t Mm8ArcomageChampionQBit = 174;
 constexpr uint32_t FirstMm8ArcomageHouseId = 228;
 constexpr uint32_t LastMm8ArcomageHouseId = 238;
@@ -4385,15 +4384,7 @@ void Party::applyGlobalNpcStateTo(EventRuntimeState &runtimeState) const
             return follower.npcId != 0 && !partyFollowerIds.contains(follower.npcId);
         });
 
-    if (staleFollowerIt != runtimeState.hiredNpcFollowers.end())
-    {
-        for (auto iterator = staleFollowerIt; iterator != runtimeState.hiredNpcFollowers.end(); ++iterator)
-        {
-            runtimeState.unavailableNpcIds.erase(iterator->npcId);
-        }
-
-        runtimeState.hiredNpcFollowers.erase(staleFollowerIt, runtimeState.hiredNpcFollowers.end());
-    }
+    runtimeState.hiredNpcFollowers.erase(staleFollowerIt, runtimeState.hiredNpcFollowers.end());
 
     for (const auto &[npcId, topicOverrides] : m_npcTopicOverrides)
     {
@@ -4428,10 +4419,9 @@ void Party::applyGlobalNpcStateTo(EventRuntimeState &runtimeState) const
         runtimeState.npcItemOverrides[npcId] = itemId;
     }
 
-    for (uint32_t npcId : m_unavailableNpcIds)
-    {
-        runtimeState.unavailableNpcIds.insert(npcId);
-    }
+    // The party's set replaces the map's: a map's saved state can keep an NPC unavailable after the party let them go
+    // elsewhere (Sir Charles Quixote, hidden from his residence after the Crusader promotion in Wromthrax's cave).
+    runtimeState.unavailableNpcIds = m_unavailableNpcIds;
 
     for (const HiredNpcFollower &follower : m_hiredNpcFollowers)
     {
@@ -7030,17 +7020,21 @@ void Party::recordArcomageWin(uint32_t houseId, int goldReward, uint32_t firstWi
             addAward(firstWinAwardId);
         }
 
-        if (m_arcomageWonHouseIds.size() >= ArcomageTavernCount)
+        const bool wonAllMm8Taverns = hasWonAllMm8ArcomageTaverns(m_arcomageWonHouseIds);
+        const bool wonAllMm7Taverns = hasWonAllMm7ArcomageTaverns(m_arcomageWonHouseIds);
+
+        // Every tavern of one continent, not wins counted across continents.
+        if (wonAllMm8Taverns || wonAllMm7Taverns)
         {
             addAward(ArcomageChampionAwardId);
         }
 
-        if (hasWonAllMm8ArcomageTaverns(m_arcomageWonHouseIds))
+        if (wonAllMm8Taverns)
         {
             setQuestBit(Mm8ArcomageChampionQBit, true);
         }
 
-        if (hasWonAllMm7ArcomageTaverns(m_arcomageWonHouseIds))
+        if (wonAllMm7Taverns)
         {
             setQuestBit(Mm7ArcomageChampionQBit, true);
         }
