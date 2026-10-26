@@ -192,3 +192,7 @@ API размер/SHA256 артефакта совпадают с отчётом 
 1.13 validation: first Windows game build passed; unit build exposed an old Axe test-world
 method signature, now adapted to shield-tier API. 17 updater tests passed. Added explicit
 EnergyGuns/LethalStrike coexistence save test. Retry remains required before publishing.
+
+1.13 second validation: all game/unit sources compiled; the Windows unit link required
+winhttp/bcrypt, now declared for the standalone unit target. Gameplay test results remain
+pending until the next run actually executes them.

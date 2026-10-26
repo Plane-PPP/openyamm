@@ -6,6 +6,7 @@ Implemented; automatic Windows validation pending, not manually tested:
 - Preserve official skill IDs, move Lethal Strike/teacher references to48 and keep named saved skills.
 - Detect patch installation from game root or child folder; report the selected missing path clearly.
 - Retain numeric skill-console mastery alongside upstream spelling/techpoints commands.
+- Declare WinHTTP/BCrypt system libraries for the standalone Windows unit-test target.
 User confirmed prior patch installation with explicit InstallationRoot; game/save retest not reported.
 
 # Minotaur — incremental ZIP packaging (2026-10-23)

@@ -465,6 +465,12 @@ target_link_libraries(openyamm_unit_tests
         "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libavutil.a"
 )
 
+# The unit target compiles HttpTransport directly and links FFmpeg's static archives;
+# it therefore needs their Windows system libraries independently of openyamm_engine/game.
+if (WIN32)
+    target_link_libraries(openyamm_unit_tests PRIVATE winhttp bcrypt)
+endif()
+
 add_dependencies(openyamm_unit_tests openyamm_ffmpeg_build)
 
 if (UNIX AND NOT APPLE)

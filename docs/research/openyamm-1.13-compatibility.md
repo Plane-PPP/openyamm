@@ -58,3 +58,8 @@ The unit target stopped compiling on AxeTestWorld's old three-argument melee ove
 updated to the 1.13 shield-tier signature. The tests were not run and no patch was uploaded.
 A separate save test now checks that schema129 retains both EnergyGuns and LethalStrike
 with independent levels/masteries and the new tech point pool. Next Windows attempt pending.
+
+Second Windows run40312194498 compiled every game and unit-test source, then failed linking
+the unit executable: WinHTTP and FFmpeg's BCrypt dependencies were absent from its link list.
+Added winhttp/bcrypt for this Windows test target, matching dependencies already used by
+the game/engine. No tests ran and no patch was uploaded. Retry required.
