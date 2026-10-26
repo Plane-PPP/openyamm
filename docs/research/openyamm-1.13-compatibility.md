@@ -63,3 +63,7 @@ Second Windows run40312194498 compiled every game and unit-test source, then fai
 the unit executable: WinHTTP and FFmpeg's BCrypt dependencies were absent from its link list.
 Added winhttp/bcrypt for this Windows test target, matching dependencies already used by
 the game/engine. No tests ran and no patch was uploaded. Retry required.
+
+Final sparse-tree audit: the official packages.yml had retained its 1.10 copy during
+sparse conflict restoration. Restored it exactly from v1.13 (including upstream macOS job).
+This does not change the Minotaur Windows workflow or the game currently building.
