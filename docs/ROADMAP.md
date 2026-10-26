@@ -188,3 +188,7 @@ Compile/PE/шейдеры/хеши/встроенные исправления �
 API размер/SHA256 артефакта совпадают с отчётом сборщика. Полный ZIP независимо не скачивался.
 Ручной запуск игры и установка на реальную пользовательскую папку ещё не проверены.
 Новая база сохранена в репозитории; следующая сборка по умолчанию использует её.
+
+1.13 validation: first Windows game build passed; unit build exposed an old Axe test-world
+method signature, now adapted to shield-tier API. 17 updater tests passed. Added explicit
+EnergyGuns/LethalStrike coexistence save test. Retry remains required before publishing.

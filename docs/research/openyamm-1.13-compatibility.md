@@ -50,3 +50,11 @@ ZIP patch targets the installed 1.10 patch above; unchanged logical resource pac
 Windows workflow also builds/runs focused Minotaur/Axe/save unit tests, separately from actual
 PowerShell installer tests. Build status, artifact and actual size are recorded after completion.
 No manual 1.13 gameplay or real user save compatibility is claimed before user testing.
+
+## First Windows attempt
+
+Run40294728955 compiled/linked the game successfully and passed all17 installer tests.
+The unit target stopped compiling on AxeTestWorld's old three-argument melee override;
+updated to the 1.13 shield-tier signature. The tests were not run and no patch was uploaded.
+A separate save test now checks that schema129 retains both EnergyGuns and LethalStrike
+with independent levels/masteries and the new tech point pool. Next Windows attempt pending.

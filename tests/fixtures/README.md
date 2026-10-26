@@ -54,3 +54,12 @@ Production mod1.5 fixture SHA256: `3432846fcbec1b49aed25b07615be43331b90159f675c
 `minotaur-1.7-v94.oysav` was written before the1.10 merge by the production
 OYMINO1/v94 serializer at0b828dc (same writer as Windows source a1b8deb).
 Synthetic campaign-progress fixture after3 roundtrips; no personal data.
+
+## Minotaur on OpenYAMM 1.10 (OYMINO1 version 95)
+
+`minotaur-1.10-v95.oysav` was produced by the unchanged pre-1.13 unit executable's
+campaign progress roundtrip before replacing its compiled objects. The old test passed
+1 case / 300 assertions. The fixture is synthetic and contains a Minotaur Lord with
+Lethal Strike, equipment, reserve, quests, and indoor/outdoor progress. It is not a user's save.
+SHA256: `9962cc9d2c4075800fcde59038f5a468badd686c001d192c3310be058429f6f3`.
+The 1.13 progress test loads it and checks three consecutive save/load cycles.

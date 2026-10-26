@@ -735,3 +735,28 @@ TEST_CASE("Lethal Strike latest save preserves the upstream named map start poin
     CHECK(save->party.members[0].findSkill("LethalStrike")->mastery == SkillMastery::Master);
     std::filesystem::remove(path);
 }
+
+TEST_CASE("Lethal Strike 1.13 separates technology and named mod skills through save migration")
+{
+    std::string error;
+    auto save = loadGameDataFromPath(std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "tests/fixtures/minotaur-1.10-v95.oysav", error);
+    REQUIRE_MESSAGE(save, error);
+    REQUIRE(save->party.members.size() == 1);
+    save->party.members[0].techPoints = 321;
+    save->party.members[0].skills["EnergyGuns"] = {"EnergyGuns", 4, SkillMastery::Expert};
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-1.13-tech-save.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
+    save = loadGameDataFromPath(path, error);
+    REQUIRE_MESSAGE(save, error);
+    CHECK(save->sourceSaveVersion == 129);
+    const auto &c = save->party.members[0];
+    CHECK(c.techPoints == 321);
+    REQUIRE(c.findSkill("EnergyGuns"));
+    CHECK(c.findSkill("EnergyGuns")->level == 4);
+    CHECK(c.findSkill("EnergyGuns")->mastery == SkillMastery::Expert);
+    REQUIRE(c.findSkill("LethalStrike"));
+    CHECK(c.findSkill("LethalStrike")->level == 7);
+    CHECK(c.findSkill("LethalStrike")->mastery == SkillMastery::Master);
+    std::filesystem::remove(path);
+}

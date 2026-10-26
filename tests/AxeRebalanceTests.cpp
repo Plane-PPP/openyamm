@@ -78,7 +78,7 @@ public:
             .position = {100, 0, 0}, .currentHp = 100000, .maxHp = 100000, .hostileToParty = true};
     }
 
-    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &) override
+    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier) override
     {
         damage = value;
         return true;
