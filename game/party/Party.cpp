@@ -1082,8 +1082,10 @@ bool matchesMonsterAttackPreference(const Character &member, uint32_t preference
                 : className == "DarkElf";
 
         case MonsterAttackPreferenceDwarf:
-            return normalizedClassName.find("dwarf") != std::string::npos
-                || normalizedRole.find("dwarf") != std::string::npos;
+            return hasCharacterIdentity
+                ? member.raceId == CharacterRaceDwarf
+                : normalizedClassName.find("dwarf") != std::string::npos
+                    || normalizedRole.find("dwarf") != std::string::npos;
 
         case MonsterAttackPreferenceGoblin:
             return hasCharacterIdentity

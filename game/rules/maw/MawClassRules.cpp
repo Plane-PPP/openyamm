@@ -304,6 +304,11 @@ bool MawClassRules::learnsSpellsFromBooks(const Character &character) const
     return line != "death_knight" && line != "elementalist" && line != "assassin";
 }
 
+bool MawClassRules::isDragon(const Character &character) const
+{
+    return mawIsDragon(character);
+}
+
 std::string MawClassRules::displayName(const Party &party, const Character &member) const
 {
     const std::string name = ClassRules::displayName(party, member);
@@ -480,12 +485,21 @@ void MawClassRules::update(Party &party, const IGameplayWorldRuntime &world, flo
 
         if (mawIsDragon(member))
         {
+            bool learned = false;
+
             for (const char *pSkill : {"Unarmed", "Dodging", "DragonAbility"})
             {
                 if (member.findSkill(pSkill) == nullptr)
                 {
                     member.skills[pSkill] = {pSkill, 1, SkillMastery::Normal};
+                    learned = true;
                 }
+            }
+
+            // Dragon Ability's Novice spell (Fear) comes with the skill.
+            if (learned)
+            {
+                member.synchronizeInnateAbilitySpells();
             }
         }
 

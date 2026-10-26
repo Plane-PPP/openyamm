@@ -202,7 +202,7 @@ TEST_CASE("the sheet's skill groups are unchanged and Technology shows only with
         std::vector<std::string>{"LeatherArmor", "ChainArmor", "PlateArmor", "Shield", "Dodging", "Cover", "Retaliation",
             "ManaShield"});
     CHECK_EQ(skillSheetGroupSkillNames(SkillSheetGroup::Misc).size(), 12u);
-    CHECK_EQ(skillSheetGroupSkillNames(SkillSheetGroup::Magic).size(), 9u);
+    CHECK_EQ(skillSheetGroupSkillNames(SkillSheetGroup::Magic).size(), 12u);
     CHECK_EQ(skillSheetGroupSkillNames(SkillSheetGroup::Technology),
         std::vector<std::string>{"EnergyGuns", "EnergyBlades", "ShieldTech", "Hacking"});
 

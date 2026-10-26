@@ -1561,3 +1561,33 @@ TEST_CASE("a dragon bites a target in melee range and breathes at one further aw
     CHECK(modeAt(200.0f) == CharacterAttackMode::Melee);
     CHECK(modeAt(1024.0f) == CharacterAttackMode::DragonBreath);
 }
+
+TEST_CASE("a MAW dragon breathes by its race, whatever its class")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    Character knight;
+    knight.name = "Ariel";
+    knight.className = "Knight";
+    knight.raceId = 5;
+    knight.level = 10;
+    knight.skills["DragonAbility"] = {"DragonAbility", 5, SkillMastery::Normal};
+    Character human = knight;
+    human.className = "Dragon";
+    human.raceId = 0;
+    const auto breathes = [&](const Character &character)
+    {
+        return GameMechanics::buildCharacterAttackProfile(character, &gameData.itemTable, &gameData.spellTable)
+            .hasDragonBreath;
+    };
+
+    // Standard: the Dragon class breathes.
+    CHECK_FALSE(breathes(knight));
+    CHECK(breathes(human));
+
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    bindGameRules(&rules.gameRules());
+    CHECK(breathes(knight));
+    CHECK_FALSE(breathes(human));
+    bindGameRules(nullptr);
+}

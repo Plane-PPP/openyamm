@@ -1076,6 +1076,24 @@ TEST_CASE("monster target selection skips invalid preferred members")
     CHECK_NE(*targetIndex, 1u);
 }
 
+TEST_CASE("monster target selection prefers dwarves by race")
+{
+    OpenYAMM::Game::Party party = {};
+    party.seed(createRegressionPartySeed());
+
+    for (size_t index = 0; index < party.members().size(); ++index)
+    {
+        party.member(index)->characterDataId = uint32_t(index + 1);
+        party.member(index)->raceId = 0;
+    }
+
+    party.member(2)->raceId = 9;
+    const std::optional<size_t> targetIndex = party.chooseMonsterAttackTarget(0x2000, 5);
+
+    REQUIRE(targetIndex.has_value());
+    CHECK_EQ(*targetIndex, 2u);
+}
+
 TEST_CASE("default seed monster target selection matches female preference")
 {
     REQUIRE_MESSAGE(

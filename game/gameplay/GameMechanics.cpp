@@ -325,10 +325,9 @@ bool hasCondition(const Character &character, CharacterCondition condition)
     return character.conditions.test(static_cast<size_t>(condition));
 }
 
-bool isDragonClass(const Character &character)
+bool isDragon(const Character &character)
 {
-    const std::string canonicalClass = canonicalClassName(character.className);
-    return canonicalClass == "Dragon" || canonicalClass == "GreatWyrm";
+    return boundGameRules().classes.isDragon(character);
 }
 
 int skillLevel(const Character &character, std::string_view skillName)
@@ -415,7 +414,7 @@ int resourceSkillBonus(const Character &character, std::string_view skillName, i
 
 std::optional<std::pair<int, int>> dragonBasicAttackDamageRange(const Character &character)
 {
-    if (!isDragonClass(character))
+    if (!isDragon(character))
     {
         return std::nullopt;
     }
@@ -2333,7 +2332,7 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     summary.spellPoints.maximum = calculateEffectiveCharacterMaxSpellPoints(character);
     summary.spellPoints.current = std::clamp(character.spellPoints, 0, std::max(0, summary.spellPoints.maximum));
 
-    const int dragonArmorBonus = isDragonClass(character)
+    const int dragonArmorBonus = isDragon(character)
         ? 5 * std::max(0, skillLevel(character, "DragonAbility"))
         : 0;
     const int armorBase = rulesetRows
@@ -2517,7 +2516,7 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
         summary.combat.shoot = skillLevel(character, "DragonAbility");
         summary.combat.rangedDamageText = formatDamageRange(dragonDamageRange->first, dragonDamageRange->second);
     }
-    else if (rulesetRows && isDragonClass(character))
+    else if (rulesetRows && isDragon(character))
     {
         summary.combat.shoot = rulesetRows->rangedAttack + character.permanentBonuses.rangedAttack
             + character.magicalBonuses.rangedAttack;
@@ -2593,7 +2592,7 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
     const CharacterSkill *pDragonAbility = character.findSkill("DragonAbility");
     profile.hasDragonBreath =
         !character.physicalAttackDisabled
-        && isDragonClass(character)
+        && isDragon(character)
         && pDragonAbility != nullptr
         && pDragonAbility->level > 0
         && pDragonAbility->mastery != SkillMastery::None;

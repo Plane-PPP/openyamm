@@ -52,6 +52,9 @@ public:
     virtual void applyClassBonuses(Character &member) const;
     // Whether spell books can teach the character. Standard: always.
     virtual bool learnsSpellsFromBooks(const Character &character) const;
+    // Whether the character fights as a dragon: breath attack, Dragon Ability bite and scales. Standard: the Dragon and
+    // Great Wyrm classes.
+    virtual bool isDragon(const Character &character) const;
     // The class counter the HUD shows at the member's portrait (MAW: an Assassin's combo points, an Elementalist's
     // stacks). Standard: none.
     virtual PortraitCounter portraitCounter(const Character &member) const;
