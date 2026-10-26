@@ -1,0 +1,61 @@
+{
+  "run": "https://github.com/Plane-PPP/openyamm/actions/runs/40325494796",
+  "source_sha": "0b4fc6589a5003142c2a0a1d3dd82da6d5542d43",
+  "upstream_release": "v1.14",
+  "upstream_commit": "f1d7c45d8a7c1fb2edbb4542b4a144cb476b9486",
+  "status": "completed",
+  "conclusion": "success",
+  "base_version": "minotaur-1.10-b7e80f0583df-14-1",
+  "target_version": "minotaur-1.14-0b4fc6589a50-19-1",
+  "artifact_id": 12654334120,
+  "artifact_url": "https://github.com/Plane-PPP/openyamm/actions/runs/40325494796/artifacts/12654334120",
+  "artifact_name": "Minotaur-Update-minotaur-1.14-0b4fc6589a50-19-1.zip",
+  "artifact_bytes": 910392473,
+  "artifact_sha256": "8bc8d0182468ee147f4d50090653156b3e99e0f4b100cc62c4c0ee42c70c4407",
+  "metadata_artifact_id": 12654879033,
+  "changed_resource_packs": 23,
+  "reused_resource_packs": 109,
+  "changed_pack_bytes": 888146682,
+  "reused_pack_bytes": 4889109186,
+  "comparison_previous_full_bytes": 5751530172,
+  "download_reduction_vs_previous_full_percent": 84.17,
+  "windows_tests": {
+    "selected_gameplay_cases": 29,
+    "assertions": 30791,
+    "installer_cases": 17,
+    "powershell_5_1_installation_scenarios": 10,
+    "package_validator_passed": true,
+    "full_suite_run": false,
+    "excluded_content": "MM9 is not shipped; its unrelated Bloodaxe quest is excluded from the Axe filter."
+  },
+  "jobs": [
+    {
+      "name": "Offline updater tests (Windows PowerShell 5.1)",
+      "id": 121581010617,
+      "conclusion": "success",
+      "completed_at": "2026-10-26T12:49:59Z"
+    },
+    {
+      "name": "Windows x64 release",
+      "id": 121581260074,
+      "conclusion": "success",
+      "completed_at": "2026-10-26T13:38:56Z"
+    }
+  ],
+  "save_magic": "OYMINO1",
+  "save_version": 132,
+  "upstream_save_schema": 131,
+  "old_mod_mapping": {
+    "89": 88,
+    "94": 93,
+    "95": 94,
+    "130": 129
+  },
+  "mod_balance_changed": false,
+  "manual_gameplay_tested": false,
+  "actual_user_save_tested": false,
+  "actual_user_installation_tested": false,
+  "full_native_installation_packaged": false,
+  "full_independent_zip_downloaded": false,
+  "validation_scope": "Clean Windows game/unit build, selected combat/teacher/Stats/save tests (including old production-writer1.10 fixture and latest spellbook page/tech pool), actual Windows5.1 installer fixtures, staged PE/shader/resource hash and hotfix comparison, builder report matched to GitHub artifact size/digest. Manual gameplay and actual user save remain pending."
+}

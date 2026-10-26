@@ -12,6 +12,9 @@
     "95": 94,
     "130": 129
   },
-  "validation": "Windows build and gameplay checks pending; previous1.13 relevant29 cases passed.",
-  "manual_gameplay_tested": false
+  "validation": "Windows packaged;29 selected cases/30791 assertions and17 installer tests passed. Actual user save/manual gameplay pending.",
+  "manual_gameplay_tested": false,
+  "build_report": "windows-v0.4-openyamm-1.14-build.json",
+  "run": "https://github.com/Plane-PPP/openyamm/actions/runs/40325494796",
+  "source_sha": "0b4fc6589a5003142c2a0a1d3dd82da6d5542d43"
 }

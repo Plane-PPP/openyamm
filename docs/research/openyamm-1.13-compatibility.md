@@ -59,12 +59,12 @@ Run40294728955 compiled/linked the game successfully and passed all17 installer 
 The unit target stopped compiling on AxeTestWorld's old three-argument melee override;
 updated to the 1.13 shield-tier signature. The tests were not run and no patch was uploaded.
 A separate save test now checks that schema129 retains both EnergyGuns and LethalStrike
-with independent levels/masteries and the new tech point pool. Next Windows attempt pending.
+with independent levels/masteries and the new tech point pool. Subsequent attempts are recorded below.
 
 Second Windows run40312194498 compiled every game and unit-test source, then failed linking
 the unit executable: WinHTTP and FFmpeg's BCrypt dependencies were absent from its link list.
 Added winhttp/bcrypt for this Windows test target, matching dependencies already used by
-the game/engine. No tests ran and no patch was uploaded. Retry required.
+the game/engine. No tests ran and no patch was uploaded. The subsequent run is recorded below.
 
 Final sparse-tree audit: the official packages.yml had retained its 1.10 copy during
 sparse conflict restoration. Restored it exactly from v1.13 (including upstream macOS job).
@@ -75,4 +75,4 @@ Third run40318306385 linked both executables and ran the tests: 29/30 cases pass
 its name accidentally matched *Axe*, while this package deliberately has no MM9 data.
 All selected Minotaur/Lethal Strike/Axe and other MM6/MM7/MM8 cases passed, including the
 old1.10 fixture and separate EnergyGuns/LethalStrike save test. The selector now explicitly
-excludes MM9* cases; no gameplay code or test expectations were weakened. Packaging retry pending.
+excludes MM9* cases; no gameplay code or test expectations were weakened. Packaging was superseded by the1.14 release before publication.

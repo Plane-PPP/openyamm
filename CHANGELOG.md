@@ -1,15 +1,16 @@
 # Minotaur on OpenYAMM 1.14 (2026-10-26)
 
-Implemented; automatic Windows validation pending; not manually tested:
+Implemented / Automatically tested / Windows ZIP packaged ([run40325494796](https://github.com/Plane-PPP/openyamm/actions/runs/40325494796)); manual gameplay pending:
 - Update to official1.14, retaining v0.4 + Luck, Axe, Damage Resistance, teachers and UI fixes.
 - Keep production mod95 saves; latest mod132 stores upstream131 and the existing combat-level field.
 - Preserve the new spellbook page and guild-school shelf format; keep upstream's old-shelf migration.
 - Root/nested ZIP installer detection fix and Windows test/link fixes from the intermediate1.13 port included.
+ZIP update910.4 MB:23 changed resource packs,109 reused.29 gameplay cases/30,791 assertions and17 installer tests passed.
 No1.13 mod package was published; the entries below describe its intermediate validation history.
 
 # Minotaur on OpenYAMM 1.13 (2026-10-26)
 
-Implemented; automatic Windows validation pending, not manually tested:
+Historical intermediate:29 applicable cases passed; no1.13 package published or manually tested:
 - Port existing v0.4 + Luck/Axe/Damage Resistance to official 1.13 without intended balance changes.
 - Keep old mod save mappings, including production 1.10/v95; write separate mod130/schema129.
 - Preserve official skill IDs, move Lethal Strike/teacher references to48 and keep named saved skills.

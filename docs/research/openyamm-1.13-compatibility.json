@@ -6,5 +6,5 @@
   "old_writer_fixture": "tests/fixtures/minotaur-1.10-v95.oysav",
   "fixture_sha256": "9962cc9d2c4075800fcde59038f5a468badd686c001d192c3310be058429f6f3",
   "fixture_origin": "Old 1.10 unit executable, campaign-progress roundtrip captured before replacing objects; 1 case/300 assertions passed. Synthetic fixture, not user save.",
-  "validation": "In progress; Linux syntax checks on ported save, combat, rules, Stats and world files passed; full Windows build/tests pending."
+  "validation": "Historical intermediate port:29 applicable Windows cases passed in run40318306385; no1.13 package published. Superseded by1.14."
 }

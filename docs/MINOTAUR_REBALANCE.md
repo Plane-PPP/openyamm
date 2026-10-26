@@ -1,10 +1,29 @@
-# OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows checks pending
+# OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged
 
 New official1.14 appeared during1.13 validation; exact1.14 now supersedes that unpublished
 intermediate port. The update still targets installed `minotaur-1.10-b7e80f0583df-14-1`.
 Installer root detection fixed; Minotaur balance retained. New save OYMINO1/v132 maps to
 schema131; production mod95 still explicitly maps to94. [Compatibility](research/openyamm-1.14-compatibility.md).
-Windows publication and manual gameplay pending. Earlier1.13 entries below are history.
+Windows build/tests and ZIP publication succeeded; manual gameplay pending. Earlier1.13 entries below are history.
+
+## Windows 1.14 — Packaged / manual retest pending
+
+[Successful run40325494796](https://github.com/Plane-PPP/openyamm/actions/runs/40325494796), source `0b4fc6589a5003142c2a0a1d3dd82da6d5542d43`.
+[Download ZIP patch](https://github.com/Plane-PPP/openyamm/actions/runs/40325494796/artifacts/12654334120): **910,392,473 bytes (910.4 MB)**.
+Base `minotaur-1.10-b7e80f0583df-14-1` → `minotaur-1.14-0b4fc6589a50-19-1`.
+Changed23 resource packs (888,146,682 bytes); reused109 packs (4,889,109,186 bytes).
+The delta includes updated shared icons/models/world items, core/maps and the new ruleset pack.
+84.17% less download than the previous5,751,530,172-byte full1.10 archive; no new full1.14 archive was built.
+SHA256: `8bc8d0182468ee147f4d50090653156b3e99e0f4b100cc62c4c0ee42c70c4407`.
+
+Automatically tested on Windows:29 selected gameplay cases /30,791 assertions;17 updater tests,
+including10 actual PowerShell5.1 filesystem scenarios; full/thin validator regressions.
+Native x64 game/launcher, shaders, all resource hashes and embedded teacher/Stats resources verified.
+This is selected coverage; MM9 data is outside this package and its Bloodaxe quest is excluded.
+The user's actual save and manual gameplay/installation of this1.14 patch remain untested.
+Back up saves, run the **new patch folder's** Apply-MinotaurUpdate.cmd and save into a new slot.
+Installer supports both nested extraction and scripts placed directly in the game root.
+The next build defaults to this newly confirmed baseline; old baselines remain available.
 
 # OpenYAMM 1.13 / Minotaur v0.4 + Luck — integration, Windows checks pending
 
