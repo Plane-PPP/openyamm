@@ -40,6 +40,7 @@ struct GameplayStandardUiInputConfig
     bool leftButtonPressed = false;
     bool rightButtonPressed = false;
     bool allowGameplayPointerInput = false;
+    bool rightPressUsesHeldItem = true;
     float mouseWheelDelta = 0.0f;
     bool blockPortraitInput = false;
     bool blockHudButtonInput = false;

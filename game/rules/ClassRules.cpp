@@ -24,6 +24,12 @@ bool ClassRules::learnsSpellsFromBooks(const Character &) const
     return true;
 }
 
+bool ClassRules::isDragon(const Character &character) const
+{
+    const std::string canonicalClass = canonicalClassName(character.className);
+    return canonicalClass == "Dragon" || canonicalClass == "GreatWyrm";
+}
+
 PortraitCounter ClassRules::portraitCounter(const Character &) const
 {
     return {};

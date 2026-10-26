@@ -262,6 +262,12 @@ public:
     struct ReadableScrollOverlayState
     {
         bool active = false;
+        // Read with a right click on a portrait: open while that button is held, as in the original.
+        bool heldByRightButton = false;
+        // Read on releasing the right button over a portrait (Modern controls): open until the next click, which only
+        // closes it.
+        bool staysUntilClick = false;
+        bool closeClickStarted = false;
         std::string title;
         std::string body;
     };
@@ -270,7 +276,6 @@ public:
     {
         bool active = false;
         SpellbookSchool school = SpellbookSchool::Fire;
-        bool hasRememberedSchool = false;
         uint32_t selectedSpellId = 0;
     };
 
@@ -524,6 +529,8 @@ public:
         bool active = false;
         uint32_t houseId = 0;
         HouseShopMode mode = HouseShopMode::None;
+        // Which of a guild's spellbook shelves is open (HouseServiceRuntime::spellbookShelfSchools).
+        uint32_t spellbookShelf = 0;
     };
 
     struct HouseShopVisitState
@@ -717,7 +724,7 @@ public:
     void closeReadableScrollOverlay();
     void openInventoryNestedOverlay(InventoryNestedOverlayMode mode, uint32_t houseId = 0);
     void closeInventoryNestedOverlay();
-    void openHouseShopOverlay(uint32_t houseId, HouseShopMode mode);
+    void openHouseShopOverlay(uint32_t houseId, HouseShopMode mode, uint32_t spellbookShelf = 0);
     void closeHouseShopOverlay();
     void beginHouseShopVisit(uint32_t houseId);
     void markHouseShopTransactionPerformed(uint32_t houseId);

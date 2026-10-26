@@ -35,6 +35,8 @@ public:
     void applyClassBonuses(Character &member) const override;
     // Death Knights, Elementalists and Assassins learn their spells their own way (MCC:482-493, 589-593).
     bool learnsSpellsFromBooks(const Character &character) const override;
+    // MAW's dragons are the dragon race, whatever their class (zzClasses.lua:500, 652).
+    bool isDragon(const Character &character) const override;
     // The counters MAW prints over the portraits (zzClasses.lua:640-650, 693-702), shown as gems: five for the
     // Assassin's combo points, ten for the Elementalist's stacks (at 10 the cast delay is back to normal).
     PortraitCounter portraitCounter(const Character &member) const override;

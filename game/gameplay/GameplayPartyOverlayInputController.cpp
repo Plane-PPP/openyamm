@@ -1379,8 +1379,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                             GameAudioSystem::PlaybackGroup::Ui);
                     }
 
-                    context.spellbook().school = next.school;
-                    context.spellbook().selectedSpellId = 0;
+                    context.setSpellbookSchool(next.school);
                     break;
                 }
             }
@@ -1566,8 +1565,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                             GameAudioSystem::PlaybackGroup::Ui);
                     }
 
-                    context.spellbook().school = target.school;
-                    context.spellbook().selectedSpellId = 0;
+                    context.setSpellbookSchool(target.school);
                 }
 
                 return;
@@ -3110,7 +3108,8 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             context,
             selectedPartyMemberIndex,
             hoveredCharacterTarget,
-            isLeftMousePressed);
+            isLeftMousePressed,
+            input.rightMouseButton.held);
 
         if (rightMousePressed
             && context.heldInventoryItem().active

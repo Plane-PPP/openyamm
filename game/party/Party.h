@@ -118,6 +118,8 @@ struct Character
     // The potion radial's six slots (QuickItemSlots): a kind of potion or scroll each.
     std::array<QuickItemSlot, QuickItemSlotCount> quickItemSlots = {};
     std::string attackSpellName;
+    // The spellbook page the character last had open (a SpellbookSchool), or -1 before the first; it opens there.
+    int32_t spellbookSchool = -1;
     std::unordered_set<uint32_t> knownSpellIds;
     CharacterResistanceSet baseResistances = {};
     CharacterStatBonuses permanentBonuses = {};
@@ -344,6 +346,7 @@ public:
         uint32_t generationVersion = 0;
         std::vector<InventoryItem> standardStock;
         std::vector<InventoryItem> specialStock;
+        // A guild's shelves, one per school it teaches (HouseServiceRuntime::spellbookShelfSchools), one after another.
         std::vector<InventoryItem> spellbookStock;
     };
 

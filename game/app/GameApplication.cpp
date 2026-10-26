@@ -13021,6 +13021,9 @@ void GameApplication::handleCompletedArcomageScreen()
     }
 
     const ArcomageState &state = pArcomageScreen->state();
+    // Kept past the screen, which closing destroys with its state.
+    const uint32_t houseId = state.houseId;
+    const bool finished = state.result.finished;
     Party *pParty = nullptr;
 
     if (m_pOutdoorPartyRuntime != nullptr)
@@ -13055,11 +13058,12 @@ void GameApplication::handleCompletedArcomageScreen()
             }
 
             pParty->recordArcomageWin(state.houseId, goldReward, firstWinAwardId);
-            arcomageStatusText = "You have won " + std::to_string(goldReward) + " gold!";
+            arcomageStatusText = goldReward > 0 ? "You have won " + std::to_string(goldReward) + " gold!" : "You won!";
         }
         else if (*state.result.winnerIndex == 1)
         {
             pParty->recordArcomageLoss();
+            arcomageStatusText = "You lost!";
         }
 
         if (m_pOutdoorPartyRuntime != nullptr)
@@ -13074,24 +13078,34 @@ void GameApplication::handleCompletedArcomageScreen()
 
     m_screenManager.setActiveScreen(nullptr);
 
-    if (arcomageStatusText.has_value())
-    {
-        if (EventRuntimeState *pEventRuntimeState = m_gameplayController.eventRuntimeState())
-        {
-            pEventRuntimeState->lastActivationResult = *arcomageStatusText;
-        }
-
-        if (m_pMapSceneRuntime != nullptr && m_pMapSceneRuntime->kind() == SceneKind::Outdoor)
-        {
-            m_outdoorGameView.showStatusBarEvent(*arcomageStatusText, 4.0f);
-        }
-    }
-
     if (m_pMapSceneRuntime != nullptr)
     {
         m_screenManager.setCurrentMode(
             m_pMapSceneRuntime->kind() == SceneKind::Outdoor ? AppMode::GameplayOutdoor : AppMode::GameplayIndoor
         );
+    }
+
+    // The Escape or click that ended the match may still be held: the tavern's dialog must not take it as its own.
+    m_gameInputSystem.suppressMouseButtonsUntilReleased();
+    GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
+    screenRuntime.updatePreviousKeyboardStateSnapshot(m_gameInputSystem.frame().keyboardState());
+    screenRuntime.interactionState().menuToggleLatch = true;
+    screenRuntime.interactionState().closeOverlayLatch = true;
+
+    // The result is told in the tavern's dialog, indoors and outdoors alike.
+    if (finished)
+    {
+        if (!arcomageStatusText.has_value())
+        {
+            arcomageStatusText = "A tie!";
+        }
+
+        if (EventRuntimeState *pEventRuntimeState = m_gameplayController.eventRuntimeState())
+        {
+            pEventRuntimeState->lastActivationResult = *arcomageStatusText;
+        }
+
+        screenRuntime.showHouseServiceMessage(houseId, *arcomageStatusText);
     }
 }
 }

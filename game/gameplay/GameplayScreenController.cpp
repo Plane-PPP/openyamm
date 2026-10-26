@@ -837,6 +837,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         .pointerY = config.pointerY,
         .leftButtonPressed = config.leftButtonPressed,
         .rightButtonPressed = input.rightMouseButton.held,
+        .rightPressUsesHeldItem = config.rightPressUsesHeldItem,
         .touchItemReleased = input.mobileTouchDragReleased,
         .allowInput = gameplayReadyForPortraitClicks,
         .requireGameplayReady = requirePortraitGameplayReady,
@@ -1146,12 +1147,34 @@ GameplayStandardWorldInputGateResult GameplayScreenController::gateStandardWorld
         return {.blocked = true};
     }
 
+    GameplayUiController::ReadableScrollOverlayState &readableScroll = context.readableScrollOverlay();
+
+    // A scroll left open until a click keeps the world paused; the click (press and release) only closes it.
+    if (readableScroll.active && readableScroll.staysUntilClick)
+    {
+        const bool buttonHeld = config.pInputFrame != nullptr
+            && (config.pInputFrame->leftMouseButton.held || config.pInputFrame->rightMouseButton.held);
+
+        if (buttonHeld)
+        {
+            readableScroll.closeClickStarted = true;
+        }
+        else if (readableScroll.closeClickStarted)
+        {
+            context.itemService().closeReadableScrollOverlay();
+        }
+
+        return {.blocked = true};
+    }
+
     if (config.clearCharacterOverlayInputState)
     {
         context.resetCharacterOverlayInteractionState();
     }
 
-    if (config.closeReadableScrollOverlay)
+    if (config.closeReadableScrollOverlay
+        && !context.itemService().readableScrollOverlayHeldByRightButton(
+            config.pInputFrame != nullptr && config.pInputFrame->rightMouseButton.held))
     {
         context.itemService().closeReadableScrollOverlay();
     }

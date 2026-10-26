@@ -627,11 +627,22 @@ bool GameplayItemService::tryUseHeldItemOnPartyMember(
     }
     else if (useResult.action == InventoryItemUseAction::ReadMessageScroll)
     {
-        GameplayUiController::ReadableScrollOverlayState &overlay = uiController.readableScrollOverlay();
-        overlay.active = true;
-        overlay.title = useResult.readableTitle;
-        overlay.body = useResult.readableBody;
-        learnRecipeScroll(runtime, *pParty, memberIndex, heldItem.item.objectDescriptionId);
+        if (useResult.readableBody.empty())
+        {
+            if (runtime.audioSystem() != nullptr)
+            {
+                runtime.audioSystem()->playCommonSound(SoundId::Error, GameAudioSystem::PlaybackGroup::Ui);
+            }
+        }
+        else
+        {
+            GameplayUiController::ReadableScrollOverlayState &overlay = uiController.readableScrollOverlay();
+            overlay.active = true;
+            overlay.title = useResult.readableTitle;
+            overlay.body = useResult.readableBody;
+            learnRecipeScroll(runtime, *pParty, memberIndex, heldItem.item.objectDescriptionId);
+            runtime.triggerPortraitFaceAnimation(memberIndex, FaceAnimationId::ReadScroll);
+        }
     }
     else
     {
@@ -1438,10 +1449,17 @@ void GameplayItemService::updateReadableScrollOverlayForHeldItem(
     GameplayScreenRuntime &runtime,
     size_t memberIndex,
     const GameplayCharacterPointerTarget &pointerTarget,
-    bool isLeftMousePressed)
+    bool isLeftMousePressed,
+    bool isRightMousePressed)
 {
     GameplayUiController &uiController = m_session.gameplayUiController();
     GameplayUiController::ReadableScrollOverlayState &overlay = uiController.readableScrollOverlay();
+
+    if (readableScrollOverlayHeldByRightButton(isRightMousePressed))
+    {
+        return;
+    }
+
     overlay = {};
 
     const ItemTable *pItemTable = m_session.hasDataRepository() ? &m_session.data().itemTable() : nullptr;
@@ -1482,7 +1500,9 @@ void GameplayItemService::updateReadableScrollOverlayForHeldItem(
             &m_session.data().mergedPotionSettingTable(),
             &m_session.data().mergedReagentSettingTable());
 
-    if (!useResult.handled || useResult.action != InventoryItemUseAction::ReadMessageScroll)
+    if (!useResult.handled
+        || useResult.action != InventoryItemUseAction::ReadMessageScroll
+        || useResult.readableBody.empty())
     {
         return;
     }
@@ -1851,6 +1871,13 @@ bool GameplayItemService::tryRepairInspectedItem(
     }
 
     return false;
+}
+
+bool GameplayItemService::readableScrollOverlayHeldByRightButton(bool isRightMousePressed) const
+{
+    const GameplayUiController::ReadableScrollOverlayState &overlay =
+        m_session.gameplayUiController().readableScrollOverlay();
+    return isRightMousePressed && overlay.active && overlay.heldByRightButton;
 }
 
 void GameplayItemService::closeReadableScrollOverlay()

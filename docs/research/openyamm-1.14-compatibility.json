@@ -1,0 +1,17 @@
+{
+  "upstream_release": "v1.14",
+  "upstream_commit": "f1d7c45d8a7c1fb2edbb4542b4a144cb476b9486",
+  "published_at": "2026-10-26T09:33:38Z",
+  "base_version": "minotaur-1.10-b7e80f0583df-14-1",
+  "save_magic": "OYMINO1",
+  "save_version": 132,
+  "upstream_schema": 131,
+  "previous_mappings": {
+    "89": 88,
+    "94": 93,
+    "95": 94,
+    "130": 129
+  },
+  "validation": "Windows build and gameplay checks pending; previous1.13 relevant29 cases passed.",
+  "manual_gameplay_tested": false
+}

@@ -22,8 +22,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 130;
-constexpr uint32_t UpstreamSaveVersion = 129;
+constexpr uint32_t SaveVersion = 132;
+constexpr uint32_t UpstreamSaveVersion = 131;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -179,6 +179,11 @@ constexpr uint32_t SaveVersionMawMadnessDeaths = 128;
 // The decoration states (decorVars) are numbered with MMerge's campfire list; older map states keep a marker until the
 // map renumbers them (EventRuntimeState::legacyCampFireDecorVars).
 constexpr uint32_t SaveVersionMMergeCampfireDecorVars = 129;
+// Each character remembers the spellbook page it last had open, as in MM8.
+constexpr uint32_t SaveVersionSpellbookSchool = 130;
+// A guild of several schools keeps a spellbook shelf for each (HouseServiceRuntime::spellbookShelfSchools); older saves
+// kept one shelf of mixed schools.
+constexpr uint32_t SaveVersionGuildSchoolShelves = 131;
 constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
 constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
@@ -1390,6 +1395,7 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.rulesetState);
     writeValue(writer, value.extraQuickSpellNames);
     writeValue(writer, value.quickItemSlots);
+    writeValue(writer, value.spellbookSchool);
 }
 
 // Saves before SaveVersionWideExperience hold a character's experience in 32 bits.
@@ -1478,7 +1484,8 @@ bool readValue(BinaryReader &reader, Character &value)
         && (reader.version() < SaveVersionCharacterTechPoints || readValue(reader, value.techPoints))
         && (reader.version() < SaveVersionCharacterRulesetState || readValue(reader, value.rulesetState))
         && (reader.version() < SaveVersionExtraQuickSpells || readValue(reader, value.extraQuickSpellNames))
-        && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots));
+        && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots))
+        && (reader.version() < SaveVersionSpellbookSchool || readValue(reader, value.spellbookSchool));
 }
 
 void writeValue(BinaryWriter &writer, const PartyBuffState &value)
@@ -1536,7 +1543,7 @@ void writeValue(BinaryWriter &writer, const Party::HouseStockState &value)
 
 bool readValue(BinaryReader &reader, Party::HouseStockState &value)
 {
-    return readValue(reader, value.houseId)
+    const bool read = readValue(reader, value.houseId)
         && readValue(reader, value.nextRefreshGameMinutes)
         && readValue(reader, value.refreshSequence)
         && readValue(reader, value.standardStock)
@@ -1544,6 +1551,22 @@ bool readValue(BinaryReader &reader, Party::HouseStockState &value)
         && readValue(reader, value.spellbookStock)
         && (reader.version() < SaveVersionVendorStockGeneration
             || readValue(reader, value.generationVersion));
+
+    // A guild's single mixed shelf has no school shelves to keep: the guild restocks on the next visit.
+    const bool guildStock = std::any_of(value.spellbookStock.begin(), value.spellbookStock.end(),
+        [](const InventoryItem &item)
+        {
+            return item.objectDescriptionId != 0;
+        });
+
+    if (read && reader.version() < SaveVersionGuildSchoolShelves && guildStock)
+    {
+        value.standardStock.clear();
+        value.specialStock.clear();
+        value.spellbookStock.clear();
+    }
+
+    return read;
 }
 
 void writeValue(BinaryWriter &writer, const AdventurersInnMember &value)
@@ -5204,7 +5227,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
         error = "invalid save header";
         return std::nullopt;
     }
-    if ((modHeader && version != 89 && version != 94 && version != 95 && version != SaveVersion)
+    if ((modHeader && version != 89 && version != 94 && version != 95 && version != 130 && version != SaveVersion)
         || (legacyHeader && version > UpstreamSaveVersion))
     {
         error = SaveFromNewerVersionError;
@@ -5213,7 +5236,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
 
     // Mod versions carry a combat-level field beyond their corresponding upstream schema.
     const uint32_t sourceVersion = !modHeader ? version
-        : version == 89 ? 88 : version == 94 ? 93 : version == 95 ? 94 : UpstreamSaveVersion;
+        : version == 89 ? 88 : version == 94 ? 93 : version == 95 ? 94 : version == 130 ? 129 : UpstreamSaveVersion;
 
     // v0.4 used upstream's magic and v85 before upstream independently assigned v85
     // to the new weather layout. Decode both known layouts and require exact consumption;

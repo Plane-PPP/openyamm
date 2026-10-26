@@ -157,6 +157,8 @@ const std::vector<StepKeys> &stepKeyTable()
             "second_enchant", "special", "rarity", "drop_level", "item_power", "charges", "identified", "equip",
             "roll_level", "boss", "seed", "dimension_map", "legendary"}},
         {ScenarioStepKind::UseItem, {"item_id", "member_index", "expect"}},
+        {ScenarioStepKind::RightClickPortrait, {"item_id", "carrier_index", "member_index", "inventory", "release",
+            "expect"}},
         {ScenarioStepKind::CastSpell, {"member_index", "spell_id", "skill", "mastery", "actor_index", "target_member",
             "scroll", "expect"}},
         {ScenarioStepKind::PartyCharge, {"actor_index", "status", "advance_seconds", "min_moved"}},
@@ -517,6 +519,12 @@ bool ScenarioYamlLoader::parseStepKind(const std::string &value, ScenarioStepKin
     if (value == "use_item")
     {
         kind = ScenarioStepKind::UseItem;
+        return true;
+    }
+
+    if (value == "right_click_portrait")
+    {
+        kind = ScenarioStepKind::RightClickPortrait;
         return true;
     }
 

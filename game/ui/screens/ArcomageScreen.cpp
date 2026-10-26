@@ -178,6 +178,13 @@ void ArcomageScreen::drawScreen(float deltaSeconds)
     const std::vector<HandCardPlacement> handPlacements = drawCurrentHand(layout);
     drawAnimatedCard(layout);
 
+    const bool resignInputHandled = !m_state.result.finished && updateResignInput();
+
+    if (m_shouldClose)
+    {
+        return;
+    }
+
     if (hasCardAnimation())
     {
         updateCardAnimation(deltaSeconds);
@@ -192,7 +199,14 @@ void ArcomageScreen::drawScreen(float deltaSeconds)
     }
     else if (m_state.currentPlayerIndex == 0)
     {
-        updateHumanInput(layout, handPlacements);
+        if (resignInputHandled || m_resignPrompt)
+        {
+            m_hoveredHandIndex.reset();
+        }
+        else
+        {
+            updateHumanInput(layout, handPlacements);
+        }
     }
     else
     {
@@ -204,6 +218,12 @@ void ArcomageScreen::drawScreen(float deltaSeconds)
     if (!hoverText.empty())
     {
         drawScreenText(layout, ArrusFontName, hoverText, LogicalWidth * 0.5f, 458.0f, true);
+    }
+
+    if (m_resignPrompt)
+    {
+        drawScreenText(layout, ArrusFontName, "Are you sure you want to resign?", LogicalWidth * 0.5f, 196.0f, true);
+        drawScreenText(layout, ArrusFontName, "Press ESC again to confirm.", LogicalWidth * 0.5f, 216.0f, true);
     }
 
 #if !defined(__ANDROID__) && !defined(OPENYAMM_IOS)
@@ -702,15 +722,6 @@ void ArcomageScreen::updateHumanInput(
         }
     }
 
-    const bool escapeDown = isScancodeHeld(SDL_SCANCODE_ESCAPE);
-
-    if (escapeDown && !m_escapeLatch)
-    {
-        m_rules.resign(0, m_state);
-    }
-
-    m_escapeLatch = escapeDown;
-
     if (!m_hoveredHandIndex.has_value() || m_pLibrary == nullptr)
     {
 #if defined(__ANDROID__) || defined(OPENYAMM_IOS)
@@ -823,7 +834,6 @@ void ArcomageScreen::updateAndroidHumanInput(
 void ArcomageScreen::updateAiTurn(float deltaSeconds)
 {
     m_hoveredHandIndex.reset();
-    m_escapeLatch = false;
 
     if (m_state.result.finished || m_pLibrary == nullptr)
     {
@@ -916,6 +926,39 @@ void ArcomageScreen::updateFinishInput()
     }
 
     m_escapeLatch = escapeDown;
+}
+
+// As in the original: Escape asks to resign at any point of the match, a second Escape resigns and leaves for the
+// tavern, and a click takes the question back. True when this frame's input was spent on it.
+bool ArcomageScreen::updateResignInput()
+{
+    const bool escapeDown = isScancodeHeld(SDL_SCANCODE_ESCAPE);
+    const bool escapePressed = escapeDown && !m_escapeLatch;
+    m_escapeLatch = escapeDown;
+
+    if (escapePressed)
+    {
+        if (m_resignPrompt)
+        {
+            m_resignPrompt = false;
+            m_rules.resign(0, m_state);
+            m_shouldClose = true;
+        }
+        else
+        {
+            m_resignPrompt = true;
+        }
+
+        return true;
+    }
+
+    if (m_resignPrompt && (leftMouseJustPressed() || rightMouseJustPressed()))
+    {
+        m_resignPrompt = false;
+        return true;
+    }
+
+    return false;
 }
 
 bool ArcomageScreen::hasCardAnimation() const

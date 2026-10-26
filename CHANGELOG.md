@@ -1,3 +1,12 @@
+# Minotaur on OpenYAMM 1.14 (2026-10-26)
+
+Implemented; automatic Windows validation pending; not manually tested:
+- Update to official1.14, retaining v0.4 + Luck, Axe, Damage Resistance, teachers and UI fixes.
+- Keep production mod95 saves; latest mod132 stores upstream131 and the existing combat-level field.
+- Preserve the new spellbook page and guild-school shelf format; keep upstream's old-shelf migration.
+- Root/nested ZIP installer detection fix and Windows test/link fixes from the intermediate1.13 port included.
+No1.13 mod package was published; the entries below describe its intermediate validation history.
+
 # Minotaur on OpenYAMM 1.13 (2026-10-26)
 
 Implemented; automatic Windows validation pending, not manually tested:

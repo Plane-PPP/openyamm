@@ -3,6 +3,7 @@
 #include "game/audio/SoundIds.h"
 #include "game/gameplay/GameplayActionController.h"
 #include "game/app/GameSettings.h"
+#include "game/gameplay/GameplayHudInputController.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/GameplayPartyOverlayInputController.h"
@@ -225,6 +226,13 @@ void GameplayInputController::handleStandardUiHotkeys(
     {
         if (pWorldRuntime != nullptr && closeActiveLootViewFromEscape(context, *pWorldRuntime))
         {
+            return;
+        }
+
+        if (context.readableScrollOverlayReadOnly().active)
+        {
+            context.itemService().closeReadableScrollOverlay();
+            context.interactionState().menuToggleLatch = true;
             return;
         }
 
@@ -678,6 +686,8 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
                 .blockOnUtilitySpellOverlay = true,
             });
 
+    // Holding the right button is the cursor mode under mouse look; this frame lets it go.
+    const bool cursorModeReleased = gameplayMouseLookState.cursorModeActive && !config.rightButtonPressed;
     frameResult.mouseLookPolicy =
         updateGameplayMouseLookPolicy(
             gameplayMouseLookState,
@@ -726,6 +736,7 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
                             .leftButtonPressed = config.leftButtonPressed,
                             .rightButtonPressed = config.rightButtonPressed,
                             .allowGameplayPointerInput = frameResult.mouseLookPolicy.allowGameplayPointerInput,
+                            .rightPressUsesHeldItem = !frameResult.mouseLookPolicy.cursorModeActive,
                             .mouseWheelDelta = config.mouseWheelDelta,
                             .blockPortraitInput =
                                 config.isUtilitySpellModalActive || config.isReadableScrollOverlayActive,
@@ -777,6 +788,23 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
     if (frameResult.journalInputConsumed)
     {
         return frameResult;
+    }
+
+    if (cursorModeReleased
+        && config.processStandardUiInput
+        && heldInventoryItem.active
+        && !hasPendingSpellCast
+        && !hasActiveLootView
+        && !config.isUtilitySpellModalActive
+        && !config.isReadableScrollOverlayActive
+        && context.currentHudScreenState() == GameplayHudScreenState::Gameplay)
+    {
+        GameplayHudInputController::useHeldItemOnPortraitAtPointer(
+            context,
+            config.screenWidth,
+            config.screenHeight,
+            config.pointerX,
+            config.pointerY);
     }
 
     const bool canRunStandardGameplayAction =

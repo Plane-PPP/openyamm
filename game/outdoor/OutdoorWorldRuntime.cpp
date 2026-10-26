@@ -5229,7 +5229,6 @@ void OutdoorWorldRuntime::initialize(
         }
 
         m_nextActorId = static_cast<uint32_t>(m_mapActors.size());
-        placeRulesetMapMonsters();
     }
 
     std::random_device randomDevice;
@@ -5313,6 +5312,13 @@ void OutdoorWorldRuntime::initialize(
     }
 
     applyEventRuntimeState(true);
+
+    // The ruleset places the map's monsters once its spawn points have filled it, so the bosses count them too.
+    if (outdoorMapDeltaData)
+    {
+        placeRulesetMapMonsters();
+    }
+
     applyOutdoorDestructibleStates(false);
     groundMm9LoadedPlacements(true, true);
 }

@@ -3324,19 +3324,32 @@ TEST_CASE("house service guild spellbook stock offers its world's books up to th
             *pElementalGuild,
             elementalHarness.worldRuntime().gameMinutes(),
             OpenYAMM::Game::HouseStockMode::GuildSpellbooks);
-    const int maxSpellInSchool = pElementalGuild->spellbookStockRule.quality;
-    std::set<uint32_t> elementalBooks;
+    const uint32_t maxSpellInSchool = uint32_t(pElementalGuild->spellbookStockRule.quality);
+    const size_t shelfSize = OpenYAMM::Game::HouseServiceRuntime::slotCountForStockMode(
+        *pElementalGuild,
+        OpenYAMM::Game::HouseStockMode::GuildSpellbooks);
+    REQUIRE_EQ(shelfSize, 12u);
 
-    for (const OpenYAMM::Game::InventoryItem &item : elementalStock)
+    // A shelf per element, as in MM8: Fire, Air, Water, Earth, each with only its school's books, all of them.
+    REQUIRE_EQ(
+        OpenYAMM::Game::HouseServiceRuntime::spellbookShelfSchools(*pElementalGuild),
+        std::vector<uint32_t>{0, 1, 2, 3});
+    REQUIRE_EQ(elementalStock.size(), 4 * shelfSize);
+
+    for (uint32_t school = 0; school < 4; ++school)
     {
-        REQUIRE_GE(item.objectDescriptionId, 400u);
-        const uint32_t bookOffset = item.objectDescriptionId - 400;
-        CHECK_LT(bookOffset, 44u);
-        CHECK_LT(static_cast<int>(bookOffset % 11), maxSpellInSchool);
-        elementalBooks.insert(item.objectDescriptionId);
-    }
+        std::set<uint32_t> shelfBooks;
 
-    CHECK_EQ(elementalBooks.size(), elementalStock.size());
+        for (size_t slot = 0; slot < shelfSize; ++slot)
+        {
+            const OpenYAMM::Game::InventoryItem &item = elementalStock[school * shelfSize + slot];
+            REQUIRE_GE(item.objectDescriptionId, 400u + school * 11);
+            REQUIRE_LT(item.objectDescriptionId, 400u + school * 11 + maxSpellInSchool);
+            shelfBooks.insert(item.objectDescriptionId);
+        }
+
+        CHECK_EQ(shelfBooks.size(), maxSpellInSchool);
+    }
 
     constexpr uint32_t NewSorpigalSelfGuildHouseId = 189;
     OpenYAMM::Tests::HouseDialogueTestHarness selfHarness(gameData);
@@ -3352,6 +3365,9 @@ TEST_CASE("house service guild spellbook stock offers its world's books up to th
         *pSelfGuild,
         selfHarness.worldRuntime().gameMinutes(),
         OpenYAMM::Game::HouseStockMode::GuildSpellbooks);
+
+    // Spirit, Mind and Body shelves.
+    REQUIRE_EQ(selfStock.size(), 3 * shelfSize);
 
     for (const OpenYAMM::Game::InventoryItem &item : selfStock)
     {
@@ -4405,6 +4421,41 @@ TEST_CASE("dwi guild skill learning")
     const OpenYAMM::Game::Character *pSorcerer = harness.party().member(3);
     REQUIRE(pSorcerer != nullptr);
     CHECK(pSorcerer->hasSkill("AirMagic"));
+}
+
+TEST_CASE("a guild of several schools offers a shelf for each, a single-school guild one")
+{
+    constexpr uint32_t DaggerWoundElementalGuildHouseId = 182;
+    constexpr uint32_t BracadaLightGuildHouseId = 171;
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Tests::HouseDialogueTestHarness harness(gameData);
+    const auto buyOptions = [&](uint32_t houseId)
+    {
+        const OpenYAMM::Game::HouseEntry *pHouseEntry = gameData.houseTable.get(houseId);
+        REQUIRE(pHouseEntry != nullptr);
+        std::vector<std::pair<std::string, std::string>> result;
+
+        for (const OpenYAMM::Game::HouseActionOption &option : OpenYAMM::Game::buildHouseActionOptions(
+                 *pHouseEntry,
+                 &harness.party(),
+                 &gameData.classSkillTable,
+                 &harness.worldRuntime(),
+                 12.0f * 60.0f,
+                 OpenYAMM::Game::DialogueMenuId::None))
+        {
+            if (option.id == OpenYAMM::Game::HouseActionId::GuildBuySpellbooks)
+            {
+                result.emplace_back(option.label, option.argument);
+            }
+        }
+
+        return result;
+    };
+
+    CHECK_EQ(buyOptions(DaggerWoundElementalGuildHouseId), std::vector<std::pair<std::string, std::string>>{
+        {"Buy Fire Spells", "0"}, {"Buy Air Spells", "1"}, {"Buy Water Spells", "2"}, {"Buy Earth Spells", "3"}});
+    CHECK_EQ(buyOptions(BracadaLightGuildHouseId),
+        std::vector<std::pair<std::string, std::string>>{{"Buy Spellbooks", ""}});
 }
 
 TEST_CASE("mm6 and mm7 magic guilds require membership; mm8 and mm7 light/dark do not")

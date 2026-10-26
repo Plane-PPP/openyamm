@@ -210,6 +210,8 @@ public:
     bool isReadOnlyAdventurersInnCharacterViewActive() const;
     bool activeMemberKnowsSpell(uint32_t spellId) const;
     bool activeMemberHasSpellbookSchool(GameplayUiController::SpellbookSchool school) const;
+    // Turns the open spellbook to the school's page and remembers it as the active member's page.
+    void setSpellbookSchool(GameplayUiController::SpellbookSchool school);
     void setStatusBarEvent(
         const std::string &text,
         float durationSeconds = 2.0f,
@@ -285,7 +287,11 @@ public:
         size_t casterMemberIndex,
         bool lloydRecallMode = false);
     void closeUtilitySpellOverlayAfterSpellResolution(uint32_t spellId);
+    // A message in the open dialog of the house (an Arcomage match's result in its tavern).
+    void showHouseServiceMessage(uint32_t houseId, const std::string &message);
     bool tryAutoPlaceHeldInventoryItemOnPartyMember(size_t memberIndex, bool showFailureStatus);
+    // The held item into the active member's pack, else the next member's with room (as a pickup goes).
+    bool tryStowHeldInventoryItemInParty();
     GameplayItemService &itemService() const;
     GameplayFxService &fxService() const;
     GameplaySpellService &spellService() const;

@@ -172,9 +172,10 @@ const std::vector<std::string> WeaponSheetSkillNames = {
     "Axe", "Bow", "Throwing", "Dagger", "Mace", "Spear", "Staff", "Sword", "Unarmed", "Blaster",
 };
 
+// The racial abilities are cast like spells and follow the schools, as in MM8.
 const std::vector<std::string> MagicSheetSkillNames = {
     "FireMagic", "AirMagic", "WaterMagic", "EarthMagic", "SpiritMagic", "MindMagic", "BodyMagic", "LightMagic",
-    "DarkMagic",
+    "DarkMagic", "DarkElfAbility", "VampireAbility", "DragonAbility",
 };
 
 // A ruleset's Cover, Retaliation and Mana Shield follow the armour skills, as in MAW (zzMAW-Skills.lua:2185-2214).

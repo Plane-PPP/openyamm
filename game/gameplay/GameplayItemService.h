@@ -54,7 +54,10 @@ public:
         GameplayScreenRuntime &runtime,
         size_t memberIndex,
         const GameplayCharacterPointerTarget &pointerTarget,
-        bool isLeftMousePressed);
+        bool isLeftMousePressed,
+        bool isRightMousePressed);
+    // A message scroll read with a right click on a portrait stays open until that button is released.
+    bool readableScrollOverlayHeldByRightButton(bool isRightMousePressed) const;
 
     bool identifyInspectedItem(
         const GameplayUiController::ItemInspectOverlayState &overlay,

@@ -2847,9 +2847,11 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         }
         else if (houseActionId == HouseActionId::GuildBuySpellbooks)
         {
+            // A guild of several schools lists one shelf per school, its index in the option's argument.
             context.uiController.openHouseShopOverlay(
                 pHouseEntry->id,
-                GameplayUiController::HouseShopMode::BuySpellbooks);
+                GameplayUiController::HouseShopMode::BuySpellbooks,
+                action.argument.empty() ? 0 : uint32_t(std::stoul(action.argument)));
             return result;
         }
         else if (houseActionId == HouseActionId::ShopSell)
@@ -4640,6 +4642,25 @@ GameplayDialogController::Result GameplayDialogController::returnToHouseBankMain
 
     context.eventRuntimeState.dialogueState.hostHouseId = houseId;
     setPendingDialogueContext(context.eventRuntimeState, DialogueContextKind::HouseService, houseId, houseId);
+    result.shouldOpenPendingEventDialog = true;
+    return result;
+}
+
+GameplayDialogController::Result GameplayDialogController::showHouseServiceMessage(
+    Context &context,
+    uint32_t houseId,
+    const std::string &message) const
+{
+    Result result = {};
+    result.previousMessageCount = context.eventRuntimeState.messages.size();
+
+    if (houseId == 0 || currentDialogueHostHouseId(context.eventRuntimeState) != houseId)
+    {
+        return result;
+    }
+
+    context.eventRuntimeState.messages.push_back(message);
+    refreshCurrentHouseServiceDialog(context, houseId);
     result.shouldOpenPendingEventDialog = true;
     return result;
 }

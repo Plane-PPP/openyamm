@@ -1029,16 +1029,18 @@ void GameplayDialogueRenderer::updateHouseShopHoverTopicText(
         view.worldRuntime()->gameMinutes(),
         *stockMode);
     const size_t slotCount = HouseServiceRuntime::slotCountForStockMode(*pHouseEntry, *stockMode);
+    // A guild's open spellbook shelf; other stocks have one shelf.
+    const size_t shelfStart = size_t(view.houseShopOverlay().spellbookShelf) * slotCount;
     const HouseShopVisualLayout overlayLayout =
         buildHouseShopVisualLayout(
             *pHouseEntry,
             view.houseShopOverlay().mode == GameplayUiController::HouseShopMode::BuySpellbooks);
 
     for (size_t slotIndex = 0;
-         slotIndex < slotCount && slotIndex < stock.size() && slotIndex < overlayLayout.slots.size();
+         slotIndex < slotCount && shelfStart + slotIndex < stock.size() && slotIndex < overlayLayout.slots.size();
          ++slotIndex)
     {
-        const InventoryItem &item = stock[slotIndex];
+        const InventoryItem &item = stock[shelfStart + slotIndex];
 
         if (item.objectDescriptionId == 0)
         {
@@ -1198,6 +1200,8 @@ void GameplayDialogueRenderer::renderHouseShopOverlay(
         view.worldRuntime()->gameMinutes(),
         *stockMode);
     const size_t slotCount = HouseServiceRuntime::slotCountForStockMode(*pHouseEntry, *stockMode);
+    // A guild's open spellbook shelf; other stocks have one shelf.
+    const size_t shelfStart = size_t(view.houseShopOverlay().spellbookShelf) * slotCount;
     const HouseShopVisualLayout overlayLayout =
         buildHouseShopVisualLayout(
             *pHouseEntry,
@@ -1205,10 +1209,10 @@ void GameplayDialogueRenderer::renderHouseShopOverlay(
     bool hoveredItem = false;
 
     for (size_t slotIndex = 0;
-         slotIndex < slotCount && slotIndex < stock.size() && slotIndex < overlayLayout.slots.size();
+         slotIndex < slotCount && shelfStart + slotIndex < stock.size() && slotIndex < overlayLayout.slots.size();
          ++slotIndex)
     {
-        const InventoryItem &item = stock[slotIndex];
+        const InventoryItem &item = stock[shelfStart + slotIndex];
 
         if (item.objectDescriptionId == 0)
         {

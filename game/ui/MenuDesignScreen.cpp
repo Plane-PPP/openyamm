@@ -587,6 +587,11 @@ void MenuDesignScreen::drawConfirmation()
     const float bodySize = pBody->textScale * fontHeight(pBody->fontName);
     const float bodyScale = unit * bodySize / std::max(1, fontHeight(pBody->fontName));
     const float bodyLineHeight = bodySize * 1.2f;
+    // Release notes widen the panel so their lines wrap less; the title, body and buttons widen with it.
+    constexpr float NotesPanelWidth = 560;
+    const float widen = !list && !twoColumns && !m_confirmation->notes.empty()
+        ? std::max(0.0f, NotesPanelWidth - pPanel->width) : 0.0f;
+    const float bodyWidth = pBody->width + widen;
     // With a row of buttons the panel grows to fit a long body, and by the notes box above it.
     constexpr float NotesPadding = 6;
     float bodyExtra = 0;
@@ -604,7 +609,7 @@ void MenuDesignScreen::drawConfirmation()
         std::string paragraph;
         while (std::getline(paragraphs, paragraph))
         {
-            bodyLines += wrapParagraph(paragraph, pBody->fontName, bodyScale, pBody->width * unit).size();
+            bodyLines += wrapParagraph(paragraph, pBody->fontName, bodyScale, bodyWidth * unit).size();
         }
         if (bodyLines > 0)
         {
@@ -613,7 +618,7 @@ void MenuDesignScreen::drawConfirmation()
 
         // A "- " line is a bullet: its wrapped lines align after the dash.
         constexpr float NotesMaxHeight = 150;
-        const float wrapWidth = (pBody->width - 2 * NotesPadding - 14) * unit;
+        const float wrapWidth = (bodyWidth - 2 * NotesPadding - 14) * unit;
         std::istringstream notes(menuEncoding(m_confirmation->notes));
         while (std::getline(notes, paragraph))
         {
@@ -636,10 +641,15 @@ void MenuDesignScreen::drawConfirmation()
     const float height = twoColumns ? GridTop + gridRows * gridRowPitch + GridBottom
                                    : list ? 155.0f + count * 25 : pPanel->height + bodyExtra + notesShift;
     const float verticalShift = (pPanel->height - height) / 2 * designScale();
-    const auto modalRect = [this, verticalShift](const std::string &id)
+    const auto modalRect = [this, verticalShift, widen](const std::string &id)
     {
         Rect rect = designRect(id);
         rect.y += verticalShift;
+        if (id != "MenuConfirmationSeal")
+        {
+            rect.x -= widen / 2 * designScale();
+            rect.width += widen * designScale();
+        }
         return rect;
     };
     Rect panel = modalRect("MenuConfirmationPanel");

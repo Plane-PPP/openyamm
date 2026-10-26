@@ -431,7 +431,6 @@ void GameplayUiController::openSpellbook(SpellbookSchool school)
     state.spellInspectOverlay = {};
     state.spellbook.active = true;
     state.spellbook.school = school;
-    state.spellbook.hasRememberedSchool = true;
 }
 
 void GameplayUiController::closeSpellbook()
@@ -474,7 +473,7 @@ void GameplayUiController::closeInventoryNestedOverlay()
     resolvedState().inventoryNestedOverlay = {};
 }
 
-void GameplayUiController::openHouseShopOverlay(uint32_t houseId, HouseShopMode mode)
+void GameplayUiController::openHouseShopOverlay(uint32_t houseId, HouseShopMode mode, uint32_t spellbookShelf)
 {
     if (mode == HouseShopMode::None || houseId == 0)
     {
@@ -488,6 +487,7 @@ void GameplayUiController::openHouseShopOverlay(uint32_t houseId, HouseShopMode 
     state.houseShopOverlay.active = true;
     state.houseShopOverlay.houseId = houseId;
     state.houseShopOverlay.mode = mode;
+    state.houseShopOverlay.spellbookShelf = spellbookShelf;
 }
 
 void GameplayUiController::closeHouseShopOverlay()

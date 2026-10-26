@@ -1,3 +1,5 @@
+> Historical intermediate port, not published. Superseded by [OpenYAMM1.14](openyamm-1.14-compatibility.md).
+
 # Minotaur v0.4 + Luck on OpenYAMM 1.13 — validation in progress
 
 Latest official release checked 2026-10-26: [v1.13](https://github.com/pjasicek/openyamm/releases/tag/v1.13),

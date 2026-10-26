@@ -3296,6 +3296,8 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                 view.worldRuntime()->gameMinutes(),
                 *stockMode);
             const size_t slotCount = HouseServiceRuntime::slotCountForStockMode(*pDialogueHouseEntry, *stockMode);
+            // A guild's open spellbook shelf; other stocks have one shelf.
+            const size_t shelfStart = size_t(view.houseShopOverlay().spellbookShelf) * slotCount;
             const HouseShopVisualLayout overlayLayout = buildHouseShopVisualLayout(
                 *pDialogueHouseEntry,
                 view.houseShopOverlay().mode == GameplayUiController::HouseShopMode::BuySpellbooks);
@@ -3304,7 +3306,8 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             const bool canReroll = *stockMode != HouseStockMode::GuildSpellbooks
                 && gameRulesFor(&party).items.shopRerollCost(party, *pDialogueHouseEntry).has_value();
             const auto resolveHoveredSlotIndex =
-                [&view, &stock, slotCount, resolvedFrame, &overlayLayout, canReroll, screenWidth, screenHeight](
+                [&view, &stock, slotCount, shelfStart, resolvedFrame, &overlayLayout, canReroll, screenWidth,
+                    screenHeight](
                     float mouseX, float mouseY) -> size_t
                 {
                     if (canReroll)
@@ -3319,10 +3322,11 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                     }
 
                     for (size_t slotIndex = 0;
-                         slotIndex < slotCount && slotIndex < stock.size() && slotIndex < overlayLayout.slots.size();
+                         slotIndex < slotCount && shelfStart + slotIndex < stock.size()
+                         && slotIndex < overlayLayout.slots.size();
                          ++slotIndex)
                     {
-                        const InventoryItem &item = stock[slotIndex];
+                        const InventoryItem &item = stock[shelfStart + slotIndex];
 
                         if (item.objectDescriptionId == 0 || view.itemTable() == nullptr)
                         {
@@ -3394,7 +3398,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                 view.interactionState().houseShopPressedSlotIndex,
                 std::numeric_limits<size_t>::max(),
                 resolveHoveredSlotIndex,
-                [&view, pDialogueHouseEntry, stockMode, &input](size_t slotIndex)
+                [&view, pDialogueHouseEntry, stockMode, shelfStart, &input](size_t slotIndex)
                 {
                     if (slotIndex == std::numeric_limits<size_t>::max()
                         || view.party() == nullptr
@@ -3442,7 +3446,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                             *pDialogueHouseEntry,
                             view.worldRuntime()->gameMinutes(),
                             *stockMode,
-                            slotIndex,
+                            shelfStart + slotIndex,
                             std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
                             std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
                             statusText,
@@ -3459,7 +3463,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                             *pDialogueHouseEntry,
                             view.worldRuntime()->gameMinutes(),
                             *stockMode,
-                            slotIndex,
+                            shelfStart + slotIndex,
                             statusText,
                             &serviceResult,
                             effectiveReputationForView(view));

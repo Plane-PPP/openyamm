@@ -50,6 +50,7 @@ enum class ScenarioStepKind
     ConsoleCommand,
     QuickLoad,
     UseItem,
+    RightClickPortrait,
     CastSpell,
     PartyCharge,
     Craft,

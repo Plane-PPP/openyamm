@@ -125,6 +125,8 @@ public:
     CloseDialogRequestResult handleDialogueCloseRequest(Context &context) const;
     bool refreshHouseBankInputDialog(Context &context, bool showCursor) const;
     Result returnToHouseBankMainDialog(Context &context) const;
+    // A message in the open dialog of the house (an Arcomage match's result in its tavern).
+    Result showHouseServiceMessage(Context &context, uint32_t houseId, const std::string &message) const;
     Result confirmHouseBankInput(Context &context) const;
     bool rejectClosedHouseInteraction(Context &context, const HouseEntry &houseEntry) const;
 };

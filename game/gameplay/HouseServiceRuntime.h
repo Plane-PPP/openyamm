@@ -49,7 +49,12 @@ public:
     static bool supportsEquipmentSell(const HouseEntry &houseEntry);
     static bool supportsIdentify(const HouseEntry &houseEntry);
     static bool supportsRepair(const HouseEntry &houseEntry);
+    // The slots on one shelf of the stock: a guild's spellbook stock holds one such shelf for each school of
+    // spellbookShelfSchools, one after another.
     static size_t slotCountForStockMode(const HouseEntry &houseEntry, HouseStockMode mode);
+    // The schools whose spellbooks a guild sells (0 Fire ... 8 Dark), one shelf each, in spell order: an Elemental
+    // Guild has Fire, Air, Water and Earth shelves, as in MM8.
+    static std::vector<uint32_t> spellbookShelfSchools(const HouseEntry &houseEntry);
     static const std::vector<InventoryItem> &ensureStock(
         Party &party,
         const ItemTable &itemTable,

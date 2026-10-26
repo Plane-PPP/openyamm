@@ -1,3 +1,11 @@
+# OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows checks pending
+
+New official1.14 appeared during1.13 validation; exact1.14 now supersedes that unpublished
+intermediate port. The update still targets installed `minotaur-1.10-b7e80f0583df-14-1`.
+Installer root detection fixed; Minotaur balance retained. New save OYMINO1/v132 maps to
+schema131; production mod95 still explicitly maps to94. [Compatibility](research/openyamm-1.14-compatibility.md).
+Windows publication and manual gameplay pending. Earlier1.13 entries below are history.
+
 # OpenYAMM 1.13 / Minotaur v0.4 + Luck — integration, Windows checks pending
 
 Port to latest official v1.13; previous balance retained. ZIP update base:

@@ -92,6 +92,7 @@ private:
     void updateResultDelay(float deltaSeconds);
     void updateCardAnimation(float deltaSeconds);
     void updateFinishInput();
+    bool updateResignInput();
     bool hasCardAnimation() const;
     bool startCardAnimation(CardAnimationKind kind, size_t handIndex, const Rect &originRect);
     bool startTurnIfNeeded();
@@ -119,6 +120,8 @@ private:
     std::optional<size_t> m_androidPressedHandIndex;
 #endif
     bool m_escapeLatch = false;
+    // Escape asked to resign; a second Escape confirms.
+    bool m_resignPrompt = false;
     bool m_shouldClose = false;
     std::optional<CardAnimation> m_cardAnimation;
     float m_aiDecisionDelaySeconds = 0.0f;
