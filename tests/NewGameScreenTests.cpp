@@ -96,6 +96,23 @@ struct NewGameScreenTestAccess
                                                        : mageClassId == 44 ? "DarkMagic" : "FireMagic"));
             }
 
+            // A Dark Elf by race of another class gets the race's ability without picking it.
+            const auto darkElf = std::find_if(screen.m_candidates.begin(), screen.m_candidates.end(),
+                [](const NewGameScreen::CreationCandidate &candidate) { return candidate.raceName == "DarkElf"; });
+            REQUIRE(darkElf != screen.m_candidates.end());
+            REQUIRE(std::find(darkElf->availableClassIds.begin(), darkElf->availableClassIds.end(), 0u)
+                    != darkElf->availableClassIds.end());
+            screen.resetStateForCandidate(static_cast<size_t>(darkElf - screen.m_candidates.begin()));
+            screen.m_state.selectedClassId = 0;
+            screen.refreshSkillChoices(false);
+            createdParty.clear();
+            screen.confirmCreation();
+            REQUIRE_EQ(createdParty.size(), 1);
+            CHECK_EQ(createdParty.front().className, "Archer");
+            CHECK(createdParty.front().hasSkill("DarkElfAbility"));
+            CHECK(createdParty.front().hasSkill("Bow"));
+            CHECK(createdParty.front().hasSkill("AirMagic"));
+
             for (size_t dragonIndex : dragonIndices)
             {
                 createdParty.clear();

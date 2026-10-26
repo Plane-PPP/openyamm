@@ -1944,6 +1944,21 @@ Character NewGameScreen::buildCharacterFromState(const CreationState &state) con
         character.skills[skillName] = {skillName, 1, SkillMastery::Normal};
     }
 
+    // A Vampire, Dark Elf or Dragon by race starts with the race's ability whatever the class: no shop teaches it.
+    constexpr std::array<std::pair<uint32_t, const char *>, 3> RacialAbilities = {{
+        {1, "VampireAbility"},
+        {2, "DarkElfAbility"},
+        {5, "DragonAbility"},
+    }};
+
+    for (const auto &[raceId, pSkillName] : RacialAbilities)
+    {
+        if (character.raceId == raceId && character.findSkill(pSkillName) == nullptr)
+        {
+            character.skills[pSkillName] = {pSkillName, 1, SkillMastery::Normal};
+        }
+    }
+
     GameMechanics::refreshCharacterBaseResources(
         character,
         true,
