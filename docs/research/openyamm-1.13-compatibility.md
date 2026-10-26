@@ -67,3 +67,10 @@ the game/engine. No tests ran and no patch was uploaded. Retry required.
 Final sparse-tree audit: the official packages.yml had retained its 1.10 copy during
 sparse conflict restoration. Restored it exactly from v1.13 (including upstream macOS job).
 This does not change the Minotaur Windows workflow or the game currently building.
+
+Third run40318306385 linked both executables and ran the tests: 29/30 cases passed,
+30790/30791 assertions passed. The sole failure was MM9 Keith Bloodaxe quest acceptance:
+its name accidentally matched *Axe*, while this package deliberately has no MM9 data.
+All selected Minotaur/Lethal Strike/Axe and other MM6/MM7/MM8 cases passed, including the
+old1.10 fixture and separate EnergyGuns/LethalStrike save test. The selector now explicitly
+excludes MM9* cases; no gameplay code or test expectations were weakened. Packaging retry pending.

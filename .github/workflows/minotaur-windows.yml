@@ -186,7 +186,8 @@ jobs:
       - name: Build and test Minotaur combat and save compatibility
         run: |
           cmake --build build-windows --target openyamm_unit_tests --parallel 4
-          build-windows/tests/openyamm_unit_tests.exe --test-case='*Lethal Strike*,*Minotaur*,*Axe*'
+          # MM9 is not shipped by this MM6/MM7/MM8 package; Bloodaxe is not an Axe mechanic test.
+          build-windows/tests/openyamm_unit_tests.exe --test-case='*Lethal Strike*,*Minotaur*,*Axe*' --test-case-exclude='MM9*'
 
       - name: Prepare indexed content (not included in unchanged update payloads)
         run: >-

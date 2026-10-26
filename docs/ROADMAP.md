@@ -196,3 +196,7 @@ EnergyGuns/LethalStrike coexistence save test. Retry remains required before pub
 1.13 second validation: all game/unit sources compiled; the Windows unit link required
 winhttp/bcrypt, now declared for the standalone unit target. Gameplay test results remain
 pending until the next run actually executes them.
+
+1.13 gameplay checks executed: 29 applicable cases passed in run40318306385. The broad Axe
+name filter also picked an unrelated MM9 Bloodaxe quest requiring unshipped MM9 assets;
+exclude MM9* from the MM6/MM7/MM8 mod job and retry packaging.
