@@ -203,6 +203,30 @@ TEST_CASE("multibag: an item the party gets goes into any bag with room before t
     CHECK_EQ(recipient, 1u);
 }
 
+TEST_CASE("multibag: event item checks see every bag (user, 2026-10-26: Markham's Contestant's Shield)")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    Party party = mawParty(rules, 4);
+    Character &holder = *party.member(2);
+    REQUIRE(InventoryBags::openBag(holder, 2, 4));
+    REQUIRE(holder.addInventoryItem(packItem(1460, 2, 2)));
+    REQUIRE(holder.addInventoryItem(packItem(1437, 1, 1)));
+    REQUIRE(InventoryBags::openBag(holder, 0, 4));
+    REQUIRE(holder.inventory.empty());
+
+    CHECK_EQ(party.inventoryItemCount(1460), 1);
+    CHECK_EQ(party.inventoryItemCount(1460, 2), 1);
+    CHECK_EQ(party.inventoryItemCount(1460, 0), 0);
+    CHECK(party.hasItemAnywhere(1460));
+
+    REQUIRE(party.removeItem(1460));
+    REQUIRE(party.removeItemFromMember(2, 1437));
+    CHECK_EQ(party.inventoryItemCount(1460), 0);
+    CHECK_EQ(party.inventoryItemCount(1437), 0);
+    CHECK_EQ(holder.rulesetState.currentBag, 0);
+    CHECK_FALSE(party.removeItem(1460));
+}
+
 TEST_CASE("multibag: sorting all bags puts the tallest first and fills the bags in order (H.1)")
 {
     Character character;

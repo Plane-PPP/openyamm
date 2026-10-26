@@ -5743,13 +5743,23 @@ int luaReplacePartyInventoryItems(lua_State *pLuaState)
                 continue;
             }
 
-            for (InventoryItem &item : pMember->inventory)
+            const auto replace = [fromItemId, toItemId, &replacedCount](std::vector<InventoryItem> &items)
             {
-                if (item.objectDescriptionId == fromItemId)
+                for (InventoryItem &item : items)
                 {
-                    item.objectDescriptionId = toItemId;
-                    ++replacedCount;
+                    if (item.objectDescriptionId == fromItemId)
+                    {
+                        item.objectDescriptionId = toItemId;
+                        ++replacedCount;
+                    }
                 }
+            };
+
+            replace(pMember->inventory);
+
+            for (auto &[bag, items] : pMember->rulesetState.storedBags)
+            {
+                replace(items);
             }
         }
     }

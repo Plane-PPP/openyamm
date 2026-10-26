@@ -16,8 +16,9 @@ class Party;
 struct Character;
 
 // Several bags per character (MAW's multibag, zzMaw-MultiBag.lua; ItemRules::bagCount): the inventory is the open
-// bag, the others wait in the character's ruleset state, each on a grid of its own. Every inventory pass of the engine
-// (quest items, event item checks, the Sort button) sees only the open bag, as in MAW.
+// bag, the others wait in the character's ruleset state, each on a grid of its own. Event and quest item checks see
+// every bag (Party::inventoryItemCount, removeItem, removeItemFromMember), since the inventory shows all of them; the
+// Sort button and the Workbench see only the open bag, as in MAW.
 namespace InventoryBags
 {
 // Opens `bag` (0-based) of the character: the open bag's items are stored and the chosen bag's become the

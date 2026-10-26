@@ -3372,6 +3372,40 @@ bool addToAnyBag(Character &member, const InventoryItem &item, int bagCount)
     InventoryBags::openBag(member, openBag, bagCount);
     return added;
 }
+
+// One of the item out of the member's open bag, else out of their other bags (MAW); the open bag stays open.
+bool removeFromAnyBag(Character &member, uint32_t objectDescriptionId)
+{
+    if (member.removeInventoryItem(objectDescriptionId))
+    {
+        return true;
+    }
+
+    for (auto &[bag, items] : member.rulesetState.storedBags)
+    {
+        const auto found = std::find_if(items.begin(), items.end(),
+            [objectDescriptionId](const InventoryItem &item)
+            {
+                return item.objectDescriptionId == objectDescriptionId;
+            });
+
+        if (found != items.end())
+        {
+            if (found->quantity > 1)
+            {
+                --found->quantity;
+            }
+            else
+            {
+                items.erase(found);
+            }
+
+            return true;
+        }
+    }
+
+    return false;
+}
 }
 
 bool Party::tryGrantItem(uint32_t objectDescriptionId, uint32_t quantity)
@@ -3531,7 +3565,7 @@ bool Party::removeItem(uint32_t objectDescriptionId, uint32_t quantity)
 
     for (Character &member : m_members)
     {
-        while (removedCount < quantity && member.removeInventoryItem(objectDescriptionId))
+        while (removedCount < quantity && removeFromAnyBag(member, objectDescriptionId))
         {
             removedCount += 1;
         }
@@ -3671,6 +3705,17 @@ void Party::restAndHealAll()
         if (member.conditions.test(static_cast<size_t>(CharacterCondition::Insane)))
         {
             member.spellPoints = 0;
+        }
+
+        for (const auto &[bag, items] : member.rulesetState.storedBags)
+        {
+            for (const InventoryItem &item : items)
+            {
+                if (item.objectDescriptionId == objectDescriptionId)
+                {
+                    availableCount += item.quantity;
+                }
+            }
         }
     }
 
@@ -4736,6 +4781,18 @@ int Party::inventoryItemCount(uint32_t objectDescriptionId, std::optional<size_t
             }
         }
 
+        // MAW's other bags count too: the inventory shows all four, unlike MAW's one bag at a time.
+        for (const auto &[bag, items] : member.rulesetState.storedBags)
+        {
+            for (const InventoryItem &item : items)
+            {
+                if (item.objectDescriptionId == objectDescriptionId)
+                {
+                    totalCount += static_cast<int>(item.quantity);
+                }
+            }
+        }
+
         for (EquipmentSlot slot : EquipmentSlots)
         {
             if (::OpenYAMM::Game::equippedItemId(member.equipment, slot) == objectDescriptionId)
@@ -4849,7 +4906,7 @@ bool Party::removeItemFromMember(size_t memberIndex, uint32_t objectDescriptionI
 
     for (uint32_t itemIndex = 0; itemIndex < quantity; ++itemIndex)
     {
-        if (!pMember->removeInventoryItem(objectDescriptionId))
+        if (!removeFromAnyBag(*pMember, objectDescriptionId))
         {
             return false;
         }

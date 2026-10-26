@@ -576,6 +576,7 @@ public:
     void addAward(size_t memberIndex, uint32_t awardId);
     void removeAward(uint32_t awardId);
     void removeAward(size_t memberIndex, uint32_t awardId);
+    // Carried and worn: every bag of a member (MAW's multibag) and the equipment.
     int inventoryItemCount(uint32_t objectDescriptionId, std::optional<size_t> memberIndex = std::nullopt) const;
     void recordEverOwnedItem(uint32_t objectDescriptionId);
     bool hasEverOwnedItem(uint32_t objectDescriptionId) const;
