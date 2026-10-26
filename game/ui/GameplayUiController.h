@@ -529,6 +529,8 @@ public:
         bool active = false;
         uint32_t houseId = 0;
         HouseShopMode mode = HouseShopMode::None;
+        // Which of a guild's spellbook shelves is open (HouseServiceRuntime::spellbookShelfSchools).
+        uint32_t spellbookShelf = 0;
     };
 
     struct HouseShopVisitState
@@ -722,7 +724,7 @@ public:
     void closeReadableScrollOverlay();
     void openInventoryNestedOverlay(InventoryNestedOverlayMode mode, uint32_t houseId = 0);
     void closeInventoryNestedOverlay();
-    void openHouseShopOverlay(uint32_t houseId, HouseShopMode mode);
+    void openHouseShopOverlay(uint32_t houseId, HouseShopMode mode, uint32_t spellbookShelf = 0);
     void closeHouseShopOverlay();
     void beginHouseShopVisit(uint32_t houseId);
     void markHouseShopTransactionPerformed(uint32_t houseId);

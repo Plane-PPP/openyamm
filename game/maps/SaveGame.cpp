@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 130;
+constexpr uint32_t SaveVersion = 131;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -180,6 +180,9 @@ constexpr uint32_t SaveVersionMawMadnessDeaths = 128;
 constexpr uint32_t SaveVersionMMergeCampfireDecorVars = 129;
 // Each character remembers the spellbook page it last had open, as in MM8.
 constexpr uint32_t SaveVersionSpellbookSchool = 130;
+// A guild of several schools keeps a spellbook shelf for each (HouseServiceRuntime::spellbookShelfSchools); older saves
+// kept one shelf of mixed schools.
+constexpr uint32_t SaveVersionGuildSchoolShelves = 131;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -1516,7 +1519,7 @@ void writeValue(BinaryWriter &writer, const Party::HouseStockState &value)
 
 bool readValue(BinaryReader &reader, Party::HouseStockState &value)
 {
-    return readValue(reader, value.houseId)
+    const bool read = readValue(reader, value.houseId)
         && readValue(reader, value.nextRefreshGameMinutes)
         && readValue(reader, value.refreshSequence)
         && readValue(reader, value.standardStock)
@@ -1524,6 +1527,22 @@ bool readValue(BinaryReader &reader, Party::HouseStockState &value)
         && readValue(reader, value.spellbookStock)
         && (reader.version() < SaveVersionVendorStockGeneration
             || readValue(reader, value.generationVersion));
+
+    // A guild's single mixed shelf has no school shelves to keep: the guild restocks on the next visit.
+    const bool guildStock = std::any_of(value.spellbookStock.begin(), value.spellbookStock.end(),
+        [](const InventoryItem &item)
+        {
+            return item.objectDescriptionId != 0;
+        });
+
+    if (read && reader.version() < SaveVersionGuildSchoolShelves && guildStock)
+    {
+        value.standardStock.clear();
+        value.specialStock.clear();
+        value.spellbookStock.clear();
+    }
+
+    return read;
 }
 
 void writeValue(BinaryWriter &writer, const AdventurersInnMember &value)

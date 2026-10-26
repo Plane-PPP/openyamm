@@ -1511,12 +1511,34 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
         if (!isSkillGuildHouse(houseEntry))
         {
-            options.push_back(makeOption(
-                HouseActionId::GuildBuySpellbooks,
-                "Buy Spellbooks",
-                isHouseOpenNow,
-                closedReason
-            ));
+            // A guild of several schools sells each from a shelf of its own, as MM8 does: "Buy Fire Spells" and so on.
+            static constexpr std::array<const char *, 9> SchoolNames = {
+                "Fire", "Air", "Water", "Earth", "Spirit", "Mind", "Body", "Light", "Dark",
+            };
+            const std::vector<uint32_t> schools = HouseServiceRuntime::spellbookShelfSchools(houseEntry);
+
+            if (schools.size() > 1)
+            {
+                for (size_t shelf = 0; shelf < schools.size(); ++shelf)
+                {
+                    HouseActionOption buy = makeOption(
+                        HouseActionId::GuildBuySpellbooks,
+                        std::string("Buy ") + SchoolNames[schools[shelf]] + " Spells",
+                        isHouseOpenNow,
+                        closedReason);
+                    buy.argument = std::to_string(shelf);
+                    options.push_back(std::move(buy));
+                }
+            }
+            else
+            {
+                options.push_back(makeOption(
+                    HouseActionId::GuildBuySpellbooks,
+                    "Buy Spellbooks",
+                    isHouseOpenNow,
+                    closedReason
+                ));
+            }
         }
 
         options.push_back(makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));

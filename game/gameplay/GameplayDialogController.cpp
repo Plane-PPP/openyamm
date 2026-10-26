@@ -2847,9 +2847,11 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         }
         else if (houseActionId == HouseActionId::GuildBuySpellbooks)
         {
+            // A guild of several schools lists one shelf per school, its index in the option's argument.
             context.uiController.openHouseShopOverlay(
                 pHouseEntry->id,
-                GameplayUiController::HouseShopMode::BuySpellbooks);
+                GameplayUiController::HouseShopMode::BuySpellbooks,
+                action.argument.empty() ? 0 : uint32_t(std::stoul(action.argument)));
             return result;
         }
         else if (houseActionId == HouseActionId::ShopSell)

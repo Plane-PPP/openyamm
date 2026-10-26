@@ -881,20 +881,24 @@ std::vector<InventoryItem> generateGuildSpellbookStock(
     const ItemTable &itemTable,
     const HouseEntry &houseEntry,
     std::mt19937 &rng,
-    size_t count)
+    size_t shelfSize)
 {
-    // The guild rule is the highest spell number sold within each of the guild's schools. Each spell is sold as
-    // the first book of the guild's world, so every continent keeps its own book design.
+    // Each school the guild teaches has a shelf of its own, the shelves one after another, as in MM8 (MM8-Rel.exe
+    // 0x4b6e13: shelf (house - 139) x 12 + school). The guild rule is the highest spell number sold within each school.
+    // Each spell is sold as the first book of the guild's world, so every continent keeps its own book design.
     const uint32_t maxSpellInSchool =
         static_cast<uint32_t>(std::clamp(houseEntry.spellbookStockRule.quality, 0, static_cast<int>(SpellsPerSchool)));
-    std::vector<uint32_t> candidates;
+    const std::vector<uint32_t> schools = guildMagicSchools(houseEntry);
+    std::vector<InventoryItem> results(shelfSize * std::max<size_t>(1, schools.size()));
 
-    for (uint32_t school : guildMagicSchools(houseEntry))
+    for (size_t shelf = 0; shelf < schools.size(); ++shelf)
     {
+        std::vector<uint32_t> candidates;
+
         for (uint32_t spellInSchool = 0; spellInSchool < maxSpellInSchool; ++spellInSchool)
         {
             const std::optional<uint32_t> itemId = itemTable.spellbookItemIdForSpell(
-                school * SpellsPerSchool + spellInSchool + 1,
+                schools[shelf] * SpellsPerSchool + spellInSchool + 1,
                 houseEntry.worldId);
 
             if (itemId)
@@ -902,37 +906,37 @@ std::vector<InventoryItem> generateGuildSpellbookStock(
                 candidates.push_back(*itemId);
             }
         }
-    }
 
-    // When the shelves have room, every spell the guild teaches is offered and spare slots repeat random spells.
-    std::vector<uint32_t> selected;
+        // When the shelf has room, every spell of the school is offered and spare slots repeat random spells.
+        std::vector<uint32_t> selected;
 
-    if (candidates.size() <= count)
-    {
-        selected = candidates;
-
-        if (!candidates.empty())
+        if (candidates.size() <= shelfSize)
         {
-            std::uniform_int_distribution<size_t> distribution(0, candidates.size() - 1);
+            selected = candidates;
 
-            while (selected.size() < count)
+            if (!candidates.empty())
             {
-                selected.push_back(candidates[distribution(rng)]);
+                std::uniform_int_distribution<size_t> distribution(0, candidates.size() - 1);
+
+                while (selected.size() < shelfSize)
+                {
+                    selected.push_back(candidates[distribution(rng)]);
+                }
             }
         }
-    }
-    else
-    {
-        std::shuffle(candidates.begin(), candidates.end(), rng);
-        selected.assign(candidates.begin(), candidates.begin() + count);
-    }
+        else
+        {
+            std::shuffle(candidates.begin(), candidates.end(), rng);
+            selected.assign(candidates.begin(), candidates.begin() + shelfSize);
+        }
 
-    std::sort(selected.begin(), selected.end());
-    std::vector<InventoryItem> results(count);
+        std::sort(selected.begin(), selected.end());
 
-    for (size_t slotIndex = 0; slotIndex < selected.size(); ++slotIndex)
-    {
-        results[slotIndex] = ItemGenerator::makeInventoryItem(selected[slotIndex], itemTable, ItemGenerationMode::Shop);
+        for (size_t slotIndex = 0; slotIndex < selected.size(); ++slotIndex)
+        {
+            results[shelf * shelfSize + slotIndex] =
+                ItemGenerator::makeInventoryItem(selected[slotIndex], itemTable, ItemGenerationMode::Shop);
+        }
     }
 
     return results;
@@ -1287,6 +1291,11 @@ std::string buildRepairPhrase(
         + std::to_string(listedPrice) + " gold, but for you I will charge a mere "
         + std::to_string(actualPrice) + ".";
 }
+}
+
+std::vector<uint32_t> HouseServiceRuntime::spellbookShelfSchools(const HouseEntry &houseEntry)
+{
+    return guildMagicSchools(houseEntry);
 }
 
 bool HouseServiceRuntime::supportsGeneratedStock(const HouseEntry &houseEntry)

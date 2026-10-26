@@ -346,6 +346,7 @@ public:
         uint32_t generationVersion = 0;
         std::vector<InventoryItem> standardStock;
         std::vector<InventoryItem> specialStock;
+        // A guild's shelves, one per school it teaches (HouseServiceRuntime::spellbookShelfSchools), one after another.
         std::vector<InventoryItem> spellbookStock;
     };
 
