@@ -17807,6 +17807,23 @@ bool IndoorWorldRuntime::summonMonsters(
     {
         const float angleRadians = (Pi * 2.0f * static_cast<float>(summonIndex)) / static_cast<float>(count);
         const float radius = 96.0f + 24.0f * static_cast<float>(summonIndex % 3u);
+        int actorX = x + static_cast<int>(std::lround(std::cos(angleRadians) * radius));
+        int actorY = y + static_cast<int>(std::lround(std::sin(angleRadians) * radius));
+
+        // A spread point inside a wall leaves the actor in no sector, frozen and never drawn: it stands on the
+        // summon point instead, as the original spawns event monsters.
+        if (m_pIndoorMapData != nullptr)
+        {
+            RuntimeGeometryCache &geometry = runtimeGeometryCache();
+
+            if (!findIndoorSectorForPoint(*m_pIndoorMapData, geometry.vertices,
+                    {float(actorX), float(actorY), float(z) + 64.0f}, &geometry.geometryCache, false))
+            {
+                actorX = x;
+                actorY = y;
+            }
+        }
+
         MapDeltaActor actor = {};
         actor.diagnosticSourceActorIndex = pMapDeltaData->actors.size();
         actor.spawnedAfterFill = !m_firstFillOpen;
@@ -17819,8 +17836,8 @@ bool IndoorWorldRuntime::summonMonsters(
         actor.radius = pMonsterEntry->radius;
         actor.height = pMonsterEntry->height;
         actor.moveSpeed = static_cast<uint16_t>(pStats->speed);
-        actor.x = x + static_cast<int>(std::lround(std::cos(angleRadians) * radius));
-        actor.y = y + static_cast<int>(std::lround(std::sin(angleRadians) * radius));
+        actor.x = actorX;
+        actor.y = actorY;
         actor.z = z;
         actor.group = group;
         actor.ally = hostileToParty ? 0u : 999u;
