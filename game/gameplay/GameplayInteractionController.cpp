@@ -1768,6 +1768,20 @@ GameplayInteractionController::updateWorldInteractionFrame(
 #else
         runtime.clearContextActionState();
 #endif
+        // Use puts the held item (such as one taken from a loot bag) into the packs instead of dropping it.
+        if (input.action(KeyboardAction::Use).pressed
+            && !GameplayQuickItems::takesPointerAction(runtime, KeyboardAction::Use))
+        {
+            runtime.tryStowHeldInventoryItemInParty();
+            worldInteractionInputState.heldInventoryDropLatch = false;
+            // The press is spent: holding Use on must not activate what is under the crosshair once the cursor is
+            // empty, until the key is released.
+            worldInteractionInputState.inspectKeyboardActivateLatch = true;
+            worldInteractionInputState.inspectKeyboardActivateNextRepeatTickNanoseconds = 0;
+            result.heldItemHandled = true;
+            return result;
+        }
+
         GameplayWorldHit heldItemWorldHit = {};
         bool hasHeldItemWorldHit = false;
 

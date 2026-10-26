@@ -2506,6 +2506,34 @@ bool GameplayScreenRuntime::tryAutoPlaceHeldInventoryItemOnPartyMember(size_t me
     return true;
 }
 
+bool GameplayScreenRuntime::tryStowHeldInventoryItemInParty()
+{
+    GameplayUiController::HeldInventoryItemState &heldItem = uiController().heldInventoryItem();
+    Party *pParty = party();
+
+    if (!heldItem.active || pParty == nullptr || pParty->members().empty())
+    {
+        return false;
+    }
+
+    const size_t memberCount = pParty->members().size();
+    const size_t firstIndex = std::min(pParty->activeMemberIndex(), memberCount - 1);
+    std::string failureStatus;
+
+    for (size_t offset = 0; offset < memberCount; ++offset)
+    {
+        if (GameplayHeldItemController::tryAutoPlaceHeldInventoryItemOnPartyMember(
+                heldItem, *pParty, (firstIndex + offset) % memberCount, failureStatus))
+        {
+            return true;
+        }
+    }
+
+    setStatusBarEvent(failureStatus.empty() ? "Pack is Full!" : failureStatus);
+    playSpeechReaction(firstIndex, SpeechId::InventoryRoom, true);
+    return false;
+}
+
 void GameplayScreenRuntime::closeSpellbookOverlay(const std::string &statusText)
 {
     const bool wasActive = uiController().spellbook().active;

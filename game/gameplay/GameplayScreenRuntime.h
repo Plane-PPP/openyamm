@@ -286,6 +286,8 @@ public:
         bool lloydRecallMode = false);
     void closeUtilitySpellOverlayAfterSpellResolution(uint32_t spellId);
     bool tryAutoPlaceHeldInventoryItemOnPartyMember(size_t memberIndex, bool showFailureStatus);
+    // The held item into the active member's pack, else the next member's with room (as a pickup goes).
+    bool tryStowHeldInventoryItemInParty();
     GameplayItemService &itemService() const;
     GameplayFxService &fxService() const;
     GameplaySpellService &spellService() const;
