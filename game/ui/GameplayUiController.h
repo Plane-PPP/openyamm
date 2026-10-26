@@ -262,6 +262,12 @@ public:
     struct ReadableScrollOverlayState
     {
         bool active = false;
+        // Read with a right click on a portrait: open while that button is held, as in the original.
+        bool heldByRightButton = false;
+        // Read on releasing the right button over a portrait (Modern controls): open until the next click, which only
+        // closes it.
+        bool staysUntilClick = false;
+        bool closeClickStarted = false;
         std::string title;
         std::string body;
     };

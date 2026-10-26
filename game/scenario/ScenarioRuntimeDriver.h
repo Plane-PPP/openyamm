@@ -305,6 +305,20 @@ public:
     // Uses (drinks, reads) the first pack item of this id on the member through the inventory's use path, as a
     // right-click on the portrait does; `used` tells whether the game took it.
     bool useInventoryItem(size_t memberIndex, uint32_t itemId, bool &used, std::string &failure);
+    // Right-clicks the target member's portrait with the carrier's first pack item of this id under the cursor,
+    // through the live input path (on the inventory page when `inventoryOpen`). By default the press lands on the
+    // portrait and a scroll's text must close with the release; with `releaseOverPortrait` (Modern controls) the
+    // press lands on the screen centre, the release on the portrait, and a scroll's text must stay until a left
+    // click, which must not drop the item. `used` tells whether the item was used or its text shown; a broken rule
+    // is a failure.
+    bool rightClickPortraitWithItem(
+        size_t carrierIndex,
+        size_t targetIndex,
+        uint32_t itemId,
+        bool inventoryOpen,
+        bool releaseOverPortrait,
+        bool &used,
+        std::string &failure);
     // Casts the spell through the party's spell system with full mana and no recovery left (the rules' auras, heals
     // and splashes, the world's projectiles); `cast` tells whether it succeeded.
     bool castSpell(const ScenarioSpellCastRequest &request, bool &cast, std::string &failure);

@@ -3110,7 +3110,8 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             context,
             selectedPartyMemberIndex,
             hoveredCharacterTarget,
-            isLeftMousePressed);
+            isLeftMousePressed,
+            input.rightMouseButton.held);
 
         if (rightMousePressed
             && context.heldInventoryItem().active

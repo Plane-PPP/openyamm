@@ -3700,6 +3700,42 @@ bool runUseItem(
     return checkExpectedOutcome(step, "use_item", used, failures);
 }
 
+// right_click_portrait: {item_id, carrier_index, member_index, inventory, release, expect}: right-clicks the member's
+// portrait with the carrier's first pack item of the id under the cursor (on the inventory page when `inventory`).
+// A scroll's text must close with the release; with `release` (Modern controls: press on the crosshair, release on
+// the portrait) it must stay until a left click instead.
+bool runRightClickPortrait(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    if (!payloadIsMap(step, failures) || !ensureRuntimeDriver(context, failures))
+    {
+        return false;
+    }
+
+    seedRuntimeDriverFromContext(context);
+    const size_t memberIndex = step.payload["member_index"].as<size_t>(0);
+    bool used = false;
+    std::string failure;
+
+    if (!context.runtimeDriver->rightClickPortraitWithItem(
+            step.payload["carrier_index"].as<size_t>(memberIndex),
+            memberIndex,
+            step.payload["item_id"].as<uint32_t>(0),
+            step.payload["inventory"].as<bool>(false),
+            step.payload["release"].as<bool>(false),
+            used,
+            failure))
+    {
+        failures.push_back(stepLocation(step) + ": " + failure);
+        return false;
+    }
+
+    syncContextFromRuntime(context);
+    return checkExpectedOutcome(step, "right_click_portrait", used, failures);
+}
+
 // party_charge: {actor_index, status, advance_seconds, min_moved}: the Knight Charge action at the actor; status is the
 // line the rules must give ("none" for no charge), then the run advances advance_seconds and the party must have moved
 // at least min_moved units.
@@ -9667,6 +9703,9 @@ ScenarioRunResult ScenarioRunner::run(
             break;
         case ScenarioStepKind::UseItem:
             stepSuccess = runUseItem(context, step, result.failures);
+            break;
+        case ScenarioStepKind::RightClickPortrait:
+            stepSuccess = runRightClickPortrait(context, step, result.failures);
             break;
         case ScenarioStepKind::CastSpell:
             stepSuccess = runCastSpell(context, step, result.failures);

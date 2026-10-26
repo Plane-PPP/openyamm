@@ -1980,6 +1980,177 @@ bool ScenarioRuntimeDriver::useInventoryItem(size_t memberIndex, uint32_t itemId
     return true;
 }
 
+bool ScenarioRuntimeDriver::rightClickPortraitWithItem(
+    size_t carrierIndex,
+    size_t targetIndex,
+    uint32_t itemId,
+    bool inventoryOpen,
+    bool releaseOverPortrait,
+    bool &used,
+    std::string &failure)
+{
+    GameSession &session = ScenarioGameApplicationAccess::gameSession(m_application);
+    GameplayScreenRuntime &runtime = session.gameplayScreenRuntime();
+    Party *pParty = runtime.party();
+    const Character *pCarrier = pParty != nullptr ? pParty->member(carrierIndex) : nullptr;
+    const auto found = pCarrier != nullptr
+        ? std::find_if(pCarrier->inventory.begin(), pCarrier->inventory.end(),
+              [itemId](const InventoryItem &item)
+              {
+                  return item.objectDescriptionId == itemId;
+              })
+        : std::vector<InventoryItem>::const_iterator{};
+
+    if (pCarrier == nullptr || found == pCarrier->inventory.end())
+    {
+        failure = "right_click_portrait: member " + std::to_string(carrierIndex) + " carries no item "
+            + std::to_string(itemId);
+        return false;
+    }
+
+    if (!takeInventoryItemToCursor(carrierIndex, found->gridX, found->gridY, failure))
+    {
+        return false;
+    }
+
+    GameplayInputFrame input = {};
+    input.screenWidth = ScenarioViewWidth;
+    input.screenHeight = ScenarioViewHeight;
+    input.pointerX = ScenarioViewWidth * 0.5f;
+    input.pointerY = ScenarioViewHeight * 0.5f;
+
+    // The inventory page lays the portraits out on its own frame: open it and let one frame settle first.
+    if (inventoryOpen)
+    {
+        GameplayUiController::CharacterScreenState &characterScreen = runtime.characterScreen();
+        characterScreen = {};
+        characterScreen.open = true;
+        characterScreen.page = GameplayUiController::CharacterPage::Inventory;
+        characterScreen.source = GameplayUiController::CharacterScreenSource::Party;
+        characterScreen.sourceIndex = carrierIndex;
+        session.updateGameplay(input, RuntimeStepSeconds, false);
+    }
+
+    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> portrait =
+        runtime.resolvePartyPortraitRect(ScenarioViewWidth, ScenarioViewHeight, targetIndex);
+
+    if (!portrait)
+    {
+        session.bindCurrentGameplayInputFrame(nullptr);
+        runtime.characterScreen().open = false;
+        placeHeldItemInInventory(failure);
+        failure = "right_click_portrait: no portrait for member " + std::to_string(targetIndex);
+        return false;
+    }
+
+    const InventoryItem before = runtime.heldInventoryItem().item;
+    const float portraitX = portrait->x + portrait->width * 0.5f;
+    const float portraitY = portrait->y + portrait->height * 0.5f;
+    const auto runFrames =
+        [&session, &input](int frames)
+        {
+            for (int frame = 0; frame < frames; ++frame)
+            {
+                session.updateGameplay(input, RuntimeStepSeconds, false);
+                input.leftMouseButton.pressed = false;
+                input.leftMouseButton.released = false;
+                input.rightMouseButton.pressed = false;
+                input.rightMouseButton.released = false;
+            }
+        };
+    const auto itemUsed =
+        [&runtime, &before]()
+        {
+            return !runtime.heldInventoryItem().active || !(runtime.heldInventoryItem().item == before);
+        };
+    bool readableAfterRelease = false;
+
+    if (releaseOverPortrait)
+    {
+        // Modern controls: the press lands on the crosshair (the screen centre), the held button frees the cursor,
+        // and the release over the portrait uses the item.
+        input.rightMouseButton.held = true;
+        input.rightMouseButton.pressed = true;
+        runFrames(2);
+        input.pointerX = portraitX;
+        input.pointerY = portraitY;
+        runFrames(2);
+
+        if (runtime.readableScrollOverlayReadOnly().active || itemUsed())
+        {
+            failure = "right_click_portrait: the item was used before the button was released";
+        }
+
+        input.rightMouseButton.held = false;
+        input.rightMouseButton.released = true;
+        runFrames(3);
+        const bool readable = runtime.readableScrollOverlayReadOnly().active;
+        used = readable || itemUsed();
+
+        // A scroll stays open until a click, which closes it without dropping the item.
+        if (readable && failure.empty())
+        {
+            input.leftMouseButton.held = true;
+            input.leftMouseButton.pressed = true;
+            runFrames(2);
+
+            if (!runtime.readableScrollOverlayReadOnly().active)
+            {
+                failure = "right_click_portrait: the scroll closed on the press of the closing click";
+            }
+
+            input.leftMouseButton.held = false;
+            input.leftMouseButton.released = true;
+            runFrames(2);
+            readableAfterRelease = runtime.readableScrollOverlayReadOnly().active;
+
+            if (!runtime.heldInventoryItem().active && failure.empty())
+            {
+                failure = "right_click_portrait: the click that closed the scroll dropped the item";
+            }
+        }
+    }
+    else
+    {
+        input.pointerX = portraitX;
+        input.pointerY = portraitY;
+        input.rightMouseButton.held = true;
+        input.rightMouseButton.pressed = true;
+        // A few frames with the button down, so an overlay that only lasts the press frame would show as closed.
+        runFrames(4);
+        used = runtime.readableScrollOverlayReadOnly().active || itemUsed();
+        input.rightMouseButton.held = false;
+        input.rightMouseButton.released = true;
+        runFrames(2);
+        readableAfterRelease = runtime.readableScrollOverlayReadOnly().active;
+    }
+
+    session.bindCurrentGameplayInputFrame(nullptr);
+    runtime.characterScreen().open = false;
+
+    if (readableAfterRelease && failure.empty())
+    {
+        failure = "right_click_portrait: the scroll text stayed open";
+    }
+
+    if (readableAfterRelease)
+    {
+        runtime.itemService().closeReadableScrollOverlay();
+    }
+
+    if (runtime.heldInventoryItem().active)
+    {
+        std::string placeFailure;
+
+        if (!placeHeldItemInInventory(placeFailure) && failure.empty())
+        {
+            failure = placeFailure;
+        }
+    }
+
+    return failure.empty();
+}
+
 bool ScenarioRuntimeDriver::partyCharge(
     std::optional<size_t> actorIndex,
     std::optional<std::string> &status,

@@ -213,6 +213,32 @@ void GameplayHudInputController::activatePartyPortrait(
     context.interactionState().lastPartyPortraitClickedIndex = memberIndex;
 }
 
+bool GameplayHudInputController::useHeldItemOnPortraitAtPointer(
+    GameplayScreenRuntime &context,
+    int screenWidth,
+    int screenHeight,
+    float pointerX,
+    float pointerY)
+{
+    if (!context.heldInventoryItem().active || screenWidth <= 0 || screenHeight <= 0)
+    {
+        return false;
+    }
+
+    const std::optional<size_t> memberIndex =
+        context.resolvePartyPortraitIndexAtPoint(screenWidth, screenHeight, pointerX, pointerY);
+
+    if (!memberIndex || !context.itemService().tryUseHeldItemOnPartyMember(context, *memberIndex, false))
+    {
+        return false;
+    }
+
+    // The button is already up: a scroll read this way stays open until the next click.
+    context.readableScrollOverlay().staysUntilClick = context.readableScrollOverlayReadOnly().active;
+    context.interactionState().lastPartyPortraitClickedIndex = std::nullopt;
+    return true;
+}
+
 void GameplayHudInputController::handlePartyPortraitInput(
     GameplayScreenRuntime &context,
     const GameplayPartyPortraitInputConfig &config)
@@ -232,6 +258,7 @@ void GameplayHudInputController::handlePartyPortraitInput(
         context.interactionState().partyPortraitRightClickItemUseLatch = false;
     }
     else if (!context.interactionState().partyPortraitRightClickItemUseLatch
+             && config.rightPressUsesHeldItem
              && context.heldInventoryItem().active)
     {
         context.interactionState().partyPortraitRightClickItemUseLatch = true;
@@ -253,6 +280,8 @@ void GameplayHudInputController::handlePartyPortraitInput(
                 *memberIndex,
                 keepCharacterScreenOpen))
         {
+            // The original reads a message scroll on the portrait for as long as the button stays down.
+            context.readableScrollOverlay().heldByRightButton = context.readableScrollOverlayReadOnly().active;
             context.interactionState().partyPortraitClickLatch = false;
             context.interactionState().partyPortraitPressedIndex = std::nullopt;
             context.interactionState().lastPartyPortraitClickedIndex = std::nullopt;

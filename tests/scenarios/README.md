@@ -26,8 +26,12 @@ When a runner check is added, add its key to the loader's lists in the same chan
 Checks added with this rule: `assert: {gold: N}` (the party's gold), `assert: {mechanism: {...}}` (as
 `assert_mechanism`), `press_action: {action: escape|cancel_dialog, expect: {dialogue_canceled: {...}}}`, and for the
 charge modifier `charge_actor: {actor_index}` and `assert: {charges: {started, hits, misses, min_started, min_hits,
-min_misses}}`, and for rulesets `assert: {ruleset: {..., rolled_items_min, report_items}}` (how many pack items the
-ruleset rolled, a loot rarity on the item; `report_items: true` prints every pack item with its ruleset fields).
+min_misses}}`, `right_click_portrait: {item_id, carrier_index, member_index, inventory, release, expect}` (right-clicks
+a portrait with a pack item under the cursor through the live input path; a scroll's text must close on release, or with
+`release: true`, the Modern gesture of pressing on the crosshair and releasing on the portrait, stay until a left click;
+`mm8_right_click_portrait_item.yml`), and for rulesets `assert: {ruleset: {..., rolled_items_min, report_items}}` (how
+many pack items the ruleset rolled, a loot rarity on the item; `report_items: true` prints every pack item with its
+ruleset fields).
 
 For MAW's content (phase 8): `execute_event: {id}` runs a map or global event; `assert: {actor_count: {name, monster_id,
 boss, min, max}}` counts living actors; `grant_item: {..., dimension_map: {map_id, affixes, active, power}}` gives a
