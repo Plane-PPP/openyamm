@@ -283,9 +283,9 @@ public:
 
     const std::string &mapName() const override;
     const MonsterTable *monsterTable() const override;
-    const MapArenaDefinition *arenaDefinition() const override
+    const MapStatsEntry *arenaMap() const override
     {
-        return m_map && m_map->runtimeRestrictions.isArena && m_map->arena ? &*m_map->arena : nullptr;
+        return m_map && m_map->runtimeRestrictions.isArena && m_map->arena ? &*m_map : nullptr;
     }
     const MergedBolsterMonsterTable *mergedBolsterMonsterTable() const override;
     bool isIndoorMap() const override;

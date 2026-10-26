@@ -90,6 +90,8 @@ public:
     // monTbl (zzMaw-Maps.lua:750-789): the C-tier families that are not wimps, by their table level, less two.
     int16_t arenaWaveMonster(int wave, const MonsterTable &monsterTable) const override;
     size_t arenaMinimumTypes() const override;
+    int arenaDrawLevel(const MonsterTable::MonsterStatsEntry &stats, const MonsterTable &monsterTable,
+        const MapStatsEntry &map) const override;
     // The outdoor maps (and Celeste and the Pit) never refill (zzMaw-Maps.lua:73-85).
     int mapRespawnDays(const MapStatsEntry &map) const override;
     std::optional<std::string> mapResetOffer(const std::string &mapFileName) const override;

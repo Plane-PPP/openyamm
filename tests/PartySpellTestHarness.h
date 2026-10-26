@@ -141,14 +141,14 @@ public:
         m_pMapDeltaData = pMapDeltaData;
     }
 
-    void bindArenaDefinition(const Game::MapArenaDefinition *pArena)
+    void bindArenaMap(const Game::MapStatsEntry *pArenaMap)
     {
-        m_pArena = pArena;
+        m_pArenaMap = pArenaMap;
     }
 
-    const Game::MapArenaDefinition *arenaDefinition() const override
+    const Game::MapStatsEntry *arenaMap() const override
     {
-        return m_pArena;
+        return m_pArenaMap;
     }
 
     Game::MapDeltaData *mapDeltaData() override
@@ -1213,7 +1213,7 @@ private:
     Game::EventRuntimeState m_eventRuntimeState = {};
     Game::EventRuntimeState *m_pEventRuntimeState = nullptr;
     Game::MapDeltaData *m_pMapDeltaData = nullptr;
-    const Game::MapArenaDefinition *m_pArena = nullptr;
+    const Game::MapStatsEntry *m_pArenaMap = nullptr;
     const std::optional<Game::ScriptedEventProgram> *m_pGlobalEventProgram = nullptr;
     const Game::MonsterTable *m_pMonsterTable = nullptr;
     const Game::MergedBolsterMonsterTable *m_pBolsterMonsterTable = nullptr;

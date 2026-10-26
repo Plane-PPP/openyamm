@@ -24,7 +24,7 @@ class ActorBehaviorRuntime;
 class GameplayActorHitFeedback;
 class GameplayProjectileService;
 class MergedBolsterMonsterTable;
-struct MapArenaDefinition;
+struct MapStatsEntry;
 struct GameplayMonsterSpawnRequest;
 struct MapKillProgress;
 struct GameplayMinimapState;
@@ -807,7 +807,8 @@ public:
         int32_t toX,
         int32_t toY,
         int32_t toZ) = 0;
-    virtual const MapArenaDefinition *arenaDefinition() const
+    // The current map when it is an Arena (its definition is set).
+    virtual const MapStatsEntry *arenaMap() const
     {
         return nullptr;
     }

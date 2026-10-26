@@ -1419,6 +1419,14 @@ size_t MawMonsterRules::arenaMinimumTypes() const
     return 12;
 }
 
+int MawMonsterRules::arenaDrawLevel(
+    const MonsterTable::MonsterStatsEntry &stats, const MonsterTable &monsterTable, const MapStatsEntry &map) const
+{
+    // The engine's draw reads MonstersTxt levels after recalculateMonsterTable, in the byte field (MawCore/Fixes.lua:87,
+    // Engine.lua setArenaPoolFallback), so a Squire bout brings the types whose arena level suits the party.
+    return std::min(levelOf(m_rules.monsterLevels(monsterTable, map), stats.id, stats.level), 255);
+}
+
 RulesetScriptInfo MawMonsterRules::scriptInfo(uint32_t continentId) const
 {
     RulesetScriptInfo info;

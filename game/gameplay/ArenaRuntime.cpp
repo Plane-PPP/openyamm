@@ -6,6 +6,7 @@
 #include "game/party/Party.h"
 #include "game/rules/GameRules.h"
 #include "game/rules/MonsterRules.h"
+#include "game/tables/MapStats.h"
 #include "game/tables/MonsterTable.h"
 
 #include <algorithm>
@@ -60,14 +61,16 @@ const char *arenaDifficultyName(ArenaDifficulty difficulty)
 }
 
 std::optional<ArenaChallenge> generateArenaChallenge(
-    const MonsterTable &monsters, const MapArenaDefinition &arena,
+    const MonsterTable &monsters, const MapStatsEntry &map,
     const Party &party, ArenaDifficulty difficulty, uint32_t seed)
 {
     const uint32_t difficultyId = static_cast<uint32_t>(difficulty);
-    if (difficultyId < 1 || difficultyId > 4 || party.members().empty())
+    if (difficultyId < 1 || difficultyId > 4 || party.members().empty() || !map.arena)
     {
         return std::nullopt;
     }
+    const MapArenaDefinition &arena = *map.arena;
+    const MonsterRules &monsterRules = gameRulesFor(&party).monsters;
 
     int maximumPartyLevel = 1;
     for (const Character &member : party.members())
@@ -91,20 +94,21 @@ std::optional<ArenaChallenge> generateArenaChallenge(
             && !stats.hasKind(MonsterKind::NoArena) && !stats.hasKind(MonsterKind::Peasant)
             && monsters.findById(int16_t(id)) != nullptr)
         {
-            if (stats.level >= minimumLevel && stats.level <= maximumLevel)
+            const int level = monsterRules.arenaDrawLevel(stats, monsters, map);
+            if (level >= minimumLevel && level <= maximumLevel)
             {
                 candidates.push_back(int16_t(id));
             }
             else
             {
-                outside.emplace_back(std::max(minimumLevel - stats.level, stats.level - maximumLevel), int16_t(id));
+                outside.emplace_back(std::max(minimumLevel - level, level - maximumLevel), int16_t(id));
             }
         }
     }
     std::sort(candidates.begin(), candidates.end());
 
     std::mt19937 random(seed);
-    const size_t minimumTypes = gameRulesFor(&party).monsters.arenaMinimumTypes();
+    const size_t minimumTypes = monsterRules.arenaMinimumTypes();
 
     if (candidates.size() < minimumTypes && !outside.empty())
     {
@@ -151,7 +155,8 @@ bool interactWithArena(IGameplayWorldRuntime &world, uint32_t npcId)
     EventRuntimeState *pState = world.eventRuntimeState();
     Party *pParty = world.party();
     const MapDeltaData *pMapData = world.mapDeltaData();
-    const MapArenaDefinition *pArena = world.arenaDefinition();
+    const MapStatsEntry *pArenaMap = world.arenaMap();
+    const MapArenaDefinition *pArena = pArenaMap != nullptr ? &*pArenaMap->arena : nullptr;
     if (pState == nullptr)
     {
         return false;
@@ -209,15 +214,16 @@ bool startArenaChallenge(
     Party *pParty = world.party();
     MapDeltaData *pMapData = world.mapDeltaData();
     const MonsterTable *pMonsters = world.monsterTable();
-    const MapArenaDefinition *pArena = world.arenaDefinition();
+    const MapStatsEntry *pArenaMap = world.arenaMap();
     if (pState == nullptr || pParty == nullptr || pMapData == nullptr || pMonsters == nullptr
-        || pArena == nullptr || arenaVariable(*pState, DifficultyVariable) != 0)
+        || pArenaMap == nullptr || arenaVariable(*pState, DifficultyVariable) != 0)
     {
         return false;
     }
+    const MapArenaDefinition *pArena = &*pArenaMap->arena;
 
     const std::optional<ArenaChallenge> challenge =
-        generateArenaChallenge(*pMonsters, *pArena, *pParty, difficulty, seed);
+        generateArenaChallenge(*pMonsters, *pArenaMap, *pParty, difficulty, seed);
     if (!challenge || challenge->monsterIds.size() > pArena->monsterPositions.size())
     {
         pState->messages.push_back("The Arena cannot prepare opponents for this challenge.");
