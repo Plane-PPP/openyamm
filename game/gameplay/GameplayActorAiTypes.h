@@ -225,6 +225,9 @@ struct ActorTargetFacts
     bool currentHasAttackLineOfSight = true;
     bool hasCurrentMovementPosition = false;
     bool partyCanSenseActor = false;
+    // How far it may shoot or cast at the party: beyond the native reach when the party hit it from farther away
+    // (outdoors), 0 for the native reach.
+    float partyAttackReach = 0.0f;
     std::vector<ActorTargetCandidateFacts> candidates;
 };
 

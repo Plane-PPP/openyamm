@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 131;
+constexpr uint32_t SaveVersion = 133;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -183,6 +183,10 @@ constexpr uint32_t SaveVersionSpellbookSchool = 130;
 // A guild of several schools keeps a spellbook shelf for each (HouseServiceRuntime::spellbookShelfSchools); older saves
 // kept one shelf of mixed schools.
 constexpr uint32_t SaveVersionGuildSchoolShelves = 131;
+// An outdoor monster the party hit beyond the full-AI range stays awake (OutdoorWorldRuntime provokedByParty).
+constexpr uint32_t SaveVersionOutdoorProvokedActors = 132;
+// ...and may shoot back from the distance of the hit (OutdoorWorldRuntime provokedAttackReach).
+constexpr uint32_t SaveVersionOutdoorProvokedAttackReach = 133;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -3623,6 +3627,8 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.proceduralDeathLoot);
     writeValue(writer, value.rulesetFacts);
     writeValue(writer, value.summonerMemberIndex);
+    writeValue(writer, value.provokedByParty);
+    writeValue(writer, value.provokedAttackReach);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
@@ -3778,7 +3784,9 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && (reader.version() < SaveVersionActorProceduralDeathLoot
             || readValue(reader, value.proceduralDeathLoot))
         && (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.rulesetFacts))
-        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex));
+        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex))
+        && (reader.version() < SaveVersionOutdoorProvokedActors || readValue(reader, value.provokedByParty))
+        && (reader.version() < SaveVersionOutdoorProvokedAttackReach || readValue(reader, value.provokedAttackReach));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)

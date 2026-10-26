@@ -305,6 +305,12 @@ public:
         bool alertStatusBit = false;
         bool bloodSplatSpawned = false;
         bool hasDetectedParty = false;
+        // A party hit woke it beyond the full-AI range: it acts out to the engagement range until it comes within
+        // the full-AI range or loses the party (MM8 leaves an outdoor monster shot from afar standing).
+        bool provokedByParty = false;
+        // The distance of the party's last hit when beyond the native missile reach: it may shoot back from there
+        // (0 for the native reach), until it loses the party.
+        float provokedAttackReach = 0.0f;
         ActorAiState aiState = ActorAiState::Standing;
         ActorAnimation animation = ActorAnimation::Standing;
         float animationTimeTicks = 0.0f;
@@ -1728,7 +1734,7 @@ private:
     bool logOutdoorPathfindingEnabled() const;
     void updateGameplayScreenOverlay(float deltaSeconds);
     void updateActorFrameGlobalEffects(float deltaSeconds, float partyX, float partyY, float partyZ);
-    std::vector<bool> selectOutdoorActiveActors(float partyX, float partyY, float partyZ) const;
+    std::vector<bool> selectOutdoorActiveActors(float partyX, float partyY, float partyZ);
     ActorAiFrameFacts collectOutdoorActorAiFrameFacts(
         float deltaSeconds,
         float partyX,

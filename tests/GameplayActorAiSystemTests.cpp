@@ -527,6 +527,42 @@ TEST_CASE("shared actor AI uses a missile attack outside melee range when the me
     CHECK(*update.animation.animationState == ActorAiAnimationState::AttackRanged);
 }
 
+TEST_CASE("shared actor AI closes in on a far party with only a missile, unless a hit lets it shoot back from there")
+{
+    // A Great Wyrm: one missile attack, no blow to fall back on. Beyond the 5120 missile reach it used to shoot.
+    const auto updateAt = [](float edgeDistance, float partyAttackReach)
+    {
+        GameplayActorAiSystem system;
+        ActorAiFrameFacts frame = makeFrame();
+        ActorAiFacts actor = makeActor(12, 109);
+        actor.world.active = true;
+        actor.identity.hostilityType = 4;
+        actor.status.hostileToParty = true;
+        actor.status.hasDetectedParty = true;
+        actor.stats.attackConstraints.attack1IsRanged = true;
+        actor.runtime.rangedAttackAnimationSeconds = 0.5f;
+        actor.movement.movementAllowed = true;
+        actor.movement.effectiveMoveSpeed = 140.0f;
+        actor.target.currentKind = ActorAiTargetKind::Party;
+        actor.target.currentPosition = {edgeDistance + 132.0f, 200.0f, 64.0f};
+        actor.target.currentDistance = edgeDistance + 32.0f;
+        actor.target.currentEdgeDistance = edgeDistance;
+        actor.target.currentCanSense = true;
+        actor.target.currentHasAttackLineOfSight = true;
+        actor.target.partyCanSenseActor = true;
+        actor.target.partyAttackReach = partyAttackReach;
+        frame.activeActors.push_back(actor);
+        const OpenYAMM::Game::ActorAiFrameResult result = system.updateActors(frame);
+        REQUIRE_EQ(result.actorUpdates.size(), 1u);
+        REQUIRE(result.actorUpdates.front().state.motionState.has_value());
+        return *result.actorUpdates.front().state.motionState;
+    };
+
+    CHECK(updateAt(7000.0f, 0.0f) == ActorAiMotionState::Pursuing);
+    CHECK(updateAt(7000.0f, 7128.0f) == ActorAiMotionState::Attacking);
+    CHECK(updateAt(4000.0f, 0.0f) == ActorAiMotionState::Attacking);
+}
+
 TEST_CASE("shared actor AI returns to standing presentation when attack impact resolves")
 {
     GameplayActorAiSystem system;

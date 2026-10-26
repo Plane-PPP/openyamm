@@ -164,6 +164,14 @@ constexpr float HostilityCloseRange = 1024.0f;
 constexpr float HostilityShortRange = 2560.0f;
 constexpr float HostilityMediumRange = 5120.0f;
 constexpr float HostilityLongRange = GameplayActorService::MaximumPartyEngagementRange;
+// The party's shots and targeted spells reach this far outdoors, so a monster they hit can always find the party
+// (provokedByParty) and shoot back (provokedAttackReach). The gap to HostilityLongRange covers a party running off
+// while a shot flies.
+constexpr float PartyAttackRange = 8192.0f;
+// Monsters shoot and cast at the party from nearer than this (GameplayActorAiSystem).
+constexpr float NativeMonsterRangedReach = 5120.0f;
+// A monster answering a hit from far away may shoot from a little beyond the distance of the hit.
+constexpr float ProvokedAttackReachSlack = 128.0f;
 constexpr float OutdoorActorAiTraceIntervalSeconds = 0.5f;
 constexpr size_t OutdoorActorAiTraceDefaultActorLimit = 16;
 
@@ -905,6 +913,7 @@ struct OutdoorActiveActorCandidate
     size_t actorIndex = static_cast<size_t>(-1);
     float distanceToParty = 0.0f;
     bool eligible = false;
+    bool provoked = false;
 };
 
 InactiveActorDeathFrame resolveInactiveActorDeathFrame(
@@ -3103,8 +3112,8 @@ std::vector<bool> selectOutdoorActiveActorMask(
         return activeActorMask;
     }
 
-    std::vector<std::pair<size_t, float>> activeActorDistances;
-    activeActorDistances.reserve(candidates.size());
+    std::vector<const OutdoorActiveActorCandidate *> activeCandidates;
+    activeCandidates.reserve(candidates.size());
 
     for (const OutdoorActiveActorCandidate &candidate : candidates)
     {
@@ -3113,23 +3122,29 @@ std::vector<bool> selectOutdoorActiveActorMask(
             continue;
         }
 
-        if (candidate.distanceToParty <= activeRange)
+        if (candidate.distanceToParty <= activeRange || candidate.provoked)
         {
-            activeActorDistances.push_back({candidate.actorIndex, candidate.distanceToParty});
+            activeCandidates.push_back(&candidate);
         }
     }
 
+    // Provoked monsters first, so a crowd near the party does not take the slot of the one it just hit.
     std::stable_sort(
-        activeActorDistances.begin(),
-        activeActorDistances.end(),
-        [](const std::pair<size_t, float> &left, const std::pair<size_t, float> &right)
+        activeCandidates.begin(),
+        activeCandidates.end(),
+        [](const OutdoorActiveActorCandidate *pLeft, const OutdoorActiveActorCandidate *pRight)
         {
-            return left.second < right.second;
+            if (pLeft->provoked != pRight->provoked)
+            {
+                return pLeft->provoked;
+            }
+
+            return pLeft->distanceToParty < pRight->distanceToParty;
         });
 
-    for (size_t index = 0; index < activeActorDistances.size() && index < maxActiveActors; ++index)
+    for (size_t index = 0; index < activeCandidates.size() && index < maxActiveActors; ++index)
     {
-        activeActorMask[activeActorDistances[index].first] = true;
+        activeActorMask[activeCandidates[index]->actorIndex] = true;
     }
 
     return activeActorMask;
@@ -9572,14 +9587,14 @@ void OutdoorWorldRuntime::updateActorFrameGlobalEffects(
 
 }
 
-std::vector<bool> OutdoorWorldRuntime::selectOutdoorActiveActors(float partyX, float partyY, float partyZ) const
+std::vector<bool> OutdoorWorldRuntime::selectOutdoorActiveActors(float partyX, float partyY, float partyZ)
 {
     std::vector<OutdoorActiveActorCandidate> activeActorCandidates;
     activeActorCandidates.reserve(m_mapActors.size());
 
     for (size_t actorIndex = 0; actorIndex < m_mapActors.size(); ++actorIndex)
     {
-        const MapActorState &actor = m_mapActors[actorIndex];
+        MapActorState &actor = m_mapActors[actorIndex];
         OutdoorActiveActorCandidate candidate = {};
         candidate.actorIndex = actorIndex;
         candidate.eligible = !actor.isDead && !actor.isInvisible;
@@ -9596,6 +9611,19 @@ std::vector<bool> OutdoorWorldRuntime::selectOutdoorActiveActors(float partyX, f
             {
                 candidate.distanceToParty = 0.0f;
             }
+        }
+
+        // A provoked monster acts until the full-AI range takes it over or it loses the party.
+        actor.provokedByParty = actor.provokedByParty
+            && candidate.eligible
+            && actor.hostileToParty
+            && candidate.distanceToParty > ActiveActorUpdateRange
+            && candidate.distanceToParty <= HostilityLongRange;
+        candidate.provoked = actor.provokedByParty;
+
+        if (!candidate.eligible || !actor.hostileToParty || candidate.distanceToParty > HostilityLongRange)
+        {
+            actor.provokedAttackReach = 0.0f;
         }
 
         activeActorCandidates.push_back(candidate);
@@ -9941,6 +9969,7 @@ std::optional<ActorAiFacts> OutdoorWorldRuntime::collectOutdoorActorAiFacts(
     facts.target.currentCanSense = combatTarget.canSense;
     facts.target.currentHasAttackLineOfSight = combatTarget.attackLineOfSight;
     facts.target.partyCanSenseActor = combatTarget.partyCanSense;
+    facts.target.partyAttackReach = actor.provokedAttackReach;
     facts.target.candidates.reserve(combatCandidates.size());
 
     for (const OutdoorCombatTargetCandidate &combatCandidate : combatCandidates)
@@ -17525,6 +17554,12 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     if (!actor.usesMm9ActorRules)
     {
         setMapActorHostileToParty(actorIndex, partyX, partyY, partyZ, false);
+        actor.provokedByParty = !died;
+        const float hitDistance =
+            length3d(partyX - actor.preciseX, partyY - actor.preciseY, partyZ - actor.preciseZ) - float(actor.radius);
+        actor.provokedAttackReach = !died && hitDistance + ProvokedAttackReachSlack > NativeMonsterRangedReach
+            ? std::min(hitDistance + ProvokedAttackReachSlack, HostilityLongRange)
+            : 0.0f;
     }
     else if (!died && !actor.hostileToParty && actor.mm9Civilian)
     {
@@ -18079,6 +18114,12 @@ bool OutdoorWorldRuntime::applyPartySpellToMapActor(
 
     MapActorState &actor = m_mapActors[actorIndex];
     const std::string &spellName = pSpellEntry->normalizedName;
+
+    if (length3d(partyX - actor.preciseX, partyY - actor.preciseY, partyZ - actor.preciseZ) - float(actor.radius)
+        > PartyAttackRange)
+    {
+        return false;
+    }
 
     if (spellName == "reanimate")
     {
@@ -21073,6 +21114,14 @@ bool OutdoorWorldRuntime::spawnPartyProjectile(const PartyProjectileRequest &req
     spawnRequest.sourceId = request.sourcePartyMemberIndex + 1;
     spawnRequest.sourcePartyMemberIndex = request.sourcePartyMemberIndex;
     spawnRequest.definition = buildGameplayProjectileDefinition(definition, objectSpriteFrameIndex);
+
+    // It fizzles past PartyAttackRange.
+    if (spawnRequest.definition.speed > 0.0f)
+    {
+        spawnRequest.definition.lifetimeTicks = std::min(spawnRequest.definition.lifetimeTicks,
+            uint32_t(std::ceil(PartyAttackRange / spawnRequest.definition.speed * TicksPerSecond)));
+    }
+
     spawnRequest.damage = request.damage;
     spawnRequest.attackBonus = request.attackBonus;
     spawnRequest.useActorHitChance = request.useActorHitChance;
