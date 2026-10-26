@@ -622,7 +622,7 @@ ReplaceGlobalEvent(832, "MMMerge Bounty Hunter promotion", function()
         firstMessage = Game.NPCText[1121],
         repeatMessage = Game.NPCText[1121],
         refuseMessage = Game.NPCText[1122],
-        condition = function() return IsAtLeast(ArenaWinsPage, 10000) end,
+        condition = function() return IsAtLeast(NumBounties, 10000) end,
     })
 
     if result == 1 then
