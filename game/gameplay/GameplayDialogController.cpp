@@ -4644,6 +4644,25 @@ GameplayDialogController::Result GameplayDialogController::returnToHouseBankMain
     return result;
 }
 
+GameplayDialogController::Result GameplayDialogController::showHouseServiceMessage(
+    Context &context,
+    uint32_t houseId,
+    const std::string &message) const
+{
+    Result result = {};
+    result.previousMessageCount = context.eventRuntimeState.messages.size();
+
+    if (houseId == 0 || currentDialogueHostHouseId(context.eventRuntimeState) != houseId)
+    {
+        return result;
+    }
+
+    context.eventRuntimeState.messages.push_back(message);
+    refreshCurrentHouseServiceDialog(context, houseId);
+    result.shouldOpenPendingEventDialog = true;
+    return result;
+}
+
 GameplayDialogController::Result GameplayDialogController::confirmHouseBankInput(Context &context) const
 {
     GameplayUiController::HouseBankState &houseBankState = context.uiController.houseBankState();

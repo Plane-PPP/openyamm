@@ -285,6 +285,8 @@ public:
         size_t casterMemberIndex,
         bool lloydRecallMode = false);
     void closeUtilitySpellOverlayAfterSpellResolution(uint32_t spellId);
+    // A message in the open dialog of the house (an Arcomage match's result in its tavern).
+    void showHouseServiceMessage(uint32_t houseId, const std::string &message);
     bool tryAutoPlaceHeldInventoryItemOnPartyMember(size_t memberIndex, bool showFailureStatus);
     // The held item into the active member's pack, else the next member's with room (as a pickup goes).
     bool tryStowHeldInventoryItemInParty();

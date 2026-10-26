@@ -668,6 +668,25 @@ void GameplayScreenRuntime::returnToHouseBankMainDialogShared()
     }
 }
 
+void GameplayScreenRuntime::showHouseServiceMessage(uint32_t houseId, const std::string &message)
+{
+    EventRuntimeState *pEventRuntimeState = worldRuntime() != nullptr ? worldRuntime()->eventRuntimeState() : nullptr;
+
+    if (pEventRuntimeState == nullptr)
+    {
+        return;
+    }
+
+    GameplayDialogController::Context context = buildDialogContext(*pEventRuntimeState);
+    const GameplayDialogController::Result result =
+        m_session.gameplayDialogController().showHouseServiceMessage(context, houseId, message);
+
+    if (result.shouldOpenPendingEventDialog)
+    {
+        presentPendingEventDialog(result.previousMessageCount, result.allowNpcFallbackContent);
+    }
+}
+
 IGameplayWorldRuntime *GameplayScreenRuntime::worldRuntime() const
 {
     return m_session.activeWorldRuntime();
