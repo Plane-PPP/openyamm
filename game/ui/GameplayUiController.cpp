@@ -431,7 +431,6 @@ void GameplayUiController::openSpellbook(SpellbookSchool school)
     state.spellInspectOverlay = {};
     state.spellbook.active = true;
     state.spellbook.school = school;
-    state.spellbook.hasRememberedSchool = true;
 }
 
 void GameplayUiController::closeSpellbook()

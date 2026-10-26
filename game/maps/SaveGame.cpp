@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 129;
+constexpr uint32_t SaveVersion = 130;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -178,6 +178,8 @@ constexpr uint32_t SaveVersionMawMadnessDeaths = 128;
 // The decoration states (decorVars) are numbered with MMerge's campfire list; older map states keep a marker until the
 // map renumbers them (EventRuntimeState::legacyCampFireDecorVars).
 constexpr uint32_t SaveVersionMMergeCampfireDecorVars = 129;
+// Each character remembers the spellbook page it last had open, as in MM8.
+constexpr uint32_t SaveVersionSpellbookSchool = 130;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -1366,6 +1368,7 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.rulesetState);
     writeValue(writer, value.extraQuickSpellNames);
     writeValue(writer, value.quickItemSlots);
+    writeValue(writer, value.spellbookSchool);
 }
 
 // Saves before SaveVersionWideExperience hold a character's experience in 32 bits.
@@ -1454,7 +1457,8 @@ bool readValue(BinaryReader &reader, Character &value)
         && (reader.version() < SaveVersionCharacterTechPoints || readValue(reader, value.techPoints))
         && (reader.version() < SaveVersionCharacterRulesetState || readValue(reader, value.rulesetState))
         && (reader.version() < SaveVersionExtraQuickSpells || readValue(reader, value.extraQuickSpellNames))
-        && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots));
+        && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots))
+        && (reader.version() < SaveVersionSpellbookSchool || readValue(reader, value.spellbookSchool));
 }
 
 void writeValue(BinaryWriter &writer, const PartyBuffState &value)

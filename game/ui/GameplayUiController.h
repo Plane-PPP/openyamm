@@ -276,7 +276,6 @@ public:
     {
         bool active = false;
         SpellbookSchool school = SpellbookSchool::Fire;
-        bool hasRememberedSchool = false;
         uint32_t selectedSpellId = 0;
     };
 

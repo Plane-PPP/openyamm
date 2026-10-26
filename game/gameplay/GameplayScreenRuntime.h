@@ -210,6 +210,8 @@ public:
     bool isReadOnlyAdventurersInnCharacterViewActive() const;
     bool activeMemberKnowsSpell(uint32_t spellId) const;
     bool activeMemberHasSpellbookSchool(GameplayUiController::SpellbookSchool school) const;
+    // Turns the open spellbook to the school's page and remembers it as the active member's page.
+    void setSpellbookSchool(GameplayUiController::SpellbookSchool school);
     void setStatusBarEvent(
         const std::string &text,
         float durationSeconds = 2.0f,

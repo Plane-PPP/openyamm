@@ -1634,11 +1634,12 @@ void GameplayScreenRuntime::startInnRest(uint32_t houseId)
 void GameplayScreenRuntime::openSpellbookOverlay()
 {
     std::optional<GameplayUiController::SpellbookSchool> school;
-    const GameplayUiController::SpellbookState &currentSpellbook = uiController().spellbook();
+    const Character *pMember = partyReadOnly() != nullptr ? partyReadOnly()->activeMember() : nullptr;
 
-    if (currentSpellbook.hasRememberedSchool && activeMemberHasSpellbookSchool(currentSpellbook.school))
+    if (pMember != nullptr && pMember->spellbookSchool >= 0
+        && activeMemberHasSpellbookSchool(GameplayUiController::SpellbookSchool(pMember->spellbookSchool)))
     {
-        school = currentSpellbook.school;
+        school = GameplayUiController::SpellbookSchool(pMember->spellbookSchool);
     }
 
     if (!school)
@@ -1673,6 +1674,7 @@ void GameplayScreenRuntime::openSpellbookOverlay()
 
     closeQuickReferenceOverlay();
     uiController().openSpellbook(school.value_or(GameplayUiController::SpellbookSchool::Fire));
+    setSpellbookSchool(uiController().spellbook().school);
     uiController().spellbook().selectedSpellId = 0;
     interactionState().spellbookClickLatch = false;
     interactionState().spellbookPressedTarget = {};
@@ -2551,6 +2553,17 @@ bool GameplayScreenRuntime::tryStowHeldInventoryItemInParty()
     setStatusBarEvent(failureStatus.empty() ? "Pack is Full!" : failureStatus);
     playSpeechReaction(firstIndex, SpeechId::InventoryRoom, true);
     return false;
+}
+
+void GameplayScreenRuntime::setSpellbookSchool(GameplayUiController::SpellbookSchool school)
+{
+    uiController().spellbook().school = school;
+    uiController().spellbook().selectedSpellId = 0;
+
+    if (Character *pMember = party() != nullptr ? party()->activeMember() : nullptr)
+    {
+        pMember->spellbookSchool = int32_t(school);
+    }
 }
 
 void GameplayScreenRuntime::closeSpellbookOverlay(const std::string &statusText)
