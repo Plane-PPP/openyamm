@@ -9049,8 +9049,11 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
         }
     }
 
+    // The left hand grips a two-handed main weapon only while the off hand is empty: rulesets such as MAW let some
+    // classes hold a two-handed sword in one hand beside a shield.
     const bool leftHandDisabled =
         pMainHandItem != nullptr
+        && pOffHandItem == nullptr
         && (pMainHandItem->equipStat == "Weapon2"
             || (canonicalSkillName(pMainHandItem->skillGroup) == "Spear" && spearMastery < SkillMastery::Master));
     const bool offHandWeaponGripAbove =
