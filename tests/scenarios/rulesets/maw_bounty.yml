@@ -9,8 +9,10 @@ steps:
       ruleset: {id: maw, difficulty: maw, progression: free}
   - speak_npc: {source_id: 1076}
   - select_topic: {action_id: 1712}
+  # No target yet: only the map's own two bosses (maw_map_boss_count.yml) and no Bounty note.
   - assert:
-      actor_count: {boss: true, max: 0}
+      actor_count: {boss: true, max: 2}
+      journal_map_note: {map: oute3.odm, id: 9999, present: false}
   - press_action: {action: cancel_dialog}
   - damage_actor: {all: true, amount: 100000000}
   - advance_runtime: {seconds: 2}

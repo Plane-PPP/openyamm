@@ -3998,9 +3998,8 @@ void IndoorWorldRuntime::initialize(
     m_actorMovementController.reset();
     invalidateRuntimeGeometryCache();
     materializeInitialMonsterSpawns();
-    // On-load event group flags target generated spawn actors too.
-    applyEventRuntimeState(true);
-    // A map whose actors carry no ruleset facts yet is placed for the first time.
+    // A map whose actors carry no ruleset facts yet is placed for the first time. Asked before the event state
+    // applies: its actor sync gives every actor its facts.
     const bool firstPlacement = mapDeltaData() != nullptr
         && std::all_of(
             mapDeltaData()->actors.begin(),
@@ -4011,6 +4010,8 @@ void IndoorWorldRuntime::initialize(
             });
     // Until the first world update the map is still filling: on-load event spawns of a first visit join its roster.
     m_firstFillOpen = firstPlacement;
+    // On-load event group flags target generated spawn actors too.
+    applyEventRuntimeState(true);
     syncMapActorAiStates();
 
     if (firstPlacement)
@@ -4118,9 +4119,8 @@ void IndoorWorldRuntime::initialize(
     m_actorMovementController.reset();
     invalidateRuntimeGeometryCache();
     materializeInitialMonsterSpawns();
-    // On-load event group flags target generated spawn actors too.
-    applyEventRuntimeState(true);
-    // A map whose actors carry no ruleset facts yet is placed for the first time.
+    // A map whose actors carry no ruleset facts yet is placed for the first time. Asked before the event state
+    // applies: its actor sync gives every actor its facts.
     const bool firstPlacement = mapDeltaData() != nullptr
         && std::all_of(
             mapDeltaData()->actors.begin(),
@@ -4131,6 +4131,8 @@ void IndoorWorldRuntime::initialize(
             });
     // Until the first world update the map is still filling: on-load event spawns of a first visit join its roster.
     m_firstFillOpen = firstPlacement;
+    // On-load event group flags target generated spawn actors too.
+    applyEventRuntimeState(true);
     syncMapActorAiStates();
 
     if (firstPlacement)

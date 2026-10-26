@@ -60,6 +60,8 @@ public class OpenYammUpdateActivity extends Activity {
     private boolean working;
     // The first download started by itself (on Wi-Fi): the game starts by itself when it is done.
     private boolean playWhenReady;
+    // Opened by the main menu's Update button, whose question already showed the release notes.
+    private boolean updateConfirmed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,6 +70,7 @@ public class OpenYammUpdateActivity extends Activity {
         stopGameProcess();
         OpenYammUpdater.loadNative();
         baseUrl = getIntent().getStringExtra(EXTRA_URL);
+        updateConfirmed = baseUrl != null;
         if (baseUrl == null) {
             baseUrl = OpenYammUpdater.configuredUrl(this);
         }
@@ -185,8 +188,11 @@ public class OpenYammUpdateActivity extends Activity {
             }
             return;
         }
-        String notes = found.notes.isEmpty() ? "" : "What's new: " + found.notes + "\n\n";
-        show("OpenYAMM " + found.release, notes + "This update downloads " + size
+        if (updateConfirmed && contentReady) {
+            download();
+            return;
+        }
+        show("OpenYAMM " + found.release, "This update downloads " + size
                 + ". Your saves and settings stay as they are.", "Update", this::download,
                 contentReady ? "Later" : null, contentReady ? this::play : null, false);
     }
