@@ -10,10 +10,11 @@ namespace OpenYAMM::Game
 GameplaySpellActionController::SpellActionResult GameplaySpellActionController::tryBeginQuickSpellCast(
     GameplayScreenRuntime &runtime,
     GameplaySpellService &spellService,
-    const TargetQueries &targetQueries)
+    const TargetQueries &targetQueries,
+    std::optional<size_t> extraSlot)
 {
     const GameplaySpellService::QuickSpellStartResolution resolution =
-        spellService.tryStartQuickSpellCast(runtime, targetQueries);
+        spellService.tryStartQuickSpellCast(runtime, targetQueries, extraSlot);
 
     if (resolution.disposition == GameplaySpellService::QuickSpellStartDisposition::AttackFallback)
     {
@@ -61,6 +62,14 @@ GameplaySpellActionController::AttackCastResult GameplaySpellActionController::t
             pAttackSpellEntry->name,
             true,
             &targetQueries);
+
+    if (castResolution.noTarget)
+    {
+        return {
+            .disposition = AttackCastDisposition::NoTarget,
+            .followupUiActive = false,
+        };
+    }
 
     if (!castResolution.castStarted)
     {
@@ -250,6 +259,13 @@ bool GameplaySpellActionController::resolvePendingActorTarget(
     if (pWorldRuntime != nullptr
         && !isSpellId(request.spellId, SpellId::Reanimate)
         && !pWorldRuntime->spellActionActorTargetPoint(worldHit.actor->actorIndex))
+    {
+        return false;
+    }
+
+    // A clicked actor beyond spell reach is no target; the dead (Reanimate's corpses) are measured the same way.
+    if (pWorldRuntime != nullptr
+        && !PartySpellSystem::isActorWithinSpellTargetRange(*pWorldRuntime, worldHit.actor->actorIndex))
     {
         return false;
     }

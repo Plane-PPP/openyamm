@@ -27,6 +27,9 @@ bool isAwardVisible(const AwardDisplayEntry &entry,
 
     case AwardStateKind::PartyAutonote:
         return isAutonoteUnlocked && isAutonoteUnlocked(entry.stateId);
+
+    case AwardStateKind::PartyArcomageWin:
+        return party.hasArcomageWinAt(entry.stateId);
     }
 
     return false;

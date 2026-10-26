@@ -119,6 +119,16 @@ public:
         std::string &statusText,
         ShopItemServiceResult *pResult = nullptr,
         int effectiveReputation = 0);
+    // Rerolls a shop's whole stock for the rules' price (MAW); every new item comes identified. False when the shop
+    // cannot be rerolled or the party cannot pay.
+    static bool tryRerollStock(
+        Party &party,
+        const ItemTable &itemTable,
+        const StandardItemEnchantTable &standardItemEnchantTable,
+        const SpecialItemEnchantTable &specialItemEnchantTable,
+        const HouseEntry &houseEntry,
+        float gameMinutes,
+        std::string &statusText);
     static bool tryStealStockItem(
         Party &party,
         IGameplayWorldRuntime &worldRuntime,

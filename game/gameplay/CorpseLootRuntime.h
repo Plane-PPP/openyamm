@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/rules/CorpseLoot.h"
 #include "game/tables/MonsterTable.h"
 #include "game/ui/GameplayUiController.h"
 
@@ -25,13 +26,17 @@ struct GameplayCorpseAutoLootResult
     std::string statusText;
 };
 
-// Gold and the random item a monster carries: rolled at its death, or earlier when Telepathy reveals them.
+// Gold and the random item a monster carries: rolled at its death, or earlier when Telepathy reveals them. An item the
+// rules' loot filter takes is turned into its gold.
 GameplayCorpseViewState rollMonsterCarriedLoot(
     const std::string &title,
-    const MonsterTable::LootPrototype &loot,
+    const CorpseLoot &corpseLoot,
     const ItemTable *pItemTable,
     Party *pParty,
     const std::string &worldId);
+
+// An item the rules add to a monster's loot besides the table's roll, as it lands in a corpse or on the ground.
+InventoryItem corpseExtraInventoryItem(const CorpseLoot::ExtraItem &extra, const ItemTable &itemTable);
 
 // Adds an actor's authored or event-given items; they take the place of a rolled random item.
 void addGuaranteedCorpseItems(

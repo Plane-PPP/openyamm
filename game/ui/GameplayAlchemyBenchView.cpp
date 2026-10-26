@@ -47,7 +47,7 @@ std::vector<uint32_t> cachedChainCounts(
 
     if (key != state.chainCountsKey || state.chainCounts.size() != model.book.entries.size())
     {
-        const AlchemyChainPlanner planner(party, model.book, model.alchemist.level, benchTables);
+        const AlchemyChainPlanner planner(party, model.book, model.alchemist, benchTables);
         state.chainCounts.clear();
 
         for (const AlchemyBookEntry &entry : model.book.entries)
@@ -259,7 +259,7 @@ AlchemyChainPlan GameplayAlchemyBenchView::planChain(
         return {};
     }
 
-    return AlchemyChainPlanner(*pParty, model.book, model.alchemist.level, *benchTables).plan(resultItemId, maxBrews);
+    return AlchemyChainPlanner(*pParty, model.book, model.alchemist, *benchTables).plan(resultItemId, maxBrews);
 }
 
 std::string GameplayAlchemyBenchView::masteryName(uint8_t mastery)

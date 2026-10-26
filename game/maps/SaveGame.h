@@ -1,13 +1,16 @@
 #pragma once
 
+#include "game/content/RulesetOptions.h"
 #include "game/scene/IndoorSceneRuntime.h"
 #include "game/scene/SceneKind.h"
 #include "game/outdoor/OutdoorPartyRuntime.h"
 #include "game/outdoor/OutdoorWorldRuntime.h"
 #include "game/party/Party.h"
+#include "game/rules/maw/MawGameState.h"
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -44,15 +47,29 @@ struct GameSaveData
     float heldInventoryItemGrabOffsetX = 0.0f;
     float heldInventoryItemGrabOffsetY = 0.0f;
     std::unordered_map<std::string, uint32_t> requiredContentPackages;
+    RulesetSelection ruleset;
+    // Root of the game's random streams (game/rules/RandomStreams.h); 0 in saves older than the streams.
+    uint64_t randomRootSeed = 0;
+    // MAW games only.
+    std::optional<MawGameState> mawState;
     std::string saveName;
     std::vector<uint8_t> previewBmp;
+    // The version the save was written with (set when loading, not saved), for migrations that need the game tables.
+    uint32_t sourceSaveVersion = 0;
 };
+
+// MAW games carry four bags a member from this version on; older saves fit theirs into four when loaded
+// (InventoryBags::fitIntoBagCount).
+constexpr uint32_t SaveVersionFourMawBags = 121;
 
 void migrateLegacyConsumedCorpseMarkers(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyNpcRosters(GameSaveData &data);
 void migrateLegacyMapAutonotes(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapHistory(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapJournalNotes(GameSaveData &data, uint32_t sourceSaveVersion);
+// Saves before version 129 numbered the decoration states with the legacy campfire keys: marks every saved map state
+// (EventRuntimeState::legacyCampFireDecorVars) for the map to renumber when it is next entered.
+void markLegacyCampFireDecorVars(GameSaveData &data, uint32_t sourceSaveVersion);
 bool saveGameDataToPath(const std::filesystem::path &path, const GameSaveData &data, std::string &error);
 
 // The load error for a save written by a newer build; the Load screen counts such saves instead of listing them.
@@ -64,6 +81,18 @@ std::unordered_map<std::string, uint32_t> collectRequiredContentPackages(
     const ItemTable &itemTable,
     const HouseTable &houseTable,
     const std::unordered_map<std::string, uint32_t> &loadedPackageSchemas);
+// Saves before version 115 keep the MM6 maps' SetTexture swaps under the face number; MMerge's MM6 scripts now name
+// faces with a negative reference, stored under EventRuntime::indoorFaceTextureOverrideKey (audit STD3-6, plan D10).
+// `isMm6IndoorMap` tells which saved maps are MM6's.
+void migrateLegacyMm6FaceTextureKeys(
+    GameSaveData &data,
+    const std::function<bool(const std::string &mapFileName)> &isMm6IndoorMap);
+// Whether every content package the save needs is loaded at the schema it was written with; the item and house checks
+// of validateRequiredContentPackages need the tables, this one does not.
+bool validateRequiredContentPackageSchemas(
+    const GameSaveData &data,
+    const std::unordered_map<std::string, uint32_t> &loadedPackageSchemas,
+    std::string &error);
 bool validateRequiredContentPackages(
     const GameSaveData &data,
     const ItemTable &itemTable,

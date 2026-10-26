@@ -1,6 +1,7 @@
 #include "game/render/WaterCoverage.h"
 #include "game/data/ActorNameResolver.h"
 #include "game/events/EvtEnums.h"
+#include "game/FaceEnums.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/maps/ActorModelManifest.h"
 #include "game/maps/DecorationModelManifest.h"
@@ -235,7 +236,6 @@ std::string monsterSpriteFrameFamilyDirectory()
     return "Data/rendering/sprite_frames/monsters";
 }
 
-constexpr uint16_t LevelDecorationInvisible = 0x0020;
 constexpr uint32_t EnvironmentFlagRain = 0x01;
 constexpr uint32_t EnvironmentFlagSnow = 0x02;
 constexpr uint32_t EnvironmentFlagUnderwater = 0x04;
@@ -412,14 +412,9 @@ DecorationLookupResult resolveDecorationEntry(
     return decorationTable.resolveMapDecoration(entity.decorationListId, entity.name);
 }
 
-template <typename EntityType>
-bool shouldSkipDecorationCollision(const EntityType &entity, const DecorationEntry &decoration)
+// Invisible decorations (map flag or evt.SetSprite) are skipped at runtime, since an event can show them again.
+bool shouldSkipDecorationCollision(const DecorationEntry &decoration)
 {
-    if ((entity.aiAttributes & LevelDecorationInvisible) != 0)
-    {
-        return true;
-    }
-
     if (hasDecorationFlag(decoration.flags, DecorationDescFlag::MoveThrough)
         || hasDecorationFlag(decoration.flags, DecorationDescFlag::DontDraw))
     {
@@ -1214,13 +1209,43 @@ SurfaceAnimationSequence staticSurfaceAnimation(const std::string &textureName)
     return animation;
 }
 
+// An animated indoor face whose texture name is no frame table sequence falls back to the sequence index stored at
+// face +0x3A. Haunted Mansion (7d37) face 1844 keeps the leftover water name hdwtr010 over the cleric portrait
+// sequence 13. A stored sequence that is itself a liquid stays with the liquid shader.
+std::optional<SurfaceAnimationSequence> resolveStoredFaceAnimation(
+    const std::string &textureName,
+    uint32_t faceAttributes,
+    int16_t textureFrameTableIndex,
+    const TextureFrameTable *pTextureFrameTable,
+    const LiquidTable *pLiquidTable)
+{
+    if (pTextureFrameTable == nullptr
+        || !hasFaceAttribute(faceAttributes, FaceAttribute::Animated)
+        || textureFrameTableIndex <= 0
+        || pTextureFrameTable->findAnimationSequenceByName(textureName))
+    {
+        return std::nullopt;
+    }
+
+    std::optional<SurfaceAnimationSequence> animation =
+        pTextureFrameTable->findAnimationSequenceByIndex(static_cast<size_t>(textureFrameTableIndex));
+
+    if (!animation || animation->frames.empty()
+        || (pLiquidTable != nullptr
+            && pLiquidTable->findMatch(animation->frames.front().textureName, faceAttributes, false) != nullptr))
+    {
+        return std::nullopt;
+    }
+
+    return animation;
+}
+
 SurfaceAnimationSequence resolveSurfaceAnimation(
     const std::string &textureName,
     uint32_t faceAttributes,
     bool isTerrain,
     const TextureFrameTable *pTextureFrameTable,
-    const LiquidTable *pLiquidTable,
-    std::optional<size_t> textureFrameTableIndex = std::nullopt)
+    const LiquidTable *pLiquidTable)
 {
     // Liquids are drawn by the liquid shader: their legacy frame animations are never loaded.
     if (pLiquidTable != nullptr && pLiquidTable->findMatch(textureName, faceAttributes, isTerrain) != nullptr)
@@ -1232,15 +1257,6 @@ SurfaceAnimationSequence resolveSurfaceAnimation(
     {
         if (const std::optional<SurfaceAnimationSequence> animation =
                 pTextureFrameTable->findAnimationSequenceByName(textureName))
-        {
-            return *animation;
-        }
-    }
-
-    if (!isTerrain && pTextureFrameTable != nullptr && textureFrameTableIndex && *textureFrameTableIndex > 0)
-    {
-        if (const std::optional<SurfaceAnimationSequence> animation =
-                pTextureFrameTable->findAnimationSequenceByIndex(*textureFrameTableIndex))
         {
             return *animation;
         }
@@ -2221,6 +2237,7 @@ std::optional<OutdoorDecorationCollisionSet> buildOutdoorDecorationCollisionSet(
     }
 
     OutdoorDecorationCollisionSet collisionSet = {};
+    collisionSet.clearRules = decorationClearRules(std::span<const EntityType>(entities), decorationTable);
 
     for (size_t entityIndex = 0; entityIndex < entities.size(); ++entityIndex)
     {
@@ -2233,7 +2250,7 @@ std::optional<OutdoorDecorationCollisionSet> buildOutdoorDecorationCollisionSet(
             continue;
         }
 
-        if (shouldSkipDecorationCollision(entity, *pDecoration))
+        if (shouldSkipDecorationCollision(*pDecoration))
         {
             continue;
         }
@@ -3787,18 +3804,18 @@ std::optional<IndoorTextureSet> buildIndoorTextureSet(
         }
 
         const std::string normalizedName = toLowerCopy(face.textureName);
-        const std::optional<size_t> textureFrameTableIndex =
-            face.textureFrameTableIndex > 0 ? std::optional<size_t>(face.textureFrameTableIndex) : std::nullopt;
-        const SurfaceAnimationSequence animation =
-            resolveSurfaceAnimation(
+        const std::optional<SurfaceAnimationSequence> storedAnimation =
+            resolveStoredFaceAnimation(
                 face.textureName,
                 face.attributes,
-                false,
+                face.textureFrameTableIndex,
                 pTextureFrameTable,
-                pLiquidTable,
-                textureFrameTableIndex);
+                pLiquidTable);
+        const SurfaceAnimationSequence animation = storedAnimation
+            ? *storedAnimation
+            : resolveSurfaceAnimation(face.textureName, face.attributes, false, pTextureFrameTable, pLiquidTable);
 
-        if (const LiquidDefinition *pLiquid = pLiquidTable != nullptr
+        if (const LiquidDefinition *pLiquid = pLiquidTable != nullptr && !storedAnimation
                 ? pLiquidTable->findMatch(normalizedName, face.attributes, false) : nullptr)
         {
             liquidTextures.try_emplace(normalizedName, pLiquid);
@@ -3853,24 +3870,39 @@ bool isSceneOverlayFileName(const std::string &entryName, const std::string &sce
     return lowerEntryName.starts_with(numberedOverlayPrefix);
 }
 
+// The world's overlays in name order, then the active ruleset's (`rulesetRoot`, empty for Standard).
 std::vector<std::string> buildSceneOverlayPathCandidates(
     const Engine::AssetFileSystem &assetFileSystem,
-    const std::string &sceneFileName)
+    const std::string &sceneFileName,
+    const std::string &rulesetRoot)
 {
     std::vector<std::string> candidates;
-
-    for (const std::string &entryName : assetFileSystem.enumerate("Data/games"))
+    const auto collect = [&](const std::string &directory)
     {
-        if (isSceneOverlayFileName(entryName, sceneFileName))
+        std::vector<std::string> found;
+
+        for (const std::string &entryName : assetFileSystem.enumerate(directory))
         {
-            candidates.push_back("Data/games/" + entryName);
+            if (isSceneOverlayFileName(entryName, sceneFileName))
+            {
+                found.push_back(directory + "/" + entryName);
+            }
         }
+
+        std::sort(found.begin(), found.end(), [](const std::string &left, const std::string &right)
+        {
+            return toLowerCopy(left) < toLowerCopy(right);
+        });
+        candidates.insert(candidates.end(), found.begin(), found.end());
+    };
+
+    collect("Data/games");
+
+    if (!rulesetRoot.empty())
+    {
+        collect(rulesetRoot + "maps");
     }
 
-    std::sort(candidates.begin(), candidates.end(), [](const std::string &left, const std::string &right)
-    {
-        return toLowerCopy(left) < toLowerCopy(right);
-    });
     return candidates;
 }
 }
@@ -3981,6 +4013,24 @@ std::optional<OutdoorBitmapTexture> loadCookedSurfaceTexture(
         cachedIt = pBinaryFilesByPath->emplace(*path, assetFileSystem.readBinaryFile(*path)).first;
     }
     return decodeCookedSurfaceTexture(textureName, *path, cachedIt->second);
+}
+
+std::optional<OutdoorBitmapTexture> loadSurfaceTexture(
+    const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &textureName)
+{
+    BitmapLoadCache bitmapLoadCache = {};
+    bitmapLoadCache.retainBinaryFiles = false;
+    bitmapLoadCache.retainDecodedPixels = false;
+    std::vector<OutdoorBitmapTexture> textures =
+        loadFaceTextures(assetFileSystem, {toLowerCopy(textureName)}, {}, bitmapLoadCache, {});
+
+    if (textures.empty())
+    {
+        return std::nullopt;
+    }
+
+    return std::move(textures.front());
 }
 
 namespace
@@ -4275,7 +4325,8 @@ std::optional<MapAssetInfo> MapAssetLoader::load(
                 assetInfo.sceneSize = sceneText->size();
                 logStageComplete("scene yml loaded");
 
-                for (const std::string &overlayPath : buildSceneOverlayPathCandidates(assetFileSystem, *sceneFileName))
+                for (const std::string &overlayPath : buildSceneOverlayPathCandidates(
+                         assetFileSystem, *sceneFileName, companionLoadOptions.rulesetRoot))
                 {
                     const std::optional<std::string> overlayText = assetFileSystem.readTextFile(overlayPath);
 

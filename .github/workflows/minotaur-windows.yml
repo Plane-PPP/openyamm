@@ -100,6 +100,8 @@ jobs:
             /game/
             /packaging/
             /tools/
+            /tests/
+            /third_party/doctest/
             /assets_dev/_legacy/sprites_original/
             /assets_dev/engine/
             /assets_dev/worlds/mm6/
@@ -140,7 +142,7 @@ jobs:
           if [ -n "$PREVIOUS_BUILD_SHA" ] && [ "$PREVIOUS_BUILD_SHA" != "$base_sha" ]; then
             echo "previous_build_sha must match the selected baseline"; exit 1
           fi
-          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.10-%s-%s-%s\n' \
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.13-%s-%s-%s\n' \
             "$base_path" "$base_sha" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
 
       - name: Configure release build
@@ -149,7 +151,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DPython3_EXECUTABLE="$(cygpath -m /ucrt64/bin/python.exe)"
           -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=ON
-          -DOPENYAMM_BUILD_TESTS=OFF
+          -DOPENYAMM_BUILD_TESTS=ON
           -DOPENYAMM_COOK_ON_BUILD=OFF
           -DOPENYAMM_RELEASE_VERSION=${MINOTAUR_RELEASE_VERSION}
           -DOPENYAMM_RELEASE_THIN=ON
@@ -180,6 +182,11 @@ jobs:
           cmake --build build-windows
           --target openyamm openyamm_launcher openyamm_runtime_shaders openyamm_sprite_atlas_cook
           --parallel 4
+
+      - name: Build and test Minotaur combat and save compatibility
+        run: |
+          cmake --build build-windows --target openyamm_unit_tests --parallel 4
+          build-windows/tests/openyamm_unit_tests.exe --test-case='*Lethal Strike*,*Minotaur*,*Axe*'
 
       - name: Prepare indexed content (not included in unchanged update payloads)
         run: >-

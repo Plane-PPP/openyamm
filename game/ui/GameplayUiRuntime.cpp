@@ -2048,7 +2048,7 @@ void GameplayUiRuntime::submitHudTexturedEllipse(
 
 void GameplayUiRuntime::submitHudTexturedArc(bgfx::TextureHandle textureHandle,
     const GameplayResolvedHudLayoutElement &rect, float strokeWidth, float startDegrees, float sweepDegrees,
-    float begin, float end) const
+    float begin, float end, float uRepeat) const
 {
     const HudArcRange range = hudArcRange(sweepDegrees, begin, end);
     if (!hasHudRenderResources() || !bgfx::isValid(textureHandle) || range.segments == 0
@@ -2070,7 +2070,7 @@ void GameplayUiRuntime::submitHudTexturedArc(bgfx::TextureHandle textureHandle,
     const std::array<float, 2> uvScale = hudTextureUvScale(textureHandle);
     for (size_t index = 0; index < mesh.vertices.size(); ++index)
     {
-        pArcVertices[index].u *= uvScale[0];
+        pArcVertices[index].u *= uvScale[0] * uRepeat;
         pArcVertices[index].v *= uvScale[1];
     }
     std::copy(mesh.indices.begin(), mesh.indices.end(), reinterpret_cast<uint16_t *>(indices.data));
@@ -2080,7 +2080,7 @@ void GameplayUiRuntime::submitHudTexturedArc(bgfx::TextureHandle textureHandle,
     bgfx::setVertexBuffer(0, &vertices);
     bgfx::setIndexBuffer(&indices);
     bindTexture(0, m_hudRenderBackend.textureSamplerHandle, textureHandle, TextureFilterProfile::Ui,
-        BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        (uRepeat == 1 ? BGFX_SAMPLER_U_CLAMP : 0) | BGFX_SAMPLER_V_CLAMP);
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_BLEND_ALPHA);
     bgfx::submit(m_hudRenderBackend.viewId, m_hudRenderBackend.texturedProgramHandle);
 }

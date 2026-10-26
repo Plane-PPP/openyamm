@@ -3,6 +3,7 @@
 #include "game/items/ItemEnchantRuntime.h"
 #include "game/items/ItemEnchantTables.h"
 #include "game/items/ItemRuntime.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 
 #include <algorithm>
@@ -162,11 +163,25 @@ std::optional<InventoryItem> ItemGenerator::generateRandomInventoryItem(
     std::mt19937 &rng,
     const std::function<bool(const ItemDefinition &)> &callerFilter)
 {
+    // A boss's drop (rulesets that flag it, MAW) is always equipment that takes enchantments.
     const std::function<bool(const ItemDefinition &)> filter =
         [&request, &callerFilter](const ItemDefinition &entry)
         {
-            return entry.availableInWorld(request.worldId) && (!callerFilter || callerFilter(entry));
+            return entry.availableInWorld(request.worldId) && (!callerFilter || callerFilter(entry))
+                && (!request.boss || ItemEnchantRuntime::isEnchantable(entry));
         };
+
+    if (request.rareItemsOnly && !gameRulesFor(pParty).items.levelSevenGivesRareItem())
+    {
+        // A level-7 chest slot rolls as a boss's drop there (MAW re-rolls the engine's chest artifacts through the
+        // boss path, zzMaw-Items.lua:4523-4533, audit OVR1-2-1); other level-7 requests are plain level 6.
+        ItemGenerationRequest levelSix = request;
+        levelSix.rareItemsOnly = false;
+        levelSix.treasureLevel = 6;
+        levelSix.boss = request.boss || request.mode == ItemGenerationMode::ChestLoot;
+        return generateRandomInventoryItem(
+            itemTable, standardItemEnchantTable, specialItemEnchantTable, levelSix, pParty, rng, callerFilter);
+    }
 
     if (request.rareItemsOnly)
     {
@@ -192,7 +207,7 @@ std::optional<InventoryItem> ItemGenerator::generateRandomInventoryItem(
         return item;
     }
 
-    if (shouldTryGenerateRareItem(request) && std::uniform_int_distribution<int>(0, 99)(rng) < 5)
+    if (gameRulesFor(pParty).items.rollsRareItem(request, pParty, rng))
     {
         const std::optional<uint32_t> rareItemId = chooseRandomRareItem(itemTable, pParty, rng, filter);
 
@@ -226,84 +241,24 @@ std::optional<InventoryItem> ItemGenerator::generateRandomInventoryItem(
 
     assignTreasurePotionPower(item, itemTable, request.treasureLevel, rng);
 
-    if (pItemDefinition == nullptr
-        || ItemRuntime::isRareItem(*pItemDefinition)
-        || !ItemEnchantRuntime::isEnchantable(*pItemDefinition))
+    if (pItemDefinition == nullptr || ItemRuntime::isRareItem(*pItemDefinition))
     {
         return item;
     }
 
-    const int clampedTreasureLevel = std::clamp(request.treasureLevel, 1, 6);
-    const bool canHaveStandardEnchant = ItemEnchantRuntime::canHaveStandardEnchant(*pItemDefinition);
-    const bool canHaveSpecialEnchant = ItemEnchantRuntime::canHaveSpecialEnchant(*pItemDefinition);
-    const int standardChance =
-        canHaveStandardEnchant ? ItemEnchantRuntime::standardEnchantChance(clampedTreasureLevel) : 0;
-    const int specialChance =
-        canHaveSpecialEnchant ? ItemEnchantRuntime::specialEnchantChance(*pItemDefinition, clampedTreasureLevel) : 0;
-
-    if (!canHaveStandardEnchant)
+    if (!ItemEnchantRuntime::isEnchantable(*pItemDefinition))
     {
-        if (specialChance <= 0)
-        {
-            return item;
-        }
-
-        if (specialChance > 0 && std::uniform_int_distribution<int>(0, 99)(rng) < specialChance)
-        {
-            const std::optional<uint16_t> specialEnchantId =
-                ItemEnchantRuntime::chooseSpecialEnchantId(*pItemDefinition, specialItemEnchantTable, clampedTreasureLevel, rng);
-
-            if (specialEnchantId)
-            {
-                item.specialEnchantId = *specialEnchantId;
-            }
-        }
-
+        gameRulesFor(pParty).items.rollPlainItem(item, *pItemDefinition, request);
         return item;
     }
 
-    if (standardChance <= 0)
-    {
-        return item;
-    }
-
-    const int roll = std::uniform_int_distribution<int>(0, 99)(rng);
-
-    if (roll < standardChance)
-    {
-        const std::optional<uint16_t> standardEnchantId =
-            ItemEnchantRuntime::chooseStandardEnchantId(*pItemDefinition, standardItemEnchantTable, rng);
-
-        if (standardEnchantId)
-        {
-            item.standardEnchantId = *standardEnchantId;
-
-            const StandardItemEnchantEntry *pEntry = standardItemEnchantTable.get(*standardEnchantId);
-
-            if (pEntry != nullptr)
-            {
-                item.standardEnchantPower =
-                    static_cast<uint16_t>(ItemEnchantRuntime::generateStandardEnchantPower(
-                        pEntry->kind,
-                        clampedTreasureLevel,
-                        rng));
-            }
-        }
-
-        return item;
-    }
-
-    if (roll < standardChance + specialChance)
-    {
-        const std::optional<uint16_t> specialEnchantId =
-            ItemEnchantRuntime::chooseSpecialEnchantId(*pItemDefinition, specialItemEnchantTable, clampedTreasureLevel, rng);
-
-        if (specialEnchantId)
-        {
-            item.specialEnchantId = *specialEnchantId;
-        }
-    }
-
+    gameRulesFor(pParty).items.rollEnchantments(
+        item,
+        *pItemDefinition,
+        ItemRollTables{itemTable, standardItemEnchantTable, specialItemEnchantTable},
+        request,
+        pParty,
+        rng);
     return item;
 }
 

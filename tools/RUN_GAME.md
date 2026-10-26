@@ -67,6 +67,24 @@ In the debug console, `screenshot coast` saves `output/screenshots/coast.png` re
 working directory. Names allow letters, digits, underscores and hyphens; existing named images are overwritten.
 The command closes the console before capture so its text does not cover the screenshot.
 
+## Rulesets
+
+`--ruleset <id>[:<option>...]` starts the isolated new game under a ruleset package from `assets_dev/engine/rulesets/`,
+for example `--ruleset maw` (MAW's defaults) or `--ruleset maw:hell:horizontal`. Options are difficulty, progression
+and challenge-mode ids in any order, plus `randomizer` and `friendlyfire` (hits on non-hostile monsters count);
+unlisted ones keep the package defaults, and an option the package does not offer fails the preparation. It cannot be combined with `--save` (a save keeps its own ruleset) or
+`--menu` (choose the ruleset on the New Game screen). The game binary takes the same `--ruleset` argument for a
+direct start without a save, and headless scenarios accept it as `new_game_flow: {ruleset: maw:hell:horizontal}`.
+
+```bash
+./tools/run_game.sh --isolated maw_hell --world mm6 --map oute3.odm --ruleset maw:hell:horizontal
+```
+
+For a MAW party at a later stage of the game, the debug console's `testparty` starts a new MAW game with a test
+party (`testparty mid newclasses hell`) or replaces the current game's party (`testparty apply endgame classic
++legendary`); `testparty` lists the stages, parties and kits of `assets_dev/engine/rulesets/maw/debug/test_parties.yml`,
+whose header explains them. A tour's `console:` step can run it at launch.
+
 ## Menu checks with isolated saves
 
 `--menu` starts the isolated game at its title screen. Without `--map` or `--save`, it starts with an empty private
@@ -95,6 +113,7 @@ currently active field. `pointer_down`, `pointer_move` and `pointer_up` accept t
 `expect: text_input` and `expect: menu_cursor` fail the run when their screen/input condition is not met.
 The cursor check verifies visibility and disabled relative mode on the game window, independently of desktop focus.
 For gameplay checks, `action: quest` (or another keyboard binding INI key) presses the native gameplay action.
+`console: menu` opens the pause menu (gameplay reads Escape from the real keyboard, which a tour cannot press).
 `right_down: [x, y]` and `right_up: [x, y]` hold/release RMB for inspectors and modern cursor interaction.
 These operations use the same input frame as the real controls; they do not invoke UI renderer callbacks.
 For repeatable camera-rotation profiling in modern controls, `look_rate: [-400, 0]` supplies relative mouse

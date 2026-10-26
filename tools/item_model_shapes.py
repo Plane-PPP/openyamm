@@ -6,8 +6,8 @@ game scale (the binding's `length` over the longest horizontal side), in the ite
 (OpenYAMM axes: glTF -X is x, glTF Z is y, glTF Y is up). The world runtimes collide and pick with it, also headless,
 where models are never loaded (GROUND_ITEMS_3D_BEHAVIOUR.md section 3).
 
-Reads the runtime copies under assets_dev, the models the game loads. Re-run after installing or replacing a model;
---check only reports bindings whose bounds are missing or stale.
+Reads the runtime copies under assets_dev (or --assets, a stage), the models the game loads. Re-run after installing or
+replacing a model; --check only reports bindings whose bounds are missing or stale.
 """
 
 import argparse
@@ -102,6 +102,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--check', action='store_true', help='report missing or stale bounds; change nothing')
     parser.add_argument('--bindings', type=Path, default=BINDINGS)
+    parser.add_argument('--assets', type=Path, default=REPO / 'assets_dev',
+                        help='the asset root the bindings\' model paths are relative to (a stage, say)')
     args = parser.parse_args()
 
     lines = args.bindings.read_text().splitlines(keepends=True)
@@ -114,7 +116,7 @@ def main():
         fields = parse_fields(match.group(2))
         if 'model' not in fields or 'length' not in fields:
             continue
-        model = REPO / 'assets_dev' / fields['model']
+        model = args.assets / fields['model']
         bounds = item_bounds(model, float(fields['length']))
         current = None
         if 'bounds' in fields:

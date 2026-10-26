@@ -35,12 +35,22 @@ enum class InventoryItemUseAction : uint8_t
     UseReagent,
     UseDimensionDoorScroll,
     UseConnectorStone,
+    // An item whose use action is grantTechPoints (Hesper's Engrams): its VarA in tech points to the target.
+    GrantTechPoints,
+    // Personal energy shields (use actions useShieldCell, useShieldBurst; Party::chargePersonalShield and
+    // burstPersonalShields).
+    UseShieldCell,
+    UseShieldBurst,
+    // throwEmpGrenade: consumed here; the caller applies it to the world (GameplayItemService).
+    ThrowEmpGrenade,
 };
 
 struct InventoryItemUseContext
 {
     bool underwater = false;
     float gameMinutes = 0.0f;
+    // Hostile monsters near the party (the yellow alert): drinking may then cost recovery.
+    bool enemiesNear = false;
 };
 
 struct InventoryItemUseResult
@@ -59,6 +69,8 @@ struct InventoryItemUseResult
     std::optional<SoundId> soundId;
     std::string readableTitle;
     std::string readableBody;
+    // A potion of several drinks that is not used up: the uses its bottle has left (its new charges).
+    std::optional<uint32_t> potionUsesLeft;
 };
 
 class InventoryItemUseRuntime
@@ -79,5 +91,9 @@ public:
         const MergedPotionSettingTable *pPotionSettingTable = nullptr,
         const MergedReagentSettingTable *pReagentSettingTable = nullptr,
         const InventoryItemUseContext &context = {});
+    // Whether a drink costs a ready member recovery under the rules' potion effects (MAW). Standard: no.
+    static bool drinkRecoveryApplies(const MergedPotionSettingTable *pPotionSettingTable);
+    // Who pays a drink's recovery: the drinker if ready, else the active member, else the first ready one.
+    static std::optional<size_t> drinkRecoveryPayer(const Party &party, size_t drinkerIndex);
 };
 }

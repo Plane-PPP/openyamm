@@ -1,4 +1,5 @@
 #include "game/app/GameSettings.h"
+#include "game/app/KeyboardBindings.h"
 
 #include <doctest/doctest.h>
 
@@ -189,3 +190,48 @@ TEST_CASE("settings saves keep the previous file as a backup")
 }
 
 
+
+TEST_CASE("kept modified packs are a choice of the file only and survive a save")
+{
+    CHECK_FALSE(GameSettings::createDefault().keepModifiedPacks);
+    CHECK_FALSE(
+        loadText("[profile]\nname=desktop\nversion=5\n[updates]\nkeep_modified_packs=maybe\n").keepModifiedPacks);
+
+    const GameSettings kept =
+        loadText("[profile]\nname=desktop\nversion=5\n[updates]\ncheck_for_updates=off\nkeep_modified_packs=on\n");
+    CHECK(kept.keepModifiedPacks);
+    CHECK(contains(savedNames(kept), "updates.keep_modified_packs"));
+
+    const std::filesystem::path path = temporarySettingsPath("settings.ini");
+    std::string error;
+    REQUIRE(OpenYAMM::Game::saveGameSettings(path, kept, error));
+    std::optional<GameSettings> loaded = OpenYAMM::Game::loadGameSettings(path, error);
+    REQUIRE_MESSAGE(loaded, error);
+    CHECK(loaded->keepModifiedPacks);
+
+    // Settings → Updates → Defaults resets the catalogued settings only.
+    OpenYAMM::Game::releaseStoredSettings(*loaded, {"check_for_updates", "update_now"});
+    CHECK(contains(savedNames(*loaded), "updates.keep_modified_packs"));
+    std::filesystem::remove_all(path.parent_path());
+}
+
+TEST_CASE("every function, keypad and punctuation key has a readable binding name that loads back")
+{
+    using OpenYAMM::Game::keyboardBindingName;
+    using OpenYAMM::Game::parseKeyboardBindingName;
+
+    // A potion slot bound to F1, F3 or F4 showed "Scancode_58" on the potion wheel.
+    for (const SDL_Scancode scancode : {SDL_SCANCODE_F1, SDL_SCANCODE_F3, SDL_SCANCODE_F4, SDL_SCANCODE_F9,
+             SDL_SCANCODE_F12, SDL_SCANCODE_KP_0, SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_ENTER, SDL_SCANCODE_GRAVE,
+             SDL_SCANCODE_MINUS, SDL_SCANCODE_SEMICOLON, SDL_SCANCODE_SLASH, SDL_SCANCODE_CAPSLOCK})
+    {
+        const std::string name = keyboardBindingName(scancode);
+        CHECK_MESSAGE(name.rfind("Scancode_", 0) != 0, name);
+        CHECK_EQ(parseKeyboardBindingName(name), scancode);
+    }
+
+    CHECK_EQ(keyboardBindingName(SDL_SCANCODE_F1), "F1");
+    CHECK_EQ(keyboardBindingName(SDL_SCANCODE_KP_7), "Num 7");
+    // Settings saved before keep loading.
+    CHECK_EQ(parseKeyboardBindingName("Scancode_58"), SDL_SCANCODE_F1);
+}

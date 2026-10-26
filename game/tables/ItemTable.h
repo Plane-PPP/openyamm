@@ -61,6 +61,9 @@ struct ItemContentEffect
     float spellRegenPerSecond = 0.0f;
     std::unordered_map<std::string, int> skillBonuses;
     std::vector<std::string> flags;
+    // Energy resistance (item_effects energy_resistance) and personal energy shield points (personal_shield).
+    int energyResistance = 0;
+    int personalShield = 0;
 };
 
 struct ItemSetBonusDefinition

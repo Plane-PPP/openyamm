@@ -1,0 +1,10 @@
+{
+  "upstream_release": "v1.13",
+  "upstream_tag_object": "a066c7e8438b8a68c7501329da667cd46e5fb272",
+  "upstream_commit": "5d7786364e7d154bbf5d222d7ff2088083414354",
+  "base_version": "minotaur-1.10-b7e80f0583df-14-1",
+  "old_writer_fixture": "tests/fixtures/minotaur-1.10-v95.oysav",
+  "fixture_sha256": "9962cc9d2c4075800fcde59038f5a468badd686c001d192c3310be058429f6f3",
+  "fixture_origin": "Old 1.10 unit executable, campaign-progress roundtrip captured before replacing objects; 1 case/300 assertions passed. Synthetic fixture, not user save.",
+  "validation": "In progress; Linux syntax checks on ported save, combat, rules, Stats and world files passed; full Windows build/tests pending."
+}

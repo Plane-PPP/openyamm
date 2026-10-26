@@ -17,6 +17,7 @@ extern "C"
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <numbers>
 
 namespace OpenYAMM::Game
 {
@@ -865,6 +866,7 @@ void ActorBehaviorRuntime::reset()
     m_projectileWards.clear();
     m_wardDisplays.clear();
     m_tacticAims.clear();
+    m_tacticTurrets.clear();
 }
 
 void ActorBehaviorRuntime::step(IGameplayWorldRuntime &world, float deltaSeconds)
@@ -1115,8 +1117,9 @@ void ActorBehaviorRuntime::applyAiFacts(ActorAiFrameFacts &facts)
 
 void ActorBehaviorRuntime::applyTactics(ActorAiFrameFacts &facts)
 {
+    const float stepSeconds = facts.fixedStepSeconds;
     const auto applyToActor =
-        [this](ActorAiFacts &actor, bool active)
+        [this, stepSeconds](ActorAiFacts &actor, bool active)
         {
             const ActorTacticsFacts *pTactics = m_pCatalog->tacticsForMonster(actor.identity.monsterId);
 
@@ -1139,10 +1142,29 @@ void ActorBehaviorRuntime::applyTactics(ActorAiFrameFacts &facts)
                 actor.movement.movementAllowed = true;
             }
 
+            // Shield broken: a hostile actor falls back from its target (the native flee) while the shield is down.
+            const float shieldDownSeconds = actor.status.shieldDownSinceBreakSeconds;
+
+            if (actor.tactics.shieldBreakReaction == ActorShieldBreakReaction::FallBack && shieldDownSeconds >= 0.0f
+                && shieldDownSeconds < actor.tactics.shieldBreakSeconds && actor.status.hostileToParty
+                && !actor.status.dead && actor.target.currentKind != ActorAiTargetKind::None)
+            {
+                actor.status.forceFleeFromParty = true;
+            }
+
+            // The turret state reads the last aim (its hold) before this step replaces it.
+            if (actor.tactics.scan.enabled() || actor.tactics.leadSeconds > 0.0f)
+            {
+                updateTacticTurret(actor, active, stepSeconds);
+            }
+
             if (active && actor.target.currentKind != ActorAiTargetKind::None && actor.target.currentCanSense
                 && !actor.status.dead)
             {
-                m_tacticAims[actor.actorIndex] = TacticAim{actor.actorId, actor.target.currentPosition};
+                const GameplayWorldPoint &target = actor.target.currentPosition;
+                const GameplayWorldPoint &lead = actor.tactics.aimLead;
+                m_tacticAims[actor.actorIndex] =
+                    TacticAim{actor.actorId, {target.x + lead.x, target.y + lead.y, target.z + lead.z}};
             }
             else
             {
@@ -1159,6 +1181,143 @@ void ActorBehaviorRuntime::applyTactics(ActorAiFrameFacts &facts)
     {
         applyToActor(actor, false);
     }
+}
+
+void ActorBehaviorRuntime::updateTacticTurret(ActorAiFacts &actor, bool active, float stepSeconds)
+{
+    // The lead's velocity estimate follows the target's movement over about this long (the party moves once a frame,
+    // the AI steps 128 times a second), and ignores speeds above the cap (a teleport, a target swap).
+    constexpr float LeadVelocitySmoothingSeconds = 0.3f;
+    constexpr float MaximumLeadSpeed = 2000.0f;
+    constexpr float RestartDelaySeconds = 0.4f;
+    ActorTacticsFacts &tactics = actor.tactics;
+
+    if (actor.status.dead)
+    {
+        m_tacticTurrets.erase(actor.actorIndex);
+        return;
+    }
+
+    TacticTurret &turret = m_tacticTurrets[actor.actorIndex];
+
+    if (turret.actorId != actor.actorId)
+    {
+        turret = {};
+        turret.actorId = actor.actorId;
+        turret.centreYawRadians = actor.movement.hasHomeYaw ? actor.movement.homeYawRadians : actor.runtime.yawRadians;
+    }
+
+    if (active && actor.target.currentKind != ActorAiTargetKind::None && actor.target.currentCanSense)
+    {
+        if (!turret.engaged)
+        {
+            turret.engaged = true;
+            turret.scanning = false;
+            turret.holdRemainingSeconds = 0.0f;
+            turret.hasHeldAim = false;
+            turret.hasTargetSample = false;
+        }
+
+        if (tactics.leadSeconds <= 0.0f)
+        {
+            return;
+        }
+
+        const GameplayWorldPoint &position = actor.target.currentPosition;
+        const bool sameTarget = turret.hasTargetSample && turret.targetKind == actor.target.currentKind
+            && turret.targetActorIndex == actor.target.currentActorIndex;
+        GameplayWorldPoint &velocity = turret.targetVelocity;
+
+        if (sameTarget && stepSeconds > 0.0f)
+        {
+            const float sampleX = (position.x - turret.targetSample.x) / stepSeconds;
+            const float sampleY = (position.y - turret.targetSample.y) / stepSeconds;
+            const float sampleZ = (position.z - turret.targetSample.z) / stepSeconds;
+            const float follow = 1.0f - std::exp(-stepSeconds / LeadVelocitySmoothingSeconds);
+            velocity.x += (sampleX - velocity.x) * follow;
+            velocity.y += (sampleY - velocity.y) * follow;
+            velocity.z += (sampleZ - velocity.z) * follow;
+        }
+        else
+        {
+            velocity = {};
+        }
+
+        turret.hasTargetSample = true;
+        turret.targetSample = position;
+        turret.targetKind = actor.target.currentKind;
+        turret.targetActorIndex = actor.target.currentActorIndex;
+        const float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z);
+        const float scale = speed > MaximumLeadSpeed ? 0.0f : tactics.leadSeconds;
+        tactics.aimLead = {velocity.x * scale, velocity.y * scale, velocity.z * scale};
+        return;
+    }
+
+    turret.hasTargetSample = false;
+    turret.targetVelocity = {};
+
+    if (turret.engaged)
+    {
+        // Lost its target: hold the last aim (facing and barrel) for the scan's hold time.
+        turret.engaged = false;
+        turret.holdRemainingSeconds = tactics.scan.holdSeconds;
+        turret.heldYawRadians = actor.runtime.yawRadians;
+        const auto aim = m_tacticAims.find(actor.actorIndex);
+        turret.hasHeldAim = aim != m_tacticAims.end() && aim->second.actorId == actor.actorId;
+
+        if (turret.hasHeldAim)
+        {
+            turret.heldAim = aim->second.point;
+        }
+    }
+
+    if (!tactics.scan.enabled())
+    {
+        return;
+    }
+
+    if (turret.holdRemainingSeconds > 0.0f)
+    {
+        turret.holdRemainingSeconds -= stepSeconds;
+        tactics.idleAimActive = true;
+        tactics.idleAimYawRadians = turret.heldYawRadians;
+        return;
+    }
+
+    turret.hasHeldAim = false;
+
+    if (!turret.scanning)
+    {
+        // A fresh turret first waits its own part of a scan cycle, so neighbours never sweep in step; one back from
+        // a fight sets off after a beat, from wherever it points (beyond the sweep it returns at half its traverse).
+        const TurretScanSettings &scan = tactics.scan;
+        const float cycleSeconds = scan.pauseMaxSeconds + 3.0f * scan.halfWidthRadians / scan.radiansPerSecond;
+        const float phase = std::fmod(float(actor.actorId) * 0.618034f, 1.0f);
+        const float delaySeconds = turret.scanStarts == 0 ? phase * cycleSeconds : RestartDelaySeconds;
+        const float offset = std::remainder(
+            actor.runtime.yawRadians - turret.centreYawRadians, 2.0f * std::numbers::pi_v<float>);
+        startTurretScan(turret.scan, actor.actorId * 7919u + turret.scanStarts, offset, 0.0f, delaySeconds,
+            0.5f * tactics.traverseRadiansPerSecond);
+        ++turret.scanStarts;
+        turret.scanning = true;
+    }
+
+    const TurretScanPose pose = advanceTurretScan(turret.scan, tactics.scan, stepSeconds);
+    turret.scanPitchRadians = pose.pitchRadians;
+    tactics.idleAimActive = true;
+    tactics.idleAimYawRadians = std::remainder(
+        turret.centreYawRadians + pose.yawOffsetRadians, 2.0f * std::numbers::pi_v<float>);
+}
+
+bool ActorBehaviorRuntime::turnsAtTraverseRate(int16_t monsterId) const
+{
+    if (m_pCatalog == nullptr || !m_pCatalog->hasTactics())
+    {
+        return false;
+    }
+
+    const ActorTacticsFacts *pTactics = m_pCatalog->tacticsForMonster(monsterId);
+    return pTactics != nullptr && pTactics->traverseRadiansPerSecond > 0.0f;
 }
 
 void ActorBehaviorRuntime::observeAiResult(const ActorAiFrameResult &result)
@@ -1187,6 +1346,30 @@ void ActorBehaviorRuntime::applyPresentation(size_t actorIndex, GameplayRuntimeA
             state.aimTargetX = aim->second.point.x;
             state.aimTargetY = aim->second.point.y;
             state.aimTargetZ = aim->second.point.z;
+        }
+    }
+
+    if (!m_tacticTurrets.empty() && !state.hasAimTarget && !state.isDead)
+    {
+        const auto turret = m_tacticTurrets.find(actorIndex);
+
+        if (turret != m_tacticTurrets.end() && turret->second.actorId == state.actorId && !turret->second.engaged)
+        {
+            const TacticTurret &record = turret->second;
+
+            if (record.holdRemainingSeconds > 0.0f && record.hasHeldAim)
+            {
+                // Holding its last aim: the barrel stays on it.
+                state.hasAimTarget = true;
+                state.aimTargetX = record.heldAim.x;
+                state.aimTargetY = record.heldAim.y;
+                state.aimTargetZ = record.heldAim.z;
+            }
+            else if (record.scanning || record.holdRemainingSeconds > 0.0f)
+            {
+                state.aimScanning = true;
+                state.aimScanPitchRadians = record.scanPitchRadians;
+            }
         }
     }
 

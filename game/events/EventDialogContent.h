@@ -43,6 +43,8 @@ enum class EventDialogActionKind
     NpcDismiss,
     NpcBtb,
     MapTransitionConfirm,
+    // Enter a completed dungeon reset to its first state, harder (MAW).
+    MapTransitionReset,
     MapTransitionCancel,
     RosterJoinOffer,
     RosterJoinAccept,

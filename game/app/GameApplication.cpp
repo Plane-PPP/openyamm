@@ -1,14 +1,18 @@
 #include "game/app/GameApplication.h"
 
+#include "game/gameplay/PartyHostileAlert.h"
 #include "game/gameplay/ActorBehaviorRuntime.h"
+#include "game/gameplay/GameplayMonsterSpawn.h"
 #include "game/gameplay/SavePreviewImage.h"
 
 #include "game/StringUtils.h"
 #include "game/app/ProfilingControl.h"
 #include "game/debug/GameplayDebugTrace.h"
+#include "game/debug/MawTestParties.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/LethalStrikeMonsters.h"
 #include "game/gameplay/GameplayHeldItemController.h"
+#include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/gameplay/ReputationRuntime.h"
 #include "game/scene/IndoorSceneRuntime.h"
 #include "game/scene/OutdoorSceneRuntime.h"
@@ -20,6 +24,9 @@
 #include "game/render/SkyClock.h"
 #include "game/render/TextureFiltering.h"
 #include "game/render/WaterMath.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/ItemRules.h"
+#include "game/rules/RandomStreams.h"
 #include "game/events/EventDialogContent.h"
 #include "game/events/EventRuntime.h"
 #include "game/events/EvtEnums.h"
@@ -73,7 +80,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
 constexpr bool IncludeGodLichCharacterCreationCandidate = true;
 #else
 constexpr bool IncludeGodLichCharacterCreationCandidate = false;
@@ -137,7 +144,7 @@ const char *gameplayUiAssetLoadKindName(GameplayUiAssetLoadKind kind)
     return "unknown";
 }
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
 bool isAndroidFingerEvent(const SDL_Event &event)
 {
     return event.type == SDL_EVENT_FINGER_DOWN
@@ -1296,9 +1303,10 @@ bool timedMapRespawnDue(
     const MapDeltaLocationInfo &locationInfo,
     int32_t currentLocationDay)
 {
-    return map.respawnIntervalDays > 0
+    const int respawnDays = boundGameRules().monsters.mapRespawnDays(map);
+    return respawnDays > 0
         && locationInfo.lastRespawnDay > 0
-        && currentLocationDay - locationInfo.lastRespawnDay >= map.respawnIntervalDays;
+        && currentLocationDay - locationInfo.lastRespawnDay >= respawnDays;
 }
 
 const OutdoorWorldRuntime::Snapshot *findSavedOutdoorWorldState(
@@ -1341,6 +1349,51 @@ const IndoorSceneRuntime::Snapshot *findSavedIndoorSceneState(
     return stateIt != states.end() ? &stateIt->second : nullptr;
 }
 
+// A saved map state from before MMerge's campfire list: renumbers its decoration states now that the map's decorations
+// are loaded (EventRuntimeState::legacyCampFireDecorVars).
+void renumberSavedLegacyCampFireDecorVars(GameSession &session, const MapAssetInfo &mapAssetInfo, const Party &party)
+{
+    const auto renumber = [&](auto &states, const auto &entities, const DecorationBillboardSet &billboards)
+    {
+        auto stateIt = states.end();
+
+        if (!mapAssetInfo.map.canonicalId.empty())
+        {
+            stateIt = states.find(mapAssetInfo.map.canonicalId);
+        }
+
+        if (stateIt == states.end())
+        {
+            stateIt = states.find(mapAssetInfo.map.fileName);
+        }
+
+        if (stateIt != states.end() && stateIt->second.eventRuntimeState)
+        {
+            renumberLegacyCampFireDecorVars(
+                *stateIt->second.eventRuntimeState,
+                mapAssetInfo.map.fileName,
+                std::span(entities),
+                billboards.decorationTable,
+                party);
+        }
+    };
+
+    if (mapAssetInfo.outdoorMapData && mapAssetInfo.outdoorDecorationBillboardSet)
+    {
+        renumber(
+            session.outdoorWorldStates(),
+            mapAssetInfo.outdoorMapData->entities,
+            *mapAssetInfo.outdoorDecorationBillboardSet);
+    }
+    else if (mapAssetInfo.indoorMapData && mapAssetInfo.indoorDecorationBillboardSet)
+    {
+        renumber(
+            session.indoorSceneStates(),
+            mapAssetInfo.indoorMapData->entities,
+            *mapAssetInfo.indoorDecorationBillboardSet);
+    }
+}
+
 bool savedSelectedMapStateNeedsFreshAssets(
     const GameSession &session,
     const MapAssetInfo &mapAssetInfo,
@@ -1350,7 +1403,8 @@ bool savedSelectedMapStateNeedsFreshAssets(
     {
         const OutdoorWorldRuntime::Snapshot *pSnapshot = findSavedOutdoorWorldState(session, mapAssetInfo);
         return pSnapshot != nullptr
-            && timedMapRespawnDue(mapAssetInfo.map, pSnapshot->locationInfo, currentLocationDay);
+            && (boundGameRules().monsters.mapRefillForced(mapAssetInfo.map.fileName)
+                || timedMapRespawnDue(mapAssetInfo.map, pSnapshot->locationInfo, currentLocationDay));
     }
 
     if (mapAssetInfo.indoorMapData)
@@ -1358,10 +1412,11 @@ bool savedSelectedMapStateNeedsFreshAssets(
         const IndoorSceneRuntime::Snapshot *pSnapshot = findSavedIndoorSceneState(session, mapAssetInfo);
         return pSnapshot != nullptr
             && pSnapshot->mapDeltaData
-            && timedMapRespawnDue(
+            && (boundGameRules().monsters.mapRefillForced(mapAssetInfo.map.fileName)
+                || timedMapRespawnDue(
                 mapAssetInfo.map,
                 pSnapshot->mapDeltaData->locationInfo,
-                currentLocationDay);
+                currentLocationDay));
     }
 
     return false;
@@ -2921,13 +2976,215 @@ void GameApplication::registerDebugConsoleCommands()
                 << "award get|set|clear <id>, award dump [active|all|filter], "
                 << "arcomage win <house-id|mm8>, "
                 << "player add <class-id|class-name> [name], hire <profession-id>, gold get|add|set <amount>, "
-                << "food get|add|set <amount>, hp full, item search <text>, item give <id|text> [qty], "
+                << "food get|add|set <amount>, hp full, item search <text>, item give <id|text> [qty] [potion power], "
                 << "tp <x> <y> <z>, config get|set|toggle immortal|unlimited_mana|invisible, "
                 << "config get|set|toggle terrain_decorations, "
                 << "effect list|stats|rate|spawn|impact-rebind|pause|scrub|replay|stop, "
                 << "model list|spawn|play|pause|scrub|visible|markers|nodes|orbit|stop, "
-                << "memory, reload map";
+                << "memory, reload map, menu, ruleset [difficulty <id> | banks <mm8> <mm7> <mm6> <other>]";
             return commandResult(true, out.str());
+        }});
+
+    m_debugConsole.registerCommand({
+        .name = "menu",
+        .description = "Open the pause menu, as Escape does in play.",
+        .usage = "menu",
+        .callback = [this, commandResult, activeGameplayWorld](const DebugConsole::CommandContext &)
+        {
+            if (activeGameplayWorld() == nullptr)
+            {
+                return commandResult(false, "No game in progress.");
+            }
+            m_gameSession.gameplayScreenRuntime().openMenuOverlay();
+            return commandResult(true, "Pause menu opened.");
+        }});
+
+    m_debugConsole.registerCommand({
+        .name = "ruleset",
+        .description = "Show the game's ruleset; change its difficulty or MAW's level banks.",
+        .usage = "ruleset [difficulty <id> | banks <mm8> <mm7> <mm6> <other> | aura <member 1-5> <spell id>"
+                 " | counter <member 1-5> <amount>]",
+        .callback = [this, activeParty, commandResult](const DebugConsole::CommandContext &context)
+        {
+            const RulesetSelection &selection = m_gameSession.ruleset();
+            const RulesetDefinition &definition = m_gameDataLoader.activeRuleset();
+            MawRules *pMawRules = m_gameSession.mawRules();
+            const auto describe = [&]()
+            {
+                std::string text = selection.isStandard() ? definition.name
+                                                          : describeRulesetSelection(selection, definition.name);
+                if (pMawRules != nullptr)
+                {
+                    const MawGameState &state = pMawRules->state();
+                    text += ", banked levels " + std::to_string(int(state.continentLevels[0])) + "/"
+                        + std::to_string(int(state.continentLevels[1])) + "/"
+                        + std::to_string(int(state.continentLevels[2])) + "/"
+                        + std::to_string(int(state.continentLevels[3]));
+                }
+                return text;
+            };
+            if (context.args.empty())
+            {
+                return commandResult(true, describe());
+            }
+            if (context.args.size() == 2 && toLowerCopy(context.args[0]) == "difficulty")
+            {
+                RulesetOptions options = selection.options;
+                const std::optional<RulesetDifficulty> difficulty =
+                    parseRulesetDifficulty(toLowerCopy(context.args[1]));
+                if (selection.isStandard() || !difficulty)
+                {
+                    return commandResult(false, "Usage: ruleset difficulty <id> (in a game with a ruleset)");
+                }
+                if (options.difficultyLocked() && *difficulty != options.difficulty)
+                {
+                    return commandResult(false, "This game's difficulty is locked.");
+                }
+                options.difficulty = *difficulty;
+                if (!definition.offers(options))
+                {
+                    return commandResult(false, "The ruleset does not offer that difficulty.");
+                }
+                m_gameSession.setRulesetOptions(options);
+                return commandResult(true, describe());
+            }
+            if (context.args.size() == 5 && toLowerCopy(context.args[0]) == "banks" && pMawRules != nullptr)
+            {
+                MawGameState state = pMawRules->state();
+                for (size_t continent = 0; continent < MawGameState::ContinentCount; ++continent)
+                {
+                    const std::optional<float> level = parseFloatArgument(context.args[continent + 1]);
+                    if (!level || *level < 0)
+                    {
+                        return commandResult(false, "Usage: ruleset banks <mm8> <mm7> <mm6> <other>");
+                    }
+                    state.continentLevels[continent] = *level;
+                }
+                pMawRules->setState(state);
+                return commandResult(true, describe() + " (monsters spawned from now on and on map load)");
+            }
+            if (context.args.size() == 3 && toLowerCopy(context.args[0]) == "aura")
+            {
+                // Toggles a buff aura as casting it would (no mana), so a MAW tester can hold one at once.
+                Party *pParty = activeParty();
+                const std::optional<int32_t> member = parseInt32Argument(context.args[1]);
+                const std::optional<int32_t> spellId = parseInt32Argument(context.args[2]);
+                if (pParty == nullptr || !member || *member < 1 || size_t(*member) > pParty->members().size()
+                    || !spellId || *spellId <= 0)
+                {
+                    return commandResult(false, "Usage: ruleset aura <member 1-5> <spell id>");
+                }
+                const std::optional<AuraCastResult> result =
+                    pParty->rules().spells.castAura(*pParty, size_t(*member - 1), uint32_t(*spellId));
+                if (!result)
+                {
+                    return commandResult(false, "That spell is not an aura in this ruleset.");
+                }
+                return commandResult(*result != AuraCastResult::NotEnoughMana,
+                    *result == AuraCastResult::Held ? "Aura held."
+                        : *result == AuraCastResult::Released ? "Aura released." : "Not enough mana for the aura.");
+            }
+            if (context.args.size() == 3 && toLowerCopy(context.args[0]) == "counter" && pMawRules != nullptr)
+            {
+                // Sets an Assassin's combo points (0-5, halves allowed) or an Elementalist's stacks, as for the
+                // portrait gems; the stacks then wait 30 seconds before they fade (the next cast sets its own window).
+                Party *pParty = activeParty();
+                const std::optional<int32_t> member = parseInt32Argument(context.args[1]);
+                const std::optional<float> amount = parseFloatArgument(context.args[2]);
+                if (pParty == nullptr || !member || *member < 1 || size_t(*member) > pParty->members().size()
+                    || !amount || *amount < 0)
+                {
+                    return commandResult(false, "Usage: ruleset counter <member 1-5> <amount>");
+                }
+                MawClassRuntime &runtime = pMawRules->classRuntime(pParty->members()[size_t(*member - 1)]);
+                runtime.comboPoints = std::min(5.0, std::floor(double(*amount) * 2) / 2);
+                runtime.elementalStacks = int(*amount);
+                runtime.elementalIdleSeconds = 0;
+                runtime.elementalDecaySeconds = 0;
+                runtime.elementalLastDelayTicks = std::max(runtime.elementalLastDelayTicks, 30 * 128 / 4);
+                return commandResult(true, "Counter set.");
+            }
+            return commandResult(false,
+                "Usage: ruleset [difficulty <id> | banks <mm8> <mm7> <mm6> <other> | aura <member 1-5> <spell id>"
+                " | counter <member 1-5> <amount>]");
+        }});
+
+    m_debugConsole.registerCommand({
+        .name = "testparty",
+        .description = "MAW test parties: a new MAW game, or this one's party, at a stage of the game.",
+        .usage = "testparty [list] | testparty <stage> [party] [+kit ...] [difficulty progression mode ...]"
+                 " | testparty apply <stage> [party] [+kit ...] | testparty kit <kit ...>",
+        .callback = [this, activeParty, commandResult](const DebugConsole::CommandContext &context)
+        {
+            MawTestPartyCatalog catalog;
+            std::string error;
+
+            if (!loadMawTestPartyCatalog(catalog, error))
+            {
+                return commandResult(false, error);
+            }
+
+            const std::string action = context.args.empty() ? std::string("list") : toLowerCopy(context.args[0]);
+
+            if (action == "list")
+            {
+                return commandResult(true, catalog.listing());
+            }
+
+            if (action == "kit" || action == "apply")
+            {
+                Party *pParty = activeParty();
+                MawRules *pMawRules = m_gameSession.mawRules();
+
+                if (pParty == nullptr || pMawRules == nullptr)
+                {
+                    return commandResult(false, "testparty " + action + " needs a MAW game in progress.");
+                }
+
+                const std::vector<std::string> args(context.args.begin() + 1, context.args.end());
+                const uint32_t seed = uint32_t(m_gameSession.randomRootSeed() ^ SDL_GetTicks());
+                std::string result;
+
+                if (action == "kit")
+                {
+                    for (const std::string &kitId : args)
+                    {
+                        const MawTestPartyKit *pKit = catalog.kit(kitId);
+
+                        if (pKit == nullptr)
+                        {
+                            return commandResult(false, "Unknown kit: " + kitId);
+                        }
+
+                        result += (result.empty() ? "" : "; ")
+                            + addMawTestPartyKit(*pParty, *pMawRules, m_gameDataLoader, *pKit, seed);
+                    }
+                }
+                else
+                {
+                    MawTestPartyRequest request;
+
+                    if (!parseMawTestPartyRequest(args, catalog, request, error))
+                    {
+                        return commandResult(false, error);
+                    }
+
+                    result = applyMawTestParty(*pParty, *pMawRules, m_gameDataLoader, catalog, request, seed);
+                }
+
+                synchronizeSessionFromRuntime();
+                return commandResult(true, result);
+            }
+
+            MawTestPartyRequest request;
+
+            if (!parseMawTestPartyRequest(context.args, catalog, request, error))
+            {
+                return commandResult(false, error);
+            }
+
+            m_pendingTestParty = context.args;
+            return commandResult(true, "Starting a MAW game: " + request.pParty->title + " at " + request.pStage->title);
         }});
 
     m_debugConsole.registerCommand({
@@ -3395,7 +3652,7 @@ void GameApplication::registerDebugConsoleCommands()
         .description = "Fire a spell or an actor's attack at a point, or cast a party spell, for reviewing spell "
             "visuals.",
         .usage = "projectile spell <spell-id> <from> <to> [skill] [mastery 1-4]"
-            " | projectile actor <index|last> <attack1|attack2|spell1|spell2> <to>"
+            " | projectile actor <index|last> <attack1|attack2|spell1|spell2> <to|at_party>"
             " | projectile cast <spell-id> [actor-index|nearest] [skill] [mastery 1-4]"
             " (points: <x y z> | party | ahead <distance>)",
         .callback = [this, activeGameplayWorld, activeParty, commandResult](const DebugConsole::CommandContext &context)
@@ -3411,7 +3668,7 @@ void GameApplication::registerDebugConsoleCommands()
             const auto pointWidth = [&](size_t first) -> size_t
             {
                 const std::string word = first < context.args.size() ? toLowerCopy(context.args[first]) : "";
-                return word == "party" ? 1 : word == "ahead" ? 2 : 3;
+                return word == "party" || word == "at_party" ? 1 : word == "ahead" ? 2 : 3;
             };
             const auto parsePoint = [&](size_t first) -> std::optional<GameplayWorldPoint>
             {
@@ -3490,7 +3747,10 @@ void GameApplication::registerDebugConsoleCommands()
                     ? std::optional<int32_t>(int32_t(pWorld->mapActorCount()) - 1)
                     : parseInt32Argument(context.args[1]);
                 const std::string abilityName = toLowerCopy(context.args[2]);
-                const std::optional<GameplayWorldPoint> target = parsePoint(3);
+                // at_party: the shot an AI would fire at the party (a true_aim monster's homes onto it).
+                const bool atParty = toLowerCopy(context.args[3]) == "at_party";
+                const std::optional<GameplayWorldPoint> target =
+                    atParty ? std::optional<GameplayWorldPoint>(GameplayWorldPoint{}) : parsePoint(3);
                 std::optional<GameplayActorAttackAbility> ability;
                 if (abilityName == "attack1")
                 {
@@ -3512,7 +3772,9 @@ void GameApplication::registerDebugConsoleCommands()
                 {
                     return commandResult(false, "Invalid actor index, ability or target.");
                 }
-                const bool fired = pWorld->debugFireActorProjectile(size_t(*index), *ability, *target);
+                const bool fired = atParty
+                    ? pWorld->debugFireActorProjectileAtParty(size_t(*index), *ability, 1)
+                    : pWorld->debugFireActorProjectile(size_t(*index), *ability, *target);
                 return commandResult(fired, fired ? "Projectile fired." : "The actor has no such projectile.");
             }
             if (mode == "cast" && context.args.size() >= 2 && context.args.size() <= 5)
@@ -3619,10 +3881,36 @@ void GameApplication::registerDebugConsoleCommands()
     });
 
     m_debugConsole.registerCommand({
+        .name = "combatlog",
+        .description = "Open or close the docked combat log (the combat_log setting must be on).",
+        .usage = "combatlog [expand]",
+        .callback = [this, commandResult](const DebugConsole::CommandContext &context)
+        {
+            GameplayScreenRuntime &runtime = m_gameSession.gameplayScreenRuntime();
+            GameplayCombatLogPanel &panel = runtime.combatLogPanel();
+
+            // expand: opens (or closes) the newest line's damage stages, as a click on it does.
+            if (!context.args.empty() && toLowerCopy(context.args[0]) == "expand")
+            {
+                if (runtime.combatLog().entries().empty())
+                {
+                    return commandResult(false, "The combat log is empty.");
+                }
+
+                panel.toggleEntry(runtime.combatLog().entries().back().id);
+                return commandResult(true, "Toggled the newest line's stages.");
+            }
+
+            panel.toggle();
+            return commandResult(true, panel.open() ? "Combat log open." : "Combat log closed.");
+        }});
+    m_debugConsole.registerCommand({
         .name = "actor",
         .description = "Count or spawn ordinary table-driven monsters on the current map.",
-        .usage = "actor health <actor-index> <hp> | actor count <id> [ids...] | actor spawn <id> [count] [x y z] [group|friendly] | actor kill <radius>"
-            " | actor behavior [<index> <behavior-id>] | actor damage <index|last> <amount>",
+        .usage = "actor health <actor-index> <hp> | actor count <id> [ids...] | actor spawn <id> [count] [x y z] [group|friendly|boss]"
+            " | actor kill <radius>"
+            " | actor behavior [<index> <behavior-id>] | actor damage <index|last> <amount> [tier]"
+            " | actor shield <index|last> [points] | actor blink <index|last> | actor charge <index|last>",
         .callback = [this, activeGameplayWorld, commandResult](const DebugConsole::CommandContext &context)
         {
             if (context.args.size() == 3 && context.args[0] == "health")
@@ -3646,12 +3934,14 @@ void GameApplication::registerDebugConsoleCommands()
                 }
                 const size_t modeIndex = positioned ? 6 : 3;
                 const bool hasMode = context.args.size() > modeIndex;
-                // "friendly" summons party-allied monsters (no combat), e.g. for repeatable rendering benchmarks.
+                // "friendly" summons party-allied monsters (no combat), e.g. for repeatable rendering benchmarks;
+                // "boss" makes them the rules' bosses (MAW), e.g. for boss badge captures.
                 const bool friendly = hasMode && toLowerCopy(context.args[modeIndex]) == "friendly";
+                const bool boss = hasMode && toLowerCopy(context.args[modeIndex]) == "boss";
                 const std::optional<int32_t> id = parseInt32Argument(context.args[1]);
                 const std::optional<int32_t> count = context.args.size() > 2
                     ? parseInt32Argument(context.args[2]) : std::optional<int32_t>(1);
-                const std::optional<int32_t> group = hasMode && !friendly
+                const std::optional<int32_t> group = hasMode && !friendly && !boss
                     ? parseInt32Argument(context.args[modeIndex]) : std::optional<int32_t>(0);
                 IGameplayWorldRuntime *pWorld = activeGameplayWorld();
                 std::optional<float> x;
@@ -3676,14 +3966,76 @@ void GameApplication::registerDebugConsoleCommands()
                 {
                     return commandResult(false, "Invalid monster id, count, position or group.");
                 }
-                const bool spawned = pWorld != nullptr && (friendly
-                    ? pWorld->summonFriendlyMonsterById(int16_t(*id), uint32_t(*count), 3600.0f, *x, *y, *z)
-                    : pWorld->summonHostileMonsterById(int16_t(*id), uint32_t(*count), *x, *y, *z, uint32_t(*group)));
+                GameplayMonsterSpawnRequest bossRequest;
+                bossRequest.monsterId = int16_t(*id);
+                bossRequest.count = uint32_t(*count);
+                bossRequest.x = *x;
+                bossRequest.y = *y;
+                bossRequest.z = *z;
+                bossRequest.boss = true;
+                const bool spawned = pWorld != nullptr
+                    && (boss ? !pWorld->spawnMonsters(bossRequest).empty()
+                        : friendly
+                        ? pWorld->summonFriendlyMonsterById(int16_t(*id), uint32_t(*count), 3600.0f, *x, *y, *z, -1)
+                        : pWorld->summonHostileMonsterById(
+                            int16_t(*id), uint32_t(*count), *x, *y, *z, uint32_t(*group)));
                 return commandResult(spawned, spawned ? "Monsters spawned." : "Monster spawn failed.");
             }
-            if (context.args.size() == 3 && toLowerCopy(context.args[0]) == "damage")
+            if (context.args.size() == 2 && toLowerCopy(context.args[0]) == "blink")
+            {
+                // A blink now, as the actor's blink modifier would (MonsterModifiers), for captures and checks.
+                IGameplayWorldRuntime *pWorld = activeGameplayWorld();
+                const bool last = toLowerCopy(context.args[1]) == "last";
+                const std::optional<int32_t> parsedIndex = pWorld == nullptr ? std::nullopt : last
+                    ? std::optional<int32_t>(int32_t(pWorld->mapActorCount()) - 1)
+                    : parseInt32Argument(context.args[1]);
+                const bool blinked = parsedIndex && *parsedIndex >= 0 && pWorld->blinkActor(size_t(*parsedIndex));
+                return commandResult(blinked, blinked ? "Blinked." : "No blink (no blink modifier or no free spot).");
+            }
+            if (context.args.size() == 2 && toLowerCopy(context.args[0]) == "charge")
+            {
+                // A charge now, as the actor's charge modifier would (MonsterModifiers), for captures and checks.
+                IGameplayWorldRuntime *pWorld = activeGameplayWorld();
+                const bool last = toLowerCopy(context.args[1]) == "last";
+                const std::optional<int32_t> parsedIndex = pWorld == nullptr ? std::nullopt : last
+                    ? std::optional<int32_t>(int32_t(pWorld->mapActorCount()) - 1)
+                    : parseInt32Argument(context.args[1]);
+                const bool charged = parsedIndex && *parsedIndex >= 0 && pWorld->chargeActor(size_t(*parsedIndex));
+                return commandResult(charged, charged ? "Charging." : "No charge (no charge modifier, or charging).");
+            }
+            if ((context.args.size() == 2 || context.args.size() == 3) && toLowerCopy(context.args[0]) == "shield")
+            {
+                // Energy shield of an actor (GameplayActorShields): show it, or set its points quietly (no break or
+                // raise effect), for captures and checks.
+                IGameplayWorldRuntime *pWorld = activeGameplayWorld();
+                GameplayActorShields *pShields = pWorld != nullptr ? pWorld->actorShields() : nullptr;
+                const bool last = toLowerCopy(context.args[1]) == "last";
+                const std::optional<int32_t> parsedIndex = pWorld == nullptr ? std::nullopt : last
+                    ? std::optional<int32_t>(int32_t(pWorld->mapActorCount()) - 1)
+                    : parseInt32Argument(context.args[1]);
+                GameplayRuntimeActorState state = {};
+                if (pShields == nullptr || !parsedIndex || *parsedIndex < 0
+                    || !pWorld->actorRuntimeState(size_t(*parsedIndex), state) || !state.shield.present)
+                {
+                    return commandResult(
+                        false, "Usage: actor shield <index|last> [points] (an actor with a shield)");
+                }
+                if (context.args.size() == 3)
+                {
+                    const std::optional<float> points = parseFloatArgument(context.args[2]);
+                    if (!points || !pShields->setShieldPoints(size_t(*parsedIndex), *points))
+                    {
+                        return commandResult(false, "Invalid shield points.");
+                    }
+                }
+                return commandResult(true, "Shield "
+                    + std::to_string(int(pShields->shieldPoints(size_t(*parsedIndex)))) + " (was "
+                    + std::to_string(int(std::lround(state.shield.fraction * 100.0f))) + "%)");
+            }
+            if ((context.args.size() == 3 || context.args.size() == 4) && toLowerCopy(context.args[0]) == "damage")
             {
                 // Party damage through the normal attack path, e.g. to walk a scripted boss through its phases.
+                // The optional tier is what the hit is to an energy shield (default physical).
                 IGameplayWorldRuntime *pWorld = activeGameplayWorld();
                 if (pWorld == nullptr || pWorld->mapActorCount() == 0)
                 {
@@ -3694,14 +4046,17 @@ void GameApplication::registerDebugConsoleCommands()
                     ? std::optional<int32_t>(int32_t(pWorld->mapActorCount() - 1))
                     : parseInt32Argument(context.args[1]);
                 const std::optional<int32_t> amount = parseInt32Argument(context.args[2]);
+                const std::optional<ShieldAttackTier> shieldTier = context.args.size() == 4
+                    ? parseShieldAttackTier(toLowerCopy(context.args[3])) : ShieldAttackTier::Physical;
                 GameplayRuntimeActorState state = {};
-                if (!parsedIndex || *parsedIndex < 0 || !amount || *amount <= 0
+                if (!parsedIndex || *parsedIndex < 0 || !amount || *amount <= 0 || !shieldTier
                     || !pWorld->actorRuntimeState(size_t(*parsedIndex), state) || state.isDead)
                 {
-                    return commandResult(false, "Usage: actor damage <index|last> <amount> (living actor)");
+                    return commandResult(false, "Usage: actor damage <index|last> <amount> "
+                        "[physical|classic_blaster|kreegan_energy|spell] (living actor)");
                 }
-                const bool damaged = pWorld->applyPartyAttackMeleeDamage(
-                    size_t(*parsedIndex), *amount, {pWorld->partyX(), pWorld->partyY(), pWorld->partyFootZ()});
+                const bool damaged = pWorld->applyPartyAttackMeleeDamage(size_t(*parsedIndex), *amount,
+                    {pWorld->partyX(), pWorld->partyY(), pWorld->partyFootZ()}, *shieldTier);
                 return commandResult(damaged, damaged ? "Actor damaged." : "Actor damage failed.");
             }
             if (!context.args.empty() && toLowerCopy(context.args[0]) == "behavior")
@@ -3760,6 +4115,12 @@ void GameApplication::registerDebugConsoleCommands()
                         || std::hypot(state.preciseX - pWorld->partyX(), state.preciseY - pWorld->partyY()) > *radius)
                     {
                         continue;
+                    }
+                    // A raised energy shield would take the blow.
+                    GameplayActorShields *pShields = pWorld->actorShields();
+                    if (pShields != nullptr && state.shield.present)
+                    {
+                        pShields->setShieldPoints(actorIndex, 0.0f);
                     }
                     killed += pWorld->applyReflectedDamageToActor(state.actorId, 1000000, CombatDamageType::Physical, 0)
                         ? 1 : 0;
@@ -5303,6 +5664,83 @@ void GameApplication::registerDebugConsoleCommands()
         }});
 
     m_debugConsole.registerCommand({
+        .name = "skill",
+        .description = "Grant a skill or tech points to the active character.",
+        .usage = "skill set <skill-name> <level> [B|E|M|G] | skill techpoints <amount>",
+        .callback = [this, activeParty, commandResult](const DebugConsole::CommandContext &context)
+        {
+            Party *pParty = activeParty();
+            Character *pMember = pParty != nullptr ? pParty->activeMember() : nullptr;
+
+            if (pMember == nullptr)
+            {
+                return commandResult(false, "No active character.");
+            }
+
+            const std::string action = context.args.empty() ? std::string() : toLowerCopy(context.args[0]);
+
+            if (action == "techpoints" && context.args.size() == 2)
+            {
+                const std::optional<int32_t> amount = parseInt32Argument(context.args[1]);
+
+                if (!amount || *amount < 0)
+                {
+                    return commandResult(false, "Invalid amount.");
+                }
+
+                pMember->techPoints = static_cast<uint32_t>(*amount);
+                return commandResult(true, pMember->name + " techpoints=" + std::to_string(pMember->techPoints));
+            }
+
+            if (action != "set" || context.args.size() < 3)
+            {
+                return commandResult(false, "Usage: skill set <skill-name> <level> [B|E|M|G] | skill techpoints <n>");
+            }
+
+            const std::optional<uint32_t> skillId = skillIdForSkillName(context.args[1]);
+            const std::optional<int32_t> level = parseInt32Argument(context.args[2]);
+
+            if (!skillId || !level || *level < 0)
+            {
+                return commandResult(false, "Unknown skill or invalid level.");
+            }
+
+            const std::string skillName = *skillNameForSkillId(*skillId);
+
+            if (*level == 0)
+            {
+                pMember->skills.erase(skillName);
+                return commandResult(true, pMember->name + " forgot " + displaySkillName(skillName));
+            }
+
+            SkillMastery mastery = SkillMastery::Normal;
+
+            if (context.args.size() >= 4)
+            {
+                mastery = parseSkillMasteryToken(context.args[3]);
+                if (const auto number = parseInt32Argument(context.args[3]); number && *number >= 1 && *number <= 4)
+                    mastery = static_cast<SkillMastery>(*number);
+
+                if (mastery == SkillMastery::None)
+                {
+                    return commandResult(false, "Mastery must be B, E, M or G.");
+                }
+            }
+
+            if (skillName == "LethalStrike" && (*level > 63 || pParty->classSkillTable() == nullptr
+                || pParty->classSkillTable()->getEffectiveCap(pMember->className, pMember->raceId, skillName) < mastery))
+                return commandResult(false, "Lethal Strike exceeds the character class cap or level 63.");
+            pMember->skills[skillName] = {skillName, static_cast<uint32_t>(*level), mastery};
+            pMember->synchronizeInnateAbilitySpells();
+            pParty->refreshDerivedState();
+            synchronizeSessionFromRuntime();
+            return commandResult(
+                true,
+                pMember->name + " " + displaySkillName(skillName) + " " + std::to_string(*level) + " "
+                    + masteryDisplayName(mastery));
+        }});
+
+    m_debugConsole.registerCommand({
         .name = "food",
         .description = "Inspect or mutate party food.",
         .usage = "food get|add|set <amount>",
@@ -5350,13 +5788,15 @@ void GameApplication::registerDebugConsoleCommands()
 
     m_debugConsole.registerCommand({
         .name = "hp",
-        .description = "Heal the party.",
-        .usage = "hp full",
+        .description = "Heal the party, or list each member's hit and spell points.",
+        .usage = "hp full | hp show",
         .callback = [activeParty, commandResult](const DebugConsole::CommandContext &context)
         {
-            if (context.args.empty() || toLowerCopy(context.args[0]) != "full")
+            const std::string action = context.args.empty() ? std::string() : toLowerCopy(context.args[0]);
+
+            if (action != "full" && action != "show")
             {
-                return commandResult(false, "Usage: hp full");
+                return commandResult(false, "Usage: hp full | hp show");
             }
 
             Party *pParty = activeParty();
@@ -5364,6 +5804,21 @@ void GameApplication::registerDebugConsoleCommands()
             if (pParty == nullptr)
             {
                 return commandResult(false, "No active party.");
+            }
+
+            if (action == "show")
+            {
+                std::string text;
+
+                for (const Character &member : pParty->members())
+                {
+                    text += (text.empty() ? "" : "; ") + member.name + " HP " + std::to_string(member.health) + "/"
+                        + std::to_string(Party::effectiveMaximumHealth(member)) + " SP "
+                        + std::to_string(member.spellPoints) + "/"
+                        + std::to_string(Party::effectiveMaximumSpellPoints(member));
+                }
+
+                return commandResult(true, text);
             }
 
             pParty->reviveAndRestoreAll();
@@ -5399,31 +5854,6 @@ void GameApplication::registerDebugConsoleCommands()
                 << " chance=" << GameMechanics::lethalStrikeChance(
                     *pMember, facts->effectiveLevel, giant, facts->currentHp, facts->maxHp) << "% (no RNG)";
             return commandResult(true, out.str());
-        }});
-
-    m_debugConsole.registerCommand({
-        .name = "skill",
-        .description = "Set a base skill on the selected character for testing; class caps still apply.",
-        .usage = "skill set <skill-name> <level 1-63> <mastery 1-4>",
-        .callback = [this, activeParty, commandResult](const DebugConsole::CommandContext &context)
-        {
-            if (context.args.size() != 4 || context.args[0] != "set")
-                return commandResult(false, "Usage: skill set LethalStrike|Perception <level 1-63> <mastery 1-4>");
-            Party *pParty = activeParty();
-            Character *pMember = pParty != nullptr ? pParty->activeMember() : nullptr;
-            const std::string name = canonicalSkillName(context.args[1]);
-            const std::optional<int32_t> level = parseInt32Argument(context.args[2]);
-            const std::optional<int32_t> mastery = parseInt32Argument(context.args[3]);
-            const ClassSkillTable *pCaps = pParty != nullptr ? pParty->classSkillTable() : nullptr;
-            if (pMember == nullptr || pCaps == nullptr || name.empty() || !level || *level < 1 || *level > 63
-                || !mastery || *mastery < 1 || *mastery > 4
-                || static_cast<int>(pCaps->getEffectiveCap(pMember->className, pMember->raceId, name)) < *mastery)
-                return commandResult(false, "Invalid skill, number or mastery above this character's class cap.");
-            pMember->skills[name] = CharacterSkill{name, uint32_t(*level), static_cast<SkillMastery>(*mastery)};
-            pMember->synchronizeInnateAbilitySpells();
-            pParty->refreshDerivedState();
-            synchronizeSessionFromRuntime();
-            return commandResult(true, displaySkillName(name) + " updated.");
         }});
 
     m_debugConsole.registerCommand({
@@ -5689,13 +6119,13 @@ void GameApplication::registerDebugConsoleCommands()
     m_debugConsole.registerCommand({
         .name = "item",
         .description = "Search for or grant an item to the party, or drop one on the ground (reviewing item models).",
-        .usage = "item search <text> | item give <id|text> [qty] | item add <id> [qty] | item drop <id> [x y z]"
-            " | item read <id>",
+        .usage = "item search <text> | item give <id|text> [qty] [potion power] | item add <id> [qty] | item drop <id> [x y z]"
+            " | item read <id> | item roll <treasure level 1-6> [count] [drop level] [ground]",
         .callback = [this, activeParty, activeGameplayWorld, commandResult](const DebugConsole::CommandContext &context)
         {
             if (context.args.size() < 2)
             {
-                return commandResult(false, "Usage: item search <text> | item give <id|text> [qty]");
+                return commandResult(false, "Usage: item search <text> | item give <id|text> [qty] [potion power]");
             }
 
             const std::string action = toLowerCopy(context.args[0]);
@@ -5732,6 +6162,63 @@ void GameApplication::registerDebugConsoleCommands()
                     request.sourceZ = *z;
                 }
                 return commandResult(pWorld->dropHeldItemToWorld(request), "Dropped item " + std::to_string(*itemId));
+            }
+
+            if (action == "roll")
+            {
+                // Random monster loot rolled by the active rules (reviewing a ruleset's items), identified; "ground"
+                // drops it in front of the party instead (reviewing ground loot).
+                Party *pParty = activeParty();
+                IGameplayWorldRuntime *pWorld = activeGameplayWorld();
+                const bool ground = context.args.size() >= 5 && toLowerCopy(context.args[4]) == "ground";
+                const std::optional<int32_t> treasureLevel = parseInt32Argument(context.args[1]);
+                const std::optional<int32_t> count =
+                    context.args.size() >= 3 ? parseInt32Argument(context.args[2]) : std::optional<int32_t>(1);
+                const std::optional<int32_t> dropLevel =
+                    context.args.size() >= 4 ? parseInt32Argument(context.args[3]) : std::nullopt;
+
+                if (pParty == nullptr || !treasureLevel || !count || *count <= 0 || *count > 100
+                    || (ground && pWorld == nullptr))
+                {
+                    return commandResult(false, "Usage: item roll <treasure level 1-6> [count] [drop level] [ground]");
+                }
+
+                static std::mt19937 rng(std::random_device{}());
+                int granted = 0;
+
+                for (int roll = 0; roll < *count; ++roll)
+                {
+                    std::optional<InventoryItem> item = ItemGenerator::generateRandomInventoryItem(
+                        itemTable,
+                        m_gameDataLoader.getStandardItemEnchantTable(),
+                        m_gameDataLoader.getSpecialItemEnchantTable(),
+                        ItemGenerationRequest{
+                            .treasureLevel = *treasureLevel,
+                            .mode = ItemGenerationMode::MonsterLoot,
+                            .dropLevel = dropLevel,
+                        },
+                        pParty,
+                        rng);
+
+                    if (item && ground)
+                    {
+                        item->identified = true;
+                        GameplayHeldItemDropRequest request = {};
+                        request.item = *item;
+                        request.yawRadians = pWorld->gameplayCameraYawRadians() + 0.3f * float(roll);
+                        request.sourceX = pWorld->partyX() + std::cos(request.yawRadians) * 320.0f;
+                        request.sourceY = pWorld->partyY() + std::sin(request.yawRadians) * 320.0f;
+                        request.sourceZ = pWorld->partyFootZ() + 40.0f;
+                        granted += pWorld->dropHeldItemToWorld(request) ? 1 : 0;
+                    }
+                    else if (item)
+                    {
+                        item->identified = true;
+                        granted += pParty->tryGrantInventoryItem(*item) ? 1 : 0;
+                    }
+                }
+
+                return commandResult(true, "Rolled " + std::to_string(granted) + " items");
             }
 
             if (action == "read")
@@ -5786,7 +6273,7 @@ void GameApplication::registerDebugConsoleCommands()
 
             if (action != "add" && action != "give")
             {
-                return commandResult(false, "Usage: item search <text> | item give <id|text> [qty]");
+                return commandResult(false, "Usage: item search <text> | item give <id|text> [qty] [potion power]");
             }
 
             Party *pParty = activeParty();
@@ -5822,7 +6309,30 @@ void GameApplication::registerDebugConsoleCommands()
                 return commandResult(false, "No matching item.");
             }
 
-            pParty->grantItem(pItem->itemId, static_cast<uint32_t>(*quantity));
+            // Potions come at a power (30 unless given), as found or brewed ones do.
+            if (pItem->hasPotionPower)
+            {
+                const std::optional<int32_t> power =
+                    context.args.size() >= 4 ? parseInt32Argument(context.args[3]) : std::optional<int32_t>(30);
+
+                if (!power || *power < 0 || *power > 65535)
+                {
+                    return commandResult(false, "Invalid potion power.");
+                }
+
+                for (int32_t index = 0; index < *quantity; ++index)
+                {
+                    InventoryItem potion = ItemGenerator::makeInventoryItem(pItem->itemId, itemTable,
+                        ItemGenerationMode::Generic);
+                    potion.standardEnchantPower = uint16_t(*power);
+                    pParty->tryGrantInventoryItem(potion);
+                }
+            }
+            else
+            {
+                pParty->grantItem(pItem->itemId, static_cast<uint32_t>(*quantity));
+            }
+
             return commandResult(
                 true,
                 "Granted " + std::to_string(*quantity) + "x " + pItem->name
@@ -6360,6 +6870,90 @@ void GameApplication::renderDebugConsoleFrame(int width, int height)
     m_debugConsoleFrameBegun = false;
 }
 
+bool GameApplication::loadMawTestPartyCatalog(MawTestPartyCatalog &catalog, std::string &error) const
+{
+    const std::optional<std::string> text =
+        m_pAssetFileSystem != nullptr ? m_pAssetFileSystem->readTextFile(MawTestPartyCatalogPath) : std::nullopt;
+
+    if (!text)
+    {
+        error = std::string("No test party catalog at ") + MawTestPartyCatalogPath;
+        return false;
+    }
+
+    if (!catalog.loadFromYaml(*text, error))
+    {
+        error = std::string(MawTestPartyCatalogPath) + ": " + error;
+        return false;
+    }
+
+    return true;
+}
+
+bool GameApplication::processPendingTestParty()
+{
+    if (!m_pendingTestParty)
+    {
+        return false;
+    }
+
+    const std::vector<std::string> args = *m_pendingTestParty;
+    m_pendingTestParty.reset();
+    const auto fail = [this](const std::string &message)
+    {
+        m_debugConsole.addMessage(DebugConsole::MessageKind::Error, message);
+        return true;
+    };
+    MawTestPartyCatalog catalog;
+    MawTestPartyRequest request;
+    std::string error;
+
+    if (!loadMawTestPartyCatalog(catalog, error) || !activateRuleset(MawTestPartyRulesetId, error)
+        || !parseMawTestPartyRequest(args, catalog, request, error))
+    {
+        return fail(error);
+    }
+
+    NewGameOptions options;
+    options.ruleset.id = MawTestPartyRulesetId;
+    options.ruleset.options = m_gameDataLoader.activeRuleset().defaultOptions();
+
+    if (!applyRulesetOptionIds(request.rulesetOptions, options.ruleset.options)
+        || !m_gameDataLoader.activeRuleset().offers(options.ruleset.options))
+    {
+        return fail("MAW does not offer the options " + request.rulesetOptions);
+    }
+
+    // The shells only carry the classes and portraits; the stage's party replaces them once the game has begun.
+    if (!startNewSessionFromCharacterCreation(mawTestPartyShells(request, m_gameDataLoader), options, true))
+    {
+        return fail("The new MAW game did not start.");
+    }
+
+    Party *pParty = m_pMapSceneRuntime != nullptr ? &m_pMapSceneRuntime->party() : nullptr;
+    MawRules *pMawRules = m_gameSession.mawRules();
+
+    if (pParty == nullptr || pMawRules == nullptr)
+    {
+        return fail("The new game has no MAW party.");
+    }
+
+    const std::string result = applyMawTestParty(
+        *pParty, *pMawRules, m_gameDataLoader, catalog, request, uint32_t(m_gameSession.randomRootSeed()));
+    synchronizeSessionFromRuntime();
+    m_debugConsole.addMessage(DebugConsole::MessageKind::Success, result);
+
+    if (!request.pStage->map.empty())
+    {
+        if (const MapStatsEntry *pMap = m_gameDataLoader.getMapStats().findByFileName(request.pStage->map))
+        {
+            m_pendingDebugMapJump = PendingDebugMapJump{.mapId = int(pMap->id)};
+        }
+    }
+
+    return true;
+}
+
 bool GameApplication::processPendingDebugMapJump()
 {
     if (!m_pendingDebugMapJump.has_value())
@@ -6586,7 +7180,7 @@ void GameApplication::handleSdlEvent(const SDL_Event &event)
     if (m_debugConsoleRendererInitialized)
     {
         ImGui_ImplSDL3_ProcessEvent(&event);
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         const bool debugConsoleConsumedAndroidTouch =
             m_debugConsole.enabled() && submitAndroidFingerEventToImGui(event);
 #else
@@ -6614,7 +7208,7 @@ void GameApplication::handleSdlEvent(const SDL_Event &event)
                 || event.type == SDL_EVENT_MOUSE_BUTTON_UP
                 || event.type == SDL_EVENT_MOUSE_WHEEL
                 || debugConsoleConsumedAndroidTouch
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
                 || isAndroidFingerEvent(event)
 #endif
                 || io.WantCaptureKeyboard
@@ -6634,7 +7228,7 @@ void GameApplication::handleSdlEvent(const SDL_Event &event)
 
     m_gameInputSystem.handleSdlEvent(event);
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     const bool activeScreenHandlesTouchDirectly =
         pActiveScreen != nullptr
         && (dynamic_cast<CutsceneVideoScreen *>(pActiveScreen) != nullptr
@@ -6769,7 +7363,7 @@ bool GameApplication::handlePendingInputPromptSdlEvent(const SDL_Event &event)
 
 void GameApplication::clearPendingInputPromptUi(bool clearStatusBar)
 {
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(OPENYAMM_IOS)
     if (m_pendingInputTextActive)
     {
         SDL_Window *pWindow = SDL_GetKeyboardFocus();
@@ -6838,7 +7432,7 @@ void GameApplication::updatePendingInputPrompt()
 
     if (!m_pendingInputTextActive)
     {
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(OPENYAMM_IOS)
         SDL_Window *pWindow = SDL_GetKeyboardFocus();
 
         if (pWindow != nullptr)
@@ -7282,7 +7876,7 @@ bool GameApplication::loadGameData(Engine::AssetFileSystem &assetFileSystem)
     m_gameDataLoader.setInitialMapFileName(m_activeWorldManifest.start.mapFileName);
 
     loadOrCreateSettings();
-    m_pUpdater = GameUpdater::create(m_settings.updateUrl);
+    m_pUpdater = GameUpdater::create(m_settings.updateUrl, m_settings.keepModifiedPacks);
 
     if (!m_gameAudioSystem.initializeMenuAudio(assetFileSystem))
     {
@@ -7352,6 +7946,57 @@ bool GameApplication::ensureCommonGameDataLoaded()
     return true;
 }
 
+bool GameApplication::activateRuleset(const std::string &rulesetId, std::string &error)
+{
+    error.clear();
+
+    if (m_commonGameDataLoaded && m_gameDataLoader.activeRuleset().id == rulesetId)
+    {
+        return true;
+    }
+
+    if (m_pAssetFileSystem == nullptr)
+    {
+        error = "game data unavailable";
+        return false;
+    }
+
+    const std::optional<RulesetDefinition> ruleset = loadRulesetDefinition(*m_pAssetFileSystem, rulesetId, error);
+
+    if (!ruleset)
+    {
+        return false;
+    }
+
+    GAMEPLAY_DEBUG_TRACE(
+        "ruleset_activated ruleset=\"" + ruleset->id + "\""
+        + " previous=\"" + m_gameDataLoader.activeRuleset().id + "\""
+        + " reload=" + (m_commonGameDataLoaded ? "true" : "false"));
+
+    if (m_commonGameDataLoaded)
+    {
+        // Runtimes and the session point into the tables the reload replaces.
+        m_gameSession.gameplayScreenRuntime().clearSharedUiRuntime();
+        shutdownRenderer();
+        m_gameSession.clear();
+        m_commonGameDataLoaded = false;
+    }
+
+    m_gameDataLoader.setActiveRuleset(*ruleset);
+
+    if (ensureCommonGameDataLoaded())
+    {
+        return true;
+    }
+
+    // A broken ruleset package must not leave the game without data: report it and return to the Standard tables.
+    error = "the " + ruleset->name + " ruleset tables could not be loaded";
+    m_gameDataLoader.setActiveRuleset(standardRulesetDefinition());
+    m_commonGameDataLoadFailed = false;
+    ensureCommonGameDataLoaded();
+    return false;
+}
+
 void GameApplication::updateDeferredStartupLoads()
 {
     if (!m_deferredCommonGameDataLoadPending || m_commonGameDataLoaded || m_commonGameDataLoadFailed)
@@ -7389,8 +8034,12 @@ void GameApplication::updateDeferredMainMenuChildWarmup()
             m_settings.newGameGodLich,
             IncludeGodLichCharacterCreationCandidate,
             m_settings.allowIncompleteCharacterCreation,
-            [](const std::vector<Character> &, uint32_t, bool)
+            [](const std::vector<Character> &, const NewGameOptions &)
             {
+            },
+            [](const std::string &, std::string &)
+            {
+                return true;
             },
             []()
             {
@@ -7587,7 +8236,8 @@ const ActorBehaviorCatalog *GameApplication::reloadActorBehaviorCatalog()
 
     std::string error;
 
-    if (!m_actorBehaviorCatalog.load(*m_pAssetFileSystem, m_activeWorldManifest.id, error))
+    if (!m_actorBehaviorCatalog.load(*m_pAssetFileSystem, m_activeWorldManifest.id, error)
+        || !m_actorBehaviorCatalog.applyMonsterModifiers(m_gameDataLoader.getMonsterTable().modifiers(), error))
     {
         std::cerr << "Actor behaviour catalogue load failed: " << error << '\n';
         m_actorBehaviorCatalog.clear();
@@ -7670,12 +8320,16 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
             m_gameSession.setPartyState(m_pOutdoorPartyRuntime->party());
         }
 
+        renumberSavedLegacyCampFireDecorVars(m_gameSession, *selectedMap, m_pOutdoorPartyRuntime->party());
         const int32_t currentMapDay = currentLocationDay(m_gameSession.gameMinutes());
         const OutdoorWorldRuntime::Snapshot *pSavedOutdoorState =
             findSavedOutdoorWorldState(m_gameSession, *selectedMap);
+        // A dimension map refills the map it opens (MAW).
         const bool outdoorTimedRespawn =
             pSavedOutdoorState != nullptr
-                && timedMapRespawnDue(selectedMap->map, pSavedOutdoorState->locationInfo, currentMapDay);
+                && (boundGameRules().monsters.mapRefillForced(selectedMap->map.fileName)
+                    || timedMapRespawnDue(selectedMap->map, pSavedOutdoorState->locationInfo, currentMapDay));
+        boundGameRules().monsters.mapLoaded(selectedMap->map.fileName, outdoorTimedRespawn);
         const bool restoreSavedOutdoorState = pSavedOutdoorState != nullptr && !outdoorTimedRespawn;
         const int32_t previousOutdoorProcessedRespawnCount =
             pSavedOutdoorState != nullptr ? pSavedOutdoorState->locationInfo.respawnCount : 0;
@@ -7897,16 +8551,21 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
             selectedMap->indoorSpriteObjectBillboardSet
                 ? &selectedMap->indoorSpriteObjectBillboardSet->spriteFrameTable
                 : pIndoorActorSpriteFrameTable;
+        renumberSavedLegacyCampFireDecorVars(m_gameSession, *selectedMap, party);
         const int32_t currentMapDay = currentLocationDay(m_gameSession.gameMinutes());
         const IndoorSceneRuntime::Snapshot *pSavedIndoorState =
             findSavedIndoorSceneState(m_gameSession, *selectedMap);
+        // A reset at the entrance refills the dungeon like a respawn (MAW).
+        const bool forcedIndoorRefill = boundGameRules().monsters.mapRefillForced(selectedMap->map.fileName);
         const bool indoorTimedRespawn =
             pSavedIndoorState != nullptr
             && pSavedIndoorState->mapDeltaData
-            && timedMapRespawnDue(
-                selectedMap->map,
-                pSavedIndoorState->mapDeltaData->locationInfo,
-                currentMapDay);
+            && (forcedIndoorRefill
+                || timedMapRespawnDue(
+                    selectedMap->map,
+                    pSavedIndoorState->mapDeltaData->locationInfo,
+                    currentMapDay));
+        boundGameRules().monsters.mapLoaded(selectedMap->map.fileName, indoorTimedRespawn);
         // Arena encounters last for one visit. Loading a save resumes that visit; returning refills it.
         const bool restoreSavedIndoorState = pSavedIndoorState != nullptr && !indoorTimedRespawn
             && (!selectedMap->map.runtimeRestrictions.isArena || m_loadingSavedGameRuntime);
@@ -8140,6 +8799,7 @@ Party &GameApplication::ensureSessionPartyState()
 void GameApplication::bindPartyDependencies(Party &party) const
 {
     const GameDataRepository &data = m_gameSession.data();
+    party.setRules(m_gameSession.rulesetGameRules());
     party.setItemTable(&data.itemTable());
     party.setJournalQuestTable(&data.journalQuestTable());
     party.setCharacterDollTable(&data.characterDollTable());
@@ -9450,6 +10110,21 @@ bool GameApplication::processPendingQuickSaveInput()
     {
         m_pendingQuickLoad = false;
         m_pendingQuickSave = false;
+
+        // Loading may cost something now (MAW: a pending Beyond Madness death): the first press says so, a second
+        // press within ten seconds loads, as the load screen's confirmation.
+        constexpr uint64_t WarningWindowTicks = 10000;
+        const std::optional<std::string> warning = boundGameRules().experience.loadWarning();
+        const uint64_t now = SDL_GetTicks();
+
+        if (warning && (!m_quickLoadWarnedTicks || now - *m_quickLoadWarnedTicks > WarningWindowTicks))
+        {
+            m_quickLoadWarnedTicks = now;
+            m_gameSession.gameplayScreenRuntime().setStatusBarEvent(*warning + " Press again to load.");
+            return false;
+        }
+
+        m_quickLoadWarnedTicks.reset();
         return quickLoad();
     }
 
@@ -9505,11 +10180,44 @@ bool GameApplication::quickSaveToPath(
         return false;
     }
 
+    // Some rulesets make saving cost food (MAW from Nightmare); autosaves are free.
+    const SaveFoodCost foodCost = isAutosavePath(path) ? SaveFoodCost{} : saveFoodCost();
+
+    if (foodCost.food > foodCost.carried)
+    {
+        GAMEPLAY_DEBUG_TRACE("save_game_failed path=\"" + path.string() + "\" reason=food");
+        reportQuickSaveStatus("Not enough food");
+
+        if (isQuickSavePath(path))
+        {
+            m_gameSession.gameplayScreenRuntime().setStatusBarEvent(
+                "Not enough food: saving here costs " + std::to_string(foodCost.food));
+        }
+
+        return false;
+    }
+
+    // The save holds the party after paying; a save that is not written gives the food back.
+    Party *pPayingParty = m_gameSession.activeWorldRuntime()->party();
+    const auto refundFood = [pPayingParty, &foodCost]()
+    {
+        if (foodCost.food > 0)
+        {
+            pPayingParty->addFood(foodCost.food);
+        }
+    };
+
+    if (foodCost.food > 0)
+    {
+        pPayingParty->addFood(-foodCost.food);
+    }
+
     captureCurrentSceneState();
     std::optional<GameSaveData> saveData = m_gameSession.buildSaveData();
 
     if (!saveData)
     {
+        refundFood();
         GAMEPLAY_DEBUG_TRACE("save_game_failed path=\"" + path.string() + "\" reason=no_save_data");
         reportQuickSaveStatus("Quick save unavailable");
         return false;
@@ -9527,6 +10235,7 @@ bool GameApplication::quickSaveToPath(
 
     if (!saveGameDataToPath(path, *saveData, error))
     {
+        refundFood();
         GAMEPLAY_DEBUG_TRACE(
             "save_game_failed path=\"" + path.string() + "\""
             + " map=\"" + saveData->mapFileName + "\""
@@ -9555,10 +10264,32 @@ bool GameApplication::quickSaveToPath(
 
     if (isQuickSavePath(path))
     {
-        m_gameSession.gameplayScreenRuntime().setStatusBarEvent("Game Saved!");
+        m_gameSession.gameplayScreenRuntime().setStatusBarEvent(
+            foodCost.food > 0 ? "Game Saved! " + std::to_string(foodCost.food) + " food ("
+                                    + std::to_string(foodCost.carried - foodCost.food) + " left)"
+                              : "Game Saved!");
     }
 
     return true;
+}
+
+SaveFoodCost GameApplication::saveFoodCost()
+{
+    SaveFoodCost cost;
+    IGameplayWorldRuntime *pWorld = m_gameSession.activeWorldRuntime();
+
+    if (pWorld == nullptr || pWorld->party() == nullptr)
+    {
+        return cost;
+    }
+
+    const Party &party = *pWorld->party();
+    const std::string &mapFileName = m_gameSession.currentMapFileName();
+    const bool indoor = m_gameSession.currentSceneKind() == SceneKind::Indoor;
+    cost.food = party.rules().monsters.saveFoodCost(mapFileName, indoor, partyHasYellowAlert(*pWorld));
+    cost.foodWithEnemiesNear = party.rules().monsters.saveFoodCost(mapFileName, indoor, true);
+    cost.carried = party.food();
+    return cost;
 }
 
 bool GameApplication::quickLoad()
@@ -9588,16 +10319,61 @@ bool GameApplication::quickLoadFromPath(const std::filesystem::path &path, bool 
     beginLoadingOverlay();
 
     std::string error;
-    const std::optional<GameSaveData> saveData = loadGameDataFromPath(path, error);
-
-    if (!saveData)
+    std::optional<GameSaveData> saveData = loadGameDataFromPath(path, error);
+    const auto fail = [this, &path](const std::string &reason, bool sessionLost)
     {
         cancelLoadingOverlay();
         GAMEPLAY_DEBUG_TRACE(
             "load_game_failed path=\"" + path.string() + "\""
-            + " reason=\"" + error + "\"");
-        reportQuickSaveStatus("Quick load failed: " + error);
+            + " reason=\"" + reason + "\"");
+
+        // A switch of rulesets already replaced the tables and cleared the game in progress.
+        if (sessionLost)
+        {
+            openMainMenuScreen();
+        }
+
+        reportQuickSaveStatus("Quick load failed: " + reason);
         return false;
+    };
+
+    if (!saveData)
+    {
+        return fail(error, false);
+    }
+
+    // Loading a save of another ruleset reloads the tables and ends the game in progress, so the package checks that
+    // need no tables come first: a failed load of that kind keeps the current game (audit STD3-1).
+    const bool switchesRuleset =
+        m_commonGameDataLoaded && m_gameDataLoader.activeRuleset().id != saveData->ruleset.id;
+
+    if (switchesRuleset && m_pAssetFileSystem != nullptr)
+    {
+        std::unordered_map<std::string, uint32_t> schemas = m_gameDataLoader.getLoadedContentPackageSchemas();
+        std::erase_if(schemas, [](const auto &entry) { return entry.first.starts_with(RulesetContentPackagePrefix); });
+
+        if (saveData->ruleset.id != StandardRulesetId)
+        {
+            const std::optional<RulesetDefinition> ruleset =
+                loadRulesetDefinition(*m_pAssetFileSystem, saveData->ruleset.id, error);
+
+            if (!ruleset)
+            {
+                return fail(error, false);
+            }
+
+            schemas[RulesetContentPackagePrefix + ruleset->id] = ruleset->contentSchemaVersion;
+        }
+
+        if (!validateRequiredContentPackageSchemas(*saveData, schemas, error))
+        {
+            return fail(error, false);
+        }
+    }
+
+    if (!activateRuleset(saveData->ruleset.id, error))
+    {
+        return fail(error, switchesRuleset);
     }
 
     if (!validateRequiredContentPackages(
@@ -9607,13 +10383,14 @@ bool GameApplication::quickLoadFromPath(const std::filesystem::path &path, bool 
             m_gameDataLoader.getLoadedContentPackageSchemas(),
             error))
     {
-        cancelLoadingOverlay();
-        GAMEPLAY_DEBUG_TRACE(
-            "load_game_failed path=\"" + path.string() + "\""
-            + " reason=\"" + error + "\"");
-        reportQuickSaveStatus("Quick load failed: " + error);
-        return false;
+        return fail(error, switchesRuleset);
     }
+
+    migrateLegacyMm6FaceTextureKeys(*saveData, [this](const std::string &mapFileName)
+        {
+            const MapStatsEntry *pMap = m_gameDataLoader.getMapStats().findByFileName(mapFileName);
+            return pMap != nullptr && pMap->worldId == "mm6";
+        });
 
     GAMEPLAY_DEBUG_TRACE_BLOCK(
         traceSaveDataStateDump("load_file", path, *saveData, &m_gameDataLoader.getItemTable());
@@ -9754,6 +10531,22 @@ bool GameApplication::applyMenuSettings(const GameSettings &settings, bool persi
     return true;
 }
 
+bool GameApplication::applyRulesetOptions(const RulesetOptions &options, std::string &error)
+{
+    const RulesetSelection &current = m_gameSession.ruleset();
+    // What cannot change mid-game: a locked difficulty, the challenge mode and the randomizer.
+    if ((current.options.difficultyLocked() && options.difficulty != current.options.difficulty)
+        || options.challengeMode != current.options.challengeMode || options.randomizer != current.options.randomizer
+        || !m_gameDataLoader.activeRuleset().offers(options))
+    {
+        error = "The " + m_gameDataLoader.activeRuleset().name + " ruleset does not allow that change.";
+        return false;
+    }
+
+    m_gameSession.setRulesetOptions(options);
+    return true;
+}
+
 void GameApplication::openMenuScreen(bool paused)
 {
     if (m_pAssetFileSystem == nullptr)
@@ -9784,10 +10577,22 @@ void GameApplication::openMenuScreen(bool paused)
     }
     const int days = int(m_gameSession.gameMinutes()) / (24 * 60);
     const std::string date = m_activeWorldManifest.name + " - Day " + std::to_string(days + 1);
+    std::optional<MainMenuScreen::CurrentGame> currentGame;
+    if (paused && !m_gameSession.ruleset().isStandard())
+    {
+        currentGame = MainMenuScreen::CurrentGame{m_gameSession.ruleset(), m_gameDataLoader.activeRuleset(), {}};
+
+        if (const RecentLootDrops *pRecentDrops = boundGameRules().items.recentLootDrops())
+        {
+            currentGame->recentLootDrops = pRecentDrops->drops();
+        }
+        actions.applyRuleset = [this](const RulesetOptions &options, std::string &error)
+        { return applyRulesetOptions(options, error); };
+    }
     std::unique_ptr<MainMenuScreen> pScreen =
         std::make_unique<MainMenuScreen>(*m_pAssetFileSystem, m_gameDataRepository, &m_gameAudioSystem, m_settings,
                                         std::move(actions), m_settingsMenuSection, paused, location, date,
-                                        m_pUpdater.get());
+                                        m_pUpdater.get(), std::move(currentGame));
     pScreen->prepareForFirstFrame();
     if (!paused && m_pUpdater)
     {
@@ -9832,7 +10637,7 @@ void GameApplication::openSaveGameScreen()
             resumeMenuGameplay();
             return true;
         },
-        location, m_gameSession.gameMinutes(), m_menuSavePreviewBmp);
+        location, m_gameSession.gameMinutes(), m_menuSavePreviewBmp, saveFoodCost());
     m_screenManager.setActiveScreen(std::move(pScreen));
 }
 
@@ -9866,7 +10671,8 @@ void GameApplication::openLoadGameScreen(bool returnToGameplayMenu, const std::s
                 openMainMenuScreen();
             }
         },
-        returnToGameplayMenu, &m_gameAudioSystem);
+        returnToGameplayMenu, &m_gameAudioSystem,
+        returnToGameplayMenu ? boundGameRules().experience.loadWarning().value_or("") : std::string());
 
 
     if (!m_mainMenuChildScreensPrepared)
@@ -9898,9 +10704,13 @@ void GameApplication::openNewGameScreen(const std::string &source)
         m_settings.newGameGodLich,
         IncludeGodLichCharacterCreationCandidate,
         m_settings.allowIncompleteCharacterCreation,
-        [this](const std::vector<Character> &characters, uint32_t continentId, bool preserveDebugLoadout)
+        [this](const std::vector<Character> &characters, const NewGameOptions &options)
         {
-            startNewSessionFromCharacterCreation(characters, continentId, preserveDebugLoadout, true);
+            startNewSessionFromCharacterCreation(characters, options, true);
+        },
+        [this](const std::string &rulesetId, std::string &error)
+        {
+            return activateRuleset(rulesetId, error);
         },
         [this]()
         {
@@ -10053,9 +10863,27 @@ bool GameApplication::startNewSession(std::optional<uint32_t> rosterId, bool ini
         return false;
     }
 
-    if (!ensureCommonGameDataLoaded())
+    std::string rulesetError;
+    // Seeded and startup parties play the Standard rules unless --ruleset chose others.
+    const std::string &rulesetText = m_config.startupRuleset;
+    const size_t rulesetSeparator = rulesetText.find(':');
+    RulesetSelection ruleset = {};
+    ruleset.id = rulesetText.empty() ? StandardRulesetId : rulesetText.substr(0, rulesetSeparator);
+
+    if (!activateRuleset(ruleset.id, rulesetError))
     {
-        std::cerr << "GameApplication: startNewSession failed to load common gameplay data\n";
+        std::cerr << "GameApplication: startNewSession failed to load common gameplay data: " << rulesetError << '\n';
+        return false;
+    }
+
+    ruleset.options = m_gameDataLoader.activeRuleset().defaultOptions();
+
+    if (rulesetSeparator != std::string::npos
+        && (!applyRulesetOptionIds(std::string_view(rulesetText).substr(rulesetSeparator + 1), ruleset.options)
+            || !m_gameDataLoader.activeRuleset().offers(ruleset.options)))
+    {
+        std::cerr << "GameApplication: the " << m_gameDataLoader.activeRuleset().name
+                  << " ruleset does not offer --ruleset " << rulesetText << '\n';
         return false;
     }
 
@@ -10065,6 +10893,8 @@ bool GameApplication::startNewSession(std::optional<uint32_t> rosterId, bool ini
     shutdownRenderer();
     m_gameSession.clear();
     m_gameSession.clearCurrentSavePath();
+    m_gameSession.setRuleset(ruleset);
+    m_gameSession.setRandomRootSeed(freshRandomRootSeed());
     m_gameSession.setCurrentSceneKind(SceneKind::Outdoor);
     const MapStartDestination startupDestination = resolveStartupDestination();
     m_gameSession.setCurrentMapFileName(startupDestination.mapFileName);
@@ -10089,6 +10919,9 @@ bool GameApplication::startNewSession(std::optional<uint32_t> rosterId, bool ini
             effectiveRosterId.has_value() && pRosterEntry != nullptr ? effectiveRosterId : std::nullopt);
         seedDebugWandsIntoParty(party, m_gameDataLoader.getItemTable());
         setDebugTownPortalUnlocks(party, true);
+        // The ruleset's own start (MAW's challenge modes), as a new game from the menu gets it (audit CHM-5).
+        party.setRules(m_gameSession.rulesetGameRules());
+        party.rules().experience.prepareNewParty(party);
     }
 
     if (!loadCurrentSessionMap(initializeView))
@@ -10151,13 +10984,12 @@ bool GameApplication::startNewSessionFromCharacterCreation(
     const std::vector<Character> &characters,
     bool initializeView)
 {
-    return startNewSessionFromCharacterCreation(characters, 0, false, initializeView);
+    return startNewSessionFromCharacterCreation(characters, NewGameOptions{}, initializeView);
 }
 
 bool GameApplication::startNewSessionFromCharacterCreation(
     const std::vector<Character> &characters,
-    uint32_t continentId,
-    bool preserveDebugLoadout,
+    const NewGameOptions &options,
     bool initializeView)
 {
     if (m_pAssetFileSystem == nullptr)
@@ -10165,11 +10997,23 @@ bool GameApplication::startNewSessionFromCharacterCreation(
         return false;
     }
 
-    if (!ensureCommonGameDataLoaded())
+    std::string rulesetError;
+
+    if (!activateRuleset(options.ruleset.id, rulesetError))
     {
-        std::cerr << "GameApplication: startNewSessionFromCharacterCreation failed to load common gameplay data\n";
+        std::cerr << "GameApplication: startNewSessionFromCharacterCreation: " << rulesetError << '\n';
         return false;
     }
+
+    if (!m_gameDataLoader.activeRuleset().offers(options.ruleset.options))
+    {
+        std::cerr << "GameApplication: the " << m_gameDataLoader.activeRuleset().name
+                  << " ruleset does not offer the chosen options\n";
+        return false;
+    }
+
+    const uint32_t continentId = options.continentId;
+    const bool preserveDebugLoadout = options.preserveDebugLoadout;
 
     m_gameAudioSystem.stopBackgroundMusicImmediate();
     m_screenManager.setActiveScreen(nullptr);
@@ -10178,6 +11022,8 @@ bool GameApplication::startNewSessionFromCharacterCreation(
     shutdownRenderer();
     m_gameSession.clear();
     m_gameSession.clearCurrentSavePath();
+    m_gameSession.setRuleset(options.ruleset);
+    m_gameSession.setRandomRootSeed(freshRandomRootSeed());
     m_gameSession.setCurrentSceneKind(SceneKind::Outdoor);
     const std::optional<MapStartDestination> continentStartDestination =
         continentId != 0 ? resolveContinentStartDestination(continentId) : std::nullopt;
@@ -10187,6 +11033,7 @@ bool GameApplication::startNewSessionFromCharacterCreation(
         continentId != 0 ? m_gameDataLoader.getMergedContinentSettingTable().findById(continentId) : nullptr;
     GAMEPLAY_DEBUG_TRACE(
         "new_game_starting continent_id=" + std::to_string(continentId)
+        + " ruleset=\"" + options.ruleset.id + "\""
         + " continent_note=\"" + (pContinentSetting != nullptr ? pContinentSetting->note : std::string()) + "\""
         + " map=\"" + startupDestination.mapFileName + "\""
         + " start_override=" + (startupDestination.start.has_value() ? "true" : "false")
@@ -10214,6 +11061,10 @@ bool GameApplication::startNewSessionFromCharacterCreation(
 
     Party &sessionParty = ensureSessionPartyState();
     sessionParty.seed(seed);
+    // Seeding leaves a party on Standard's rules: the ruleset's own start (MAW's challenge modes: 5000 gold, bonus
+    // experience) needs the session's rules back first.
+    sessionParty.setRules(m_gameSession.rulesetGameRules());
+    sessionParty.rules().experience.prepareNewParty(sessionParty);
     setDebugTownPortalUnlocks(sessionParty, false);
     renderLoadingOverlayProgress(15);
 
@@ -10416,6 +11267,12 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
 
     const uint64_t pendingDebugMapJumpBeginTickCount = collectFrameDiagnostics ? SDL_GetTicksNS() : 0;
 
+    if (processPendingTestParty())
+    {
+        finishFrameDiagnostics();
+        return;
+    }
+
     if (processPendingDebugMapJump())
     {
         recordFrameDiagnostics(
@@ -10467,7 +11324,7 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
         && m_gameSession.gameplayScreenRuntime().currentHudScreenState() != GameplayHudScreenState::Gameplay;
 
     std::vector<GameplayTouchControl> touchControls;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     if (pActiveScreenForInput == nullptr)
     {
         touchControls = m_gameSession.gameplayScreenRuntime().mobileTouchControls(width, height);
@@ -11684,6 +12541,19 @@ bool GameApplication::processPendingPartyDefeat()
     return true;
 }
 
+void GameApplication::applyRulesMapLeave()
+{
+    // The scene's event context is its world.
+    IGameplayWorldRuntime *pWorld = m_pMapSceneRuntime != nullptr
+        ? dynamic_cast<IGameplayWorldRuntime *>(m_pMapSceneRuntime->sceneEventContext())
+        : nullptr;
+
+    if (pWorld != nullptr)
+    {
+        m_pMapSceneRuntime->party().rules().monsters.leaveMap(*pWorld);
+    }
+}
+
 bool GameApplication::executeCurrentMapOnLeaveEvents()
 {
     if (m_pMapSceneRuntime == nullptr)
@@ -11698,6 +12568,7 @@ bool GameApplication::executeCurrentMapOnLeaveEvents()
         return false;
     }
 
+    applyRulesMapLeave();
     EventRuntime eventRuntime = {};
     eventRuntime.bindHouseTable(&m_gameDataLoader.getHouseTable());
     eventRuntime.bindNpcDialogTable(&m_gameDataLoader.getNpcDialogTable());
@@ -11858,6 +12729,8 @@ bool GameApplication::processPendingDimensionDoorOverlay()
     pRuntimeState->pendingDimensionDoorOverlay = false;
 
     GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
+    screenRuntime.setDimensionDoorWithoutQuest(pRuntimeState->pendingDimensionDoorWithoutQuest);
+    pRuntimeState->pendingDimensionDoorWithoutQuest = false;
 
     if (!screenRuntime.ensureDimensionDoorDestinationsLoaded())
     {

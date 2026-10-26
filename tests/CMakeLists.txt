@@ -14,14 +14,44 @@ add_executable(openyamm_unit_tests
     MapWorldOwnershipTests.cpp
     ChestRegressionTests.cpp
     ContentManifestTests.cpp
+    RulesetTests.cpp
+    QuickItemSlotTests.cpp
     EffectSystemTests.cpp
+    EnergyShieldTests.cpp
+    MonsterModifierTests.cpp
     EffectDefinitionLoaderTests.cpp
+    WorldMissileTests.cpp
     HouseDialogueRegressionTests.cpp
     ScriptedMapRegressionTests.cpp
     UnitTestMain.cpp
     CharacterSheetRegressionTests.cpp
     CombatActorHealthBarPolicyTests.cpp
     ActorBehaviorRuntimeTests.cpp
+    StandardRulesGoldenTests.cpp
+    RulesSeamTests.cpp
+    MawBalanceModelTests.cpp
+    MawCombatFormulaTests.cpp
+    MawItemFormulaTests.cpp
+    MawSkillTests.cpp
+    MawSpellTests.cpp
+    MawClassTests.cpp
+    MawPotionTests.cpp
+    MawCraftingTests.cpp
+    MawDimensionMapTests.cpp
+    MawGapTests.cpp
+    MawSpellClassTests.cpp
+    MawAuraReportTests.cpp
+    MawAuditCombatSpellTests.cpp
+    MawMonsterItemAuditTests.cpp
+    MawContentUiTests.cpp
+    MawProgressTests.cpp
+    MawMapProgressTests.cpp
+    MawSpecExampleTests.cpp
+    MawChallengeModeTests.cpp
+    MawMadnessLedgerTests.cpp
+    CombatLogTests.cpp
+    LootFilterTests.cpp
+    MawMonsterLevelTests.cpp
     GameplayActorAiSystemTests.cpp
     GameplayActorHitFeedbackTests.cpp
     MeleeContactEffectsTests.cpp
@@ -91,12 +121,15 @@ add_executable(openyamm_unit_tests
     ViewFrustumTests.cpp
     WaterRenderingTests.cpp
     PartyRegressionTests.cpp
+    TechnologySkillTests.cpp
     PathMapTests.cpp
     PathPlannerTests.cpp
     RegressionMapLoader.cpp
     ScreenManagerTests.cpp
     ScreenshotTourTests.cpp
     ../game/debug/ScreenshotTour.cpp
+    ScenarioYamlLoaderTests.cpp
+    ../game/scenario/ScenarioYamlLoader.cpp
     SkyStateTests.cpp
     ../game/render/SkyPresets.cpp
     ../game/render/SkyState.cpp
@@ -165,9 +198,12 @@ add_executable(openyamm_unit_tests
     ../game/audio/SoundCatalog.cpp
     ../game/content/ContentManifest.cpp
     ../game/content/ContentTableComposer.cpp
+    ../game/content/RulesetDefinition.cpp
+    ../game/content/RulesetOptions.cpp
     ../game/data/ActorNameResolver.cpp
     ../game/data/GameDataLoader.cpp
     ../game/debug/GameplayDebugTrace.cpp
+    ../game/debug/MawTestParties.cpp
     ../engine/scripting/LuaStateOwner.cpp
     ../game/events/EventRuntime.cpp
     ../game/events/EventDialogContent.cpp
@@ -179,12 +215,17 @@ add_executable(openyamm_unit_tests
     ../game/gameplay/ActorBehaviorRuntime.cpp
     ../game/gameplay/GameplayActorAiSystem.cpp
     ../game/gameplay/GameplayActorHitFeedback.cpp
+    ../game/gameplay/GameplayActorShields.cpp
+    ../game/gameplay/GameplayActorModifiers.cpp
+    ../game/gameplay/GameplayMonsterSpawn.cpp
+    ../game/maps/SceneOverlayOperations.cpp
     ../game/gameplay/MeleeContactEffects.cpp
     ../game/gameplay/GameplayActorService.cpp
     ../game/gameplay/GameplayWorldItemPolicy.cpp
     ../game/gameplay/SearchableLootPropRuntime.cpp
     ../game/gameplay/LootContainerRuntime.cpp
     ../game/gameplay/GameplayDialogController.cpp
+    ../game/gameplay/CombatLog.cpp
     ../game/gameplay/GameplayCombatController.cpp
     ../game/gameplay/GameplayActionController.cpp
     ../game/gameplay/GameplaySpeechRules.cpp
@@ -211,6 +252,7 @@ add_executable(openyamm_unit_tests
     ../game/gameplay/TurnBasedCombatRuntime.cpp
     ../game/gameplay/TravelRuntime.cpp
     ../game/gameplay/CorpseLootRuntime.cpp
+    ../game/gameplay/GameplayLootFilter.cpp
     ../game/gameplay/SavePreviewImage.cpp
     ../game/maps/MapDeltaData.cpp
     ../game/maps/MapAssetLoader.cpp
@@ -246,6 +288,9 @@ add_executable(openyamm_unit_tests
     ../game/fx/import/EffectResourceLibrary.cpp
     ../game/fx/ParticleSystem.cpp
     ../game/items/AlchemyBenchRuntime.cpp
+    ../game/items/CraftingRuntime.cpp
+    ../game/items/InventoryBags.cpp
+    ../game/items/QuickItemSlots.cpp
     ../game/items/InventoryItemMixingRuntime.cpp
     ../game/items/InventoryItemUseRuntime.cpp
     ../game/items/ItemEnchantRuntime.cpp
@@ -274,8 +319,55 @@ add_executable(openyamm_unit_tests
     ../game/tables/JournalHistoryTable.cpp
     ../game/tables/JournalQuestTable.cpp
     ../game/tables/MonsterTable.cpp
+    ../game/tables/MonsterShields.cpp
+    ../game/tables/MonsterModifiers.cpp
+    ../game/tables/MonsterRelationAddOns.cpp
     ../game/tables/MonsterProjectileTable.cpp
     ../game/tables/MergedBaseTables.cpp
+    ../game/tables/PotionEffectTable.cpp
+    ../game/rules/CombatRules.cpp
+    ../game/rules/ExperienceRules.cpp
+    ../game/rules/GameRules.cpp
+    ../game/rules/ItemRules.cpp
+    ../game/rules/LootFilter.cpp
+    ../game/rules/MonsterRules.cpp
+    ../game/rules/maw/MawAuraReport.cpp
+    ../game/rules/maw/MawAuras.cpp
+    ../game/rules/maw/MawBalanceModel.cpp
+    ../game/rules/maw/MawCharacterSheet.cpp
+    ../game/rules/maw/MawCombatFormulas.cpp
+    ../game/rules/maw/MawCombatRules.cpp
+    ../game/rules/maw/MawExperienceCurve.cpp
+    ../game/rules/maw/MawExperienceRules.cpp
+    ../game/rules/maw/MawGameState.cpp
+    ../game/rules/maw/MawItemData.cpp
+    ../game/rules/maw/MawItemFormulas.cpp
+    ../game/rules/maw/MawItemRules.cpp
+    ../game/rules/maw/MawMonsterLevels.cpp
+    ../game/rules/maw/MawMonsterInspect.cpp
+    ../game/rules/maw/MawMadnessLedger.cpp
+    ../game/rules/maw/MawMonsterRules.cpp
+    ../game/rules/maw/MawProgress.cpp
+    ../game/rules/maw/MawNpcPresence.cpp
+    ../game/rules/maw/MawRules.cpp
+    ../game/rules/maw/MawSkillFormulas.cpp
+    ../game/rules/maw/MawClassRules.cpp
+    ../game/rules/maw/MawClassSpells.cpp
+    ../game/rules/maw/MawCraftingData.cpp
+    ../game/rules/maw/MawDimensionMaps.cpp
+    ../game/rules/maw/MawCraftingRules.cpp
+    ../game/rules/maw/MawPotionRules.cpp
+    ../game/rules/maw/MawPromotions.cpp
+    ../game/rules/maw/MawSkillRules.cpp
+    ../game/rules/maw/MawSpellFormulas.cpp
+    ../game/rules/maw/MawSpellRules.cpp
+    ../game/rules/maw/MawTexts.cpp
+    ../game/rules/RandomStreams.cpp
+    ../game/rules/ClassRules.cpp
+    ../game/rules/CraftingRules.cpp
+    ../game/rules/PotionRules.cpp
+    ../game/rules/SkillRules.cpp
+    ../game/rules/SpellRules.cpp
     ../game/mm9/Mm9RudeDialogue.cpp
     ../game/mm9/Mm9BarrelRuntime.cpp
     ../game/mm9/Mm9PrimaryStats.cpp
@@ -304,6 +396,7 @@ add_executable(openyamm_unit_tests
     ../game/tables/LiquidTable.cpp
     ../game/tables/TextureFrameTable.cpp
     ../game/ui/GameplayUiController.cpp
+    ../game/ui/GameplayMapProgressText.cpp
     ../game/ui/HouseShopLayout.cpp
     ../game/ui/SpellbookUiLayout.cpp
     ../game/ui/UiLayoutManager.cpp
@@ -397,6 +490,7 @@ add_executable(openyamm_runtime_tests
     IndoorDecorationInteractionTests.cpp
     OutdoorLightingProbeRuntimeTests.cpp
     OutdoorEventSpellProjectileTests.cpp
+    MonsterModifierWorldTests.cpp
 )
 
 target_include_directories(openyamm_runtime_tests PRIVATE

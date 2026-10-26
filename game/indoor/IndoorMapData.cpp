@@ -553,6 +553,8 @@ std::optional<IndoorMapData> IndoorMapDataLoader::loadFromBytes(const std::vecto
         uint8_t facetType = 0;
         reader.readUInt32(faceStructOffset + 0x1c, attributes);
         reader.readUInt16(faceStructOffset + 0x38, faceParamIndex);
+        int16_t textureFrameTableIndex = -1;
+        reader.readInt16(faceStructOffset + 0x3a, textureFrameTableIndex);
         reader.readUInt16(faceStructOffset + 0x3c, roomNumber);
         reader.readUInt16(faceStructOffset + 0x3e, roomBehindNumber);
         reader.readUInt8(faceStructOffset + 0x4c, facetType);
@@ -560,6 +562,7 @@ std::optional<IndoorMapData> IndoorMapDataLoader::loadFromBytes(const std::vecto
 
         face = {};
         face.attributes = attributes;
+        face.textureFrameTableIndex = textureFrameTableIndex;
         std::array<int32_t, 3> planeNormal = {};
         for (size_t axis = 0; axis < planeNormal.size(); ++axis)
         {
@@ -614,7 +617,6 @@ std::optional<IndoorMapData> IndoorMapDataLoader::loadFromBytes(const std::vecto
                 faceParamsOffset + static_cast<size_t>(faceParamIndex) * FaceParamRecordSize;
             reader.readInt16(faceParamOffset + 0x14, face.textureDeltaU);
             reader.readInt16(faceParamOffset + 0x16, face.textureDeltaV);
-            reader.readUInt16(faceParamOffset + 0x10, face.textureFrameTableIndex);
             reader.readUInt16(faceParamOffset + 0x12, face.textureFrameTableCog);
             reader.readUInt16(faceParamOffset + 0x18, face.cogNumber);
             reader.readUInt16(faceParamOffset + 0x1a, face.cogTriggered);
@@ -1085,6 +1087,7 @@ std::optional<std::vector<uint8_t>> IndoorMapDataWriter::buildBytes(const Indoor
             planeDistance, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max()));
         writeValue<uint32_t>(bytes, faceStructOffset + 0x1c, face.attributes);
         writeValue<uint16_t>(bytes, faceStructOffset + 0x38, static_cast<uint16_t>(faceIndex));
+        writeValue<int16_t>(bytes, faceStructOffset + 0x3a, face.textureFrameTableIndex);
         writeValue<uint16_t>(bytes, faceStructOffset + 0x3c, face.roomNumber);
         writeValue<uint16_t>(bytes, faceStructOffset + 0x3e, face.roomBehindNumber);
         writeValue<uint8_t>(bytes, faceStructOffset + 0x4c, face.facetType);
@@ -1105,7 +1108,6 @@ std::optional<std::vector<uint8_t>> IndoorMapDataWriter::buildBytes(const Indoor
     {
         const size_t faceParamOffset = bytes.size();
         appendZeroBytes(bytes, FaceParamRecordSize);
-        writeValue<uint16_t>(bytes, faceParamOffset + 0x10, face.textureFrameTableIndex);
         writeValue<uint16_t>(bytes, faceParamOffset + 0x12, face.textureFrameTableCog);
         writeValue<int16_t>(bytes, faceParamOffset + 0x14, face.textureDeltaU);
         writeValue<int16_t>(bytes, faceParamOffset + 0x16, face.textureDeltaV);

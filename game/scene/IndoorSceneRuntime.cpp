@@ -683,10 +683,20 @@ bool IndoorSceneRuntime::advanceSimulation(float deltaMilliseconds)
         }
     }
 
+    return advanceMechanisms(deltaMilliseconds) || stateChanged;
+}
+
+bool IndoorSceneRuntime::advanceMechanisms(float deltaMilliseconds)
+{
+    if (!m_eventRuntimeState || !m_mapDeltaData || deltaMilliseconds <= 0.0f)
+    {
+        return false;
+    }
+
     if (!hasMovingMechanism(*m_eventRuntimeState))
     {
         m_mechanismAccumulatorMilliseconds = 0.0f;
-        return stateChanged;
+        return false;
     }
 
     int mechanismSteps = 0;
@@ -733,7 +743,7 @@ bool IndoorSceneRuntime::advanceSimulation(float deltaMilliseconds)
         m_mechanismAccumulatorMilliseconds = MechanismStepMilliseconds;
     }
 
-    return stateChanged || mechanismSteps > 0;
+    return mechanismSteps > 0;
 }
 
 void IndoorSceneRuntime::updateMechanismAudio(
@@ -964,6 +974,8 @@ bool IndoorSceneRuntime::activateEvent(
     const std::optional<ScriptedEventProgram> emptyLocalProgram;
     const std::optional<ScriptedEventProgram> &effectiveLocalEventProgram =
         allowGlobalFallback ? emptyLocalProgram : m_localEventProgram;
+    const std::vector<int64_t> statsBefore =
+        activeDecorationContext ? partyBaseStatSnapshot(m_partyRuntime.party()) : std::vector<int64_t>{};
 
     const bool executed = m_eventRuntime.executeEventById(
         effectiveLocalEventProgram,
@@ -976,6 +988,12 @@ bool IndoorSceneRuntime::activateEvent(
         allowGlobalFallback
     );
     m_eventRuntimeState->activeDecorationContext.reset();
+
+    if (executed && activeDecorationContext)
+    {
+        reportDecorationStatGain(
+            m_partyRuntime.party(), *m_eventRuntimeState, activeDecorationContext->decorVarIndex, statsBefore);
+    }
 
     if (!executed)
     {

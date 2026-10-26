@@ -35,6 +35,7 @@ bool isSimpleName(const std::string &name)
 }
 
 // The mount of a pack lies inside its package: "/engine" or "/worlds/<package>", optionally followed by folders.
+// Releases up to 1.10 accept nothing else, so new content goes below one of these (the rulesets: /engine/rulesets).
 bool isPackageMount(const std::string &mount, const std::string &package)
 {
     const std::string root = package == "engine" ? "/engine" : "/worlds/" + package;
@@ -199,6 +200,23 @@ bool validateAssetPackFiles(const AssetPackIndex &index, const std::filesystem::
         {
             error = sizeError ? "missing content pack " + pack.file
                               : "content pack " + pack.file + " has the wrong size; verify the game files";
+            return false;
+        }
+    }
+
+    error.clear();
+    return true;
+}
+
+bool assetPackFilesExist(const AssetPackIndex &index, const std::filesystem::path &storeRoot, std::string &error)
+{
+    for (const AssetPackRecord &pack : index.packs)
+    {
+        std::error_code fileError;
+
+        if (!std::filesystem::is_regular_file(storeRoot / pack.file, fileError))
+        {
+            error = "missing content pack " + pack.file;
             return false;
         }
     }

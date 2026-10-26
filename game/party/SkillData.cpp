@@ -44,7 +44,8 @@ std::string canonicalLookupKey(const std::string &value)
     return result;
 }
 
-const std::array<std::string, 53> CanonicalClassNames = {
+// MMMerge's classes, then MAW's four class lines (ids 53-64), which only a ruleset's class tables make playable.
+const std::array<std::string, 65> CanonicalClassNames = {
     "Archer",
     "WarriorMage",
     "MasterArcher",
@@ -98,9 +99,24 @@ const std::array<std::string, 53> CanonicalClassNames = {
     "HighPriest",
     "MasterWizard",
     "None",
+    "Seraphim",
+    "Angel",
+    "Archangel",
+    "DeathKnight",
+    "DeathLord",
+    "LichKing",
+    "Shaman",
+    "Sekhem",
+    "Marabou",
+    "Elementalist",
+    "ElementalAdept",
+    "MasterOfElements",
 };
 
-const std::array<std::string, 41> CanonicalSkillNames = {
+// Skill ids are positions in this list. The 40 classic skills keep their MMerge ids (teacher topics name skills by
+// id); the technology skills are appended from FirstTechnologySkillId and never renumber the classic ones, and the
+// ruleset skills follow from FirstRulesetSkillId.
+const std::array<std::string, 49> CanonicalSkillNames = {
     "Staff",
     "Sword",
     "Dagger",
@@ -141,7 +157,38 @@ const std::array<std::string, 41> CanonicalSkillNames = {
     "Alchemy",
     "Learning",
     "Throwing",
+    "EnergyGuns",
+    "EnergyBlades",
+    "ShieldTech",
+    "Hacking",
+    "Cover",
+    "ManaShield",
+    "Enlightenment",
+    "Retaliation",
     "LethalStrike",
+};
+
+const std::vector<std::string> WeaponSheetSkillNames = {
+    "Axe", "Bow", "Throwing", "Dagger", "Mace", "Spear", "Staff", "Sword", "Unarmed", "Blaster",
+};
+
+const std::vector<std::string> MagicSheetSkillNames = {
+    "FireMagic", "AirMagic", "WaterMagic", "EarthMagic", "SpiritMagic", "MindMagic", "BodyMagic", "LightMagic",
+    "DarkMagic",
+};
+
+// A ruleset's Cover, Retaliation and Mana Shield follow the armour skills, as in MAW (zzMAW-Skills.lua:2185-2214).
+const std::vector<std::string> ArmorSheetSkillNames = {
+    "LeatherArmor", "ChainArmor", "PlateArmor", "Shield", "Dodging", "Cover", "Retaliation", "ManaShield",
+};
+
+const std::vector<std::string> MiscSheetSkillNames = {
+    "Alchemy", "Armsmaster", "Bodybuilding", "IdentifyItem", "IdentifyMonster", "Learning", "DisarmTraps",
+    "Meditation", "Merchant", "Perception", "RepairItem", "Stealing", "LethalStrike",
+};
+
+const std::vector<std::string> TechnologySheetSkillNames = {
+    "EnergyGuns", "EnergyBlades", "ShieldTech", "Hacking",
 };
 
 const std::unordered_map<std::string, std::string> ClassAliases = {
@@ -200,6 +247,11 @@ const std::unordered_map<std::string, std::string> DisplayClassNames = {
     {"MasterArcher", "Master Archer"},
     {"PriestLight", "Priest of the Light"},
     {"PriestDark", "Priest of the Dark"},
+    {"DeathKnight", "Death Knight"},
+    {"DeathLord", "Death Lord"},
+    {"LichKing", "Lich King"},
+    {"ElementalAdept", "Elemental Adept"},
+    {"MasterOfElements", "Master of Elements"},
     {"DarkElf", "Dark Elf"},
     {"GreatWyrm", "Great Wyrm"},
     {"GreatDruid", "Great Druid"},
@@ -238,7 +290,13 @@ const std::unordered_map<std::string, std::string> DisplaySkillNames = {
     {"Bodybuilding", "Body Building"},
     {"IdentifyMonster", "Identify Monster"},
     {"DisarmTraps", "Disarm Traps"},
+    {"EnergyGuns", "Energy Guns"},
+    {"EnergyBlades", "Energy Blades"},
+    {"ShieldTech", "Shield Tech"},
+    {"ManaShield", "Mana Shield"},
 };
+
+std::map<std::string, std::string> RulesetDisplaySkillNames;
 
 std::unordered_map<std::string, std::string> buildCanonicalClassLookup()
 {
@@ -323,6 +381,12 @@ std::string displayClassName(const std::string &className)
 std::string displaySkillName(const std::string &skillName)
 {
     const std::string canonicalName = canonicalSkillName(skillName);
+    const std::map<std::string, std::string>::const_iterator rulesetIt = RulesetDisplaySkillNames.find(canonicalName);
+
+    if (rulesetIt != RulesetDisplaySkillNames.end())
+    {
+        return rulesetIt->second;
+    }
     const std::unordered_map<std::string, std::string>::const_iterator displayIt =
         DisplaySkillNames.find(canonicalName);
 
@@ -332,6 +396,11 @@ std::string displaySkillName(const std::string &skillName)
     }
 
     return canonicalName;
+}
+
+void setSkillDisplayNameOverrides(const std::map<std::string, std::string> &displayNames)
+{
+    RulesetDisplaySkillNames = displayNames;
 }
 
 std::string masteryDisplayName(SkillMastery mastery)
@@ -354,6 +423,60 @@ std::string masteryDisplayName(SkillMastery mastery)
 std::vector<std::string> allCanonicalSkillNames()
 {
     return {CanonicalSkillNames.begin(), CanonicalSkillNames.end()};
+}
+
+std::optional<std::string> skillNameForSkillId(uint32_t skillId)
+{
+    if (skillId >= CanonicalSkillNames.size())
+    {
+        return std::nullopt;
+    }
+
+    return CanonicalSkillNames[skillId];
+}
+
+std::optional<uint32_t> skillIdForSkillName(const std::string &skillName)
+{
+    const std::string canonicalName = canonicalSkillName(skillName);
+    const auto skillIt = std::find(CanonicalSkillNames.begin(), CanonicalSkillNames.end(), canonicalName);
+
+    if (skillIt == CanonicalSkillNames.end())
+    {
+        return std::nullopt;
+    }
+
+    return static_cast<uint32_t>(skillIt - CanonicalSkillNames.begin());
+}
+
+bool isTechnologySkill(const std::string &skillName)
+{
+    const std::optional<uint32_t> skillId = skillIdForSkillName(skillName);
+    return skillId && *skillId >= FirstTechnologySkillId && *skillId < FirstRulesetSkillId;
+}
+
+bool isRulesetSkill(const std::string &skillName)
+{
+    const std::optional<uint32_t> skillId = skillIdForSkillName(skillName);
+    return skillId && *skillId >= FirstRulesetSkillId && *skillId < 48;
+}
+
+const std::vector<std::string> &skillSheetGroupSkillNames(SkillSheetGroup group)
+{
+    switch (group)
+    {
+        case SkillSheetGroup::Weapons:
+            return WeaponSheetSkillNames;
+        case SkillSheetGroup::Magic:
+            return MagicSheetSkillNames;
+        case SkillSheetGroup::Armor:
+            return ArmorSheetSkillNames;
+        case SkillSheetGroup::Misc:
+            return MiscSheetSkillNames;
+        case SkillSheetGroup::Technology:
+            return TechnologySheetSkillNames;
+    }
+
+    return MiscSheetSkillNames;
 }
 
 std::optional<std::string> nextPromotionClassName(const std::string &className)

@@ -111,6 +111,9 @@ enum class SpecialItemEnchantKind : uint8_t
     TheOcean,
     WaterWalking,
     FeatherFalling,
+    // A special a ruleset adds or renames (MAW's "of Ascension", "Lichs'" and the class specials 74-80); its effect
+    // comes from the ruleset's item rules alone.
+    RulesetSpecial,
 };
 
 struct ItemEnchantPriceModifier

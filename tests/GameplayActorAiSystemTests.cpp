@@ -883,6 +883,58 @@ TEST_CASE("shared actor AI uses the pursuit speed multiplier and cap")
     CHECK(update.movementIntent.moveSpeed == doctest::Approx(1000.0f));
 }
 
+TEST_CASE("turn-based wait stage multiplies movement speed by 5/3 before the cap")
+{
+    GameplayActorAiSystem system;
+    ActorAiFrameFacts frame = makeFrame();
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::MoveOnly;
+    frame.turnBased.actionGrantActorIndices = {};
+    ActorAiFacts actor = makeActor(25, 125);
+    actor.world.active = true;
+    actor.identity.hostilityType = 4;
+    actor.status.hostileToParty = true;
+    actor.status.hasDetectedParty = true;
+    actor.stats.aiType = GameplayActorAiType::Normal;
+    actor.stats.moveSpeed = 200;
+    actor.stats.attack1Damage.diceRolls = 1;
+    actor.stats.attack1Damage.diceSides = 4;
+    actor.movement.movementAllowed = true;
+    actor.movement.effectiveMoveSpeed = 200.0f;
+    actor.target.currentKind = ActorAiTargetKind::Party;
+    actor.target.currentPosition = {600.0f, 200.0f, 64.0f};
+    actor.target.currentDistance = 500.0f;
+    actor.target.currentEdgeDistance = 500.0f;
+    actor.target.currentCanSense = true;
+    actor.target.currentHasAttackLineOfSight = false;
+    actor.target.partyCanSenseActor = true;
+    frame.activeActors.push_back(actor);
+
+    const OpenYAMM::Game::ActorAiFrameResult waitResult = system.updateActors(frame);
+    REQUIRE_EQ(waitResult.actorUpdates.size(), 1u);
+    const OpenYAMM::Game::ActorAiUpdate &waitUpdate = waitResult.actorUpdates.front();
+    REQUIRE(waitUpdate.state.motionState.has_value());
+    CHECK(*waitUpdate.state.motionState == ActorAiMotionState::Pursuing);
+    CHECK(waitUpdate.movementIntent.applyMovement);
+    CHECK(waitUpdate.movementIntent.moveSpeed == doctest::Approx(200.0f * 1.75f * 5.0f / 3.0f));
+
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::RealTime;
+    const OpenYAMM::Game::ActorAiFrameResult realTimeResult = system.updateActors(frame);
+    REQUIRE_EQ(realTimeResult.actorUpdates.size(), 1u);
+    CHECK(realTimeResult.actorUpdates.front().movementIntent.moveSpeed == doctest::Approx(350.0f));
+
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::MoveOnly;
+    frame.activeActors.front().stats.moveSpeed = 700;
+    frame.activeActors.front().movement.effectiveMoveSpeed = 700.0f;
+    const OpenYAMM::Game::ActorAiFrameResult cappedResult = system.updateActors(frame);
+    REQUIRE_EQ(cappedResult.actorUpdates.size(), 1u);
+    CHECK(cappedResult.actorUpdates.front().movementIntent.moveSpeed == doctest::Approx(1000.0f));
+
+    frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::Hold;
+    const OpenYAMM::Game::ActorAiFrameResult heldResult = system.updateActors(frame);
+    REQUIRE_EQ(heldResult.actorUpdates.size(), 1u);
+    CHECK_FALSE(heldResult.actorUpdates.front().movementIntent.applyMovement);
+}
+
 TEST_CASE("shared actor AI emits vertical movement for flying actors pursuing above or below")
 {
     GameplayActorAiSystem system;
@@ -2416,13 +2468,13 @@ TEST_CASE("actor tactics keep a turret tracking its target between shots and thr
 {
     ActorAiFacts actor = makeTacticTurret(-1500.0f, 0.0f);
     actor.runtime.attackCooldownSeconds = 1.0f;
-    actor.runtime.yawRadians = 3.0f;
+    actor.runtime.yawRadians = 2.5f;
     const OpenYAMM::Game::ActorAiUpdate waiting = updateOne(actor);
 
     REQUIRE(waiting.state.motionState.has_value());
     CHECK(*waiting.state.motionState == ActorAiMotionState::Standing);
     REQUIRE(waiting.movementIntent.updateYaw);
-    CHECK(waiting.movementIntent.yawRadians == doctest::Approx(3.0f + 90.0f * TacticDegrees / 128.0f));
+    CHECK(waiting.movementIntent.yawRadians == doctest::Approx(2.5f + 90.0f * TacticDegrees / 128.0f));
 
     actor.runtime.motionState = ActorAiMotionState::Attacking;
     actor.runtime.animationState = ActorAiAnimationState::AttackRanged;
@@ -2592,4 +2644,126 @@ TEST_CASE("actor tactics leash a post: it stops moving away from home but keeps 
     REQUIRE(free.state.motionState.has_value());
     CHECK(*free.state.motionState == ActorAiMotionState::Pursuing);
     CHECK(free.movementIntent.applyMovement);
+}
+
+TEST_CASE("actor tactics ease a traverse onto its target instead of stopping dead")
+{
+    ActorAiFacts actor = makeTacticTurret(0.0f, 1500.0f);
+    actor.runtime.attackCooldownSeconds = 1.0f;
+    actor.runtime.yawRadians = std::atan2(1500.0f, 0.0f) - 2.0f * TacticDegrees;
+    const OpenYAMM::Game::ActorAiUpdate settling = updateOne(actor);
+
+    REQUIRE(settling.movementIntent.updateYaw);
+    const float step = settling.movementIntent.yawRadians - actor.runtime.yawRadians;
+    CHECK(step > 0.0f);
+    CHECK(step < 0.5f * 90.0f * TacticDegrees / 128.0f);
+}
+
+TEST_CASE("actor tactics aim a turret ahead of its target by the lead, shot included")
+{
+    // Without the lead the turret is 5.7 degrees off its target and turns; with it, it is on the led point and fires.
+    ActorAiFacts actor = makeTacticTurret(0.0f, 1500.0f);
+    actor.runtime.yawRadians = std::atan2(1500.0f, 150.0f);
+    const OpenYAMM::Game::ActorAiUpdate unled = updateOne(actor);
+    REQUIRE(unled.state.motionState.has_value());
+    CHECK(*unled.state.motionState == ActorAiMotionState::Standing);
+
+    actor.tactics.aimLead = {150.0f, 0.0f, 10.0f};
+    const OpenYAMM::Game::ActorAiUpdate led = updateOne(actor);
+    REQUIRE(led.state.motionState.has_value());
+    CHECK(*led.state.motionState == ActorAiMotionState::Attacking);
+
+    // The release aims at the led point too.
+    actor.runtime.motionState = ActorAiMotionState::Attacking;
+    actor.runtime.animationState = ActorAiAnimationState::AttackRanged;
+    actor.runtime.queuedAttackAbility = GameplayActorAttackAbility::Attack1;
+    actor.runtime.actionSeconds = 0.001f;
+    actor.runtime.attackCooldownSeconds = 1.0f;
+    const OpenYAMM::Game::ActorAiUpdate release = updateOne(actor);
+    REQUIRE(release.attackRequest.has_value());
+    CHECK(release.attackRequest->target.x == doctest::Approx(150.0f));
+    CHECK(release.attackRequest->target.y == doctest::Approx(1500.0f));
+    CHECK(release.attackRequest->target.z == doctest::Approx(74.0f));
+}
+
+TEST_CASE("actor tactics turn an idle post turret to its scan facing, standing without fidgets")
+{
+    ActorAiFacts actor = makeTacticTurret(0.0f, 0.0f);
+    actor.target = {};
+    actor.status.hostileToParty = false;
+    actor.status.hasDetectedParty = false;
+    actor.tactics.holdPost = true;
+    actor.movement.hasHomeYaw = true;
+    actor.movement.homeYawRadians = 1.0f;
+    actor.movement.distanceToParty = 5000.0f;
+    actor.runtime.yawRadians = 1.0f;
+    actor.tactics.idleAimActive = true;
+    actor.tactics.idleAimYawRadians = 1.3f;
+
+    for (uint32_t decision = 0; decision < 16; ++decision)
+    {
+        actor.runtime.idleDecisionCount = decision;
+        const OpenYAMM::Game::ActorAiUpdate idle = updateOne(actor);
+        REQUIRE(idle.state.motionState.has_value());
+        CHECK(*idle.state.motionState == ActorAiMotionState::Standing);
+        REQUIRE(idle.animation.animationState.has_value());
+        CHECK(*idle.animation.animationState == ActorAiAnimationState::Standing);
+        CHECK_FALSE(idle.movementIntent.applyMovement);
+        REQUIRE(idle.movementIntent.updateYaw);
+        CHECK(idle.movementIntent.yawRadians > 1.0f);
+        CHECK(idle.movementIntent.yawRadians <= 1.0f + 90.0f * TacticDegrees / 128.0f + 1.0e-5f);
+    }
+
+    // A background turret scans too, instead of facing its placement.
+    actor.world.active = false;
+    actor.world.listenerPosition = {0.0f, 3000.0f, 0.0f};
+    ActorAiFrameFacts frame = makeFrame();
+    frame.backgroundActors.push_back(actor);
+    const OpenYAMM::Game::ActorAiFrameResult background = GameplayActorAiSystem().updateActors(frame);
+    REQUIRE_EQ(background.actorUpdates.size(), 1u);
+    REQUIRE(background.actorUpdates[0].movementIntent.updateYaw);
+    CHECK(background.actorUpdates[0].movementIntent.yawRadians > 1.0f);
+
+    // Without the scan the post keeps its native stand at the placement facing.
+    actor.world.active = true;
+    actor.tactics.idleAimActive = false;
+    const OpenYAMM::Game::ActorAiUpdate native = updateOne(actor);
+    CHECK((!native.movementIntent.updateYaw || native.movementIntent.yawRadians == doctest::Approx(1.0f)));
+}
+
+TEST_CASE("actor tactics keep a friendly scanning turret tracking a target it senses but does not fight yet")
+{
+    // A friendly turret (hostility type 0) senses a hostile actor beyond its promotion range: no fight yet, but its
+    // facing follows the target at the traverse rate instead of its scan.
+    ActorAiFacts actor = makeTacticTurret(0.0f, 0.0f);
+    actor.status.hostileToParty = false;
+    actor.status.hasDetectedParty = false;
+    actor.identity.hostilityType = 0;
+    actor.tactics.holdPost = true;
+    actor.tactics.scan.radiansPerSecond = 0.2f;
+    actor.tactics.scan.halfWidthRadians = 0.8f;
+    actor.tactics.idleAimActive = false;
+    actor.movement.hasHomeYaw = true;
+    actor.movement.homeYawRadians = 0.0f;
+    actor.movement.distanceToParty = 5000.0f;
+    actor.runtime.yawRadians = 0.0f;
+    actor.target.currentKind = ActorAiTargetKind::Actor;
+    actor.target.currentActorIndex = 4;
+    actor.target.currentPosition = {0.0f, 2400.0f, 300.0f};
+    actor.target.currentDistance = 2400.0f;
+    actor.target.currentEdgeDistance = 2300.0f;
+    actor.target.currentRelationToTarget = 2;     // promoted only within the close range (1 024)
+    actor.target.partyCanSenseActor = false;
+    const OpenYAMM::Game::ActorAiUpdate update = updateOne(actor);
+
+    CHECK_FALSE(update.attackRequest.has_value());
+    REQUIRE(update.state.motionState.has_value());
+    CHECK(*update.state.motionState == ActorAiMotionState::Standing);
+    REQUIRE(update.movementIntent.updateYaw);
+    CHECK(update.movementIntent.yawRadians == doctest::Approx(90.0f * TacticDegrees / 128.0f));
+
+    // Without the scan the same post does not engage and keeps its placement facing (the native result).
+    actor.tactics.scan = {};
+    const OpenYAMM::Game::ActorAiUpdate native = updateOne(actor);
+    CHECK((!native.movementIntent.updateYaw || native.movementIntent.yawRadians == doctest::Approx(0.0f)));
 }

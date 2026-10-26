@@ -1,0 +1,256 @@
+#pragma once
+
+#include "game/gameplay/GameMechanics.h"
+#include "game/gameplay/GameplayActorAiTypes.h"
+#include "game/gameplay/GameplayProjectileService.h"
+#include "game/tables/MonsterModifiers.h"
+#include "game/tables/MonsterTable.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <vector>
+
+namespace OpenYAMM::Game
+{
+struct EventRuntimeState;
+
+// The homing a true_aim monster gives the projectiles it fires at a target (MonsterModifierSet::trueAim); empty for a
+// monster without it or a shot with no target (actor index invalid for TargetKind::Actor).
+std::optional<GameplayProjectileService::ProjectileHoming> trueAimProjectileHoming(
+    const MonsterModifierSet *pModifiers,
+    GameplayProjectileService::ProjectileHoming::TargetKind targetKind,
+    size_t targetActorIndex,
+    uint32_t targetActorId);
+
+// Blinks of one world runtime's actors (MonsterModifierSet::blink), indexed by its actor indices. Shared decisions:
+// triggers, cooldowns and the candidate spots; the world runtime checks a spot (floor, walls, other bodies, sight)
+// and moves the actor. Runtime state only: cooldowns restart on every map load and after loading a save.
+class GameplayActorModifiers
+{
+public:
+    struct ActorFacts
+    {
+        int16_t monsterId = 0;
+        uint32_t actorId = 0;
+        // Alive and free to act (not dying, stunned or paralysed).
+        bool canAct = false;
+        // Feet.
+        std::array<float, 3> position = {};
+    };
+
+    struct BlinkRequest
+    {
+        size_t actorIndex = 0;
+        uint32_t actorId = 0;
+        const BlinkModifier *pBlink = nullptr;
+        std::array<float, 3> origin = {};
+        // Where the last threat came from (the attacker of the last hit, the target of its last shot), if known.
+        std::optional<std::array<float, 3>> threat;
+        // Deterministic per actor and blink, for the candidate spots.
+        uint32_t seed = 0;
+    };
+
+    void bind(const MonsterModifierTable *pTable);
+    void clear();
+    bool active() const
+    {
+        return m_pTable != nullptr && m_pTable->hasBlink();
+    }
+    // A hit on the actor: source is the attacker's position, damaged that it lost hit points or shield, shieldBroke
+    // that its energy shield broke.
+    void observeHit(size_t actorIndex, int16_t monsterId, uint32_t actorId, const std::array<float, 3> &source,
+        bool damaged, bool shieldBroke);
+    // The actor fights: it released an attack at target.
+    void observeAttack(size_t actorIndex, int16_t monsterId, uint32_t actorId, const std::array<float, 3> &target);
+    // Per actor step: ages cooldowns and returns the actors due to blink now.
+    std::vector<BlinkRequest> update(float deltaSeconds, size_t actorCount,
+        const std::function<ActorFacts(size_t)> &actorFacts);
+    // The world tried the request's spots: a blink starts the cooldown; a failure retries after a short delay.
+    void finishBlink(const BlinkRequest &request, bool blinked);
+    // Candidate spots (feet, at the origin's height) of a blink: random directions and distances within the
+    // modifier's range, the ones turning away from the threat first. Deterministic for a seed.
+    static std::vector<std::array<float, 3>> blinkCandidates(const BlinkRequest &request, size_t count);
+    // The effect at both ends and the sound at the arrival, queued into the world's event runtime state.
+    static void queueBlinkPresentation(EventRuntimeState &eventRuntimeState, const BlinkModifier &blink,
+        const std::array<float, 3> &fromCenter, const std::array<float, 3> &toCenter);
+    // Blinks so far (console, tests).
+    uint32_t blinkCount() const
+    {
+        return m_blinkCount;
+    }
+
+    // Charges (MonsterModifierSet::charge). Phases of one charge: wind-up, dash, then recovery (a short one after a
+    // hit, the stumble after a miss); between charges the cooldown runs.
+    enum class ChargePhase
+    {
+        Ready,
+        Windup,
+        Dash,
+        Recover,
+    };
+
+    struct ChargeActorFacts
+    {
+        int16_t monsterId = 0;
+        uint32_t actorId = 0;
+        // Alive and free to act (not dying, stunned, paralysed, invisible or mid-attack).
+        bool canAct = false;
+        // Hostile to the party and aware of it (not party-controlled).
+        bool engagesParty = false;
+        // Feet.
+        std::array<float, 3> position = {};
+        // Horizontal distance between the actor's and the party's edges.
+        float partyEdgeDistance = 0.0f;
+        // The party's feet.
+        std::array<float, 3> partyPosition = {};
+    };
+
+    enum class ChargeStepResult
+    {
+        Moved,
+        // A wall, a ledge, the floor's end, a decoration or another actor in the way.
+        Blocked,
+        // The party is in the way: the hit.
+        Contact,
+    };
+
+    enum class ChargeEventKind
+    {
+        WindupStarted,
+        Hit,
+        Missed,
+    };
+
+    struct ChargeEvent
+    {
+        ChargeEventKind kind = ChargeEventKind::WindupStarted;
+        size_t actorIndex = 0;
+        const ChargeModifier *pCharge = nullptr;
+        // Unit dash direction (horizontal).
+        float directionX = 0.0f;
+        float directionY = 0.0f;
+    };
+
+    // What a world runtime does for a charge: sight to the party, one dash step (the blink spot checks: floor within
+    // maxHeightChange, walls, other bodies; it moves the actor and faces it along the dash) and the presentation and
+    // the hit of an event.
+    struct ChargeWorld
+    {
+        std::function<bool(size_t actorIndex)> hasLineOfSightToParty;
+        std::function<ChargeStepResult(size_t actorIndex, float x, float y, float maxHeightChange, float yaw)> step;
+        std::function<void(const ChargeEvent &event)> handle;
+    };
+
+    // A charge step is at most this long (so a fast dash cannot step through a thin wall or past the party), and the
+    // floor may rise or drop at most this much over one step.
+    static constexpr float ChargeStepLength = 24.0f;
+    static constexpr float ChargeStepHeightChange = 48.0f;
+    // After a hit the charger recovers this long before the cooldown runs.
+    static constexpr float ChargeHitRecoverSeconds = 0.35f;
+
+    bool chargeActive() const
+    {
+        return m_pTable != nullptr && m_pTable->hasCharge();
+    }
+    // Per fixed actor step, after the AI: starts charges, runs the wind-up timers and the dashes.
+    void updateCharges(float deltaSeconds, size_t actorCount, const std::function<ChargeActorFacts(size_t)> &actorFacts,
+        const ChargeWorld &world);
+    // Before the AI: a charging actor holds (ActorBehaviorFacts::holdActive) so its AI neither moves nor attacks.
+    void applyChargeHolds(ActorAiFrameFacts &facts) const;
+    // The actor's charge phase (Ready without a charge).
+    ChargePhase chargePhase(size_t actorIndex) const;
+    // Starts a charge now when the actor has the modifier (console, scenarios): the trigger band, sight and cooldown
+    // are not checked. False without the modifier or while it charges already.
+    bool startCharge(size_t actorIndex, int16_t monsterId, uint32_t actorId, const std::array<float, 3> &position,
+        const std::array<float, 3> &partyPosition, const ChargeWorld &world);
+    // Charges so far, and those that hit or missed (console, tests).
+    uint32_t chargeCount() const
+    {
+        return m_chargeCount;
+    }
+    uint32_t chargeHitCount() const
+    {
+        return m_chargeHitCount;
+    }
+    uint32_t chargeMissCount() const
+    {
+        return m_chargeMissCount;
+    }
+    struct ChargeHit
+    {
+        int damage = 1;
+        CombatDamageType damageType = CombatDamageType::Physical;
+        GameplayActorAttackAbility ability = GameplayActorAttackAbility::Attack1;
+        // Contact always lands (stepping aside is the defence): an attack bonus past any armour roll.
+        int attackBonus = 1000;
+    };
+
+    // A charge's hit: its fixed damage (physical), or a roll of the monster's melee attack from seed: Attack1, or
+    // Attack2 when Attack1 fires a missile and Attack2 does not (a Lancer's lance thrust).
+    static ChargeHit chargeHit(const ChargeModifier &charge, const MonsterTable::MonsterStatsEntry *pStats,
+        uint32_t seed);
+    // The party knock-back impulse of a hit (horizontal velocity along the dash and an upward velocity) that throws
+    // the party about distance units under gravity.
+    static std::array<float, 3> chargeKnockbackImpulse(float directionX, float directionY, float distance,
+        float gravity);
+    // The wind-up flash and sound, and the hit sound, queued into the world's event runtime state.
+    static void queueChargeWindupPresentation(EventRuntimeState &eventRuntimeState, const ChargeModifier &charge,
+        const std::array<float, 3> &center);
+    static void queueChargeHitPresentation(EventRuntimeState &eventRuntimeState, const ChargeModifier &charge,
+        const std::array<float, 3> &center);
+
+private:
+    struct ChargeEntry
+    {
+        bool used = false;
+        uint32_t actorId = 0;
+        int16_t monsterId = 0;
+        const ChargeModifier *pCharge = nullptr;
+        ChargePhase phase = ChargePhase::Ready;
+        float timerSeconds = 0.0f;
+        float cooldownSeconds = 0.0f;
+        float directionX = 0.0f;
+        float directionY = 0.0f;
+        float travelled = 0.0f;
+        float x = 0.0f;
+        float y = 0.0f;
+        bool stumbling = false;
+    };
+
+    ChargeEntry *ensureCharge(size_t actorIndex, int16_t monsterId, uint32_t actorId);
+    void beginWindup(ChargeEntry &entry, size_t actorIndex, const std::array<float, 3> &position,
+        const std::array<float, 3> &partyPosition, const ChargeWorld &world);
+    void endDash(ChargeEntry &entry, size_t actorIndex, bool hit, const ChargeWorld &world);
+
+    std::vector<ChargeEntry> m_charges;
+    uint32_t m_chargeCount = 0;
+    uint32_t m_chargeHitCount = 0;
+    uint32_t m_chargeMissCount = 0;
+
+private:
+    struct Entry
+    {
+        bool used = false;
+        uint32_t actorId = 0;
+        int16_t monsterId = 0;
+        const BlinkModifier *pBlink = nullptr;
+        float cooldownSeconds = 0.0f;
+        float sincePeriodicSeconds = 0.0f;
+        float sinceCombatSeconds = 1000.0f;
+        // A hit or a shield break asked for a blink, for pendingSeconds more.
+        float pendingSeconds = 0.0f;
+        uint32_t hitCount = 0;
+        uint32_t blinkCount = 0;
+        std::optional<std::array<float, 3>> threat;
+    };
+
+    Entry *ensure(size_t actorIndex, int16_t monsterId, uint32_t actorId);
+
+    const MonsterModifierTable *m_pTable = nullptr;
+    std::vector<Entry> m_entries;
+    uint32_t m_blinkCount = 0;
+};
+}

@@ -58,6 +58,8 @@ struct OutdoorMovementEffects
     bool playSplashSound = false;
     bool playLandingSound = false;
     bool playHardLandingSound = false;
+    // Taken inside a dungeon (rules size such damage by where it happens).
+    bool indoor = false;
 };
 
 struct OutdoorMovementTuning
@@ -66,7 +68,8 @@ struct OutdoorMovementTuning
     float runForwardMultiplier = 2.0f;
     float flyingRunMultiplier = 4.0f;
     float backwardWalkMultiplier = 1.0f;
-    float strafeMultiplier = 0.75f;
+    // Half the walking speed, as indoors (IndoorRenderer) and MAW: running strafes at walking speed (user, 2026-10-25).
+    float strafeMultiplier = 0.5f;
     float turboMultiplier = 12.0f;
     float flyingRunTurboMultiplier = 24.0f;
     float jumpVelocity = 480.0f;
@@ -114,9 +117,12 @@ public:
         float deltaSeconds,
         GameplayWorldMovementFrameDiagnostics *pPerformanceDiagnostics = nullptr);
     void setActorColliders(const std::vector<OutdoorActorCollision> &actorColliders);
+    void setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities);
     void setFaceAttributes(size_t bModelIndex, size_t faceIndex, uint32_t attributes);
     void updateFaceGeometries(const std::vector<OutdoorFaceGeometryData> &geometries);
     bool translateWithSupportedBModel(size_t bModelIndex, float deltaX, float deltaY, float deltaZ);
+    // Raises the party in place; it falls back from there (MAW's unstuck key).
+    void lift(float height);
     const OutdoorMoveState &state() const;
     const OutdoorMovementEvents &lastEvents() const;
     const OutdoorMovementConsequences &lastConsequences() const;
@@ -141,6 +147,8 @@ public:
     void setCollisionTraceEnabled(bool enabled, std::string mapName);
     void requestJump(std::optional<float> verticalVelocity = std::nullopt, float lift = 1.0f);
     void requestSpecialJump(float velocityX, float velocityY, float velocityZ);
+    // Adds this horizontal velocity to every movement step for `seconds`, with the world's collision (a charge).
+    void requestDash(float velocityX, float velocityY, float seconds);
 
 private:
     bool canActivateFlying() const;
@@ -150,6 +158,8 @@ private:
     OutdoorMoveState m_state;
     OutdoorPartyMovementState m_partyMovementState;
     OutdoorMovementTuning m_tuning;
+    // The map's flight ceiling (its scene's movement.flight_ceiling), restored into m_tuning whenever it resets.
+    float m_flightCeiling = 0.0f;
     OutdoorBodyDimensions m_bodyDimensions;
     OutdoorMovementEvents m_lastEvents;
     OutdoorMovementConsequences m_lastConsequences;
@@ -164,6 +174,9 @@ private:
     float m_pendingImpulseVelocityX = 0.0f;
     float m_pendingImpulseVelocityY = 0.0f;
     float m_pendingImpulseVelocityZ = 0.0f;
+    float m_dashVelocityX = 0.0f;
+    float m_dashVelocityY = 0.0f;
+    float m_dashSeconds = 0.0f;
     bool m_flyingAvailable = false;
     float m_movementAccumulatorSeconds = 0.0f;
     float m_startedFallingEventSeconds = 0.0f;

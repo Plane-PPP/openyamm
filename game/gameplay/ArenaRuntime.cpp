@@ -4,6 +4,8 @@
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/maps/MapArenaDefinition.h"
 #include "game/party/Party.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/MonsterRules.h"
 #include "game/tables/MonsterTable.h"
 
 #include <algorithm>
@@ -20,6 +22,8 @@ namespace
 constexpr const char *DifficultyVariable = "OpenYAMM.Arena.Difficulty";
 constexpr const char *RewardVariable = "OpenYAMM.Arena.RewardGold";
 constexpr const char *ClaimedVariable = "OpenYAMM.Arena.Claimed";
+// The original puts every opponent in one group, so they never fight each other (MM8 0x4bc74f).
+constexpr uint32_t ArenaOpponentGroup = 1;
 
 int32_t arenaVariable(const EventRuntimeState &state, const char *name)
 {
@@ -79,23 +83,46 @@ std::optional<ArenaChallenge> generateArenaChallenge(
         2, 100);
 
     std::vector<int16_t> candidates;
+    // The arena's other types, by their distance from the level range (the ruleset's nearest-types fallback).
+    std::vector<std::pair<int, int16_t>> outside;
     for (const auto &[id, stats] : monsters.statsEntries())
     {
-        if (id >= arena.minimumMonsterId && id <= arena.maximumMonsterId && id > 0
-            && stats.level >= minimumLevel && stats.level <= maximumLevel && stats.hitPoints > 0
+        if (id >= arena.minimumMonsterId && id <= arena.maximumMonsterId && id > 0 && stats.hitPoints > 0
             && !stats.hasKind(MonsterKind::NoArena) && !stats.hasKind(MonsterKind::Peasant)
             && monsters.findById(int16_t(id)) != nullptr)
         {
-            candidates.push_back(int16_t(id));
+            if (stats.level >= minimumLevel && stats.level <= maximumLevel)
+            {
+                candidates.push_back(int16_t(id));
+            }
+            else
+            {
+                outside.emplace_back(std::max(minimumLevel - stats.level, stats.level - maximumLevel), int16_t(id));
+            }
         }
-    }
-    if (candidates.empty())
-    {
-        return std::nullopt;
     }
     std::sort(candidates.begin(), candidates.end());
 
     std::mt19937 random(seed);
+    const size_t minimumTypes = gameRulesFor(&party).monsters.arenaMinimumTypes();
+
+    if (candidates.size() < minimumTypes && !outside.empty())
+    {
+        // Nearest first; equally near types in a random order.
+        std::shuffle(outside.begin(), outside.end(), random);
+        std::stable_sort(outside.begin(), outside.end(),
+            [](const auto &left, const auto &right) { return left.first < right.first; });
+
+        for (size_t index = 0; index < outside.size() && candidates.size() < minimumTypes; ++index)
+        {
+            candidates.push_back(outside[index].second);
+        }
+    }
+
+    if (candidates.empty())
+    {
+        return std::nullopt;
+    }
     std::uniform_int_distribution<size_t> chooseCandidate(0, candidates.size() - 1);
     std::vector<int16_t> types;
     for (size_t index = 0; index < std::min<size_t>(6, candidates.size()); ++index)
@@ -209,7 +236,8 @@ bool startArenaChallenge(
         actor.monsterInfoId = monsterId;
         actor.attributes = uint32_t(EvtActorAttribute::Aggressor);
         actor.hostilityType = 4;
-        actor.hp = int16_t(std::clamp(stats.hitPoints, 1, 32767));
+        actor.group = ArenaOpponentGroup;
+        actor.hp = std::max(1, stats.hitPoints);
         actor.radius = monster.radius;
         actor.height = monster.height;
         actor.moveSpeed = uint16_t(stats.speed);

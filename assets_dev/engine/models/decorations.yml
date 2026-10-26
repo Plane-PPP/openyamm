@@ -310,6 +310,11 @@ decorations:
   - name: ped06
     model: engine/models/mm6_deco_pedestal.glb
     height: 150
+  # MAW's teleporter plazas flank each pedestal with two of the dungeon columns (rulesets/maw/maps/).
+  - name: corinth
+    model: engine/models/mm6_deco_corinth.glb
+    height: 448
+    yaw: facing
   # The five filled statuette pedestals (shrine events SetSprite ped06 -> ped0N): the unchanged ped06 pedestal plus a
   # gold figure (mm6_new_sorpigal_3d/statuettes/), enlarged past the sprite to fill the slab. Heights are the model
   # bounds, so the pedestal stays 150 units.

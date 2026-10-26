@@ -1,5 +1,8 @@
 #pragma once
 
+#include "game/party/SkillData.h"
+
+#include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -32,8 +35,28 @@ struct SpellEntry
     int displayObjectId = 0;
     int impactDisplayObjectId = 0;
     int damageBase = 0;
+    // Damage per skill point is a roll from damageDiceMin to damageDiceSides; equal values are a fixed amount.
     int damageDiceSides = 0;
+    int damageDiceMin = 1;
+    SkillMastery requiredMastery = SkillMastery::Normal;
+    // Indexed by mastery, Normal to Grandmaster.
+    std::array<uint32_t, 4> projectileCounts = {1, 1, 1, 1};
+    // Scales the base damage and the dice of a cast at each mastery, in percent.
+    std::array<int, 4> damagePercents = {100, 100, 100, 100};
 };
+
+// A spell's numbers when the party casts it at one mastery.
+struct SpellMasteryNumbers
+{
+    int manaCost = 0;
+    int recoveryTicks = 0;
+    int damageBase = 0;
+    int damageDiceMin = 0;
+    int damageDiceMax = 0;
+    uint32_t projectileCount = 1;
+};
+
+SpellMasteryNumbers spellNumbersAtMastery(const SpellEntry &entry, SkillMastery mastery);
 
 class SpellTable
 {

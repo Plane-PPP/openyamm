@@ -38,11 +38,18 @@
 #include "game/tables/SpellFxTable.h"
 #include "game/tables/TransitionTable.h"
 
+#include <string>
 #include <vector>
 
 namespace OpenYAMM::Game
 {
 class GameDataLoader;
+class MawItemData;
+struct MawPromotionData;
+class MawCraftingData;
+class MawDimensionData;
+class MawTextData;
+class MawMapLevels;
 
 class GameDataRepository
 {
@@ -102,6 +109,15 @@ public:
     const MergedContinentSettingTable &mergedContinentSettingTable() const;
     const MergedMonsterPortraitTable &mergedMonsterPortraitTable() const;
     const MergedPotionSettingTable &mergedPotionSettingTable() const;
+    // The address of the active ruleset's player's guide (`guide_url`), empty for none.
+    const std::string &rulesetGuideUrl() const;
+    // Null unless the MAW ruleset is active.
+    const MawMapLevels *mawMapLevels() const;
+    const MawItemData *mawItemData() const;
+    const MawPromotionData *mawPromotionData() const;
+    const MawCraftingData *mawCraftingData() const;
+    const MawDimensionData *mawDimensionData() const;
+    const MawTextData *mawTextData() const;
     const MergedReagentSettingTable &mergedReagentSettingTable() const;
     const MergedComplexItemPictureTable &mergedComplexItemPictureTable() const;
     const MergedTeacherTopicTable &mergedTeacherTopicTable() const;
@@ -158,6 +174,13 @@ private:
     const MergedContinentSettingTable *m_pMergedContinentSettingTable = nullptr;
     const MergedMonsterPortraitTable *m_pMergedMonsterPortraitTable = nullptr;
     const MergedPotionSettingTable *m_pMergedPotionSettingTable = nullptr;
+    const MawMapLevels *m_pMawMapLevels = nullptr;
+    const MawItemData *m_pMawItemData = nullptr;
+    const MawPromotionData *m_pMawPromotionData = nullptr;
+    const MawCraftingData *m_pMawCraftingData = nullptr;
+    const MawDimensionData *m_pMawDimensionData = nullptr;
+    const MawTextData *m_pMawTextData = nullptr;
+    std::string m_rulesetGuideUrl;
     const MergedReagentSettingTable *m_pMergedReagentSettingTable = nullptr;
     const MergedComplexItemPictureTable *m_pMergedComplexItemPictureTable = nullptr;
     const MergedTeacherTopicTable *m_pMergedTeacherTopicTable = nullptr;

@@ -161,6 +161,12 @@ public:
     {
         m_emissiveProgramLoader = std::move(loader);
     }
+    // Loads the energy shield shell program (vs_model_shield, fs_model_shield) the first time an instance with a
+    // shield shell (ModelInstanceSystem::setShieldShell) draws, so scenes without shields cost nothing.
+    void setShieldShellProgramLoader(std::function<bgfx::ProgramHandle()> loader)
+    {
+        m_shieldShellProgramLoader = std::move(loader);
+    }
     // Whether an emitter drew into the glow view since setGlowView (the bloom chain is skipped otherwise).
     bool glowDrawn() const
     {
@@ -360,6 +366,10 @@ private:
         OpaquePass pass = OpaquePass::Shaded);
     // The additive fire standing in for a burning draw's freshly burnt surface (ModelBurn::fireWidth).
     void submitBurnFire(const Draw &draw, uint16_t viewId);
+    // The energy shield shell over a draw (ModelShieldShell), additive after the scene's opaque and blended parts,
+    // and its glow into the bloom view.
+    void submitShieldShell(const Draw &draw, uint16_t viewId, const std::array<float, 3> &cameraPosition);
+    bool ensureShieldShellProgram();
     // Placements of one static group node that share a LOD mesh in one view.
     struct StaticBatch
     {
@@ -457,6 +467,10 @@ private:
     bgfx::ProgramHandle m_skinnedInstancedProgramHandle = BGFX_INVALID_HANDLE;
     // Emissive-texture programs and their sampler, created on first use (ensureEmissivePrograms).
     std::function<ModelEmissivePrograms()> m_emissiveProgramLoader;
+    std::function<bgfx::ProgramHandle()> m_shieldShellProgramLoader;
+    bool m_shieldShellProgramAttempted = false;
+    bgfx::ProgramHandle m_shieldShellProgram = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_shieldShellUniformHandle = BGFX_INVALID_HANDLE;
     bool m_emissiveProgramsAttempted = false;
     ModelEmissivePrograms m_emissivePrograms;
     bgfx::UniformHandle m_emissiveSamplerHandle = BGFX_INVALID_HANDLE;

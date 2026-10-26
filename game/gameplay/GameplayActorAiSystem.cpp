@@ -35,11 +35,15 @@ constexpr float FleeMoveSpeedMultiplier = 2.0f;
 // 16 of the original 2048 angle units.
 constexpr float RangedOrbitStepRadians = Pi / 64.0f;
 constexpr float MaxActorMoveSpeed = 1000.0f;
+// The original speeds monsters up by 5/3 during the turn-based wait stage, before its 1000 cap (MM8 0x46fd09).
+constexpr float TurnBasedWaitMoveSpeedMultiplier = 5.0f / 3.0f;
 constexpr uint32_t IdleStandChancePercent = 25u;
 // Tactics (ActorTacticsFacts): a post counts as reached within this distance of home; band moves last at most these.
 constexpr float TacticPostArrivalRadius = 48.0f;
 constexpr float TacticPostReturnStepSeconds = 0.5f;
 constexpr float TacticBackOffSeconds = 0.4f;
+// A traverse eases out of its turn: within traverse rate x this of its goal it closes the rest exponentially.
+constexpr float TacticTraverseEaseSeconds = 0.1f;
 
 float normalizeAngleRadians(float angle)
 {
@@ -2512,6 +2516,7 @@ void applyActiveMovementCommit(
 
 void AI_HoldIdle(ActorAiCommandContext &ai);
 void AI_StartIdleStand(ActorAiCommandContext &ai);
+bool AI_TacticIdleAim(ActorAiCommandContext &ai);
 
 bool AI_CombatFlow(ActorAiCommandContext &ai, bool attackInProgress)
 {
@@ -2570,6 +2575,12 @@ bool AI_CombatFlow(ActorAiCommandContext &ai, bool attackInProgress)
     AI_ApplyCombatFlowOutcome(ai, flowOutcome);
     if (flowAction == ActorCombatFlowAction::FriendlyNearParty)
     {
+        // A friendly turret keeps scanning while the party walks by.
+        if (AI_TacticIdleAim(ai))
+        {
+            return true;
+        }
+
         if (actionSeconds <= 0.0f)
         {
             AI_StartIdleStand(ai);
@@ -3170,6 +3181,9 @@ void applyAttackImpactOutcome(const ActorAiFacts &actor, ActorAiUpdate &update)
     request.damageType = attackDamageTypeFromFacts(actor.runtime.queuedAttackAbility, actor.stats);
     request.source = actor.movement.position;
     request.target = actor.target.currentPosition;
+    request.target.x += actor.tactics.aimLead.x;
+    request.target.y += actor.tactics.aimLead.y;
+    request.target.z += actor.tactics.aimLead.z;
 
     if (actor.runtime.queuedAttackAbility == GameplayActorAttackAbility::Spell1)
     {
@@ -3409,7 +3423,8 @@ bool actorAttackReady(const ActorAiFacts &actor, const ActorAiFrameFacts &frame)
 
 // Tactics (ActorTacticsFacts, opt-in from world data). Without tactics every helper returns the native result.
 
-// The yaw after one AI step toward desiredYaw: the tactic's traverse rate, or the native instant turn.
+// The yaw after one AI step toward desiredYaw: the tactic's traverse rate, easing out near the goal (so a turret
+// settles on its target instead of stopping dead), or the native instant turn.
 float tacticFacingYaw(const ActorAiFacts &actor, const ActorAiFrameFacts *pFrame, float desiredYaw)
 {
     if (actor.tactics.traverseRadiansPerSecond <= 0.0f || pFrame == nullptr)
@@ -3417,16 +3432,42 @@ float tacticFacingYaw(const ActorAiFacts &actor, const ActorAiFrameFacts *pFrame
         return desiredYaw;
     }
 
+    const float stepSeconds = std::max(0.0f, pFrame->fixedStepSeconds);
     const float difference = normalizeAngleRadians(desiredYaw - actor.runtime.yawRadians);
-    const float step = actor.tactics.traverseRadiansPerSecond * std::max(0.0f, pFrame->fixedStepSeconds);
+    const float step = std::min(actor.tactics.traverseRadiansPerSecond * stepSeconds,
+        std::abs(difference) * (1.0f - std::exp(-stepSeconds / TacticTraverseEaseSeconds)));
     return normalizeAngleRadians(actor.runtime.yawRadians + std::clamp(difference, -step, step));
 }
 
+// Toward the target, ahead of it by the tactics' lead (ActorTacticsFacts::aimLead, zero without lead_seconds).
 float yawTowardTarget(const ActorAiFacts &actor)
 {
     return std::atan2(
-        actor.target.currentPosition.y - actor.movement.position.y,
-        actor.target.currentPosition.x - actor.movement.position.x);
+        actor.target.currentPosition.y + actor.tactics.aimLead.y - actor.movement.position.y,
+        actor.target.currentPosition.x + actor.tactics.aimLead.x - actor.movement.position.x);
+}
+
+// A scanning turret (ActorTacticsFacts::scan) that does not fight: it stands, without fidgets, and turns to a target
+// it senses but does not engage yet (a friendly turret tracks a drone until it comes within its hostility promotion
+// range), else to the facing its scan or the hold of its last aim gives (idleAimActive). False for every other actor.
+bool AI_TacticIdleAim(ActorAiCommandContext &ai)
+{
+    const ActorAiFacts &actor = ai.actor();
+    const bool tracking = actor.tactics.scan.enabled() && actor.tactics.traverseRadiansPerSecond > 0.0f
+        && actor.target.currentKind != ActorAiTargetKind::None && actor.target.currentCanSense;
+
+    if (!tracking && !actor.tactics.idleAimActive)
+    {
+        return false;
+    }
+
+    ai.setMotionState(ActorAiMotionState::Standing);
+    ai.setAnimationState(ActorAiAnimationState::Standing);
+    ai.setMovementAction(ActorAiMovementAction::Stand);
+    ai.clearMovementDirection();
+    ai.clearVelocity();
+    ai.faceYaw(tacticFacingYaw(actor, ai.frame(), tracking ? yawTowardTarget(actor) : actor.tactics.idleAimYawRadians));
+    return true;
 }
 
 // A post's leash: true when the actor is already at least the leash from home and the move would take it further.
@@ -3878,8 +3919,8 @@ bool AI_ContinueCurrentAction(ActorAiCommandContext &ai)
     if (!actor.runtime.attackImpactTriggered && actor.target.currentKind != ActorAiTargetKind::None
         && actor.target.currentCanSense)
     {
-        const float dx = actor.target.currentPosition.x - actor.movement.position.x;
-        const float dy = actor.target.currentPosition.y - actor.movement.position.y;
+        const float dx = actor.target.currentPosition.x + actor.tactics.aimLead.x - actor.movement.position.x;
+        const float dy = actor.target.currentPosition.y + actor.tactics.aimLead.y - actor.movement.position.y;
         if (dx * dx + dy * dy > 0.0001f)
         {
             // Release already aims at the current target. Keep windup facing consistent with that aim.
@@ -4043,6 +4084,11 @@ void AI_HoldPost(ActorAiCommandContext &ai, float actionSeconds)
         return;
     }
 
+    if (AI_TacticIdleAim(ai))
+    {
+        return;
+    }
+
     if (actor.runtime.motionState == ActorAiMotionState::Wandering)
     {
         AI_Stand(ai);
@@ -4081,6 +4127,11 @@ void AI_StandOrBored(ActorAiCommandContext &ai, float actionSeconds)
 
     if (!actor.movement.movementAllowed || actor.status.hostileToParty || actor.movement.wanderRadius <= 0.0f)
     {
+        if (!actor.movement.movementAllowed && AI_TacticIdleAim(ai))
+        {
+            return;
+        }
+
         if (actionSeconds <= 0.0f)
         {
             AI_StartIdleStand(ai);
@@ -4320,6 +4371,10 @@ ActorAiUpdate updateBackgroundActor(const ActorAiFacts &actor, const ActorAiFram
     ai.setAnimationTimeTicks(actor.runtime.animationTimeTicks + frame.fixedStepSeconds * ActorAiTicksPerSecond);
     ai.setActionSeconds(remainingSeconds);
     ai.setIdleDecisionSeconds(remainingSeconds);
+    if (AI_TacticIdleAim(ai))
+    {
+        return ai.finish();
+    }
     if (remainingSeconds > 0.0f)
     {
         AI_HoldIdle(ai);
@@ -4390,6 +4445,7 @@ void appendActorUpdate(ActorAiFrameResult &result, const ActorAiUpdate &update)
             projectileRequest.sourceActorIndex = update.actorIndex;
             projectileRequest.ability = update.attackRequest->ability;
             projectileRequest.targetKind = update.attackRequest->targetKind;
+            projectileRequest.targetActorIndex = update.attackRequest->targetActorIndex;
             projectileRequest.damage = update.attackRequest->damage;
             projectileRequest.attackBonus = update.attackRequest->attackBonus;
             projectileRequest.damageType = update.attackRequest->damageType;
@@ -4471,6 +4527,19 @@ ActorAiFrameResult GameplayActorAiSystem::updateActors(const ActorAiFrameFacts &
 
     updateBackgroundActors(facts, result);
     updateActiveActors(facts, result);
+
+    if (facts.turnBased.mode == ActorTurnBasedMode::MoveOnly)
+    {
+        for (ActorAiUpdate &update : result.actorUpdates)
+        {
+            if (update.movementIntent.applyMovement && update.movementIntent.moveSpeed > 0.0f)
+            {
+                update.movementIntent.moveSpeed = std::min(
+                    update.movementIntent.moveSpeed * TurnBasedWaitMoveSpeedMultiplier,
+                    MaxActorMoveSpeed);
+            }
+        }
+    }
 
     return result;
 }

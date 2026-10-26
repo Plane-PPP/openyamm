@@ -2,6 +2,8 @@
 
 #include "game/maps/MapItemSourceData.h"
 
+#include <cstddef>
+#include <optional>
 #include <string>
 
 namespace OpenYAMM::Game
@@ -17,4 +19,15 @@ bool applyWorldItemPolicyActions(
     Party &party,
     const ItemTable &itemTable);
 std::string formatWorldItemPickupStatusText(const InventoryItem &item, const ItemTable &itemTable);
+
+// Where a ground item the party picked up went: a member's bag tagged for it (ItemRules::bagTag, MAW's crafting bag),
+// else the inventory as Party::tryGrantInventoryItem gives it.
+struct StoredPickup
+{
+    size_t memberIndex = 0;
+    bool taggedBag = false;
+};
+std::optional<StoredPickup> storePickedUpItem(Party &party, const InventoryItem &item, const ItemTable *pItemTable);
+// " -- <name>" when a tagged bag of a member other than the active one took the item (zzzMaw_CraftingBag.lua:240-245).
+std::string storedPickupOwnerSuffix(const Party &party, const StoredPickup &stored);
 }

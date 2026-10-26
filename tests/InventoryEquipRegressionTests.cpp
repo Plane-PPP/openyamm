@@ -536,7 +536,8 @@ TEST_CASE("inventory item use potions and horseshoe apply the expected effects")
         0,
         cureWounds,
         gameData.itemTable,
-        &gameData.readableScrollTable);
+        &gameData.readableScrollTable,
+        &gameData.mergedPotionSettingTable);
 
     OpenYAMM::Game::InventoryItem magicPotion = {};
     magicPotion.objectDescriptionId = 223;
@@ -545,7 +546,8 @@ TEST_CASE("inventory item use potions and horseshoe apply the expected effects")
         0,
         magicPotion,
         gameData.itemTable,
-        &gameData.readableScrollTable);
+        &gameData.readableScrollTable,
+        &gameData.mergedPotionSettingTable);
 
     OpenYAMM::Game::InventoryItem blackPotion = {};
     blackPotion.objectDescriptionId = 266;
@@ -554,7 +556,8 @@ TEST_CASE("inventory item use potions and horseshoe apply the expected effects")
         0,
         blackPotion,
         gameData.itemTable,
-        &gameData.readableScrollTable);
+        &gameData.readableScrollTable,
+        &gameData.mergedPotionSettingTable);
 
     OpenYAMM::Game::InventoryItem horseshoe = {};
     horseshoe.objectDescriptionId = 656;
@@ -650,6 +653,38 @@ TEST_CASE("equip plan requires the skill and respects the doll type")
 
     CHECK(OpenYAMM::Game::GameMechanics::canCharacterEquipItem(character, *pLeatherArmor, &dollType));
     CHECK_FALSE(OpenYAMM::Game::GameMechanics::canCharacterEquipItem(character, *pHelm, &dollType));
+}
+
+TEST_CASE("clubs equip without a learned skill")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+
+    OpenYAMM::Game::Character character = {};
+
+    OpenYAMM::Game::CharacterDollTypeEntry dollType = {};
+    dollType.canEquipArmor = true;
+    dollType.canEquipHelm = true;
+    dollType.canEquipWeapon = true;
+
+    for (const uint32_t clubItemId : {76u, 860u, 1660u})
+    {
+        CAPTURE(clubItemId);
+        const OpenYAMM::Game::ItemDefinition *pClub = gameData.itemTable.get(clubItemId);
+        REQUIRE(pClub != nullptr);
+
+        CHECK(OpenYAMM::Game::GameMechanics::canCharacterEquipItem(character, *pClub, &dollType));
+
+        const std::optional<OpenYAMM::Game::CharacterEquipPlan> plan =
+            OpenYAMM::Game::GameMechanics::resolveCharacterEquipPlan(
+                character,
+                *pClub,
+                &gameData.itemTable,
+                &dollType,
+                std::nullopt,
+                false);
+        REQUIRE(plan.has_value());
+        CHECK(plan->targetSlot == OpenYAMM::Game::EquipmentSlot::MainHand);
+    }
 }
 
 TEST_CASE("wetsuit equip rules require empty equipment except blasters")

@@ -5,6 +5,7 @@
 #include "game/ui/GameplayUiController.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace OpenYAMM::Game
@@ -57,6 +58,8 @@ public:
         bool castLatch = false;
         bool readyMemberAvailableWhileHeld = false;
         bool attackFallbackRequested = false;
+        // The extra quick spell slot whose key began the held cast (Quick Spell 1-4); none for the quick spell.
+        std::optional<size_t> extraSlot;
 
         void clear();
     };

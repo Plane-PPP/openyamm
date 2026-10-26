@@ -2,6 +2,7 @@
 
 #include "engine/AssetFileSystem.h"
 #include "game/arcomage/ArcomageTypes.h"
+#include "game/content/RulesetDefinition.h"
 #include "game/tables/AwardTable.h"
 #include "game/tables/ChestTable.h"
 #include "game/tables/CharacterInspectTable.h"
@@ -35,6 +36,12 @@
 #include "game/tables/PortraitFxEventTable.h"
 #include "game/tables/PotionMixingTable.h"
 #include "game/tables/PotionNoteTable.h"
+#include "game/rules/maw/MawCraftingData.h"
+#include "game/rules/maw/MawDimensionMaps.h"
+#include "game/rules/maw/MawTexts.h"
+#include "game/rules/maw/MawItemData.h"
+#include "game/rules/maw/MawPromotions.h"
+#include "game/rules/maw/MawMonsterLevels.h"
 #include "game/tables/ReadableScrollTable.h"
 #include "game/tables/RaceStartingStatsTable.h"
 #include "game/tables/RosterTable.h"
@@ -46,6 +53,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -64,6 +72,15 @@ class GameDataLoader
 {
 public:
     void setActiveWorldId(const std::string &worldId);
+    // The ruleset whose table overrides the next load applies; Standard (no overrides) until set.
+    void setActiveRuleset(const RulesetDefinition &ruleset);
+    const RulesetDefinition &activeRuleset() const;
+    // The paths of the active ruleset's table contributions the last load applied, so a test can find one that no
+    // loader reads (audit DAT-1: map_stats.txt was skipped for weeks).
+    const std::set<std::string> &appliedRulesetContributions() const;
+    // The active ruleset's package directory ("engine/rulesets/<id>/"), whose map and event overlays load after the worlds';
+    // empty for Standard.
+    std::string activeRulesetRoot() const;
     void setInitialMapFileName(const std::string &fileName);
     // Actor models (settings `actor_models`): the merged models/actors.yml of every mounted world, or only
     // overrideManifestPath when it is set. Map loads then skip the sprites of the monsters they bind.
@@ -147,6 +164,14 @@ public:
     const MergedNewsProfessionTopicTable &getMergedNewsProfessionTopicTable() const;
     const MergedMonsterPortraitTable &getMergedMonsterPortraitTable() const;
     const MergedPotionSettingTable &getMergedPotionSettingTable() const;
+    // The MAW ruleset's map level data; null unless MAW is the active ruleset.
+    const MawMapLevels *mawMapLevels() const;
+    // The MAW ruleset's item data (artifacts, legendary affixes); null unless MAW is the active ruleset.
+    const MawItemData *mawItemData() const;
+    const MawPromotionData *mawPromotionData() const;
+    const MawCraftingData *mawCraftingData() const;
+    const MawDimensionData *mawDimensionData() const;
+    const MawTextData *mawTextData() const;
     const MergedReagentSettingTable &getMergedReagentSettingTable() const;
     const MergedAdditionalUiTable &getMergedAdditionalUiTable() const;
     const MergedBolsterFormulaTable &getMergedBolsterFormulaTable() const;
@@ -231,11 +256,26 @@ private:
         const std::string &virtualPath,
         std::vector<std::vector<std::string>> &rows
     );
+    // A whole data file (not a text table) under the active ruleset: its replacement if it has one.
+    std::optional<std::string> readRulesetDataFile(
+        const Engine::AssetFileSystem &assetFileSystem,
+        const std::string &virtualPath
+    ) const;
+    bool loadPotionEffects(const Engine::AssetFileSystem &assetFileSystem);
+    bool loadRulesetData(const Engine::AssetFileSystem &assetFileSystem);
+    // Applies the active ruleset's override or replacement of this engine table, if it has one.
+    bool applyActiveRulesetTable(
+        const Engine::AssetFileSystem &assetFileSystem,
+        const std::string &virtualPath,
+        std::vector<std::vector<std::string>> &rows
+    ) const;
 
     bool ensureActorModelManifest(const Engine::AssetFileSystem &assetFileSystem);
 
     std::vector<LoadedTableSummary> m_loadedTables;
     std::string m_activeWorldId = "mm8";
+    RulesetDefinition m_activeRuleset = standardRulesetDefinition();
+    mutable std::set<std::string> m_appliedRulesetContributions;
     bool m_actorModelsEnabled = false;
     std::string m_actorModelManifestOverride;
     std::shared_ptr<const ActorModelManifest> m_pActorModelManifest;
@@ -256,6 +296,7 @@ private:
     ObjectTable m_objectTable;
     SpellTable m_spellTable;
     ItemTable m_itemTable;
+    void recordActiveRulesetSchema();
     std::unordered_map<std::string, uint32_t> m_loadedContentPackageSchemas = {{"engine", 1}};
     StandardItemEnchantTable m_standardItemEnchantTable;
     SpecialItemEnchantTable m_specialItemEnchantTable;
@@ -301,6 +342,12 @@ private:
     MergedNewsProfessionTopicTable m_mergedNewsProfessionTopicTable;
     MergedMonsterPortraitTable m_mergedMonsterPortraitTable;
     MergedPotionSettingTable m_mergedPotionSettingTable;
+    std::optional<MawMapLevels> m_mawMapLevels;
+    std::optional<MawItemData> m_mawItemData;
+    std::optional<MawPromotionData> m_mawPromotionData;
+    std::optional<MawCraftingData> m_mawCraftingData;
+    std::optional<MawDimensionData> m_mawDimensionData;
+    std::optional<MawTextData> m_mawTextData;
     MergedReagentSettingTable m_mergedReagentSettingTable;
     MergedAdditionalUiTable m_mergedAdditionalUiTable;
     MergedBolsterFormulaTable m_mergedBolsterFormulaTable;

@@ -1798,6 +1798,8 @@ its own."		End deliver Fire Resistance Scrolls quest	654. James		James
 1794	Runaway Chaos				Runaway Chaos	1092
 1795
 10000	Dimensional travel				Verdant	803
+10001	Path of Light				Enroth dark arts	
+10002	Path of Dark				Enroth dark arts	
 29000	Expert Lethal Strike	0	Lethal Strike v0.4	29000	minotaur
 29001	Master Lethal Strike	0	Lethal Strike v0.4	29001	minotaur
 29002	Grandmaster Lethal Strike	0	Lethal Strike v0.4	29002	minotaur

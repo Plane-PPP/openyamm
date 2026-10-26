@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <string_view>
 #include <vector>
 
@@ -224,6 +225,18 @@ bool loadRegressionGameData(RegressionGameData &data, std::string &failure)
         failure = "could not load merged potion setting table for regression tests";
         return false;
     }
+
+    const std::optional<std::string> potionEffectsText =
+        assetFileSystem.readTextFile(engineDataTablePath("potion_effects.yml"));
+    Game::PotionEffectTable potionEffects;
+
+    if (!potionEffectsText || !potionEffects.loadFromYaml(*potionEffectsText, failure))
+    {
+        failure = "could not load potion effects for regression tests: " + failure;
+        return false;
+    }
+
+    data.mergedPotionSettingTable.setEffects(std::move(potionEffects));
 
     data.itemTable.applyPotionSettings(data.mergedPotionSettingTable);
 

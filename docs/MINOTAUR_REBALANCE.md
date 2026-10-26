@@ -1,3 +1,12 @@
+# OpenYAMM 1.13 / Minotaur v0.4 + Luck — integration, Windows checks pending
+
+Port to latest official v1.13; previous balance retained. ZIP update base:
+`minotaur-1.10-b7e80f0583df-14-1` (user confirmed installation on 2026-10-26).
+Installer now detects extraction directly into the game root as well as a child folder.
+Lethal Strike moves to skill ID48 to preserve new upstream IDs; named saved skills are retained.
+New save header OYMINO1/v130 maps to schema129; old mod95 remains explicitly schema94.
+[Compatibility review](research/openyamm-1.13-compatibility.md). Windows packaging and manual gameplay pending.
+
 # Minotaur Rebalance — описание мода
 
 ## Текущая база — OpenYAMM1.10 / мод v0.4 + Luck

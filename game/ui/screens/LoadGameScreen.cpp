@@ -1,5 +1,6 @@
 #include "game/ui/screens/LoadGameScreen.h"
 
+#include "game/content/RulesetDefinition.h"
 #include "game/maps/SaveGame.h"
 #include "engine/UserDataPaths.h"
 
@@ -13,6 +14,7 @@
 #include <cstring>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <chrono>
@@ -170,18 +172,46 @@ bool decodeBmpBytesToBgra(const std::vector<uint8_t> &bmpBytes, int &width, int 
     return true;
 }
 
+// The saves folder's save files by name, size and time, so a list read earlier can tell it is out of date (saves
+// copied in from outside, or written by another game).
+uint64_t saveFolderSignature()
+{
+    uint64_t signature = 14695981039346656037ull;
+    const auto mix = [&signature](uint64_t value)
+    {
+        signature = (signature ^ value) * 1099511628211ull;
+    };
+    std::error_code error;
+
+    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator("saves", error))
+    {
+        if (!entry.is_regular_file(error) || toLowerCopy(entry.path().extension().string()) != ".oysav")
+        {
+            continue;
+        }
+
+        mix(std::hash<std::string>{}(entry.path().filename().string()));
+        mix(entry.file_size(error));
+        mix(uint64_t(entry.last_write_time(error).time_since_epoch().count()));
+    }
+
+    return signature;
+}
+
 } // namespace
 
 LoadGameScreen::LoadGameScreen(const Engine::AssetFileSystem &assetFileSystem, const GameDataRepository &gameData,
                                LoadAction loadAction, CancelAction cancelAction, bool fromGameplay,
-                               GameAudioSystem *pAudio)
+                               GameAudioSystem *pAudio, std::string loadWarning)
     : MenuDesignScreen(assetFileSystem, fromGameplay, pAudio), m_pGameData(&gameData),
-      m_loadAction(std::move(loadAction)), m_cancelAction(std::move(cancelAction)), m_fromGameplay(fromGameplay)
+      m_loadAction(std::move(loadAction)), m_cancelAction(std::move(cancelAction)), m_fromGameplay(fromGameplay),
+      m_loadWarning(std::move(loadWarning))
 {
 }
 
 std::vector<LoadGameScreen::SaveSlotSummary> LoadGameScreen::s_cachedSlots;
 bool LoadGameScreen::s_cachedSlotsValid = false;
+uint64_t LoadGameScreen::s_cachedSignature = 0;
 size_t LoadGameScreen::s_cachedNewerSaveCount = 0;
 
 void LoadGameScreen::invalidateCachedSaveSlots()
@@ -200,7 +230,12 @@ void LoadGameScreen::prepareForFirstFrame()
     loadDesign("gameplay/load_game");
     preloadLayoutAssets(m_designLayouts);
 
-    if (s_cachedSlotsValid && !m_saveAction)
+    loadSaveSlots();
+}
+
+void LoadGameScreen::loadSaveSlots()
+{
+    if (s_cachedSlotsValid && !m_saveAction && s_cachedSignature == saveFolderSignature())
     {
         loadCachedSaveSlots();
     }
@@ -212,23 +247,18 @@ void LoadGameScreen::prepareForFirstFrame()
 
 void LoadGameScreen::onEnter()
 {
-    if (!m_slotsLoaded)
+    // The folder may have changed since the list was read: saves copied in, or written by another game.
+    if (!m_slotsLoaded || m_slotsSignature != saveFolderSignature())
     {
-        if (s_cachedSlotsValid && !m_saveAction)
-        {
-            loadCachedSaveSlots();
-        }
-        else
-        {
-            refreshSaveSlots();
-        }
+        loadSaveSlots();
     }
 }
 
 void LoadGameScreen::configureSave(SaveAction action, const std::string &location, float gameMinutes,
-                                   const std::vector<uint8_t> &previewBmp)
+                                   const std::vector<uint8_t> &previewBmp, SaveFoodCost foodCost)
 {
     m_saveAction = std::move(action);
+    m_foodCost = foodCost;
     m_currentLocation = location;
     m_saveName = location;
     const CivilTime time = civilTimeFromGameMinutes(gameMinutes);
@@ -315,7 +345,9 @@ void LoadGameScreen::requestLoad()
     };
     if (m_fromGameplay)
     {
-        confirm("Load Adventure?", "Unsaved progress in the current adventure will be lost.", {"Cancel", "Load"},
+        confirm("Load Adventure?",
+                m_loadWarning.empty() ? "Unsaved progress in the current adventure will be lost." : m_loadWarning,
+                {"Cancel", "Load"},
                 [load](int choice)
                 {
                     if (choice == 1)
@@ -499,6 +531,7 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
 {
     static_cast<void>(deltaSeconds);
     const bool saving = bool(m_saveAction);
+    const bool saveAffordable = m_foodCost.food <= m_foodCost.carried;
     const std::string prefix = saving ? "SaveGame" : "LoadGame";
     loadDesign(saving ? "gameplay/save_game" : "gameplay/load_game");
     beginDesign(prefix);
@@ -508,8 +541,38 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
         cancel();
         return;
     }
+    if (drawRulesetFilters(prefix))
+    {
+        m_scrollOffset = 0;
+        m_revealSelection = true;
+        if (saving)
+        {
+            m_newSave = true;
+            m_saveName = m_currentLocation;
+        }
+    }
+    // Rows of the list: the new-save row when saving, then the shown slots.
+    const std::vector<size_t> shown = shownSlots();
+    const size_t firstSlotRow = saving ? 1 : 0;
+    std::optional<size_t> selectedSlotRow;
+    for (size_t row = 0; row < shown.size(); ++row)
+    {
+        if (shown[row] == m_selectedIndex)
+        {
+            selectedSlotRow = row;
+        }
+    }
+    if (!selectedSlotRow && !shown.empty())
+    {
+        m_selectedIndex = shown.front();
+        selectedSlotRow = 0;
+    }
+    if (saving && !selectedSlotRow)
+    {
+        m_newSave = true;
+    }
     const Rect viewport = designRect(prefix + "ListViewport");
-    const size_t total = m_slots.size() + (saving ? 1 : 0);
+    const size_t total = shown.size() + firstSlotRow;
     const float unit = designScale();
     const Rect firstRow = designRect(prefix + "SlotRow0");
     const float rowPitch = firstRow.height / unit + 3.2f;
@@ -527,10 +590,14 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
                           visibleRows * (int(keyPressed(SDL_SCANCODE_PAGEDOWN)) - int(keyPressed(SDL_SCANCODE_PAGEUP)));
         if (delta != 0)
         {
-            const int current = saving && m_newSave ? 0 : int(m_selectedIndex) + (saving ? 1 : 0);
+            const int current = saving && m_newSave ? 0 : int(selectedSlotRow.value_or(0) + firstSlotRow);
             const size_t selected = size_t(std::clamp(current + delta, 0, int(total) - 1));
             m_newSave = saving && selected == 0;
-            m_selectedIndex = saving && selected > 0 ? selected - 1 : selected;
+            if (!m_newSave)
+            {
+                selectedSlotRow = selected - firstSlotRow;
+                m_selectedIndex = shown[*selectedSlotRow];
+            }
             if (saving)
             {
                 m_saveName = m_newSave ? m_currentLocation : m_slots[m_selectedIndex].fileLabel;
@@ -540,7 +607,7 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
     }
     if (m_revealSelection)
     {
-        const size_t selected = saving && m_newSave ? 0 : m_selectedIndex + (saving ? 1 : 0);
+        const size_t selected = saving && m_newSave ? 0 : selectedSlotRow.value_or(0) + firstSlotRow;
         const float top = selected * rowPitch;
         m_scrollOffset = std::clamp(m_scrollOffset, top + firstRow.height / unit - viewport.height / unit, top);
         m_revealSelection = false;
@@ -551,7 +618,7 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
     for (size_t index = firstIndex; index < total; ++index)
     {
         const bool newRow = saving && index == 0;
-        const size_t slotIndex = saving && index > 0 ? index - 1 : index;
+        const size_t slotIndex = newRow ? 0 : shown[index - firstSlotRow];
         const SaveSlotSummary *pSlot = newRow ? nullptr : &m_slots[slotIndex];
         const std::string id = prefix + "SlotRow" + std::to_string(index);
         Rect rect = firstRow;
@@ -595,15 +662,16 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
         }
     }
     setDesignClip(std::nullopt);
-    const SaveSlotSummary *pSlot = !m_newSave && m_selectedIndex < m_slots.size() ? &m_slots[m_selectedIndex] : nullptr;
+    const SaveSlotSummary *pSlot = !m_newSave && selectedSlotRow ? &m_slots[m_selectedIndex] : nullptr;
     if (pSlot || saving)
     {
         const std::string kind = !pSlot                              ? "New save"
                                  : pSlot->path.stem() == "autosave"  ? "Automatic"
                                  : pSlot->path.stem() == "quicksave" ? "Quick"
                                                                      : "Manual";
-        label(prefix + "SelectedWorldAndKind",
-              pSlot && !pSlot->worldName.empty() ? pSlot->worldName + " - " + kind : kind);
+        const std::string worldAndKind =
+            pSlot && !pSlot->worldName.empty() ? pSlot->worldName + " - " + kind : kind;
+        label(prefix + "SelectedWorldAndKind", worldAndKind);
         label(prefix + "SelectedName", pSlot ? pSlot->locationName : m_currentLocation);
         const Rect preview = designRect(prefix + "PreviewRect");
         const auto drawPreview =
@@ -641,16 +709,29 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
                 setTextEditing(true);
             }
             label(prefix + "NameField", m_saveName + (m_nameEditing ? "_" : ""));
+            if (m_foodCost.food > 0 || m_foodCost.foodWithEnemiesNear > 0)
+            {
+                std::string text = m_foodCost.food > 0 ? "Saving here costs " + std::to_string(m_foodCost.food) +
+                                                             " food, you carry " + std::to_string(m_foodCost.carried)
+                                                       : std::string("Saving here is free now");
+                if (m_foodCost.foodWithEnemiesNear > m_foodCost.food)
+                {
+                    text += "\nWith enemies near: " + std::to_string(m_foodCost.foodWithEnemiesNear) + " food";
+                }
+                label(prefix + "FoodCost", text, saveAffordable ? 0 : 0xff5c5ce0u);
+            }
         }
         else
         {
             label(prefix + "SelectedMetadata", pSlot->fileLabel + "\nSaved " + pSlot->savedAt);
+            label(prefix + "SelectedRuleset", pSlot->rulesetBadge);
         }
     }
     else
     {
-        textInRect(viewport, "No saved games\nStart a new game from the main menu.", "menu_arrus", 15, 0xffc6dfeau,
-                   true);
+        const std::string text = m_slots.empty() ? "No saved games\nStart a new game from the main menu."
+                                                 : "No saved games with this ruleset";
+        textInRect(viewport, text, "menu_arrus", 15, 0xffc6dfeau, true);
     }
     if (action(prefix + "CancelButton"))
     {
@@ -661,7 +742,8 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
     {
         requestDelete();
     }
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(OPENYAMM_IOS)
+    // Phones pick no folders here; on iOS, Finder and the Files app reach the saves in the app's Documents folder.
     if (!saving)
     {
         if (action(prefix + "ImportButton", m_folderPick == nullptr))
@@ -676,10 +758,15 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
         finishImportSaves();
     }
 #endif
-    if (action(prefix + "ConfirmButton", saving ? !m_saveName.empty() : pSlot != nullptr) || m_commitRequested)
+    if (action(prefix + "ConfirmButton", saving ? !m_saveName.empty() && saveAffordable : pSlot != nullptr) ||
+        m_commitRequested)
     {
         m_commitRequested = false;
-        if (saving)
+        if (saving && !saveAffordable)
+        {
+            m_error = "Not enough food: saving here costs " + std::to_string(m_foodCost.food) + ".";
+        }
+        else if (saving)
         {
             commitSave();
         }
@@ -708,6 +795,8 @@ void LoadGameScreen::refreshSaveSlots()
     m_slotsLoaded = false;
     m_newerSaveCount = 0;
     std::filesystem::create_directories("saves");
+    m_slotsSignature = saveFolderSignature();
+    std::unordered_map<std::string, std::string> rulesetNames;
 
     for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator("saves"))
     {
@@ -738,6 +827,25 @@ void LoadGameScreen::refreshSaveSlots()
         slot.fileLabel = !saveData->saveName.empty() ? saveData->saveName : friendlySaveFileLabel(entry.path());
         slot.locationName = saveData->mapFileName;
         slot.populated = true;
+        slot.rulesetId = saveData->ruleset.id;
+
+        if (!saveData->ruleset.isStandard())
+        {
+            auto rulesetName = rulesetNames.find(saveData->ruleset.id);
+
+            if (rulesetName == rulesetNames.end())
+            {
+                std::string rulesetError;
+                const std::optional<RulesetDefinition> ruleset =
+                    loadRulesetDefinition(assetFileSystem(), saveData->ruleset.id, rulesetError);
+                rulesetName = rulesetNames.emplace(
+                    saveData->ruleset.id,
+                    ruleset ? ruleset->name : saveData->ruleset.id + " (not installed)").first;
+            }
+
+            slot.rulesetBadge = describeRulesetSelection(saveData->ruleset, rulesetName->second);
+        }
+
         const CivilTime civilTime = civilTimeFromGameMinutes(saveData->savedGameMinutes);
         slot.weekdayClockText = formatClock(civilTime);
         slot.dateText = formatDate(civilTime);
@@ -801,10 +909,12 @@ void LoadGameScreen::refreshSaveSlots()
     m_lastClickedSlotTicks = 0;
     m_newSave = bool(m_saveAction);
     m_slotsLoaded = true;
+    refreshRulesetFilters();
     if (!m_saveAction)
     {
         s_cachedSlots = m_slots;
         s_cachedNewerSaveCount = m_newerSaveCount;
+        s_cachedSignature = m_slotsSignature;
         s_cachedSlotsValid = true;
     }
 }
@@ -813,6 +923,7 @@ void LoadGameScreen::loadCachedSaveSlots()
 {
     m_slots = s_cachedSlots;
     m_newerSaveCount = s_cachedNewerSaveCount;
+    m_slotsSignature = s_cachedSignature;
 
     if (m_selectedIndex >= m_slots.size())
     {
@@ -824,6 +935,108 @@ void LoadGameScreen::loadCachedSaveSlots()
     m_lastClickedSlotTicks = 0;
     m_newSave = bool(m_saveAction);
     m_slotsLoaded = true;
+    refreshRulesetFilters();
+}
+
+void LoadGameScreen::refreshRulesetFilters()
+{
+    // Only the rulesets the saves were played with, so a player who never started a game of another ruleset sees no
+    // filter (audit STD2-M2). Their names are read from the ruleset packages once, when a second ruleset appears.
+    static std::unordered_map<std::string, std::string> s_rulesetNames;
+    m_rulesetFilters.clear();
+
+    for (const SaveSlotSummary &slot : m_slots)
+    {
+        const bool listed = std::any_of(m_rulesetFilters.begin(), m_rulesetFilters.end(),
+                                        [&slot](const RulesetFilter &filter) { return filter.id == slot.rulesetId; });
+
+        if (!listed)
+        {
+            m_rulesetFilters.push_back({slot.rulesetId, slot.rulesetId});
+        }
+    }
+
+    if (m_rulesetFilters.size() >= 2 && s_rulesetNames.empty())
+    {
+        std::vector<RulesetDefinition> rulesets;
+        std::string error;
+        loadAvailableRulesets(assetFileSystem(), rulesets, error);
+
+        for (const RulesetDefinition &ruleset : rulesets)
+        {
+            s_rulesetNames[ruleset.id] = ruleset.isStandard() ? "Standard" : ruleset.name;
+        }
+    }
+
+    for (RulesetFilter &filter : m_rulesetFilters)
+    {
+        const auto name = s_rulesetNames.find(filter.id);
+        filter.name = name != s_rulesetNames.end() ? name->second : filter.id;
+    }
+
+    std::stable_sort(m_rulesetFilters.begin(), m_rulesetFilters.end(),
+        [](const RulesetFilter &left, const RulesetFilter &right)
+        {
+            return (left.id == StandardRulesetId) != (right.id == StandardRulesetId)
+                ? left.id == StandardRulesetId
+                : left.id < right.id;
+        });
+
+    const bool filterListed =
+        std::any_of(m_rulesetFilters.begin(), m_rulesetFilters.end(),
+                    [this](const RulesetFilter &filter) { return filter.id == m_rulesetFilter; });
+
+    if (!filterListed)
+    {
+        m_rulesetFilter.clear();
+    }
+}
+
+std::vector<size_t> LoadGameScreen::shownSlots() const
+{
+    std::vector<size_t> shown;
+
+    for (size_t index = 0; index < m_slots.size(); ++index)
+    {
+        if (m_rulesetFilter.empty() || m_slots[index].rulesetId == m_rulesetFilter)
+        {
+            shown.push_back(index);
+        }
+    }
+
+    return shown;
+}
+
+bool LoadGameScreen::drawRulesetFilters(const std::string &prefix)
+{
+    if (m_rulesetFilters.size() < 2)
+    {
+        return false;
+    }
+
+    const Rect area = designRect(prefix + "RulesetFilters");
+    const float unit = designScale();
+    const float gap = 6 * unit;
+    const size_t count = m_rulesetFilters.size() + 1;
+    const float width = std::min(96 * unit, (area.width - gap * float(count - 1)) / float(count));
+    bool changed = false;
+
+    for (size_t index = 0; index < count; ++index)
+    {
+        const std::string id = index == 0 ? std::string() : m_rulesetFilters[index - 1].id;
+        const std::string text = index == 0 ? "All" : m_rulesetFilters[index - 1].name;
+        const Rect rect = {area.x + area.width - float(count - index) * (width + gap) + gap, area.y, width,
+                           area.height};
+
+        if (button(prefix + "RulesetFilter" + std::to_string(index), rect, text, "tab", true, id == m_rulesetFilter)
+            && id != m_rulesetFilter)
+        {
+            m_rulesetFilter = id;
+            changed = true;
+        }
+    }
+
+    return changed;
 }
 
 bool LoadGameScreen::tryLoadSelectedSlot()

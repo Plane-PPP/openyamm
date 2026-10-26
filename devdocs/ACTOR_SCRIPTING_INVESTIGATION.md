@@ -141,17 +141,45 @@ AI step.
 ```yaml
 schema: openyamm.actorBehaviors.v1
 tactics:
-  10065: {traverse_degrees_per_second: 120, fire_within_degrees: 5, post: {}}    # a wall turret
+  10065: {traverse_degrees_per_second: 120, fire_within_degrees: 5, post: {}, lead_seconds: 0.25,   # a wall turret
+          scan: {half_width_degrees: 55, degrees_per_second: 16, pause_seconds: [0.8, 2.6], pitch_degrees: 5,
+                 hold_seconds: 3.5}}
   10067: {ranged_band: [768, 2304], post: {leash: 1536}}                         # a rifle guard
 ```
 
 - **`traverse_degrees_per_second`** (with `fire_within_degrees`, default 6): the actor turns toward its target at this
   rate instead of snapping to it, keeps tracking it between attacks and through the wind-up, and starts an attack only
-  once it is within the tolerance. It also keeps turning toward a target it cannot shoot (no line of sight).
+  once it is within the tolerance. It also keeps turning toward a target it cannot shoot (no line of sight). The turn
+  eases out over its last traverse x 0.1 s, so it settles on a target instead of stopping dead. Such a monster gets no
+  instant reaction turns from the world runtimes (toward an attacker on a hit or a stun, toward the party when turned
+  hostile: `ActorBehaviorRuntime::turnsAtTraverseRate`); its AI turns it there at the traverse rate.
+- **`lead_seconds`** (needs a traverse rate, 0–2): aims ahead of a moving target by its velocity times this: the facing,
+  the published aim (the barrel) and the shot's target point (`ActorTacticsFacts::aimLead`). The velocity is
+  estimated from the target's positions over about 0.3 s (`ActorBehaviorRuntime`), reset on a target change.
+- **`scan`** (needs a traverse rate): a stationary turret's idle behaviour (`game/gameplay/ActorTurretScan.h`). With no
+  target it sweeps its facing around its placement facing (`half_width_degrees` either side): every move eases in and
+  out (smoothstep, peak `degrees_per_second`), ends at a random heading, alternates sides or now and then stops
+  part-way, then pauses (`pause_seconds: [min, max]`, default 0.8–2.4); some moves also change the barrel's pitch
+  within `pitch_degrees` (presentation). Each turret draws its own sequence (seeded by its actor id) and starts after its
+  own delay, so neighbours never move in step. Having lost its target it holds the last aim (facing and barrel) for
+  `hold_seconds` (default 3), then sets off after a 0.4 s beat from wherever it points, back into the sweep (beyond it,
+  at up to half its traverse rate). A target it senses but does not fight yet (a friendly turret's drone beyond its
+  hostility promotion range) is tracked at the traverse rate. The state is presentation-grade and not saved: after a
+  load the scan restarts from the saved facing. The AI side is `AI_TacticIdleAim` (posts, Stationary actors, the
+  friendly-near-party stand and background actors); without `scan` the post stands as before.
 - **`ranged_band: [min, max]`** (edge distances): a chosen ranged attack always commits, instead of the native distance
   roll that walks ranged monsters in to melee; melee (attack 2 on its chance) only happens against an adjacent target.
   Between shots the actor backs off inside `min` (walking, still facing the target), closes in beyond `max` and circles
   the target in between (the native ranged orbit).
+- **`shield_break: {react: fall_back, max_seconds}`** (default 8 s): while a hostile actor's energy shield is down
+  after a break (`ActorStatusFacts::shieldDownSinceBreakSeconds`, filled by both world runtimes from
+  `GameplayActorShields`), for at most `max_seconds`, it takes the native flee from its target
+  (`forceFleeFromParty`): it backs off and comes back once the shield is up. Friendly actors (the Landfall guards) and
+  actors without a target hold. See `devdocs/ENERGY_SHIELDS_AND_RELATIONS.md`; Hesper's Troopers and Ashrunner Gunners
+  have it (`hesper_out1/shield_followups.yml`).
+- A world's `modifiers.yml` monster modifier `kites_party: {min_distance, max_distance}` is the same ranged band, merged
+  into the tactics when the catalogue loads (`ActorBehaviorCatalog::applyMonsterModifiers`); a monster may not have
+  both. The other modifiers (true aim, never staggers, blink) are in [MONSTER_MODIFIERS.md](MONSTER_MODIFIERS.md).
 - **`post: {leash}`**: applies only to actors the map places `immobile` (the same monster placed free keeps the native
   wander). The post may leave its spot to fight (unless the monster is Stationary) but never moves further than `leash`
   from home (0: unlimited); with no target it walks back, turns to its placement facing (at the traverse rate when it
@@ -165,17 +193,22 @@ Presentation: an actor with tactics publishes the target it engages as `Gameplay
 (presentation only, never saved). An `actors.yml` look block opts in with `target: combat`: the look nodes follow that
 target at any distance and rest without one, `min_pitch_degrees` limits how far they turn down (default
 `-max_pitch_degrees`), and `hold_clip: <clip>` holds that clip's first frame instead of the standing clip while the
-actor tracks a target (a turret stops its idle scan). Landfall's turrets pitch `B_Barrel` −20…+45°.
+actor tracks a target, and also while its tactics `scan` sweeps it (`GameplayRuntimeActorState::aimScanning`: the whole
+actor turns, the look only eases the nodes' pitch to the scan's pitch over about 0.6 s), so the model's own idle clip
+(the turrets' looping ±25° Standing scan) only plays for a monster without a tactics scan. Landfall's turrets pitch
+`B_Barrel` −35…+30° (Ward) and −35…+35° (Bastion).
 
-Code: `ActorTacticsFacts` (`GameplayActorAiTypes.h`), `AI_TacticEngage`, `AI_HoldPost`, `tacticFacingYaw`
-(`GameplayActorAiSystem.cpp`), the `tactics` parser (`ActorBehaviorCatalog.cpp`), `applyTactics` (`ActorBehaviorRuntime.cpp`),
-`updateActorLook` (`WorldFxSystem.cpp`). Tests: `--test-case='*tactic*'`. Headless check on Hesper:
+Code: `ActorTacticsFacts`, `ActorShieldBreakReaction` (`GameplayActorAiTypes.h`), `AI_TacticEngage`, `AI_HoldPost`,
+`AI_TacticIdleAim`, `tacticFacingYaw` (`GameplayActorAiSystem.cpp`), the `tactics` parser (`ActorBehaviorCatalog.cpp`),
+`applyTactics` and `updateTacticTurret` (`ActorBehaviorRuntime.cpp`), the scan (`ActorTurretScan.h`), `updateActorLook`
+(`WorldFxSystem.cpp`). Tests: `--test-case='*tactic*,*turret*,*shield_break*'`. Headless check on Hesper:
 `level_generation/projects/hesper_out1/landfall_defenders.yml`, with the scenario steps `damage_actor: {actor_index,
 amount}` and the `actor_visible` checks `near`, `far`, `faces` and `has_aim_target`.
 
-Not covered: monster relations (Hesper's ids lie past the relation table; `evt.SetMonsterRelation` in a map script is the
-existing per-map path), patrol routes, and the instant facing snap when an actor is first turned hostile
-(`setMapActorHostileToParty`).
+Captures of the turret behaviour: `level_generation/creatures/hes_turrets_claude/review/scan/`.
+
+Not covered: patrol routes; a turret's choice of target is the native one (the nearest it senses each step, the party
+without line of sight included), with no hysteresis between two targets at similar distances.
 
 ### Shield dome
 
@@ -195,6 +228,10 @@ then swells and fades it over 0.45 s when the ward lapses or its owner dies.
 
 The ground glow is an analytic stand-in for the usual depth-buffer intersection glow. Scene depth is not sampleable
 on the default or Android render paths, so this works everywhere.
+
+Energy shields over creatures (a shell following the skinned model, not a dome) and per-world monster relations are
+separate: [ENERGY_SHIELDS_AND_RELATIONS.md](ENERGY_SHIELDS_AND_RELATIONS.md). Their shader shares the dome's noise
+(`game/shaders/shield_common.sh`).
 
 The renderer has no gameplay coupling: it takes a list of `ShieldDomeDraw` (centre, radius, ground height, colour,
 strength, rim, noise, hits). Other shells can reuse it, such as a party Shield or Protection from Magic visual, or

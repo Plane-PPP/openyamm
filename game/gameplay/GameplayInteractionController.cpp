@@ -1,5 +1,7 @@
 #include "game/gameplay/GameplayInteractionController.h"
 
+#include "game/ui/GameplayQuickItems.h"
+
 #include "game/gameplay/GameplayHeldItemController.h"
 #include "game/gameplay/GameplayInputController.h"
 #include "game/gameplay/GameplayInputFrame.h"
@@ -7,12 +9,15 @@
 #include "game/gameplay/GameplaySpellActionController.h"
 #include "game/gameplay/GameplaySpellService.h"
 #include "game/gameplay/GameplayWorldItemInteraction.h"
+#include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/events/ScriptedEventProgram.h"
 #include "game/items/ItemRuntime.h"
 #include "game/party/SpellIds.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/ItemRules.h"
 #include "game/tables/ItemTable.h"
 
 #include <SDL3/SDL_timer.h>
@@ -38,6 +43,7 @@ constexpr uint64_t KeyboardInteractionRepeatNanoseconds = 67 * 1000 * 1000;
 constexpr float ContextActionRayOriginChangeThresholdSquared = 4.0f;
 constexpr float ContextActionRayDirectionChangeThresholdSquared = 0.000001f;
 constexpr uint32_t ArrowProjectileObjectId = 545;
+constexpr uint32_t FireArrowProjectileObjectId = 550;
 constexpr uint32_t ThrowingDaggerProjectileObjectId = 307;
 constexpr uint32_t ThrowingAxeProjectileObjectId = 309;
 constexpr uint32_t BlasterProjectileObjectId = 555;
@@ -100,7 +106,39 @@ void resolveWorldItemHoverName(
     }
 }
 
-#if defined(__ANDROID__)
+// Names a hovered ground item above the pointer in the colour the rules give its name (MAW's rarities, none for
+// Common), while the status bar names it.
+void updateWorldItemHoverLabel(
+    GameplayScreenRuntime &runtime,
+    const IGameplayWorldRuntime *pWorldRuntime,
+    const GameplayInteractionController::HoverStateResult &hover,
+    float screenX,
+    float screenY)
+{
+    GameplayWorldItemInspectState itemState = {};
+
+    if (pWorldRuntime == nullptr || hover.hitKind != GameplayWorldHitKind::WorldItem || !hover.worldHit.worldItem
+        || hover.statusText.empty() || hover.worldHit.worldItem->displayName.empty()
+        || !pWorldRuntime->worldItemInspectState(hover.worldHit.worldItem->worldItemIndex, itemState)
+        || itemState.isGold)
+    {
+        runtime.setWorldItemHoverLabel({}, 0, 0, 0);
+        return;
+    }
+
+    const std::optional<uint32_t> color = gameRulesFor(runtime.partyReadOnly()).items.nameColor(itemState.item);
+
+    if (!color)
+    {
+        runtime.setWorldItemHoverLabel({}, 0, 0, 0);
+        return;
+    }
+
+    const uint32_t colorAbgr = 0xff000000u | ((*color & 0xffu) << 16) | (*color & 0xff00u) | ((*color >> 16) & 0xffu);
+    runtime.setWorldItemHoverLabel(hover.worldHit.worldItem->displayName, colorAbgr, screenX, screenY);
+}
+
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
 bool usesMobileGroundTargetConfirm(uint32_t spellId)
 {
     return isSpellId(spellId, SpellId::MeteorShower)
@@ -551,7 +589,10 @@ bool dropHeldItemToActiveWorld(
     const ItemDefinition *pItemDefinition =
         pItemTable != nullptr ? pItemTable->get(heldItem.item.objectDescriptionId) : nullptr;
 
-    if (pWorldRuntime == nullptr || (pItemDefinition != nullptr && !ItemRuntime::canDrop(*pItemDefinition)))
+    const bool droppable = pItemDefinition == nullptr
+        || gameRulesFor(runtime.partyReadOnly()).items.canDropToWorld(heldItem.item, *pItemDefinition);
+
+    if (pWorldRuntime == nullptr || !droppable)
     {
         runtime.setStatusBarEvent("Can't drop " + itemName);
         return false;
@@ -588,11 +629,11 @@ std::string worldItemDisplayName(
 bool canStoreWorldItemInInventory(
     Party &party,
     const InventoryItem &item,
-    size_t &recipientMemberIndex)
+    const ItemTable *pItemTable)
 {
     const Party::Snapshot snapshot = party.snapshot();
     const ScopedGameplayDebugTraceSuppression traceSuppression;
-    const bool canStore = party.tryGrantInventoryItem(item, &recipientMemberIndex);
+    const bool canStore = storePickedUpItem(party, item, pItemTable).has_value();
     party.restoreSnapshot(snapshot);
     return canStore;
 }
@@ -647,10 +688,8 @@ bool tryActivateWorldItem(
     }
 
     GameplayUiController::HeldInventoryItemState &heldItem = runtime.heldInventoryItem();
-    size_t recipientMemberIndex = 0;
     const bool canStoreInInventory =
-        !worldItemState.isGold
-        && canStoreWorldItemInInventory(*pParty, worldItemState.item, recipientMemberIndex);
+        !worldItemState.isGold && canStoreWorldItemInInventory(*pParty, worldItemState.item, runtime.itemTable());
     const GameplayWorldItemPickupDecision pickupDecision =
         GameplayWorldItemInteraction::decidePickupDestination(
             GameplayWorldItemPickupDecisionInput{
@@ -696,7 +735,10 @@ bool tryActivateWorldItem(
 
     if (pickupDecision.destination == GameplayWorldItemPickupDestination::Inventory)
     {
-        if (!pParty->tryGrantInventoryItem(removedItemState.item, &recipientMemberIndex))
+        const std::optional<StoredPickup> stored =
+            storePickedUpItem(*pParty, removedItemState.item, runtime.itemTable());
+
+        if (!stored)
         {
             return false;
         }
@@ -706,10 +748,10 @@ bool tryActivateWorldItem(
             + std::to_string(removedItemState.item.objectDescriptionId)
             + gameplayDebugTraceItemSummary(removedItemState.item.objectDescriptionId, runtime.itemTable())
             + " world_item_index=" + std::to_string(worldItemIndex)
-            + " member_index=" + std::to_string(recipientMemberIndex));
+            + " member_index=" + std::to_string(stored->memberIndex));
         pParty->requestSound(SoundId::Gold);
-        runtime.playSpeechReaction(recipientMemberIndex, SpeechId::FoundItem, true);
-        runtime.setStatusBarEvent(formatFoundItemStatusText(itemName));
+        runtime.playSpeechReaction(stored->memberIndex, SpeechId::FoundItem, true);
+        runtime.setStatusBarEvent(formatFoundItemStatusText(itemName) + storedPickupOwnerSuffix(*pParty, *stored));
         recordWorldItemActivationResult(worldRuntime, "picked up " + itemName);
         return true;
     }
@@ -985,6 +1027,7 @@ void executePartyAttack(
             .worldInspectionRefreshRequest = standardHoverInput.hoverRequest,
             .randomSeed = partyAttackRandomSeed(),
             .arrowProjectileObjectId = ArrowProjectileObjectId,
+            .fireArrowProjectileObjectId = FireArrowProjectileObjectId,
             .throwingDaggerProjectileObjectId = ThrowingDaggerProjectileObjectId,
             .throwingAxeProjectileObjectId = ThrowingAxeProjectileObjectId,
             .blasterProjectileObjectId = BlasterProjectileObjectId,
@@ -1025,7 +1068,7 @@ void clearWorldInteractionFrameState(
     quickSpellState.clear();
 
     clearWorldHover(runtime.worldRuntime());
-    runtime.clearStatusBarHoverText();
+    runtime.clearWorldStatusBarHoverText();
     runtime.clearContextActionState();
 }
 
@@ -1431,10 +1474,14 @@ GameplayInteractionController::updateWorldInteractionFrame(
     const bool worldReady = pWorldRuntime != nullptr && pWorldRuntime->worldInteractionReady();
     const bool inspectModeActive = pWorldRuntime != nullptr && pWorldRuntime->worldInspectModeActive();
     const bool pendingSpellCancelPressed = input.isScancodeHeld(SDL_SCANCODE_ESCAPE);
-    const bool keyboardUsePressed = input.action(KeyboardAction::Trigger).held;
-    const bool usePressed = input.action(KeyboardAction::Use).held;
-    const bool attackPressed = input.action(KeyboardAction::Attack).held;
-    const bool leftMousePressed = input.leftMouseButton.held;
+    // A click on the quick item ring is its own: Attack on the left button must not attack as well.
+    const bool keyboardUsePressed = input.action(KeyboardAction::Trigger).held
+        && !GameplayQuickItems::takesPointerAction(runtime, KeyboardAction::Trigger);
+    const bool usePressed = input.action(KeyboardAction::Use).held
+        && !GameplayQuickItems::takesPointerAction(runtime, KeyboardAction::Use);
+    const bool attackPressed = input.action(KeyboardAction::Attack).held
+        && !GameplayQuickItems::takesPointerAction(runtime, KeyboardAction::Attack);
+    const bool leftMousePressed = input.leftMouseButton.held && !GameplayQuickItems::takesPointer(runtime);
     const bool rightMousePressed = input.rightMouseButton.held;
     const bool mouseLookActive = sharedInput.mouseLookPolicy.mouseLookActive;
     const bool cursorModeActive = sharedInput.mouseLookPolicy.cursorModeActive;
@@ -1470,7 +1517,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
 
     if (worldInputBlocked)
     {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         const bool preserveHeldItemDropAction =
             heldItemActive
             && overlayInteractionState.gameplayHudClickLatch
@@ -1479,7 +1526,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
             && overlayInteractionState.gameplayHudPressedContextActionActive;
 #endif
         clearWorldInteractionFrameState(screenState, overlayInteractionState, runtime);
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         if (preserveHeldItemDropAction)
         {
             setHeldItemDropContextAction(runtime);
@@ -1558,7 +1605,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
             overlayInteractionState.gameplayHudSpellTargetConfirmRequested;
         overlayInteractionState.gameplayHudSpellTargetConfirmRequested = false;
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         const bool mobileGroundTargetConfirmSpell = usesMobileGroundTargetConfirm(pendingSpellCast.spellId);
 #else
         const bool mobileGroundTargetConfirmSpell = false;
@@ -1590,7 +1637,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
         }
 
         bool confirmFromPointer = pointerPolicy.leftMousePressed;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         if (mobileGroundTargetConfirmSpell)
         {
             confirmFromPointer = false;
@@ -1705,7 +1752,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
 
     if (heldItemActive)
     {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         if (overlayInteractionState.gameplayHudDropHeldItemRequested)
         {
             overlayInteractionState.gameplayHudDropHeldItemRequested = false;
@@ -1724,7 +1771,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
         GameplayWorldHit heldItemWorldHit = {};
         bool hasHeldItemWorldHit = false;
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         const bool heldItemPointerPressed = false;
         worldInteractionInputState.heldInventoryDropLatch = false;
 #else
@@ -2015,7 +2062,37 @@ GameplayInteractionController::updateWorldInteractionFrame(
             attackHit);
     }
 
-    runtime.setStatusBarHoverText(result.hover.statusText);
+    // MAW's Knight Charge: a lone Knight dashes at the monster under the cursor.
+    if (input.action(KeyboardAction::KnightCharge).pressed && pWorldRuntime != nullptr
+        && pWorldRuntime->party() != nullptr)
+    {
+        pickCurrentHit();
+        const GameplayWorldHit chargeHit = pWorldRuntime->pickPartyAttackTarget(currentInteractionPickRequest);
+        const std::optional<size_t> targetActorIndex =
+            chargeHit.kind == GameplayWorldHitKind::Actor && chargeHit.actor
+                ? std::optional<size_t>(chargeHit.actor->actorIndex)
+                : std::nullopt;
+        const std::optional<std::string> status =
+            GameplayActionController::tryPartyCharge(*pWorldRuntime->party(), *pWorldRuntime, targetActorIndex);
+
+        if (status && !status->empty())
+        {
+            runtime.setStatusBarEvent(*status);
+        }
+    }
+
+    // The quick item ring hides the world's hover text: its plate would lie over the ring's lowest slot.
+    if (GameplayQuickItems::ringOpen(runtime))
+    {
+        runtime.clearWorldStatusBarHoverText();
+        runtime.setWorldItemHoverLabel({}, 0, 0, 0);
+    }
+    else
+    {
+        runtime.setWorldStatusBarHoverText(result.hover.statusText);
+        updateWorldItemHoverLabel(
+            runtime, pWorldRuntime, result.hover, pointerPolicy.inspectScreenX, pointerPolicy.inspectScreenY);
+    }
 
     return result;
 }

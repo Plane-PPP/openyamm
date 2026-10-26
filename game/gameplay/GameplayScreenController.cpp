@@ -6,10 +6,14 @@
 #include "game/gameplay/GameplayInputController.h"
 #include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/GameplayPartyOverlayInputController.h"
+#include "game/items/InventoryBags.h"
 #include "game/items/ItemRuntime.h"
+#include "game/rules/GameRules.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
 #include "game/ui/GameplayHudOverlayRenderer.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/ui/GameplayJournalProgress.h"
+#include "game/ui/GameplayQuickItems.h"
 #include "game/ui/GameplayPartyOverlayRenderer.h"
 #include "game/ui/GameplayUiRenderer.h"
 #include "game/ui/RestHourglassAnimation.h"
@@ -25,6 +29,87 @@ namespace OpenYAMM::Game
 {
 namespace
 {
+// What a save from when the ruleset had more bags could not fit into the members' bags (InventoryBags::
+// fitIntoBagCount) falls at the party's feet once the world runs; an item the world refuses waits for the next frame.
+void dropBagOverflow(GameplayScreenRuntime &context)
+{
+    Party *pParty = context.party();
+    IGameplayWorldRuntime *pWorldRuntime = context.worldRuntime();
+
+    if (pParty == nullptr || pWorldRuntime == nullptr)
+    {
+        return;
+    }
+
+    const int bagCount = pParty->rules().items.bagCount(*pParty);
+    size_t dropped = 0;
+
+    for (size_t memberIndex = 0; memberIndex < pParty->members().size(); ++memberIndex)
+    {
+        Character &member = *pParty->member(memberIndex);
+
+        for (const InventoryItem &item : InventoryBags::takeOverflow(member, bagCount))
+        {
+            GameplayHeldItemDropRequest request;
+            request.item = item;
+            request.sourceX = pWorldRuntime->partyX();
+            request.sourceY = pWorldRuntime->partyY();
+            request.sourceZ = pWorldRuntime->partyFootZ() + 40.0f;
+
+            if (pWorldRuntime->dropHeldItemToWorld(request))
+            {
+                ++dropped;
+            }
+            else
+            {
+                member.rulesetState.storedBags[uint8_t(std::max(1, bagCount))].push_back(item);
+            }
+        }
+    }
+
+    if (dropped > 0)
+    {
+        context.setStatusBarEvent(std::to_string(dropped) + (dropped == 1 ? " item" : " items")
+            + " from the old bags did not fit and lie at your feet");
+    }
+}
+
+// The bag buttons on a chest and over a shop's or chest's party inventory (rulesets with several bags): a click opens
+// that bag of the active member.
+void handleNestedInventoryBagButtons(GameplayScreenRuntime &context, const GameplayInputFrame &input)
+{
+    Party *pParty = context.party();
+
+    if (!input.leftMouseButton.pressed || !GameplayPartyOverlayInputController::partyBagButtonsShown(context)
+        || pParty == nullptr || pParty->activeMember() == nullptr)
+    {
+        return;
+    }
+
+    const int bagCount = pParty->rules().items.bagCount(*pParty);
+
+    for (int bag = 0; bagCount > 1 && bag < bagCount; ++bag)
+    {
+        const std::string id = "ChestInventoryBag" + std::to_string(bag + 1);
+        const GameplayScreenRuntime::HudLayoutElement *pLayout = context.findHudLayoutElement(id);
+        const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> button = pLayout != nullptr
+            ? context.resolveHudLayoutElement(id, input.screenWidth, input.screenHeight, pLayout->width,
+                  pLayout->height)
+            : std::nullopt;
+
+        if (button && input.pointerX >= button->x && input.pointerX < button->x + button->width
+            && input.pointerY >= button->y && input.pointerY < button->y + button->height)
+        {
+            if (InventoryBags::openBag(*pParty->activeMember(), uint8_t(bag), bagCount))
+            {
+                context.setStatusBarEvent("Bag " + std::to_string(bag + 1));
+            }
+
+            return;
+        }
+    }
+}
+
 constexpr std::array<SDL_Scancode, 9> NumberHotkeyScancodes = {{
     SDL_SCANCODE_1,
     SDL_SCANCODE_2,
@@ -119,6 +204,7 @@ void GameplayScreenController::updateSharedFrameState(
 {
     context.fxService().syncProjectilePresentation();
     context.fxService().advanceGameplayScreenOverlay(deltaSeconds);
+    dropBagOverflow(context);
     context.updatePartyPortraitAnimations(deltaSeconds);
     context.updateDelayedSpeechReactions(deltaSeconds);
     context.consumePendingPartyAudioRequests();
@@ -279,6 +365,12 @@ bool GameplayScreenController::canEnableGameplayMouseLook(
     }
 
     if (config.hasPendingSpellTarget)
+    {
+        return false;
+    }
+
+    // The quick item ring needs the cursor.
+    if (GameplayQuickItems::ringOpen(context))
     {
         return false;
     }
@@ -509,6 +601,19 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
             return context.itemService().tryRepairInspectedItem(overlay, activeMemberIndex, statusText);
         };
 
+    // A sealed spellbook (MAW) opens for an inspector with the mastery its book asks.
+    if (context.itemService().tryOpenInspectedItem(overlay, activeMemberIndex))
+    {
+        refreshOverlayItemState();
+        overlay.objectDescriptionId = overlay.itemState.objectDescriptionId;
+        pItemDefinition = pItemTable->get(overlay.objectDescriptionId);
+
+        if (pItemDefinition == nullptr)
+        {
+            return;
+        }
+    }
+
     if (!overlay.itemState.identified)
     {
         std::string statusText;
@@ -631,6 +736,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleSharedOverlayInput(
     const GameplayInputFrame &input,
     const GameplayUiOverlayInputConfig &config)
 {
+    handleNestedInventoryBagButtons(context, input);
     GameplayUiOverlayInputResult result = GameplayUiOverlayOrchestrator::handleStandardOverlayInput(
         context,
         input,
@@ -697,7 +803,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !activeEventDialog
         && !hasActiveLootView
         && !houseShopActive;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     const bool allowPortraitPointerInput =
         config.allowGameplayPointerInput
         || input.leftMouseButton.held
@@ -738,7 +844,17 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         .onPortraitActivated = config.onPortraitActivated,
     };
 
-    if (!input.mobileTouchDragReleased)
+    // The quick item buttons and ring (the potion radial) take their clicks before the portraits and the HUD.
+    const bool quickItemsAllowed = config.width > 0 && config.height > 0
+        && !activeEventDialog && !characterScreenOpen && !spellbookActive && !hasActiveLootView && !restActive
+        && !menuActive && !controlsActive && !keyboardActive && !videoOptionsActive && !saveGameActive
+        && !loadGameActive && !journalActive && !quickReferenceActive && !houseShopActive && !houseBankInputActive
+        && context.currentHudScreenState() == GameplayHudScreenState::Gameplay;
+    const bool quickItemClick =
+        GameplayQuickItems::handleHudInput(context, input, config.width, config.height, quickItemsAllowed,
+            config.allowGameplayPointerInput);
+
+    if (!input.mobileTouchDragReleased && !quickItemClick)
     {
         handlePartyPortraitInput(context, portraitInputConfig);
     }
@@ -772,9 +888,36 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
             .onPortraitActivated = config.onPortraitActivated,
         };
 
+        const bool shiftHeld =
+            input.isScancodeHeld(SDL_SCANCODE_LSHIFT) || input.isScancodeHeld(SDL_SCANCODE_RSHIFT);
+        // The bag keys (by default 1-4) act on the inventory pages; there Shift and a number still select a member.
+        // A held bag key that acts there keeps its number from selecting a member on any frame of the press.
+        bool bagKeyTaken = false;
+
+        for (int bag = 0; bag < 4 && !shiftHeld; ++bag)
+        {
+            const GameplayButtonInputState &bagKey =
+                input.action(KeyboardAction(size_t(KeyboardAction::Bag1) + size_t(bag)));
+
+            if (bagKey.pressed)
+            {
+                bagKeyTaken = GameplayPartyOverlayInputController::openBagForKey(context, bag) || bagKeyTaken;
+            }
+            else if (bagKey.held && GameplayPartyOverlayInputController::bagKeysActive(context))
+            {
+                bagKeyTaken = true;
+            }
+        }
+
+        // MAW's crafting bag key (Shift+B by default, zzzMaw_CraftingBag.lua:49-55) on the inventory page.
+        if (shiftHeld && input.action(KeyboardAction::CraftingBag).pressed)
+        {
+            GameplayPartyOverlayInputController::toggleBagTag(context, BagTag::Crafting);
+        }
+
         for (size_t memberIndex = 0; memberIndex < 5; ++memberIndex)
         {
-            if (isNumberHotkeyNewlyPressed(input, context.previousKeyboardState(), memberIndex))
+            if (isNumberHotkeyNewlyPressed(input, context.previousKeyboardState(), memberIndex) && !bagKeyTaken)
             {
                 GameplayHudInputController::activatePartyPortrait(context, memberIndex, portraitHotkeyConfig);
             }
@@ -782,7 +925,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
     }
 
     const bool allowGameplayHudPointerInput =
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
         config.allowGameplayPointerInput
         || input.leftMouseButton.held
         || context.interactionState().gameplayHudClickLatch;
@@ -809,7 +952,8 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !journalActive
         && !quickReferenceActive
         && !houseShopActive
-        && !houseBankInputActive;
+        && !houseBankInputActive
+        && !quickItemClick;
 
     handleGameplayHudButtonInput(
         context,
@@ -873,9 +1017,13 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
     // Keys typed into the journal search are text, not journal shortcuts.
     const bool journalTyping = GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly());
     const bool mapShortcutPressed = !journalTyping
-        && (input.isScancodeHeld(SDL_SCANCODE_M) || input.action(KeyboardAction::MapBook).held);
+        && (input.isScancodeHeld(SDL_SCANCODE_M) || input.action(KeyboardAction::MapBook).held)
+        && !(input.action(KeyboardAction::SkillManaShield).held
+            && GameplayPartyOverlayInputController::skillSwitchForAction(context, KeyboardAction::SkillManaShield));
     const bool storyShortcutPressed = !journalTyping && input.action(KeyboardAction::History).held;
     const bool notesShortcutPressed = false;
+    const bool progressShortcutPressed =
+        !journalTyping && input.action(KeyboardAction::OpenProgress).held && journalHasProgressTab(context);
     const bool zoomInPressed = !journalTyping && input.action(KeyboardAction::ZoomIn).held;
     const bool zoomOutPressed = !journalTyping && input.action(KeyboardAction::ZoomOut).held;
 
@@ -888,6 +1036,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
             .mapShortcutPressed = mapShortcutPressed,
             .storyShortcutPressed = storyShortcutPressed,
             .notesShortcutPressed = notesShortcutPressed,
+            .progressShortcutPressed = progressShortcutPressed,
             .zoomInPressed = zoomInPressed,
             .zoomOutPressed = zoomOutPressed,
             .mouseWheelDelta = input.mouseWheelDelta,

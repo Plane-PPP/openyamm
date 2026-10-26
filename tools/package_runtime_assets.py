@@ -169,7 +169,9 @@ def verify_surface_cook(assets_root, profile):
 
 # The model manifests the game reads (ActorModelManifest, DecorationModelManifest, DecorationModelSet). Review and
 # stress-test manifests selected through debug.actor_models_manifest stay out.
-RUNTIME_MODEL_MANIFESTS = {"actors.yml", "decorations.yml", "indoor_decorations.yml", "decoration_overlays.yml"}
+RUNTIME_MODEL_MANIFESTS = {
+    "actors.yml", "decorations.yml", "indoor_decorations.yml", "decoration_overlays.yml", "projectiles.yml"
+}
 
 
 def release_model_file(relative):
@@ -310,6 +312,9 @@ def main():
     packages = {"engine": collect_entries(
         args.assets_root / "engine", sprites=sprites, profile=args.profile, dependencies=dependencies,
         model_textures=profile_root / "engine" if profile_root else None, surface_profile=args.profile)}
+    # The rulesets the release offers (engine/rulesets, MAW) ship without their documentation.
+    packages["engine"] = {name: source for name, source in packages["engine"].items()
+                          if not (name.startswith("rulesets/") and name.endswith(".md"))}
     if not args.engine_only:
         worlds = args.assets_root / "worlds"
         for name in args.world or config.worlds:

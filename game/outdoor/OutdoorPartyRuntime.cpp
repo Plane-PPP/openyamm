@@ -42,7 +42,9 @@ void OutdoorPartyRuntime::update(
     GameplayWorldMovementFrameDiagnostics *pPerformanceDiagnostics)
 {
     m_movementStatusText.clear();
-    m_movementDriver.update(input, deltaSeconds, pPerformanceDiagnostics);
+    OutdoorMovementInput rulesInput = input;
+    rulesInput.movementSpeedScale *= m_party.rulesMovementMultiplier();
+    m_movementDriver.update(rulesInput, deltaSeconds, pPerformanceDiagnostics);
 
     uint64_t stageBeginTickCount = pPerformanceDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
     if (!input.turnBasedPhysicsStep)
@@ -95,6 +97,11 @@ void OutdoorPartyRuntime::setActorColliders(const std::vector<OutdoorActorCollis
     m_movementDriver.setActorColliders(actorColliders);
 }
 
+void OutdoorPartyRuntime::setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities)
+{
+    m_movementDriver.setHiddenDecorationEntities(hiddenEntities);
+}
+
 void OutdoorPartyRuntime::setFaceAttributes(size_t bModelIndex, size_t faceIndex, uint32_t attributes)
 {
     m_movementDriver.setFaceAttributes(bModelIndex, faceIndex, attributes);
@@ -103,6 +110,16 @@ void OutdoorPartyRuntime::setFaceAttributes(size_t bModelIndex, size_t faceIndex
 void OutdoorPartyRuntime::updateFaceGeometries(const std::vector<OutdoorFaceGeometryData> &geometries)
 {
     m_movementDriver.updateFaceGeometries(geometries);
+}
+
+void OutdoorPartyRuntime::lift(float height)
+{
+    m_movementDriver.lift(height);
+}
+
+void OutdoorPartyRuntime::requestDash(float velocityX, float velocityY, float seconds)
+{
+    m_movementDriver.requestDash(velocityX, velocityY, seconds);
 }
 
 bool OutdoorPartyRuntime::translateWithSupportedBModel(

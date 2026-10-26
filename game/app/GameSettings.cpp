@@ -463,8 +463,9 @@ GameSettings GameSettings::createDefault()
     settings.assetScaleProfile.preferRestoredIcons = true;
     // These are the only defaults: release packages ship no settings file, and a player's settings.ini holds only
     // their own choices. The surface texture tier is the one cooked tier the packages carry per platform
-    // (tools/cook_surface_textures.py), x4 on desktop and x2 on Android.
-#if defined(__ANDROID__)
+    // (tools/cook_surface_textures.py), x4 on desktop and x2 on Android. iOS GPUs have no BC formats, so iOS uses the
+    // Android packages (ASTC/ETC2, x2 surfaces) and the Android defaults.
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     settings.assetScaleProfile.textures = Engine::AssetScaleTier::X2;
     settings.soundVolume = 2;
     settings.voiceVolume = 2;
@@ -481,6 +482,8 @@ GameSettings GameSettings::createDefault()
     settings.waterReflectionSize = 256;
     settings.bloom = false;
     settings.cinematicGrading = false;
+    // Android has no combat log (user, 2026-10-25).
+    settings.combatLog = false;
 #else
     settings.assetScaleProfile.textures = Engine::AssetScaleTier::X4;
     settings.windowMode = WindowMode::WindowedFullscreen;
@@ -994,6 +997,21 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "rarity_glow"))
+    {
+        bool enabled = true;
+
+        if (validRarityGlowValue(*value))
+        {
+            settings.rarityGlow = *value;
+        }
+        // The first builds wrote the glow as a switch.
+        else if (parseBoolValue(*value, enabled))
+        {
+            settings.rarityGlow = enabled ? "always" : "off";
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "context_action_popup"))
     {
         bool parsed = settings.contextActionPopup;
@@ -1013,6 +1031,19 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
             settings.combatText = parsed;
         }
     }
+
+    // Android has no combat log: the thumb controls leave it no room (user, 2026-10-25).
+#if !defined(__ANDROID__)
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "combat_log"))
+    {
+        bool parsed = settings.combatLog;
+
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.combatLog = parsed;
+        }
+    }
+#endif
 
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "enemy_health_bars"))
     {
@@ -1062,6 +1093,11 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "party_frame"))
     {
         parseBoolValue(*value, settings.partyFrame);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "potion_buttons"))
+    {
+        parseBoolValue(*value, settings.potionButtons);
     }
 
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "melee_hit_blood_effects"))
@@ -1743,6 +1779,16 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "updates", "keep_modified_packs"))
+    {
+        bool parsed = settings.keepModifiedPacks;
+
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.keepModifiedPacks = parsed;
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "debug", "start_world"))
     {
         const std::string trimmed = toLowerCopy(trimCopy(*value));
@@ -2262,17 +2308,20 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("keyboard_interaction_depth", std::clamp(settings.keyboardInteractionDepth, 32, 4096));
     serializer.add("mouse_interaction_depth", std::clamp(settings.mouseInteractionDepth, 32, 4096));
     serializer.add("combat_text", boolValue(settings.combatText));
+    serializer.add("combat_log", boolValue(settings.combatLog));
     serializer.add("enemy_health_bars", settings.enemyHealthBarMode);
     serializer.add("enemy_health_bar_values", settings.enemyHealthBarValues);
     serializer.add("enemy_health_bar_damage_trail", boolValue(settings.enemyHealthBarDamageTrail));
     serializer.add("quest_markers", boolValue(settings.questMarkers));
     serializer.add("party_frame", boolValue(settings.partyFrame));
+    serializer.add("potion_buttons", boolValue(settings.potionButtons));
     serializer.add("melee_hit_blood_effects", boolValue(settings.meleeHitBloodEffects));
     serializer.add("melee_hit_feedback", boolValue(settings.meleeHitFeedback));
     serializer.add("melee_hit_effects", boolValue(settings.meleeHitEffects));
     serializer.add("melee_hit_flash", boolValue(settings.meleeHitFlash));
     serializer.add("melee_camera_kick", boolValue(settings.meleeCameraKick));
     serializer.add("context_action_popup", boolValue(settings.contextActionPopup));
+    serializer.add("rarity_glow", settings.rarityGlow);
     serializer.section("startup");
     serializer.add("start_in_main_menu", boolValue(settings.startInMainMenu));
     serializer.add("save_file", settings.startupSaveFile);
@@ -2367,6 +2416,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.section("updates");
     serializer.add("check_for_updates", settings.updateCheck);
     serializer.add("url", settings.updateUrl);
+    serializer.add("keep_modified_packs", boolValue(settings.keepModifiedPacks));
     serializer.section("debug");
     serializer.add("preseed_party", boolValue(settings.preseedParty));
     serializer.add("party_seed_roster_id", settings.partySeedRosterId);

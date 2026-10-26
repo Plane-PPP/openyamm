@@ -171,7 +171,11 @@ try {
         throw 'Patch lacks the game or launcher.'
     }
     if (-not $InstallationRoot) {
-        $InstallationRoot = Split-Path -Parent $PSScriptRoot
+        if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'app/current') -PathType Leaf) {
+            $InstallationRoot = $PSScriptRoot
+        } else {
+            $InstallationRoot = Split-Path -Parent $PSScriptRoot
+        }
         if (-not (Test-Path -LiteralPath (Join-Path $InstallationRoot 'app/current') -PathType Leaf)) {
             Add-Type -AssemblyName System.Windows.Forms
             $picker = New-Object Windows.Forms.FolderBrowserDialog
@@ -182,7 +186,7 @@ try {
     }
     $InstallationRoot = [IO.Path]::GetFullPath($InstallationRoot)
     $currentPath = Safe-Path $InstallationRoot 'app/current'
-    if (-not (Test-Path -LiteralPath $currentPath -PathType Leaf)) { throw 'Установите полную базовую сборку мода.' }
+    if (-not (Test-Path -LiteralPath $currentPath -PathType Leaf)) { throw ('В выбранной папке не найден app/current: ' + $InstallationRoot + '. Выберите корень установленного мода с папкой app.') }
     $current = (Get-Content -LiteralPath $currentPath -Raw -Encoding UTF8).Trim()
     Assert-Version $current
     $installed = Load-Json (Safe-Path $InstallationRoot ('app/' + $current + '/index.json'))

@@ -3,6 +3,7 @@
 #include "game/events/EventDialogContent.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/party/Party.h"
+#include "game/party/QuickItemSlot.h"
 #include "game/ui/GameplayUiController.h"
 
 #include <bgfx/bgfx.h>
@@ -298,6 +299,7 @@ enum class GameplayChestPointerTargetType
 {
     None,
     TakeAllButton,
+    TakeGoldButton,
     CloseButton
 };
 
@@ -315,7 +317,9 @@ enum class GameplaySpellbookPointerTargetType
     SpellButton,
     CloseButton,
     QuickCastButton,
-    AttackCastButton
+    AttackCastButton,
+    // One of MMMerge's four extra quick spell slots (ExtraQuickSpells.lua); `slot` says which.
+    QuickSpellSlotButton
 };
 
 struct GameplaySpellbookPointerTarget
@@ -323,6 +327,7 @@ struct GameplaySpellbookPointerTarget
     GameplaySpellbookPointerTargetType type = GameplaySpellbookPointerTargetType::None;
     GameplayUiController::SpellbookSchool school = GameplayUiController::SpellbookSchool::Fire;
     uint32_t spellId = 0;
+    size_t slot = 0;
 
     bool operator==(const GameplaySpellbookPointerTarget &other) const = default;
 };
@@ -379,6 +384,13 @@ enum class GameplayCharacterPointerTargetType
     DismissButton,
     AlchemyButton,
     InventorySortButton,
+    InventoryBagButton,
+    // The bag overview: its button, an item in a bag and a free cell under a held item.
+    InventoryBagOverviewButton,
+    // A bag tag's toggle (bagButton: BagTag) for the open bag.
+    InventoryBagTagButton,
+    BagOverviewItem,
+    BagOverviewCell,
     MagnifyButton,
     AdventurersInnHireButton,
     AdventurersInnScrollUpButton,
@@ -398,10 +410,16 @@ struct GameplayCharacterPointerTarget
     GameplayUiController::CharacterPage page = GameplayUiController::CharacterPage::Inventory;
     std::string statName;
     std::string skillName;
+    // A skill row that a click raises; other skill rows are targets only for their hover text.
+    bool skillRaisable = false;
     uint8_t gridX = 0;
     uint8_t gridY = 0;
     EquipmentSlot equipmentSlot = EquipmentSlot::MainHand;
     size_t innIndex = 0;
+    // The bag a multibag button zooms (0-3).
+    uint8_t bagButton = 0;
+    // The bag (0-based) of an overview target; gridX and gridY are its cell.
+    uint8_t bag = 0;
 
     bool operator==(const GameplayCharacterPointerTarget &other) const = default;
 };
@@ -422,13 +440,34 @@ enum class GameplayAlchemyBenchPointerTargetType
     IngredientFilterReagents,
     RecipeRow,
     RecipeSearch,
-    Ingredient
+    Ingredient,
+    // The Workbench's tab strip and its Crafting tab.
+    AlchemyTab,
+    CraftingTab,
+    CraftApplyButton,
+    CraftApplyManyButton,
+    CraftClearButton,
+    CraftItemSlot,
+    CraftMaterialSlot,
+    CraftItemFilterAll,
+    CraftItemFilterWorn,
+    CraftItemFilterPacks,
+    CraftSearch,
+    CraftMaterialFilterAll,
+    CraftMaterialFilterGems,
+    CraftMaterialFilterSpecial,
+    CraftMaterialFilterPotions,
+    CraftCheapestGems,
+    CraftItemRow,
+    CraftMaterial
 };
 
 struct GameplayAlchemyBenchPointerTarget
 {
     GameplayAlchemyBenchPointerTargetType type = GameplayAlchemyBenchPointerTargetType::None;
     uint32_t itemId = 0;
+    // Crafting rows and cells: the item's or material's index in the frame's model.
+    size_t index = 0;
 
     bool operator==(const GameplayAlchemyBenchPointerTarget &other) const = default;
 };
@@ -440,6 +479,15 @@ enum class GameplayJournalPointerTargetType
     MainQuestsView,
     MainStoryView,
     MainNotesView,
+    // MAW's Progress tab and, on it, a continent card, a map filter and a map row (their index in noteId), and the
+    // ruleset's player's guide link.
+    MainProgressView,
+    ProgressContinent,
+    ProgressFilter,
+    ProgressMap,
+    ProgressGuide,
+    // The aura panel's targets (GameplayJournalAuras.h), packed into noteId.
+    AuraPanel,
     PrevPageButton,
     NextPageButton,
     NotesPotionButton,
@@ -500,6 +548,11 @@ enum class GameplayHudPointerTargetType
     MinimapZoomInButton,
     MinimapZoomOutButton,
     FollowerPanelToggleButton,
+    // The combat log's button, one of its lines (index: the entry id) and the rest of its panel.
+    CombatLogToggleButton,
+    CombatLogEntry,
+    CombatLogFilter,
+    CombatLogPanel,
     FollowerPanelPortrait,
     FollowerPanelScrollUpButton,
     FollowerPanelScrollDownButton,
@@ -698,6 +751,18 @@ struct GameplayOverlayInteractionState
     std::optional<size_t> overlayPersonalBuffPressedIndex;
     bool followerPanelOpen = false;
     size_t followerPanelScrollOffset = 0;
+    // The quick item ring (the potion radial, devdocs/maw/GAPS.md H.6): open at a member's portrait, the slot under
+    // the pointer, the wheel key's press (a tap leaves the ring open, a hold uses the slot it is released over), and
+    // the picker beside it filling one slot, with its list's scroll.
+    bool quickItemRingOpen = false;
+    size_t quickItemRingMember = 0;
+    std::optional<size_t> quickItemHoveredSlot;
+    uint64_t quickItemWheelPressedTicks = 0;
+    bool quickItemWheelHeld = false;
+    bool quickItemClickLatch = false;
+    std::optional<size_t> quickItemPickerSlot;
+    size_t quickItemPickerScroll = 0;
+    bool quickItemEscapeHeld = false;
     bool menuToggleLatch = false;
     bool menuClickLatch = false;
     GameplayMenuPointerTarget menuPressedTarget = {};

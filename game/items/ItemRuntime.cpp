@@ -2,6 +2,7 @@
 
 #include "game/items/ItemEnchantRuntime.h"
 #include "game/items/ItemEnchantTables.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/party/SkillData.h"
 
@@ -314,6 +315,15 @@ std::string ItemRuntime::displayName(
         return itemDefinition.unidentifiedName;
     }
 
+    return boundGameRules().items.displayName(item, itemDefinition, pStandardEnchantTable, pSpecialEnchantTable);
+}
+
+std::string ItemRuntime::identifiedDisplayName(
+    const InventoryItem &item,
+    const ItemDefinition &itemDefinition,
+    const StandardItemEnchantTable *pStandardEnchantTable,
+    const SpecialItemEnchantTable *pSpecialEnchantTable)
+{
     if (item.standardEnchantId != 0 || item.specialEnchantId != 0)
     {
         return ItemEnchantRuntime::displayName(item, itemDefinition, pStandardEnchantTable, pSpecialEnchantTable);

@@ -325,6 +325,114 @@ elements:
           default: GF-ASpell
           pressed: GF-ASpellD
           highlighted: GF-ASpell
+      - id: SpellbookQuickSpellSlot1
+        anchor: bottom_left
+        offset_x: 0
+        offset_y: -140
+        width: 36
+        height: 44
+        z_index: 60
+        interactive: true
+        asset:
+          default: STSSu
+          pressed: STSSd
+          highlighted: STSSu
+        notes: MMMerge's extra quick spell 1 (ExtraQuickSpells.lua); a click sets or clears the selected spell, the
+          Quick Spell 1 key casts it.
+        children:
+        - id: SpellbookQuickSpellSlot1Label
+          anchor: top_left
+          offset_x: 0
+          offset_y: 4
+          width: 36
+          height: 14
+          text:
+            value: '1'
+            font: SMALLNUM
+            color: '#ffffff'
+            align_x: center
+            align_y: middle
+      - id: SpellbookQuickSpellSlot2
+        anchor: bottom_left
+        offset_x: 0
+        offset_y: -186
+        width: 36
+        height: 44
+        z_index: 60
+        interactive: true
+        asset:
+          default: STSSu
+          pressed: STSSd
+          highlighted: STSSu
+        notes: MMMerge's extra quick spell 2 (ExtraQuickSpells.lua); a click sets or clears the selected spell, the
+          Quick Spell 2 key casts it.
+        children:
+        - id: SpellbookQuickSpellSlot2Label
+          anchor: top_left
+          offset_x: 0
+          offset_y: 4
+          width: 36
+          height: 14
+          text:
+            value: '2'
+            font: SMALLNUM
+            color: '#ffffff'
+            align_x: center
+            align_y: middle
+      - id: SpellbookQuickSpellSlot3
+        anchor: bottom_left
+        offset_x: 0
+        offset_y: -232
+        width: 36
+        height: 44
+        z_index: 60
+        interactive: true
+        asset:
+          default: STSSu
+          pressed: STSSd
+          highlighted: STSSu
+        notes: MMMerge's extra quick spell 3 (ExtraQuickSpells.lua); a click sets or clears the selected spell, the
+          Quick Spell 3 key casts it.
+        children:
+        - id: SpellbookQuickSpellSlot3Label
+          anchor: top_left
+          offset_x: 0
+          offset_y: 4
+          width: 36
+          height: 14
+          text:
+            value: '3'
+            font: SMALLNUM
+            color: '#ffffff'
+            align_x: center
+            align_y: middle
+      - id: SpellbookQuickSpellSlot4
+        anchor: bottom_left
+        offset_x: 0
+        offset_y: -278
+        width: 36
+        height: 44
+        z_index: 60
+        interactive: true
+        asset:
+          default: STSSu
+          pressed: STSSd
+          highlighted: STSSu
+        notes: MMMerge's extra quick spell 4 (ExtraQuickSpells.lua); a click sets or clears the selected spell, the
+          Quick Spell 4 key casts it.
+        children:
+        - id: SpellbookQuickSpellSlot4Label
+          anchor: top_left
+          offset_x: 0
+          offset_y: 4
+          width: 36
+          height: 14
+          text:
+            value: '4'
+            font: SMALLNUM
+            color: '#ffffff'
+            align_x: center
+            align_y: middle
       - id: SpellbookPageFireSpellTorchlight
         anchor: center
         offset_x: 74

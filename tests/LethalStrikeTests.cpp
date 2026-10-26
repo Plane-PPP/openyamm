@@ -65,7 +65,7 @@ public:
             .displayName = "Target", .position = {targetDistance, 0, 0}, .currentHp = hp, .maxHp = maximum,
             .effectiveLevel = level, .isDead = hp <= 0, .hostileToParty = true};
     }
-    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &) override
+    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier) override
     {
         ++ordinaryApplications;
         damage = value;
@@ -164,7 +164,10 @@ TEST_CASE("Lethal Strike GIANT strict sixty percent and approved template regist
 TEST_CASE("Lethal Strike innate migration hiring promotion and save persistence")
 {
     CHECK(allCanonicalSkillNames()[39] == "Throwing");
-    CHECK(allCanonicalSkillNames()[40] == "LethalStrike");
+    CHECK(allCanonicalSkillNames()[48] == "LethalStrike");
+    CHECK(allCanonicalSkillNames()[40] == "EnergyGuns");
+    CHECK_FALSE(isRulesetSkill("LethalStrike"));
+    CHECK_FALSE(isTechnologySkill("LethalStrike"));
     Party party;
     party.setClassSkillTable(&data().classSkillTable);
     Character c = minotaur("Minotaur");
@@ -627,6 +630,7 @@ TEST_CASE("Lethal Strike v0.4 campaign progress inventory quests and visited map
 {
     std::string error;
     const char *fixture = "minotaur-v04-progress-v85.oysav";
+    SUBCASE("production mod on OpenYAMM 1.10") { fixture = "minotaur-1.10-v95.oysav"; }
     SUBCASE("production mod on OpenYAMM 1.7") { fixture = "minotaur-1.7-v94.oysav"; }
     SUBCASE("production mod on OpenYAMM 1.5") { fixture = "minotaur-1.5-v89.oysav"; }
     SUBCASE("original v0.4 progress") {}

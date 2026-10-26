@@ -303,6 +303,14 @@ uniforms persist between draws. The emission colour is linear: fire orange is ab
 After the burn completes, picking uses only visible attachment bounds (for example, Wyrm charred remains),
 or the loot satchel when present; the vanished body is no longer pickable.
 
+**Energy shield shells** (`ModelShieldShell`, `ModelInstanceSystem::setShieldShell`, `submitShieldShell`; game side:
+`devdocs/ENERGY_SHIELDS_AND_RELATIONS.md`). An instance with a shell draws each skinned or CPU-deformed draw once more
+after the scene's blended parts, with `vs_model_shield`/`fs_model_shield`: pushed out along the normals, additive,
+both faces, depth-tested without depth writes, and again into the glow view at 45 % when bloom runs; also in the
+inspect portrait. The program loads on the first shielded draw; without shells nothing is submitted and the existing
+programs are unchanged (all shader binaries compared identical, 2026-10-23). Creatures stay instanced: the shell is
+an extra single draw.
+
 **Attachments** become static placements (`collectAttachments`): one `ModelStaticGroup` per item model and
 variant, with each placement at its carrier's node matrix. A placement takes the carrier's colour LOD level, its
 ambient light and sun visibility, its point lights folded into undirected light at the item, and its hover

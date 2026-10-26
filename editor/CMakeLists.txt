@@ -33,6 +33,7 @@ add_executable(openyamm-editor
     ${CMAKE_SOURCE_DIR}/game/maps/MapIdentity.cpp
     ${CMAKE_SOURCE_DIR}/game/maps/MapItemSourceYml.cpp
     ${CMAKE_SOURCE_DIR}/game/maps/OutdoorSceneYml.cpp
+    ${CMAKE_SOURCE_DIR}/game/maps/SceneOverlayOperations.cpp
     ${CMAKE_SOURCE_DIR}/game/maps/TerrainTileData.cpp
     ${CMAKE_SOURCE_DIR}/game/party/SkillData.cpp
     ${CMAKE_SOURCE_DIR}/game/items/ItemEnchantTables.cpp
@@ -43,6 +44,9 @@ add_executable(openyamm-editor
     ${CMAKE_SOURCE_DIR}/game/tables/ItemTable.cpp
     ${CMAKE_SOURCE_DIR}/game/tables/MapStats.cpp
     ${CMAKE_SOURCE_DIR}/game/tables/MonsterTable.cpp
+    ${CMAKE_SOURCE_DIR}/game/tables/MonsterShields.cpp
+    ${CMAKE_SOURCE_DIR}/game/tables/MonsterModifiers.cpp
+    ${CMAKE_SOURCE_DIR}/game/tables/MonsterRelationAddOns.cpp
     ${CMAKE_SOURCE_DIR}/game/tables/MergedBaseTables.cpp
     ${CMAKE_SOURCE_DIR}/game/tables/ObjectTable.cpp
     ${CMAKE_SOURCE_DIR}/game/tables/SpriteTables.cpp

@@ -2,15 +2,25 @@
 
 #include "game/ui/GameplayUiController.h"
 
+#include <memory>
+
 namespace OpenYAMM::Game
 {
 class GameplayScreenRuntime;
+// What the character screen works out for a frame (the sheet, the rules' rows, the skill lists), kept by the first of
+// its two passes for the second.
+struct CharacterOverlayFrameData;
 
 class GameplayPartyOverlayRenderer
 {
 public:
     static void renderUtilitySpellOverlay(GameplayScreenRuntime &context, int width, int height);
-    static void renderCharacterOverlay(GameplayScreenRuntime &context, int width, int height, bool renderAboveHud);
+    static void renderCharacterOverlay(
+        GameplayScreenRuntime &context,
+        int width,
+        int height,
+        bool renderAboveHud,
+        std::shared_ptr<CharacterOverlayFrameData> &frameData);
     static void renderHeldInventoryItem(GameplayScreenRuntime &context, int width, int height);
     static void renderItemInspectOverlay(GameplayScreenRuntime &context, int width, int height);
     static void renderCharacterInspectOverlay(GameplayScreenRuntime &context, int width, int height);

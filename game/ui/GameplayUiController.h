@@ -5,6 +5,7 @@
 #include "game/gameplay/GameplayWorldInteraction.h"
 #include "game/party/CharacterState.h"
 #include "game/events/EventDialogContent.h"
+#include "game/items/CraftingRuntime.h"
 #include "game/party/Party.h"
 #include "game/party/PartySpellSystem.h"
 #include "game/party/SkillData.h"
@@ -13,12 +14,15 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace OpenYAMM::Game
 {
+struct RulesetProgressSummary;
+
 class GameplayUiController
 {
 public:
@@ -94,7 +98,11 @@ public:
         Map = 0,
         Quests,
         Story,
-        Notes
+        Notes,
+        // MAW games only: the game's progress (the Journal's fifth tab).
+        Progress,
+        // MAW games only: the aura panel in the Journal's frame, opened from the buff panels, not a tab.
+        Auras
     };
 
     enum class JournalNotesCategory : uint8_t
@@ -192,6 +200,8 @@ public:
         float sourceY = 0.0f;
         float sourceWidth = 0.0f;
         float sourceHeight = 0.0f;
+        // Above the source, right-aligned with it (the map progress bar), instead of beside it.
+        bool above = false;
     };
 
     struct CharacterDetailOverlayState
@@ -222,6 +232,8 @@ public:
         bool active = false;
         size_t runtimeActorIndex = static_cast<size_t>(-1);
         std::string displayNameOverride;
+        // Alt held: the rules' numbers before the selected member's defences (MAW).
+        bool rawNumbers = false;
         float sourceX = 0.0f;
         float sourceY = 0.0f;
         float sourceWidth = 0.0f;
@@ -364,6 +376,18 @@ public:
         int cachedMapZoomStep = 0;
         float cachedMapCenterX = 0.0f;
         float cachedMapCenterY = 0.0f;
+        // The Progress tab: the summary built as the tab opened (rebuilt on the next opening), the continent and the
+        // map filter shown, the map selected and the one under the pointer (file names), and the map list's scroll.
+        std::shared_ptr<const RulesetProgressSummary> progress;
+        size_t progressContinent = 0;
+        uint8_t progressFilter = 0;
+        std::string progressSelectedMap;
+        std::string progressHoveredMap;
+        size_t progressScroll = 0;
+        // The aura panel: the chosen aura (spell id), the list's scroll and whether its Move-to menu is open.
+        uint32_t auraSelected = 0;
+        size_t auraScroll = 0;
+        bool auraMoveMenuOpen = false;
     };
 
     struct QuickReferenceScreenState
@@ -378,9 +402,56 @@ public:
         Reagents
     };
 
+    enum class CraftingTargetFilter : uint8_t
+    {
+        All = 0,
+        Worn,
+        Packs
+    };
+
+    enum class CraftingMaterialFilter : uint8_t
+    {
+        All = 0,
+        Gems,
+        Special,
+        Potions
+    };
+
+    // The Workbench's Crafting tab (devdocs/maw/CRAFTING_BENCH_DESIGN.md §4.1): an item, a material and their result.
+    struct CraftingBenchState
+    {
+        std::optional<CraftItemRef> target;
+        std::optional<CraftMaterialKey> material;
+        CraftingTargetFilter targetFilter = CraftingTargetFilter::All;
+        CraftingMaterialFilter materialFilter = CraftingMaterialFilter::All;
+        std::string search;
+        bool searchActive = false;
+        float listScrollOffset = 0;
+        size_t materialScrollRow = 0;
+        // A gem batch draws on the lowest tier that still raises the item.
+        bool cheapestGems = true;
+        // Apply was pressed on a step that destroys something; the next press confirms it.
+        bool confirmPending = false;
+        // Merge was pressed; the next press merges the chosen gem's tier.
+        bool mergePending = false;
+        // What the last craft did, shown with a short glow until the slots change.
+        std::string craftedText;
+        uint64_t craftedTicks = 0;
+
+        void clearResult()
+        {
+            confirmPending = false;
+            mergePending = false;
+            craftedText.clear();
+        }
+    };
+
     struct AlchemyBenchState
     {
         bool active = false;
+        // The Workbench shows its Crafting tab (rules with crafting only).
+        bool craftingTab = false;
+        CraftingBenchState crafting;
         // The held item is poured into the target item, as when dropping one item onto another in a pack.
         uint32_t targetItemId = 0;
         uint32_t heldItemId = 0;
@@ -421,6 +492,9 @@ public:
         bool open = false;
         bool dollJewelryOverlayOpen = false;
         bool adventurersInnRosterOverlayOpen = false;
+        // Several bags (MAW): the open bag fills the grid at full size instead of the four-bag overview (the 1-4
+        // buttons and keys zoom, the overview button returns). Not saved.
+        bool inventoryBagZoomed = false;
         CharacterPage page = CharacterPage::Inventory;
         CharacterScreenSource source = CharacterScreenSource::Party;
         size_t sourceIndex = 0;
@@ -499,6 +573,13 @@ public:
     struct StatusBarState
     {
         std::string hoverText;
+        // Whether the world's hover set hoverText; the world clears only its own text while overlays block it.
+        bool hoverTextFromWorld = false;
+        // The hovered ground item's name, drawn above the pointer in its rarity colour (MAW); empty otherwise.
+        std::string worldItemLabel;
+        uint32_t worldItemLabelColorAbgr = 0;
+        float worldItemLabelX = 0.0f;
+        float worldItemLabelY = 0.0f;
         std::string eventText;
         float eventRemainingSeconds = 0.0f;
         StatusBarEventPriority eventPriority = StatusBarEventPriority::Normal;
@@ -655,8 +736,10 @@ public:
         float durationSeconds = 2.0f,
         StatusBarEventPriority priority = StatusBarEventPriority::Normal);
     bool statusBarEventActive() const;
-    void setStatusBarHoverText(const std::string &text);
+    void setStatusBarHoverText(const std::string &text, bool fromWorld = false);
     void clearStatusBarHoverText();
+    // Clears the hover text when the world's hover set it, and the hovered ground item's label.
+    void clearWorldStatusBarHoverText();
     void updateStatusBarEvent(float deltaSeconds);
     void clearEventDialog();
     void setEventDialogContent(const EventDialogContent &content);

@@ -9,6 +9,7 @@
 #include "game/party/Party.h"
 #include "game/items/PriceCalculator.h"
 #include "game/party/SkillData.h"
+#include "game/rules/GameRules.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -464,6 +465,7 @@ std::vector<InventoryItem> generateStockItems(
     const StandardItemEnchantTable &standardItemEnchantTable,
     const SpecialItemEnchantTable &specialItemEnchantTable,
     const HouseEntry &houseEntry,
+    Party *pParty,
     int treasureLevel,
     std::mt19937 &rng,
     size_t count,
@@ -538,7 +540,7 @@ std::vector<InventoryItem> generateStockItems(
                     .allowRareItems = false,
                     .worldId = houseEntry.worldId,
                 },
-                nullptr,
+                pParty,
                 rng,
                 [itemId](const ItemDefinition &entry)
                 {
@@ -557,21 +559,136 @@ std::vector<InventoryItem> generateStockItems(
     return results;
 }
 
+constexpr uint32_t PotionBottleItemId = 220;
+constexpr size_t AlchemistTopRowSlots = 6;
+
+bool isRecipeScrollItem(const ItemDefinition &entry)
+{
+    static const std::string RecipeSuffix = " Recipe";
+    return entry.equipStat == "Mscroll"
+        && entry.name.size() > RecipeSuffix.size()
+        && entry.name.ends_with(RecipeSuffix);
+}
+
+// The merged table carries the MM8 and MM7 recipe sets under the same names; only the first of each name is sold so
+// neither set doubles the odds.
+std::unordered_set<uint32_t> uniqueRecipeScrollItemIds(const ItemTable &itemTable)
+{
+    std::unordered_set<uint32_t> itemIds;
+    std::unordered_set<std::string> names;
+
+    for (const ItemDefinition &entry : itemTable.entries())
+    {
+        if (isRecipeScrollItem(entry) && names.insert(entry.name).second)
+        {
+            itemIds.insert(entry.itemId);
+        }
+    }
+
+    return itemIds;
+}
+
+// The native alchemist rows (OpenEnroth GUIWindow_AlchemyShop::generateShopItems): the standard stock is six empty
+// bottles over random reagents, the special stock six random recipe scrolls over random potions.
+std::vector<InventoryItem> generateAlchemistStock(
+    const ItemTable &itemTable,
+    const StandardItemEnchantTable &standardItemEnchantTable,
+    const SpecialItemEnchantTable &specialItemEnchantTable,
+    const HouseEntry &houseEntry,
+    Party *pParty,
+    std::mt19937 &rng,
+    size_t count,
+    int tier,
+    bool special)
+{
+    const size_t topRowCount = std::min(AlchemistTopRowSlots, count);
+    std::vector<InventoryItem> results(count);
+
+    if (special)
+    {
+        const std::unordered_set<uint32_t> recipeItemIds = uniqueRecipeScrollItemIds(itemTable);
+        const std::vector<InventoryItem> topRow = generateStockItems(
+            itemTable,
+            standardItemEnchantTable,
+            specialItemEnchantTable,
+            houseEntry,
+            pParty,
+            tier,
+            rng,
+            topRowCount,
+            [&recipeItemIds](const ItemDefinition &entry)
+            {
+                return recipeItemIds.contains(entry.itemId);
+            },
+            [](const ItemDefinition &)
+            {
+                return 1;
+            },
+            true);
+        std::copy(topRow.begin(), topRow.end(), results.begin());
+    }
+    else
+    {
+        for (size_t index = 0; index < topRowCount; ++index)
+        {
+            results[index] = ItemGenerator::makeInventoryItem(PotionBottleItemId, itemTable, ItemGenerationMode::Shop);
+        }
+    }
+
+    const std::vector<InventoryItem> bottomRow = generateStockItems(
+        itemTable,
+        standardItemEnchantTable,
+        specialItemEnchantTable,
+        houseEntry,
+        pParty,
+        tier,
+        rng,
+        count - topRowCount,
+        [special](const ItemDefinition &entry)
+        {
+            return special
+                ? entry.equipStat == "Bottle" && entry.itemId != PotionBottleItemId
+                : entry.equipStat == "Reagent" || entry.equipStat == "Herb";
+        },
+        [tier, special](const ItemDefinition &entry)
+        {
+            return special ? itemTreasureWeightForSpecialStock(entry, tier) : itemTreasureWeightUpToTier(entry, tier);
+        },
+        true);
+    std::copy(bottomRow.begin(), bottomRow.end(), results.begin() + static_cast<std::ptrdiff_t>(topRowCount));
+    return results;
+}
+
 std::vector<InventoryItem> generateShopStandardStock(
     const ItemTable &itemTable,
     const StandardItemEnchantTable &standardItemEnchantTable,
     const SpecialItemEnchantTable &specialItemEnchantTable,
     const HouseEntry &houseEntry,
+    Party *pParty,
     std::mt19937 &rng,
     size_t count)
 {
     const HouseEntry::StockRule &rule = houseEntry.standardStockRule;
     const int tier = stockRuleTreasureTier(rule);
-    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop") || isHouseType(houseEntry, "Alchemist");
+    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop");
 
     if (tier <= 0)
     {
         return std::vector<InventoryItem>(count);
+    }
+
+    if (isHouseType(houseEntry, "Alchemist"))
+    {
+        return generateAlchemistStock(
+            itemTable,
+            standardItemEnchantTable,
+            specialItemEnchantTable,
+            houseEntry,
+            pParty,
+            rng,
+            count,
+            tier,
+            false);
     }
 
     if (isHouseType(houseEntry, "Armor Shop"))
@@ -585,6 +702,7 @@ std::vector<InventoryItem> generateShopStandardStock(
             standardItemEnchantTable,
             specialItemEnchantTable,
             houseEntry,
+            pParty,
             tier,
             rng,
             topRowCount,
@@ -601,6 +719,7 @@ std::vector<InventoryItem> generateShopStandardStock(
             standardItemEnchantTable,
             specialItemEnchantTable,
             houseEntry,
+            pParty,
             tier,
             rng,
             bottomRowCount,
@@ -632,6 +751,7 @@ std::vector<InventoryItem> generateShopStandardStock(
         standardItemEnchantTable,
         specialItemEnchantTable,
         houseEntry,
+        pParty,
         tier,
         rng,
         count,
@@ -653,16 +773,31 @@ std::vector<InventoryItem> generateShopSpecialStock(
     const StandardItemEnchantTable &standardItemEnchantTable,
     const SpecialItemEnchantTable &specialItemEnchantTable,
     const HouseEntry &houseEntry,
+    Party *pParty,
     std::mt19937 &rng,
     size_t count)
 {
     const HouseEntry::StockRule &rule = houseEntry.specialStockRule;
     const int tier = stockRuleTreasureTier(rule);
-    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop") || isHouseType(houseEntry, "Alchemist");
+    const bool allowDuplicates = isHouseType(houseEntry, "Magic Shop");
 
     if (tier <= 0)
     {
         return std::vector<InventoryItem>(count);
+    }
+
+    if (isHouseType(houseEntry, "Alchemist"))
+    {
+        return generateAlchemistStock(
+            itemTable,
+            standardItemEnchantTable,
+            specialItemEnchantTable,
+            houseEntry,
+            pParty,
+            rng,
+            count,
+            tier,
+            true);
     }
 
     if (isHouseType(houseEntry, "Armor Shop"))
@@ -676,6 +811,7 @@ std::vector<InventoryItem> generateShopSpecialStock(
             standardItemEnchantTable,
             specialItemEnchantTable,
             houseEntry,
+            pParty,
             tier,
             rng,
             topRowCount,
@@ -692,6 +828,7 @@ std::vector<InventoryItem> generateShopSpecialStock(
             standardItemEnchantTable,
             specialItemEnchantTable,
             houseEntry,
+            pParty,
             tier,
             rng,
             bottomRowCount,
@@ -723,6 +860,7 @@ std::vector<InventoryItem> generateShopSpecialStock(
         standardItemEnchantTable,
         specialItemEnchantTable,
         houseEntry,
+        pParty,
         tier,
         rng,
         count,
@@ -879,6 +1017,7 @@ Party::HouseStockState &ensureHouseStockGenerated(
             standardItemEnchantTable,
             specialItemEnchantTable,
             houseEntry,
+            &party,
             rng,
             standardCount);
     state.specialStock =
@@ -887,6 +1026,7 @@ Party::HouseStockState &ensureHouseStockGenerated(
             standardItemEnchantTable,
             specialItemEnchantTable,
             houseEntry,
+            &party,
             rng,
             specialCount);
     state.spellbookStock =
@@ -895,6 +1035,9 @@ Party::HouseStockState &ensureHouseStockGenerated(
             houseEntry,
             rng,
             spellbookCount);
+    const ItemRules &itemRules = gameRulesFor(&party).items;
+    itemRules.adjustShopStock(state.standardStock, houseEntry, party, itemTable, rng);
+    itemRules.adjustShopStock(state.specialStock, houseEntry, party, itemTable, rng);
     return state;
 }
 
@@ -974,6 +1117,11 @@ bool hasMerchantSkillForPhrase(const Character *pCharacter)
 
 const Character *partyMerchantMember(const Party &party)
 {
+    if (const Character *pRulesMerchant = PriceCalculator::rulesMerchantMember(party))
+    {
+        return pRulesMerchant;
+    }
+
     const Character *pMerchant = party.bestPartyWideUtilitySkillMember("Merchant");
     return pMerchant != nullptr ? pMerchant : party.activeMember();
 }
@@ -1076,7 +1224,7 @@ std::string buildIdentifyPhrase(
         pActiveMember,
         item,
         itemDefinition,
-        houseEntry.priceMultiplier,
+        boundGameRules().items.shopServiceMultiplier(itemDefinition, true, houseEntry.priceMultiplier),
         pStandardItemEnchantTable,
         pSpecialItemEnchantTable,
         effectiveReputation);
@@ -1109,7 +1257,7 @@ std::string buildRepairPhrase(
         pActiveMember,
         item,
         itemDefinition,
-        houseEntry.priceMultiplier,
+        boundGameRules().items.shopServiceMultiplier(itemDefinition, false, houseEntry.priceMultiplier),
         pStandardItemEnchantTable,
         pSpecialItemEnchantTable,
         effectiveReputation);
@@ -1260,8 +1408,8 @@ int HouseServiceRuntime::buyPrice(
         return 0;
     }
 
-    const int actualValue =
-        PriceCalculator::itemValue(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
+    const int actualValue = gameRulesFor(&party).items.shopBuyValue(
+        item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
     const int price = PriceCalculator::itemBuyingPrice(
         partyMerchantMember(party),
         actualValue,
@@ -1339,8 +1487,8 @@ std::string HouseServiceRuntime::buildBuyHoverText(
         houseEntry,
         item,
         effectiveReputation);
-    const int realValue =
-        PriceCalculator::itemValue(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
+    const int realValue = gameRulesFor(&party).items.shopBuyValue(
+        item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
     const int listedPrice = baseBuyPrice(realValue, houseEntry.priceMultiplier);
     const std::string itemName =
         ItemRuntime::displayName(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
@@ -1554,6 +1702,48 @@ bool HouseServiceRuntime::tryBuyStockItem(
         *pResult = ShopItemServiceResult::Success;
     }
 
+    return true;
+}
+
+bool HouseServiceRuntime::tryRerollStock(
+    Party &party,
+    const ItemTable &itemTable,
+    const StandardItemEnchantTable &standardItemEnchantTable,
+    const SpecialItemEnchantTable &specialItemEnchantTable,
+    const HouseEntry &houseEntry,
+    float gameMinutes,
+    std::string &statusText)
+{
+    const std::optional<int> cost = gameRulesFor(&party).items.shopRerollCost(party, houseEntry);
+
+    if (!cost)
+    {
+        return false;
+    }
+
+    if (party.gold() < *cost)
+    {
+        statusText = "Not enough gold.";
+        return false;
+    }
+
+    party.addGold(-*cost);
+    Party::HouseStockState &state = party.ensureHouseStockState(houseEntry.id);
+    state.standardStock.clear();
+    state.specialStock.clear();
+    state.spellbookStock.clear();
+    ensureHouseStockGenerated(
+        party, itemTable, standardItemEnchantTable, specialItemEnchantTable, houseEntry, gameMinutes);
+
+    for (std::vector<InventoryItem> *pStock : {&state.standardStock, &state.specialStock})
+    {
+        for (InventoryItem &item : *pStock)
+        {
+            item.identified = true;
+        }
+    }
+
+    statusText = "New stock for " + std::to_string(*cost) + " gold.";
     return true;
 }
 
@@ -1795,6 +1985,18 @@ bool HouseServiceRuntime::trySellInventoryItem(
         return false;
     }
 
+    if (const std::optional<std::string> refusal = party.rules().items.sellRefusal(party, *pItem))
+    {
+        statusText = *refusal;
+
+        if (pResult != nullptr)
+        {
+            *pResult = ShopItemServiceResult::Unavailable;
+        }
+
+        return false;
+    }
+
     const int price = sellPrice(
         party,
         itemTable,
@@ -1818,8 +2020,9 @@ bool HouseServiceRuntime::trySellInventoryItem(
     }
 
     party.addGold(price);
+    party.rules().items.itemSold(party, removedItem);
     statusText = "Sold "
-        + itemDisplayName(*pItem, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)
+        + itemDisplayName(removedItem, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)
         + " for " + std::to_string(price) + " gold.";
 
     if (pResult != nullptr)
@@ -1913,7 +2116,7 @@ bool HouseServiceRuntime::tryIdentifyInventoryItem(
         partyMerchantMember(party),
         *pItem,
         *pItemDefinition,
-        houseEntry.priceMultiplier,
+        gameRulesFor(&party).items.shopServiceMultiplier(*pItemDefinition, true, houseEntry.priceMultiplier),
         &standardItemEnchantTable,
         &specialItemEnchantTable,
         effectiveReputation);
@@ -2038,7 +2241,7 @@ bool HouseServiceRuntime::tryRepairInventoryItem(
         partyMerchantMember(party),
         *pItem,
         *pItemDefinition,
-        houseEntry.priceMultiplier,
+        gameRulesFor(&party).items.shopServiceMultiplier(*pItemDefinition, false, houseEntry.priceMultiplier),
         &standardItemEnchantTable,
         &specialItemEnchantTable,
         effectiveReputation);

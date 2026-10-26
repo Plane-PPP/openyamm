@@ -128,6 +128,8 @@ public:
     void applyMapReentryReset();
     void prepareTimers();
     bool advanceSimulation(float deltaMilliseconds);
+    // Doors and lifts only; turn-based mode keeps them moving while game time stays frozen.
+    bool advanceMechanisms(float deltaMilliseconds);
     bool activateEvent(
         uint16_t eventId,
         const std::string &sourceKind,

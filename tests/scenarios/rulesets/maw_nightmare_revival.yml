@@ -1,0 +1,39 @@
+id: rulesets.maw_nightmare_revival
+title: "Ruleset - MAW Nightmare: the slain of a dungeon left before 65 % are cleared rise again, and stay dead once it is weakened"
+world: mm8
+mode: faithful
+tags: [rulesets, maw]
+steps:
+  - new_game_flow:
+      start_map: out01.odm
+      ruleset: {id: maw, difficulty: nightmare, progression: free}
+  - load_map: {map: d31.blv}
+  - damage_actor: {actor_index: 0, amount: 10000000}
+  - damage_actor: {actor_index: 1, amount: 10000000}
+  # Audit MON-11: a monster that came after the map's first fill stays dead.
+  - advance_runtime: {seconds: 1}
+  - spawn_actor: {monster_id: 194, near_party: true}
+  - damage_actor: {actor_index: last, amount: 10000000}
+  - advance_runtime: {seconds: 2}
+  - assert:
+      actor_visible: {actor_index: 0, dead: true}
+  - assert:
+      actor_visible: {actor_index: last, dead: true}
+  - load_map: {map: out01.odm}
+  - load_map: {map: d31.blv}
+  - assert:
+      actor_visible: {actor_index: 0, dead: false}
+  - assert:
+      actor_visible: {actor_index: last, dead: true}
+  # Audit MON-2: the risen still count as slain, so the revival does not undo the progress.
+  - assert:
+      ruleset: {id: maw, map_slain_min: 2}
+  - damage_actor: {all: true, amount: 10000000}
+  - advance_runtime: {seconds: 2}
+  # Audit MON-3: cleared since the last refill.
+  - assert:
+      ruleset: {id: maw, map_cleared: true}
+  - load_map: {map: out01.odm}
+  - load_map: {map: d31.blv}
+  - assert:
+      actor_visible: {actor_index: 0, dead: true}

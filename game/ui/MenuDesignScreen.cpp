@@ -1,5 +1,6 @@
 #include "game/ui/MenuDesignScreen.h"
 
+#include "engine/FontAsset.h"
 #include "game/audio/GameAudioSystem.h"
 #include "game/audio/SoundIds.h"
 #include "game/render/WaterMath.h"
@@ -18,16 +19,11 @@ constexpr float CanvasHeight = 480.0f;
 constexpr float BrowserToLogical = 8.0f / 15.0f;
 const std::string ArtRoot = "hud_x2/menus/omenu_";
 
+// SDL_iconv knows WINDOWS-1252 only when SDL is built on the system's iconv; its own converter lacks it, which left
+// UTF-8 bytes drawn as CP1252 glyphs ("Ã—0.50") on some builds. Imported game names may already be CP1252.
 std::string menuEncoding(const std::string &text)
 {
-    char *pEncoded = SDL_iconv_string("WINDOWS-1252", "UTF-8", text.c_str(), text.size() + 1);
-    if (pEncoded == nullptr)
-    {
-        return text; // Existing imported game names may already be CP1252.
-    }
-    const std::string result(pEncoded);
-    SDL_free(pEncoded);
-    return result;
+    return Engine::utf8ToCp1252(text);
 }
 } // namespace
 
@@ -344,6 +340,21 @@ void MenuDesignScreen::textInRect(const Rect &rect, const std::string &text, con
     }
 }
 
+float MenuDesignScreen::textBlockHeight(const std::string &text, const std::string &font, float logicalSize,
+                                       float width)
+{
+    const float scale = designScale() * logicalSize / std::max(1, fontHeight(font));
+    size_t lineCount = 0;
+    std::istringstream paragraphs(menuEncoding(text));
+    std::string paragraph;
+    while (std::getline(paragraphs, paragraph))
+    {
+        lineCount += wrapParagraph(paragraph, font, scale, width).size();
+    }
+    const float glyphHeight = logicalSize * designScale();
+    return lineCount == 0 ? 0 : glyphHeight + (lineCount - 1) * glyphHeight * 1.2f;
+}
+
 void MenuDesignScreen::label(const std::string &id, const std::string &text, uint32_t color, float offsetY)
 {
     const UiLayoutManager::LayoutElement *pElement = m_designLayouts.findElement(id);
@@ -558,7 +569,18 @@ void MenuDesignScreen::drawConfirmation()
     const bool list = m_confirmation->choices.size() > 3;
     const int total = int(m_confirmation->choices.size());
     const int count = twoColumns ? total : std::min(8, total);
-    const int columns = twoColumns ? std::min(2, count) : 1;
+    // The grid: two columns, three when two would run off the 480-unit canvas (MAW's twenty classes); rows close up
+    // to fit what still would not.
+    constexpr float GridTop = 126;
+    constexpr float GridBottom = 46;
+    constexpr float GridRowPitch = 46;
+    constexpr float GridCanvasHeight = 472;
+    const int columns = !twoColumns ? 1
+        : GridTop + GridBottom + (count + 1) / 2 * GridRowPitch > GridCanvasHeight ? std::min(3, count)
+        : std::min(2, count);
+    const int gridRows = (count + columns - 1) / columns;
+    const float gridRowPitch = gridRows > 0
+        ? std::min(GridRowPitch, std::floor((GridCanvasHeight - GridTop - GridBottom) / gridRows)) : GridRowPitch;
     const auto *pPanel = m_designLayouts.findElement("MenuConfirmationPanel");
     const auto *pBody = m_designLayouts.findElement("MenuConfirmationBody");
     const float unit = designScale();
@@ -611,7 +633,7 @@ void MenuDesignScreen::drawConfirmation()
     }
     constexpr float NotesGap = 10;
     const float notesShift = notesHeight > 0 ? notesHeight + NotesGap : 0;
-    const float height = twoColumns ? 172.0f + ((count + columns - 1) / columns) * 46
+    const float height = twoColumns ? GridTop + gridRows * gridRowPitch + GridBottom
                                    : list ? 155.0f + count * 25 : pPanel->height + bodyExtra + notesShift;
     const float verticalShift = (pPanel->height - height) / 2 * designScale();
     const auto modalRect = [this, verticalShift](const std::string &id)
@@ -623,7 +645,7 @@ void MenuDesignScreen::drawConfirmation()
     Rect panel = modalRect("MenuConfirmationPanel");
     if (twoColumns)
     {
-        const float width = 600 * designScale();
+        const float width = (columns > 2 ? 720 : 600) * designScale();
         panel.x += (panel.width - width) / 2;
         panel.width = width;
     }
@@ -742,7 +764,7 @@ void MenuDesignScreen::drawConfirmation()
         {
             const float width = (panel.width - 72 * scale - (columns - 1) * 12 * scale) / columns;
             rect = {panel.x + 36 * scale + (i % columns) * (width + 12 * scale),
-                    panel.y + (126 + (i / columns) * 46) * scale, width, 38 * scale};
+                    panel.y + (GridTop + (i / columns) * gridRowPitch) * scale, width, (gridRowPitch - 8) * scale};
         }
         else if (list)
         {

@@ -7,6 +7,9 @@
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/MasteryTeacherDialog.h"
 #include "game/gameplay/ReputationRuntime.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/MonsterRules.h"
+#include "game/rules/SkillRules.h"
 #include "game/StringUtils.h"
 #include "game/tables/MergedBaseTables.h"
 
@@ -1191,6 +1194,19 @@ EventDialogContent buildEventDialogContent(
         confirmAction.label = "OK";
         dialog.actions.push_back(std::move(confirmAction));
 
+        // The rules may offer to reset a completed dungeon on the way in (MAW).
+        if (const std::optional<std::string> resetOffer = !leavingCurrentDungeon && !transitionMapName.empty()
+                    && context.transitionMapMove.has_value() && !context.boundaryTravel
+                ? gameRulesFor(pParty).monsters.mapResetOffer(transitionMapName)
+                : std::nullopt)
+        {
+            dialog.lines.push_back(*resetOffer);
+            EventDialogAction resetAction = {};
+            resetAction.kind = EventDialogActionKind::MapTransitionReset;
+            resetAction.label = "Reset";
+            dialog.actions.push_back(std::move(resetAction));
+        }
+
         EventDialogAction cancelAction = {};
         cancelAction.kind = EventDialogActionKind::MapTransitionCancel;
         cancelAction.label = "Close";
@@ -1676,7 +1692,9 @@ EventDialogContent buildEventDialogContent(
                         EventDialogAction action = {};
                         action.kind = EventDialogActionKind::NpcHireOffer;
                         action.id = pNpc->professionId;
-                        action.label = "Join";
+                        const std::optional<FollowerHireRefusal> hireRefusal =
+                            gameRulesFor(pParty).classes.followerHireRefusal(context.hostHouseId);
+                        action.label = hireRefusal ? hireRefusal->topic : "Join";
                         action.enabled = npcRuntimeState.hiredNpcFollowers.size() < MaxNpcFollowerCount;
                         action.disabledReason = action.enabled ? std::string() : "You already have enough followers.";
                         dialog.actions.push_back(std::move(action));
@@ -1795,7 +1813,21 @@ EventDialogContent buildEventDialogContent(
 
         if (teacherTopic && teacherTopic->textId != 0)
         {
-            const std::optional<std::string> text = pNpcDialogTable->getText(teacherTopic->textId);
+            std::optional<std::string> text = pNpcDialogTable->getText(teacherTopic->textId);
+
+            // The rules' requirement and price for the active member replace the speech's (MAW).
+            if (text && !text->empty() && pParty != nullptr && pClassSkillTable != nullptr)
+            {
+                if (const std::optional<MasteryTeacherEvaluation> evaluation = evaluateMasteryTeacherTopic(
+                        pCurrentOffer->topicId, *pParty, *pClassSkillTable, *pNpcDialogTable, pTeacherTopicTable))
+                {
+                    const SkillRules &skillRules = pParty->rules().skills;
+                    text = skillRules.teacherSpeech(*text, canonicalSkillName(teacherTopic->skillName),
+                        teacherTopic->targetMastery,
+                        skillRules.masteryRequiredLevel(teacherTopic->skillName, teacherTopic->targetMastery),
+                        evaluation->cost);
+                }
+            }
 
             if (text && !text->empty())
             {

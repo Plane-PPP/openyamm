@@ -3,7 +3,9 @@
 #include "engine/TextTable.h"
 #include "game/data/GameDataLoader.h"
 #include "game/gameplay/ArenaRuntime.h"
+#include "game/gameplay/GameplayActorService.h"
 #include "game/maps/IndoorSceneYml.h"
+#include "game/rules/maw/MawRules.h"
 #include "tests/HouseDialogueTestHarness.h"
 
 #include <array>
@@ -248,6 +250,7 @@ TEST_CASE("arena master offers four difficulties and awards a completed fight ex
             {
                 CHECK_FALSE(actor.proceduralDeathLoot);
                 CHECK_EQ(actor.hostilityType, 4);
+                CHECK_EQ(actor.group, 1u);
                 CHECK_GE(actor.monsterId, world.minimumMonster);
                 CHECK_LE(actor.monsterId, world.maximumMonster);
             }
@@ -288,6 +291,41 @@ TEST_CASE("arena master offers four difficulties and awards a completed fight ex
     }
 }
 
+TEST_CASE("MAW arena bouts past level 100 draw from the twelve types nearest the range (audit OVR2-2-2)")
+{
+    const Game::MonsterTable monsters = arenaMonsters();
+    Game::MawRules rules(Game::RulesetOptions{}, Game::MawMapLevels{});
+    Game::Party party;
+    Game::PartySeed seed = {};
+    seed.members.push_back(Game::Character{});
+    party.seed(seed);
+    party.member(0)->level = 200;
+
+    for (const ArenaWorld &world : Arenas)
+    {
+        CAPTURE(world.world);
+        const Game::MapStatsEntry map = arenaMap(world);
+        const auto typesDrawn = [&](const Game::Party &drawer)
+        {
+            std::set<int16_t> types;
+
+            for (uint32_t randomSeed = 0; randomSeed < 40; ++randomSeed)
+            {
+                const auto challenge = Game::generateArenaChallenge(
+                    monsters, *map.arena, drawer, Game::ArenaDifficulty::Lord, randomSeed);
+                REQUIRE(challenge.has_value());
+                types.insert(challenge->monsterIds.begin(), challenge->monsterIds.end());
+            }
+
+            return types.size();
+        };
+        const size_t standard = typesDrawn(party);
+        party.setRules(&rules.gameRules());
+        CHECK(typesDrawn(party) >= std::min<size_t>(6, standard + 2));
+        party.setRules(nullptr);
+    }
+}
+
 TEST_CASE("arena invalid difficulty or unavailable opponent pool cannot begin a challenge")
 {
     const Game::MonsterTable monsters = arenaMonsters();
@@ -303,4 +341,55 @@ TEST_CASE("arena invalid difficulty or unavailable opponent pool cannot begin a 
     onlyPeasants.maximumMonsterId = 3;
     party.member(0)->level = 6;
     CHECK_FALSE(Game::generateArenaChallenge(monsters, onlyPeasants, party, Game::ArenaDifficulty::Page, 0));
+}
+
+TEST_CASE("arena opponents from hostile factions share a group and never target each other")
+{
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    Engine::AssetFileSystem assetFileSystem;
+    REQUIRE(assetFileSystem.initialize(sourceRoot, sourceRoot / "assets_dev", Engine::AssetScaleTier::X1));
+    Game::GameDataLoader data;
+    REQUIRE(data.loadForHeadlessGameplay(assetFileSystem));
+    const Game::MonsterTable &monsters = data.getMonsterTable();
+
+    int16_t firstMonsterId = 0;
+    int16_t secondMonsterId = 0;
+    for (int16_t first = 1; first <= 198 && firstMonsterId == 0; ++first)
+    {
+        for (int16_t second = 1; second <= 198; ++second)
+        {
+            if (monsters.findStatsById(first) != nullptr && monsters.findStatsById(second) != nullptr
+                && monsters.getRelationBetweenMonsters(first, second) > 0)
+            {
+                firstMonsterId = first;
+                secondMonsterId = second;
+                break;
+            }
+        }
+    }
+    REQUIRE_NE(firstMonsterId, 0);
+
+    Game::GameplayActorService service = {};
+    service.bindTables(&monsters, &data.getSpellTable());
+
+    Game::GameplayActorTargetPolicyState attacker = {};
+    attacker.monsterId = firstMonsterId;
+    attacker.hostileToParty = true;
+    attacker.height = 128;
+
+    Game::GameplayActorTargetPolicyState opponent = attacker;
+    opponent.monsterId = secondMonsterId;
+
+    CHECK(service.resolveActorTargetPolicy(attacker, opponent).canTarget);
+
+    attacker.group = 1;
+    opponent.group = 1;
+    CHECK_FALSE(service.resolveActorTargetPolicy(attacker, opponent).canTarget);
+
+    Game::GameplayActorTargetPolicyState summon = {};
+    summon.monsterId = secondMonsterId;
+    summon.group = 1;
+    summon.height = 128;
+    summon.controlMode = Game::GameplayActorControlMode::Enslaved;
+    CHECK(service.resolveActorTargetPolicy(attacker, summon).canTarget);
 }

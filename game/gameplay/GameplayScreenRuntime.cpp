@@ -13,6 +13,7 @@
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayFxService.h"
 #include "game/gameplay/GameplayHeldItemController.h"
+#include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/GameplaySaveLoadUiSupport.h"
 #include "game/gameplay/GameplaySpellService.h"
 #include "game/items/InventoryItemUseRuntime.h"
@@ -419,6 +420,15 @@ constexpr uint64_t SpellFailSoundCooldownMs = 250;
 GameplayScreenRuntime::GameplayScreenRuntime(GameSession &session)
     : m_session(session)
 {
+    bindCombatLog(&m_combatLog);
+}
+
+GameplayScreenRuntime::~GameplayScreenRuntime()
+{
+    if (boundCombatLog() == &m_combatLog)
+    {
+        bindCombatLog(nullptr);
+    }
 }
 
 CombatActorHealthBarRuntime &GameplayScreenRuntime::enemyHealthBars() const
@@ -453,6 +463,8 @@ void GameplayScreenRuntime::bindAudioSystem(GameAudioSystem *pAudioSystem)
 void GameplayScreenRuntime::bindSettings(GameSettings *pSettings)
 {
     m_pSettings = pSettings;
+    // The session's update keeps it in step with later changes.
+    m_combatLog.setRecording(pSettings != nullptr && pSettings->combatLog);
 }
 
 void GameplayScreenRuntime::bindSceneAdapter(IGameplayOverlaySceneAdapter *pSceneAdapter)
@@ -865,6 +877,11 @@ const ItemTable *GameplayScreenRuntime::itemTable() const
     return &m_session.data().itemTable();
 }
 
+const std::string &GameplayScreenRuntime::rulesetGuideUrl() const
+{
+    return m_session.data().rulesetGuideUrl();
+}
+
 const StandardItemEnchantTable *GameplayScreenRuntime::standardItemEnchantTable() const
 {
     return &m_session.data().standardItemEnchantTable();
@@ -1258,6 +1275,40 @@ void GameplayScreenRuntime::clearStatusBarHoverText() const
     uiController().clearStatusBarHoverText();
 }
 
+void GameplayScreenRuntime::setWorldStatusBarHoverText(const std::string &text) const
+{
+    if (text.empty())
+    {
+        uiController().clearWorldStatusBarHoverText();
+        return;
+    }
+
+    uiController().setStatusBarHoverText(text, true);
+}
+
+void GameplayScreenRuntime::clearWorldStatusBarHoverText() const
+{
+    uiController().clearWorldStatusBarHoverText();
+}
+
+void GameplayScreenRuntime::setWorldItemHoverLabel(
+    const std::string &text,
+    uint32_t colorAbgr,
+    float screenX,
+    float screenY) const
+{
+    GameplayUiController::StatusBarState &statusBar = uiController().statusBar();
+    statusBar.worldItemLabel = text;
+    statusBar.worldItemLabelColorAbgr = colorAbgr;
+    statusBar.worldItemLabelX = screenX;
+    statusBar.worldItemLabelY = screenY;
+}
+
+const GameplayUiController::StatusBarState &GameplayScreenRuntime::statusBarState() const
+{
+    return uiController().statusBar();
+}
+
 size_t &GameplayScreenRuntime::eventDialogSelectionIndex() const
 {
     return uiController().eventDialog().selectionIndex;
@@ -1499,9 +1550,28 @@ void GameplayScreenRuntime::beginRestAction(
     }
 
     // The party sleeps from the start of a heal, so dawns passed during it do not count as days without rest.
+    // Sleeping members show their sleep portraits until restAndHealAll wakes them when the rest completes.
     if (mode == GameplayUiController::RestMode::Heal)
     {
-        party()->clearDaysWithoutRest();
+        Party &currentParty = *party();
+        currentParty.clearDaysWithoutRest();
+
+        for (size_t memberIndex = 0; memberIndex < currentParty.members().size(); ++memberIndex)
+        {
+            Character *pMember = currentParty.member(memberIndex);
+
+            if (pMember == nullptr
+                || pMember->conditions.test(static_cast<size_t>(CharacterCondition::Dead))
+                || pMember->conditions.test(static_cast<size_t>(CharacterCondition::Petrified))
+                || pMember->conditions.test(static_cast<size_t>(CharacterCondition::Eradicated)))
+            {
+                continue;
+            }
+
+            pMember->conditions.set(static_cast<size_t>(CharacterCondition::Asleep));
+            pMember->conditionStartGameMinutes[static_cast<size_t>(CharacterCondition::Asleep)] =
+                worldRuntime()->gameMinutes();
+        }
     }
 
     restScreen.mode = mode;
@@ -1527,10 +1597,19 @@ void GameplayScreenRuntime::startRestAction(GameplayUiController::RestMode mode,
     beginRestAction(mode, minutes, true, false);
 }
 
-void GameplayScreenRuntime::startInnRest(float durationMinutes)
+void GameplayScreenRuntime::startInnRest(uint32_t houseId)
 {
+    if (worldRuntime() == nullptr)
+    {
+        return;
+    }
+
     openRestOverlay(false);
-    beginRestAction(GameplayUiController::RestMode::Heal, durationMinutes, false, true);
+    beginRestAction(
+        GameplayUiController::RestMode::Heal,
+        innRestDurationMinutes(houseId, worldRuntime()->gameMinutes()),
+        false,
+        true);
 }
 
 void GameplayScreenRuntime::openSpellbookOverlay()
@@ -1615,7 +1694,7 @@ void GameplayScreenRuntime::toggleCharacterInventoryScreen()
 void GameplayScreenRuntime::closeCharacterScreen()
 {
     GameplayUiController::CharacterScreenState &characterScreen = uiController().characterScreen();
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     GameplayUiController::HeldInventoryItemState &heldItem = heldInventoryItem();
     Party *pParty = party();
     if (characterScreen.open && heldItem.active && pParty != nullptr)
@@ -2114,6 +2193,8 @@ void GameplayScreenRuntime::openJournalOverlay()
     journalScreen.questPage = 0;
     journalScreen.storyPage = 0;
     journalScreen.notesPage = 0;
+    journalScreen.progress.reset();
+    journalScreen.progressScroll = 0;
     journalScreen.hoverAnimationElapsedSeconds = 0.0f;
     journalScreen.mapDragActive = false;
     journalScreen.mapDragStartMouseX = 0.0f;
@@ -2154,6 +2235,7 @@ void GameplayScreenRuntime::closeJournalOverlay()
     const bool wasActive = journalScreen.active;
     journalScreen.active = false;
     journalScreen.notesSearchActive = false;
+    journalScreen.progress.reset();
     journalScreen.hoverAnimationElapsedSeconds = 0.0f;
     journalScreen.mapDragActive = false;
     journalScreen.mapDragStartMouseX = 0.0f;
@@ -2328,6 +2410,11 @@ void GameplayScreenRuntime::executeActiveDialogAction(
     else
     {
         closeActiveDialogActionResult(result, closeActiveDialog);
+
+        if (result.pendingInnRest.has_value())
+        {
+            startInnRest(result.pendingInnRest->houseId);
+        }
     }
 
     if (afterCloseContinuation)
@@ -2734,7 +2821,8 @@ void GameplayScreenRuntime::playSpeechReaction(size_t memberIndex, SpeechId spee
 
     const Character *pMember = pParty->member(memberIndex);
 
-    if (pMember == nullptr)
+    // An incapacitated member neither speaks nor animates; the portrait shows the condition.
+    if (pMember == nullptr || !canMemberSpeak(*pMember, speechId))
     {
         return;
     }
@@ -3048,7 +3136,11 @@ void GameplayScreenRuntime::consumePendingEventRuntimeAudioRequests()
 
         if (!request.soundName.empty())
         {
-            m_pAudioSystem->playSoundByName(request.soundName, group, request.soundScope, position);
+            if (!m_pAudioSystem->playSoundByName(request.soundName, group, request.soundScope, position)
+                && !request.fallbackSoundName.empty())
+            {
+                m_pAudioSystem->playSoundByName(request.fallbackSoundName, group, request.soundScope, position);
+            }
         }
         else
         {
@@ -3365,6 +3457,93 @@ void GameplayScreenRuntime::updateHouseVideoPlayback(float deltaSeconds)
     uiRuntime().updateHouseVideoPlayback(deltaSeconds);
 }
 
+void GameplayScreenRuntime::updateHouseDialoguePresentation(float deltaSeconds)
+{
+    const EventDialogContent &activeDialog = activeEventDialog();
+
+    if (!activeDialog.isActive
+        || currentHudScreenState() != GameplayHudScreenState::Dialogue
+        || !activeEventDialogAllowsHouseVideoPlayback(activeDialog))
+    {
+        leaveHouseEntryAudio(true);
+        stopHouseVideoPlayback();
+        return;
+    }
+
+    if (!activeDialog.videoName.empty())
+    {
+        // A dialogue with its own video carries its own audio: no door sound or greeting.
+        leaveHouseEntryAudio(false);
+
+        if (activeDialog.videoDirectory.empty())
+        {
+            playHouseVideo(activeDialog.videoName);
+        }
+        else
+        {
+            playHouseVideo(activeDialog.videoName, activeDialog.videoDirectory);
+        }
+
+        updateHouseVideoPlayback(deltaSeconds);
+        return;
+    }
+
+    const EventRuntimeState *pEventRuntimeState =
+        worldRuntime() != nullptr ? worldRuntime()->eventRuntimeState() : nullptr;
+    const uint32_t hostHouseId = pEventRuntimeState != nullptr ? pEventRuntimeState->dialogueState.hostHouseId : 0;
+    const HouseEntry *pHostHouseEntry = hostHouseId != 0 ? m_session.data().houseTable().get(hostHouseId) : nullptr;
+
+    if (pHostHouseEntry == nullptr || pHostHouseEntry->videoName.empty())
+    {
+        leaveHouseEntryAudio(true);
+        stopHouseVideoPlayback();
+        return;
+    }
+
+    if (m_activeHouseAudioHostId != pHostHouseEntry->id)
+    {
+        m_activeHouseAudioHostId = pHostHouseEntry->id;
+
+        if (m_pAudioSystem != nullptr)
+        {
+            m_pAudioSystem->pauseBackgroundMusic();
+            m_pAudioSystem->playCommonSound(SoundId::Enter, GameAudioSystem::PlaybackGroup::HouseDoor);
+            const std::optional<uint32_t> greetingSoundId =
+                deriveHouseSoundId(
+                    *pHostHouseEntry,
+                    houseEntrySoundType(*pHostHouseEntry, partyReadOnly(), worldRuntime()));
+
+            if (greetingSoundId.has_value())
+            {
+                playHouseSound(*greetingSoundId);
+            }
+        }
+    }
+
+    playHouseVideo(pHostHouseEntry->videoName);
+    updateHouseVideoPlayback(deltaSeconds);
+}
+
+void GameplayScreenRuntime::resetHouseEntryAudio()
+{
+    m_activeHouseAudioHostId = 0;
+}
+
+void GameplayScreenRuntime::leaveHouseEntryAudio(bool playDoorSound)
+{
+    if (m_activeHouseAudioHostId != 0 && m_pAudioSystem != nullptr)
+    {
+        if (playDoorSound)
+        {
+            m_pAudioSystem->playCommonSound(SoundId::WoodDoorClosing, GameAudioSystem::PlaybackGroup::HouseDoor);
+        }
+
+        m_pAudioSystem->resumeBackgroundMusic();
+    }
+
+    m_activeHouseAudioHostId = 0;
+}
+
 bool GameplayScreenRuntime::isControlsRenderButtonPressed(GameplayControlsRenderButton button) const
 {
     if (!interactionState().controlsClickLatch)
@@ -3469,7 +3648,9 @@ std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> GameplayScreenRun
     }
     const Party *pParty = partyReadOnly();
     const size_t count = pParty != nullptr ? std::clamp(pParty->members().size(), size_t{1}, size_t{5}) : 5;
-    if (layoutId.starts_with("ObsidianPc") || layoutId == "OutdoorGameplayBasebar")
+    // The map progress channel spans the frame as the frame does.
+    if (layoutId.starts_with("ObsidianPc") || layoutId == "OutdoorGameplayBasebar"
+        || layoutId == "MapProgressChannel")
     {
         const HudLayoutElement *pFirst = findHudLayoutElement("ObsidianPc1");
         const HudLayoutElement *pSecond = findHudLayoutElement("ObsidianPc2");
@@ -3477,7 +3658,7 @@ std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> GameplayScreenRun
         {
             const float unusedWidth = (5 - count) * (pSecond->gapX - pFirst->gapX) * rect->scale;
             rect->x += unusedWidth * 0.5f;
-            if (layoutId == "OutdoorGameplayBasebar")
+            if (layoutId == "OutdoorGameplayBasebar" || layoutId == "MapProgressChannel")
             {
                 rect->width -= unusedWidth;
             }
@@ -3767,8 +3948,16 @@ float GameplayScreenRuntime::characterSkillsContentHeight(int width, int height)
         return 0;
     }
     float contentHeight = 0;
-    for (const char *pId : {"CharacterSkillsMagicListRegion", "CharacterSkillsMiscListRegion"})
+    const Character *pCharacter = selectedCharacterScreenCharacter();
+    const bool showTechnologySkills = pCharacter != nullptr && pCharacter->hasTechnologySkill();
+    for (const char *pId : {"CharacterSkillsMagicListRegion", "CharacterSkillsMiscListRegion",
+             "CharacterSkillsTechListRegion"})
     {
+        if (!showTechnologySkills && std::string_view(pId) == "CharacterSkillsTechListRegion")
+        {
+            continue;
+        }
+
         const std::optional<ResolvedHudLayoutElement> rect = resolveHudLayoutElement(pId, width, height, 0, 0);
         if (rect)
         {
@@ -3887,6 +4076,22 @@ void GameplayScreenRuntime::releaseHudGpuResources(bool destroyBgfxResources)
 void GameplayScreenRuntime::clearSharedUiRuntime()
 {
     uiRuntime().clear();
+    m_combatLog.clear();
+}
+
+CombatLog &GameplayScreenRuntime::combatLog()
+{
+    return m_combatLog;
+}
+
+const CombatLog &GameplayScreenRuntime::combatLog() const
+{
+    return m_combatLog;
+}
+
+GameplayCombatLogPanel &GameplayScreenRuntime::combatLogPanel()
+{
+    return m_combatLogPanel;
 }
 
 bool GameplayScreenRuntime::hasHudRenderResources() const
@@ -4091,9 +4296,9 @@ bool GameplayScreenRuntime::ensureDimensionDoorDestinationsLoaded()
     const uint32_t dayIndex = static_cast<uint32_t>(std::floor(gameMinutes / MinutesPerDay));
     const EventRuntimeState *pEventRuntimeState =
         pWorldRuntime != nullptr ? pWorldRuntime->eventRuntimeState() : nullptr;
-    bool crossContinentsUnlocked = false;
+    bool crossContinentsUnlocked = m_dimensionDoorWithoutQuest;
 
-    if (pEventRuntimeState != nullptr)
+    if (!crossContinentsUnlocked && pEventRuntimeState != nullptr)
     {
         const auto iterator = pEventRuntimeState->namedGlobalVars.find(CrossContinentsGotMainQuestVar);
         crossContinentsUnlocked = iterator != pEventRuntimeState->namedGlobalVars.end() && iterator->second != 0;
@@ -4142,11 +4347,18 @@ bool GameplayScreenRuntime::shouldTownPortalCastOpenDimensionDoor() const
     return false;
 }
 
+void GameplayScreenRuntime::setDimensionDoorWithoutQuest(bool withoutQuest)
+{
+    m_dimensionDoorWithoutQuest = withoutQuest;
+}
+
 bool GameplayScreenRuntime::openDimensionDoorOverlay(
     size_t casterMemberIndex,
     uint32_t spellId,
     const std::string &statusText)
 {
+    m_dimensionDoorWithoutQuest = false;
+
     if (!ensureDimensionDoorDestinationsLoaded())
     {
         setStatusBarEvent("Dimension Door destinations unavailable");

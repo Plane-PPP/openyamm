@@ -54,6 +54,50 @@ enum class KeyboardAction : uint8_t
     FlyDown,
     Land,
     DoubleSpeed,
+    // MAW's keys (devdocs/maw/GAPS.md §11 D.18), listed only in a MAW game: lift a stuck party, open the Workbench,
+    // gather corpses and crafting items, and on the inventory and skills pages the alchemist pick and the switches;
+    // a lone Knight's charge at the monster under the cursor.
+    Unstuck,
+    OpenWorkbench,
+    GatherLoot,
+    AlchemistPick,
+    SkillCover,
+    SkillManaShield,
+    SkillRotation,
+    KnightCharge,
+    // Held: items glow in their rarity colour (the gameplay.rarity_glow setting "hold").
+    ShowItemRarity,
+    // MMMerge's four extra quick spells (ExtraQuickSpells.lua): cast the active member's slot, else attack.
+    QuickSpell1,
+    QuickSpell2,
+    QuickSpell3,
+    QuickSpell4,
+    // MMMerge's follower keys (NPCFollowers.lua:345-351): toggle the follower panel, speak with follower 1-4.
+    FollowerPanel,
+    Follower1,
+    Follower2,
+    Follower3,
+    Follower4,
+    // MAW's multibag on the inventory page and a shop's or chest's inventory: open (and zoom) bag 1-4
+    // (zzMaw-MultiBag.lua:38-67); with Shift the number keys still select party members.
+    Bag1,
+    Bag2,
+    Bag3,
+    Bag4,
+    // MAW's crafting bag (zzzMaw_CraftingBag.lua:49-55): with Shift, tags or untags the open bag on the inventory page.
+    CraftingBag,
+    // MAW: opens the Journal on its Progress tab (unbound by default).
+    OpenProgress,
+    // MAW: opens the aura panel (unbound by default).
+    OpenAuras,
+    // The potion radial (GAPS.md H.6): the active member's ring, and each of its six slots.
+    QuickItemWheel,
+    QuickItem1,
+    QuickItem2,
+    QuickItem3,
+    QuickItem4,
+    QuickItem5,
+    QuickItem6,
     Count
 };
 

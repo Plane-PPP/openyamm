@@ -29,6 +29,8 @@ public:
     {
         NotConfigured,
         Failed,
+        // No target for the attack spell: the attack swings the weapon instead.
+        NoTarget,
         CastStarted
     };
 
@@ -57,10 +59,12 @@ public:
         PartySpellCastResult castResult = {};
     };
 
+    // The active member's quick spell, or with `extraSlot` one of MMMerge's four extra quick spells.
     static SpellActionResult tryBeginQuickSpellCast(
         GameplayScreenRuntime &runtime,
         GameplaySpellService &spellService,
-        const TargetQueries &targetQueries);
+        const TargetQueries &targetQueries,
+        std::optional<size_t> extraSlot = std::nullopt);
 
     static AttackCastResult tryBeginAttackCast(
         GameplayScreenRuntime &runtime,

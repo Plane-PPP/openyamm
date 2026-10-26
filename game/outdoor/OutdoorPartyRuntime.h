@@ -30,9 +30,13 @@ public:
         float deltaSeconds,
         GameplayWorldMovementFrameDiagnostics *pPerformanceDiagnostics = nullptr);
     void setActorColliders(const std::vector<OutdoorActorCollision> &actorColliders);
+    void setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities);
     void setFaceAttributes(size_t bModelIndex, size_t faceIndex, uint32_t attributes);
     void updateFaceGeometries(const std::vector<OutdoorFaceGeometryData> &geometries);
     bool translateWithSupportedBModel(size_t bModelIndex, float deltaX, float deltaY, float deltaZ);
+    void lift(float height);
+    // Adds this horizontal velocity to every movement step for `seconds`, with the world's collision (a charge).
+    void requestDash(float velocityX, float velocityY, float seconds);
     void applyEventRuntimeState(const EventRuntimeState &runtimeState, bool grantItemsToInventory = true);
 
     const OutdoorMoveState &movementState() const;

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace OpenYAMM::Game
@@ -112,6 +113,8 @@ private:
     uint32_t m_turnCount = 0;
     float m_actorActionTimerTicks = 0.0f;
     bool m_movementFinished = false;
+    // Where the party stood when the movement stage's first update ran.
+    std::optional<std::pair<float, float>> m_movementStart;
     bool m_movementStepThisFrame = false;
     float m_movementStepSeconds = 0.0f;
     bool m_waitingForActorActionResolution = false;

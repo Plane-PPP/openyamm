@@ -516,6 +516,101 @@ bool isNumericString(const std::string &value)
     return true;
 }
 
+// A whole number as spreadsheets write it: quoted, padded or with thousands separators (" 1,080 "). Empty is 0.
+int parseTableInteger(const std::string &value)
+{
+    std::string digits;
+
+    for (char character : value)
+    {
+        if (character != '"' && character != ',' && std::isspace(static_cast<unsigned char>(character)) == 0)
+        {
+            digits.push_back(character);
+        }
+    }
+
+    return digits.empty() ? 0 : std::stoi(digits);
+}
+
+// The attack preference column: a number of MonsterAttackPreference flags, or letters in either case ("CP", "x").
+// Letters that name no preference are ignored.
+uint32_t parseAttackPreferences(const std::string &value)
+{
+    std::string trimmed;
+
+    for (char character : value)
+    {
+        if (character != '"' && std::isspace(static_cast<unsigned char>(character)) == 0)
+        {
+            trimmed.push_back(character);
+        }
+    }
+
+    if (isNumericString(trimmed))
+    {
+        return static_cast<uint32_t>(std::stoul(trimmed));
+    }
+
+    uint32_t flags = 0;
+
+    for (char character : trimmed)
+    {
+        switch (std::tolower(static_cast<unsigned char>(character)))
+        {
+            case 'k':
+                flags |= MonsterAttackPreferenceKnight;
+                break;
+            case 'p':
+                flags |= MonsterAttackPreferencePaladin;
+                break;
+            case 'a':
+                flags |= MonsterAttackPreferenceArcher;
+                break;
+            case 'd':
+                flags |= MonsterAttackPreferenceDruid;
+                break;
+            case 'c':
+                flags |= MonsterAttackPreferenceCleric;
+                break;
+            case 's':
+                flags |= MonsterAttackPreferenceSorcerer;
+                break;
+            case 'r':
+                flags |= MonsterAttackPreferenceRanger;
+                break;
+            case 't':
+                flags |= MonsterAttackPreferenceThief;
+                break;
+            case 'm':
+                flags |= MonsterAttackPreferenceMonk;
+                break;
+            case 'x':
+                flags |= MonsterAttackPreferenceMale;
+                break;
+            case 'f':
+            case 'o':
+                flags |= MonsterAttackPreferenceFemale;
+                break;
+            case 'h':
+                flags |= MonsterAttackPreferenceHuman;
+                break;
+            case 'e':
+                flags |= MonsterAttackPreferenceElf;
+                break;
+            case 'w':
+                flags |= MonsterAttackPreferenceDwarf;
+                break;
+            case 'g':
+                flags |= MonsterAttackPreferenceGoblin;
+                break;
+            default:
+                break;
+        }
+    }
+
+    return flags;
+}
+
 uint32_t parseUnsignedIntegerValue(const std::string &value)
 {
     if (value.empty())
@@ -1028,13 +1123,13 @@ bool MonsterTable::loadStatsFromRows(const std::vector<std::vector<std::string>>
         }
 
         MonsterStatsEntry entry = {};
-        entry.id = std::stoi(row[0]);
+        entry.id = parseTableInteger(row[0]);
         entry.name = row[1];
         entry.pictureName = row[2];
-        entry.level = row[3].empty() ? 0 : std::stoi(row[3]);
-        entry.hitPoints = row[4].empty() ? 0 : std::stoi(row[4]);
-        entry.armorClass = row[5].empty() ? 0 : std::stoi(row[5]);
-        entry.experience = row.size() > 6 && !row[6].empty() ? std::stoi(row[6]) : 0;
+        entry.level = row[3].empty() ? 0 : parseTableInteger(row[3]);
+        entry.hitPoints = row[4].empty() ? 0 : parseTableInteger(row[4]);
+        entry.armorClass = row[5].empty() ? 0 : parseTableInteger(row[5]);
+        entry.experience = row.size() > 6 && !row[6].empty() ? parseTableInteger(row[6]) : 0;
         entry.attack1Type = row.size() > 17 ? row[17] : std::string();
         entry.bloodSplatOnDeath = row.size() > 8 && !row[8].empty() && row[8] != "0";
         entry.canFly = row.size() > 9 && !row[9].empty() && toLowerCopy(row[9]) == "y";
@@ -1042,11 +1137,10 @@ bool MonsterTable::loadStatsFromRows(const std::vector<std::vector<std::string>>
         entry.aiType = row.size() > 11 ? parseAiType(row[11]) : MonsterAiType::Suicide;
         entry.treasureDefinition = row[7];
         entry.loot = parseLootPrototype(entry.treasureDefinition);
-        entry.hostility = row[12].empty() ? 0 : std::stoi(row[12]);
-        entry.speed = row[13].empty() ? 0 : std::stoi(row[13]);
-        entry.recovery = row[14].empty() ? 0 : std::stoi(row[14]);
-        entry.attackPreferences =
-            row.size() > 15 && isNumericString(row[15]) ? static_cast<uint32_t>(std::stoul(row[15])) : 0;
+        entry.hostility = row[12].empty() ? 0 : parseTableInteger(row[12]);
+        entry.speed = row[13].empty() ? 0 : parseTableInteger(row[13]);
+        entry.recovery = row[14].empty() ? 0 : parseTableInteger(row[14]);
+        entry.attackPreferences = row.size() > 15 ? parseAttackPreferences(row[15]) : 0;
         entry.specialAttackDescriptor = row.size() > 16 ? row[16] : std::string();
         const MonsterSpecialAttackParseResult specialAttack =
             parseMonsterSpecialAttack(entry.specialAttackDescriptor);
@@ -1055,7 +1149,7 @@ bool MonsterTable::loadStatsFromRows(const std::vector<std::vector<std::string>>
         entry.attack1MissileType = row.size() > 19 ? row[19] : std::string();
         entry.attack1HasMissile = isSupportedMonsterMissileToken(entry.attack1MissileType);
         entry.attack1Damage = row.size() > 18 ? parseDamageProfile(row[18]) : MonsterStatsEntry::DamageProfile();
-        entry.attack2Chance = row.size() > 20 && !row[20].empty() ? std::stoi(row[20]) : 0;
+        entry.attack2Chance = row.size() > 20 && !row[20].empty() ? parseTableInteger(row[20]) : 0;
         entry.attack2Type = row.size() > 21 ? row[21] : std::string();
         entry.attack2MissileType = row.size() > 23 ? row[23] : std::string();
         entry.attack2HasMissile = isSupportedMonsterMissileToken(entry.attack2MissileType);
@@ -1063,13 +1157,13 @@ bool MonsterTable::loadStatsFromRows(const std::vector<std::vector<std::string>>
         entry.spell1Descriptor = row.size() > 25 ? row[25] : std::string();
         entry.spell1Name = parseMonsterSpellName(entry.spell1Descriptor);
         entry.hasSpell1 = hasMonsterAbilityDescriptor(entry.spell1Descriptor);
-        entry.spell1UseChance = row.size() > 24 && !row[24].empty() ? std::stoi(row[24]) : 0;
+        entry.spell1UseChance = row.size() > 24 && !row[24].empty() ? parseTableInteger(row[24]) : 0;
         entry.spell1SkillLevel = parseMonsterSpellSkillLevel(entry.spell1Descriptor);
         entry.spell1SkillMastery = parseMonsterSpellSkillMastery(entry.spell1Descriptor);
         entry.spell2Descriptor = row.size() > 27 ? row[27] : std::string();
         entry.spell2Name = parseMonsterSpellName(entry.spell2Descriptor);
         entry.hasSpell2 = hasMonsterAbilityDescriptor(entry.spell2Descriptor);
-        entry.spell2UseChance = row.size() > 26 && !row[26].empty() ? std::stoi(row[26]) : 0;
+        entry.spell2UseChance = row.size() > 26 && !row[26].empty() ? parseTableInteger(row[26]) : 0;
         entry.spell2SkillLevel = parseMonsterSpellSkillLevel(entry.spell2Descriptor);
         entry.spell2SkillMastery = parseMonsterSpellSkillMastery(entry.spell2Descriptor);
         entry.fireResistance = row.size() > 28 ? parseMonsterResistanceValue(row[28]) : 0;
@@ -1445,6 +1539,14 @@ size_t MonsterTable::relationIndexForMonsterId(int16_t monsterId)
 
 int MonsterTable::getRelationToParty(int16_t monsterId) const
 {
+    if (!m_relationAddOns.empty())
+    {
+        if (const std::optional<int> relation = m_relationAddOns.relationToParty(monsterId))
+        {
+            return *relation;
+        }
+    }
+
     if (m_relations.empty())
     {
         return 0;
@@ -1462,6 +1564,14 @@ int MonsterTable::getRelationToParty(int16_t monsterId) const
 
 int MonsterTable::getRelationBetweenMonsters(int16_t leftMonsterId, int16_t rightMonsterId) const
 {
+    if (!m_relationAddOns.empty())
+    {
+        if (const std::optional<int> relation = m_relationAddOns.relationBetween(leftMonsterId, rightMonsterId))
+        {
+            return *relation;
+        }
+    }
+
     if (m_relations.empty())
     {
         return 0;
@@ -1485,6 +1595,14 @@ bool MonsterTable::isHostileToParty(int16_t monsterId) const
 
 bool MonsterTable::isLikelySameFaction(int16_t leftMonsterId, int16_t rightMonsterId) const
 {
+    if (!m_relationAddOns.empty())
+    {
+        if (const std::optional<bool> same = m_relationAddOns.sameFaction(leftMonsterId, rightMonsterId))
+        {
+            return *same;
+        }
+    }
+
     const size_t leftRelationIndex = relationIndexForMonsterId(leftMonsterId);
     const size_t rightRelationIndex = relationIndexForMonsterId(rightMonsterId);
 
@@ -1506,6 +1624,40 @@ bool MonsterTable::isLikelySameFaction(int16_t leftMonsterId, int16_t rightMonst
 const std::vector<MonsterEntry> &MonsterTable::getEntries() const
 {
     return m_entries;
+}
+
+void MonsterTable::acceptWorldMissileTokens(const std::vector<std::string> &tokens)
+{
+    if (tokens.empty())
+    {
+        return;
+    }
+
+    std::vector<std::string> normalizedTokens;
+
+    for (const std::string &token : tokens)
+    {
+        normalizedTokens.push_back(toLowerCopy(trimCopy(token)));
+    }
+
+    const auto isWorldToken = [&](const std::string &value)
+    {
+        const std::string token = toLowerCopy(trimCopy(value));
+        return std::find(normalizedTokens.begin(), normalizedTokens.end(), token) != normalizedTokens.end();
+    };
+
+    for (auto &[id, entry] : m_statsById)
+    {
+        const bool attack1 = !entry.attack1HasMissile && isWorldToken(entry.attack1MissileType);
+        const bool attack2 = !entry.attack2HasMissile && isWorldToken(entry.attack2MissileType);
+
+        if (attack1 || attack2)
+        {
+            entry.attack1HasMissile = entry.attack1HasMissile || attack1;
+            entry.attack2HasMissile = entry.attack2HasMissile || attack2;
+            entry.attackStyle = classifyAttackStyle(entry);
+        }
+    }
 }
 
 const std::unordered_map<int, MonsterTable::MonsterStatsEntry> &MonsterTable::statsEntries() const

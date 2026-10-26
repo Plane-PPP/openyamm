@@ -60,9 +60,17 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return settings.partyFrame ? "true" : "false";
     }
+    if (id == "potion_buttons")
+    {
+        return settings.potionButtons ? "true" : "false";
+    }
     if (id == "combat_text")
     {
         return settings.combatText ? "true" : "false";
+    }
+    if (id == "combat_log")
+    {
+        return settings.combatLog ? "true" : "false";
     }
     if (id == "enemy_health_bars")
     {
@@ -83,6 +91,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     if (id == "context_action_popup")
     {
         return settings.contextActionPopup ? "true" : "false";
+    }
+    if (id == "rarity_glow")
+    {
+        return settings.rarityGlow;
     }
     if (id == "skip_event_cutscenes")
     {
@@ -338,6 +350,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
         settings.partyFrame = value == "true";
         return true;
     }
+    if (id == "potion_buttons")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.potionButtons = value == "true";
+        return true;
+    }
     if (id == "combat_text")
     {
         if (value != "true" && value != "false")
@@ -345,6 +366,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
             return false;
         }
         settings.combatText = value == "true";
+        return true;
+    }
+    if (id == "combat_log")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.combatLog = value == "true";
         return true;
     }
     if (id == "enemy_health_bars")
@@ -390,6 +420,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
             return false;
         }
         settings.contextActionPopup = value == "true";
+        return true;
+    }
+    if (id == "rarity_glow")
+    {
+        if (!validRarityGlowValue(value))
+        {
+            return false;
+        }
+        settings.rarityGlow = value;
         return true;
     }
     if (id == "skip_event_cutscenes")
@@ -896,14 +935,15 @@ bool sameMenuBinding(const InputBinding &left, const InputBinding &right)
                                                          : true);
 }
 
-bool reservedMenuBinding(const InputBinding &binding)
+bool reservedMenuBinding(const InputBinding &binding, KeyboardAction action)
 {
     if (binding.kind != InputBindingKind::Keyboard)
     {
         return false;
     }
+    const bool bagKey = action >= KeyboardAction::Bag1 && action <= KeyboardAction::Bag4;
     return binding.scancode == SDL_SCANCODE_ESCAPE || binding.scancode == SDL_SCANCODE_F9 ||
            binding.scancode == SDL_SCANCODE_F10 || binding.scancode == SDL_SCANCODE_GRAVE ||
-           (binding.scancode >= SDL_SCANCODE_1 && binding.scancode <= SDL_SCANCODE_5);
+           (!bagKey && binding.scancode >= SDL_SCANCODE_1 && binding.scancode <= SDL_SCANCODE_5);
 }
 } // namespace OpenYAMM::Game

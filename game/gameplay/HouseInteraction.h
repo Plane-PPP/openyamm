@@ -116,6 +116,11 @@ struct HouseShopGoodbyeResult
 };
 
 HouseServiceType resolveHouseServiceType(const HouseEntry &houseEntry);
+// The sound played on entering: the greeting, or a magic guild's members-only line for a non-member.
+HouseSoundType houseEntrySoundType(
+    const HouseEntry &houseEntry,
+    const Party *pParty,
+    const IGameplayWorldRuntime *pWorldRuntime);
 std::optional<uint32_t> deriveHouseSoundId(const HouseEntry &houseEntry, HouseSoundType soundType);
 bool isAlchemyShop(const HouseEntry &houseEntry);
 bool houseRefusesShopServiceForReputation(
@@ -128,6 +133,7 @@ HouseShopGoodbyeResult resolveHouseShopGoodbyeResult(
     bool shopBanned,
     int partyGold);
 bool isHouseOpenAtGameMinute(const HouseEntry &houseEntry, float currentGameMinutes);
+float innRestDurationMinutes(uint32_t houseId, float currentGameMinutes);
 std::string buildClosedStatusText(const HouseEntry &houseEntry);
 bool isBoatHouse(const HouseEntry &houseEntry);
 uint32_t arcomageDeckItemId();

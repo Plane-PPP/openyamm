@@ -11,6 +11,7 @@ class GameSession;
 class GameplayScreenRuntime;
 class Party;
 struct InventoryItemMixResult;
+struct CraftItemRef;
 
 class GameplayItemService
 {
@@ -21,6 +22,10 @@ public:
         GameplayScreenRuntime &runtime,
         size_t memberIndex,
         bool keepCharacterScreenOpen);
+    // The member's quick item slot (the potion radial): the matching potion or scroll from the member's bags, else
+    // another member's (QuickItemSlots::findPartyItem), used on the member as a held item is (a scroll casts, a potion is drunk under the rules' recovery). What remains goes back
+    // where it lay. False, with a status line, when nothing was used.
+    bool useQuickItemSlot(GameplayScreenRuntime &runtime, size_t memberIndex, size_t slot);
 
     bool tryUseHeldItemOnInventoryItem(
         GameplayScreenRuntime &runtime,
@@ -32,6 +37,13 @@ public:
     bool mixAlchemyBench(GameplayScreenRuntime &runtime, bool mixAll);
     // Brews the bench's selected recipe, brewing missing ingredients first from known recipes.
     bool brewAlchemyChain(GameplayScreenRuntime &runtime, bool brewAll);
+    // A crafting material held over an item (right-click) opens the Workbench's Crafting tab with both in place; the
+    // material goes back to the party. False when the held item is no material or the item takes none.
+    bool openWorkbenchForHeldMaterial(GameplayScreenRuntime &runtime, const CraftItemRef &target);
+    // The Workbench's Crafting tab: applies its material to its item once, or as often as the materials allow.
+    bool applyCraft(GameplayScreenRuntime &runtime, bool all);
+    // Merges three gems of the chosen tier into one of the next, once or (`all`) as often as the gems allow.
+    bool combineGems(GameplayScreenRuntime &runtime, bool all);
 
     void updateConnectorStoneRecharge(
         Party &party,
@@ -55,6 +67,8 @@ public:
         const GameplayUiController::ItemInspectOverlayState &overlay,
         size_t inspectorMemberIndex,
         std::string &statusText);
+    // Opens an inspected item the inspector can unseal (ItemRules::openSealedItem) in an inventory, chest or corpse.
+    bool tryOpenInspectedItem(const GameplayUiController::ItemInspectOverlayState &overlay, size_t inspectorMemberIndex);
 
     void closeReadableScrollOverlay();
 

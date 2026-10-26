@@ -3,10 +3,16 @@
 
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayInputFrame.h"
+#include "game/items/InventoryBags.h"
+#include "game/party/PartySpellSystem.h"
 #include "game/party/SkillData.h"
 #include "game/party/SpellSchool.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/ui/GameplayHudCommon.h"
+#include "game/ui/GameplayJournalAuras.h"
+#include "game/ui/GameplayMapProgressBar.h"
+#include "game/ui/GameplayPortraitGems.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/ui/SpellbookUiLayout.h"
 
@@ -100,7 +106,8 @@ int recoveryTicksFromSeconds(float recoverySeconds)
 bool mainHandAttackUsesBlasterRecovery(const Character &character, const ItemTable &itemTable)
 {
     const ItemDefinition *pMainHandItem = itemTable.get(character.equipment.mainHand);
-    return pMainHandItem != nullptr && canonicalSkillName(pMainHandItem->skillGroup) == "Blaster";
+    const std::string skillName = pMainHandItem != nullptr ? canonicalSkillName(pMainHandItem->skillGroup) : "";
+    return skillName == "Blaster" || skillName == "EnergyGuns";
 }
 
 std::string attackRecoveryInspectSupplement(
@@ -124,6 +131,20 @@ std::string attackRecoveryInspectSupplement(
         context.spellTable(),
         characterAttackTuningFromSettings(context.settingsSnapshot()));
 
+    // Rules that decide the recovery themselves (MAW: weapon delay, speed, Haste) show theirs.
+    const CombatRules &combatRules = boundGameRules().combat;
+    const bool blasterMelee = mainHandAttackUsesBlasterRecovery(character, *context.itemTable());
+
+    if (const std::optional<int> ticks = combatRules.characterAttackRecoveryTicks(character,
+            statName == "Attack" && !blasterMelee ? CharacterAttackMode::Melee
+                : blasterMelee                    ? CharacterAttackMode::Blaster
+                                                  : CharacterAttackMode::Bow,
+            *context.itemTable(), context.standardItemEnchantTable(), context.specialItemEnchantTable());
+        ticks && (statName == "Attack" || profile.canShoot))
+    {
+        return "Recovery time: " + std::to_string(*ticks);
+    }
+
     if (statName == "Attack")
     {
         const float recoverySeconds =
@@ -141,38 +162,39 @@ std::string attackRecoveryInspectSupplement(
     return "Recovery time: " + std::to_string(recoveryTicksFromSeconds(profile.rangedRecoverySeconds));
 }
 
-std::string formatRemainingDuration(float remainingSeconds)
+// A member buff's name: the rules' name for its spell when they rename it (MAW's Vampiric Aura), else the slot's.
+std::string personalBuffName(
+    const SpellTable *pSpellTable,
+    const Party &party,
+    const Character &member,
+    size_t buffIndex,
+    const CharacterBuffState &buff)
 {
-    if (std::isinf(remainingSeconds))
-    {
-        return "Constant";
-    }
-    const int totalSeconds = std::max(0, int(std::lround(remainingSeconds)));
-    const int hours = totalSeconds / 3600;
-    const int minutes = (totalSeconds % 3600) / 60;
-    const int seconds = totalSeconds % 60;
+    const SpellEntry *pSpell =
+        buff.spellId != 0 && pSpellTable != nullptr ? pSpellTable->findById(int(buff.spellId)) : nullptr;
 
-    if (hours > 0)
+    if (pSpell != nullptr)
     {
-        if (minutes > 0)
+        const std::string name = gameRulesFor(&party).spells.spellName(member, *pSpell);
+
+        if (name != pSpell->name)
         {
-            return std::to_string(hours) + "h " + std::to_string(minutes) + "m";
+            return name;
         }
-
-        return std::to_string(hours) + "h";
     }
 
-    if (minutes > 0)
-    {
-        if (seconds > 0 && minutes < 5)
-        {
-            return std::to_string(minutes) + "m " + std::to_string(seconds) + "s";
-        }
+    return GameplayPersonalBuffNames[buffIndex];
+}
 
-        return std::to_string(minutes) + "m";
-    }
-
-    return std::to_string(seconds) + "s";
+// A buff's time left, or the rules' text while a member holds it as an aura.
+std::string formatBuffDuration(
+    const Party &party,
+    uint32_t spellId,
+    float remainingSeconds,
+    std::string (*pFormat)(float))
+{
+    const std::optional<std::string> held = gameRulesFor(&party).spells.heldBuffText(party, spellId);
+    return held ? *held : pFormat(remainingSeconds);
 }
 
 std::string formatCharacterDetailDuration(float remainingSeconds)
@@ -247,6 +269,16 @@ struct CharacterSkillUiData
     std::vector<CharacterSkillUiRow> magicRows;
     std::vector<CharacterSkillUiRow> armorRows;
     std::vector<CharacterSkillUiRow> miscRows;
+    std::vector<CharacterSkillUiRow> techRows;
+};
+
+// Which rows a stats page shows: always, only the usual Condition and Quick Spell rows, or only the four tighter rows
+// of powers that replace them (SkillRules::compactStatPowerRows, MAW).
+enum class CharacterStatRowMode : uint8_t
+{
+    Always,
+    Usual,
+    PowerRows,
 };
 
 struct CharacterStatRowDefinition
@@ -254,9 +286,10 @@ struct CharacterStatRowDefinition
     const char *pStatName;
     const char *pLabelId;
     const char *pValueId;
+    CharacterStatRowMode mode = CharacterStatRowMode::Always;
 };
 
-constexpr std::array<CharacterStatRowDefinition, 27> CharacterStatRows = {{
+constexpr std::array<CharacterStatRowDefinition, 31> CharacterStatRows = {{
     {"SkillPoints", "CharacterStatsSkillPointsTextLabel", "CharacterStatsSkillPointsValue"},
     {"Might", "CharacterStatMightLabel", "CharacterStatMightValue"},
     {"Intellect", "CharacterStatIntellectLabel", "CharacterStatIntellectValue"},
@@ -269,8 +302,13 @@ constexpr std::array<CharacterStatRowDefinition, 27> CharacterStatRows = {{
     {"SpellPoints", "CharacterStatSpellPointsLabel", "CharacterStatSpellPointsValue"},
     {"ArmorClass", "CharacterStatArmorClassLabel", "CharacterStatArmorClassValue"},
     {"DamageResistance", "CharacterStatDamageResistanceLabel", "CharacterStatDamageResistanceValue"},
-    {"Condition", "CharacterStatConditionLabel", "CharacterStatConditionValue"},
-    {"QuickSpell", "CharacterStatQuickSpellLabel", "CharacterStatQuickSpellValue"},
+    {"Condition", "CharacterStatConditionLabel", "CharacterStatConditionValue", CharacterStatRowMode::Usual},
+    {"QuickSpell", "CharacterStatQuickSpellLabel", "CharacterStatQuickSpellValue", CharacterStatRowMode::Usual},
+    // The rows of powers (MAW); Spell Power and Vitality have no stat table entries.
+    {"Condition", "CharacterStatPowerRow1Label", "CharacterStatPowerRow1Value", CharacterStatRowMode::PowerRows},
+    {"QuickSpell", "CharacterStatPowerRow2Label", "CharacterStatPowerRow2Value", CharacterStatRowMode::PowerRows},
+    {"SpellPower", "CharacterStatPowerRow3Label", "CharacterStatPowerRow3Value", CharacterStatRowMode::PowerRows},
+    {"Vitality", "CharacterStatPowerRow4Label", "CharacterStatPowerRow4Value", CharacterStatRowMode::PowerRows},
     {"Age", "CharacterStatAgeLabel", "CharacterStatAgeValue"},
     {"Level", "CharacterStatLevelLabel", "CharacterStatLevelValue"},
     {"Experience", "CharacterStatExperienceLabel", "CharacterStatExperienceValue"},
@@ -302,12 +340,10 @@ void appendCharacterSkillUiRows(
     const Character &character,
     std::vector<CharacterSkillUiRow> &rows,
     std::unordered_set<std::string> &shownSkillNames,
-    const char *const *pSkillNames,
-    size_t skillCount)
+    const std::vector<std::string> &skillNames)
 {
-    for (size_t skillIndex = 0; skillIndex < skillCount; ++skillIndex)
+    for (const std::string &canonicalName : skillNames)
     {
-        const std::string canonicalName = pSkillNames[skillIndex];
         const CharacterSkill *pSkill = character.findSkillByCanonicalName(canonicalName);
 
         if (pSkill == nullptr)
@@ -332,51 +368,6 @@ void appendCharacterSkillUiRows(
 
 CharacterSkillUiData buildCharacterSkillUiData(const Character *pCharacter)
 {
-    static constexpr const char *WeaponSkillNames[] = {
-        "Axe",
-        "Bow",
-        "Throwing",
-        "Dagger",
-        "Mace",
-        "Spear",
-        "Staff",
-        "Sword",
-        "Unarmed",
-        "Blaster",
-    };
-    static constexpr const char *MagicSkillNames[] = {
-        "FireMagic",
-        "AirMagic",
-        "WaterMagic",
-        "EarthMagic",
-        "SpiritMagic",
-        "MindMagic",
-        "BodyMagic",
-        "LightMagic",
-        "DarkMagic",
-    };
-    static constexpr const char *ArmorSkillNames[] = {
-        "LeatherArmor",
-        "ChainArmor",
-        "PlateArmor",
-        "Shield",
-        "Dodging",
-    };
-    static constexpr const char *MiscSkillNames[] = {
-        "Alchemy",
-        "Armsmaster",
-        "Bodybuilding",
-        "IdentifyItem",
-        "IdentifyMonster",
-        "Learning",
-        "DisarmTraps",
-        "Meditation",
-        "Merchant",
-        "Perception",
-        "RepairItem",
-        "Stealing",
-    };
-
     CharacterSkillUiData data = {};
 
     if (pCharacter == nullptr)
@@ -389,26 +380,27 @@ CharacterSkillUiData buildCharacterSkillUiData(const Character *pCharacter)
         *pCharacter,
         data.weaponRows,
         shownSkillNames,
-        WeaponSkillNames,
-        std::size(WeaponSkillNames));
+        skillSheetGroupSkillNames(SkillSheetGroup::Weapons));
     appendCharacterSkillUiRows(
         *pCharacter,
         data.magicRows,
         shownSkillNames,
-        MagicSkillNames,
-        std::size(MagicSkillNames));
+        skillSheetGroupSkillNames(SkillSheetGroup::Magic));
     appendCharacterSkillUiRows(
         *pCharacter,
         data.armorRows,
         shownSkillNames,
-        ArmorSkillNames,
-        std::size(ArmorSkillNames));
+        skillSheetGroupSkillNames(SkillSheetGroup::Armor));
     appendCharacterSkillUiRows(
         *pCharacter,
         data.miscRows,
         shownSkillNames,
-        MiscSkillNames,
-        std::size(MiscSkillNames));
+        skillSheetGroupSkillNames(SkillSheetGroup::Misc));
+    appendCharacterSkillUiRows(
+        *pCharacter,
+        data.techRows,
+        shownSkillNames,
+        skillSheetGroupSkillNames(SkillSheetGroup::Technology));
 
     std::vector<CharacterSkillUiRow> extraMiscRows;
 
@@ -468,6 +460,40 @@ int skillMasteryAvailability(
 
     return 2;
 }
+}
+
+std::string GameplayHudOverlaySupport::formatRemainingDuration(float remainingSeconds)
+{
+    if (std::isinf(remainingSeconds))
+    {
+        return "Constant";
+    }
+    const int totalSeconds = std::max(0, int(std::lround(remainingSeconds)));
+    const int hours = totalSeconds / 3600;
+    const int minutes = (totalSeconds % 3600) / 60;
+    const int seconds = totalSeconds % 60;
+
+    if (hours > 0)
+    {
+        if (minutes > 0)
+        {
+            return std::to_string(hours) + "h " + std::to_string(minutes) + "m";
+        }
+
+        return std::to_string(hours) + "h";
+    }
+
+    if (minutes > 0)
+    {
+        if (seconds > 0 && minutes < 5)
+        {
+            return std::to_string(minutes) + "m " + std::to_string(seconds) + "s";
+        }
+
+        return std::to_string(minutes) + "m";
+    }
+
+    return std::to_string(seconds) + "s";
 }
 
 bool GameplayHudOverlaySupport::tryPopulateItemInspectOverlayFromRenderedHudItems(
@@ -606,8 +632,16 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
 
     if (context.characterScreenReadOnly().page == GameplayUiController::CharacterPage::Stats)
     {
+        const bool powerRows = gameRulesFor(context.partyReadOnly()).skills.compactStatPowerRows();
+
         for (const CharacterStatRowDefinition &row : CharacterStatRows)
         {
+            if (row.mode != CharacterStatRowMode::Always
+                && (row.mode == CharacterStatRowMode::PowerRows) != powerRows)
+            {
+                continue;
+            }
+
             const GameplayScreenRuntime::HudLayoutElement *pLabelLayout = context.findHudLayoutElement(row.pLabelId);
             const GameplayScreenRuntime::HudLayoutElement *pValueLayout = context.findHudLayoutElement(row.pValueId);
 
@@ -645,15 +679,26 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
             }
 
             const StatInspectEntry *pEntry = context.characterInspectTable()->getStat(row.pStatName);
+            const Party *pStatParty = context.partyReadOnly();
+            // A row the rules relabel or add names and explains itself (MAW: the powers and Vitality).
+            const std::optional<CharacterStatRowText> relabelled = pStatParty != nullptr
+                ? gameRulesFor(pStatParty).skills.statRowText(*pStatParty, *pCharacter, row.pStatName)
+                : std::nullopt;
 
-            if (pEntry == nullptr || pEntry->description.empty())
+            if ((pEntry == nullptr || pEntry->description.empty()) && !(relabelled && !relabelled->popupTitle.empty()))
             {
                 return;
             }
 
             overlay.active = true;
-            overlay.title = pEntry->name;
-            overlay.body = pEntry->description;
+            overlay.title = relabelled && !relabelled->popupTitle.empty() ? relabelled->popupTitle : pEntry->name;
+            overlay.body = pEntry != nullptr ? pEntry->description : std::string();
+
+            if (pStatParty != nullptr)
+            {
+                overlay.body =
+                    gameRulesFor(pStatParty).skills.statTooltip(*pStatParty, *pCharacter, row.pStatName, overlay.body);
+            }
 
             if (std::string_view(row.pStatName) == "DamageResistance" && context.settingsSnapshot().minotaurRussianText)
             {
@@ -666,7 +711,9 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
 
             if (std::string_view(row.pStatName) == "Experience")
             {
-                const std::string supplement = GameMechanics::buildExperienceInspectSupplement(*pCharacter);
+                const std::string supplement = GameMechanics::buildExperienceInspectSupplement(
+                    *pCharacter,
+                    gameRulesFor(context.partyReadOnly()).experience);
 
                 if (!supplement.empty())
                 {
@@ -776,7 +823,12 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                 }
 
                 overlay.active = true;
-                overlay.title = pEntry->name;
+                // The rules may rename a skill (a class's own school name); the row's label also carries the mastery,
+                // so it is not the title (audit STD2-U1).
+                const std::string ruledName = pCharacter != nullptr
+                    ? gameRulesFor(context.partyReadOnly()).skills.skillDisplayName(*pCharacter, row.canonicalName)
+                    : displaySkillName(row.canonicalName);
+                overlay.title = ruledName != displaySkillName(row.canonicalName) ? ruledName : pEntry->name;
                 overlay.body = pEntry->description;
                 std::string normalDescription = pEntry->normalDescription;
                 std::string expertDescription = pEntry->expertDescription;
@@ -795,6 +847,19 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                         "Skill added to Attack Bonus (quintuple effect); +1 damage per skill point";
                 }
 
+                // The rules' own text over the table's (MAW: its descriptions with the character's numbers).
+                if (const Party *pPopupParty = context.partyReadOnly())
+                {
+                    const SkillTooltipText ruled = gameRulesFor(pPopupParty).skills.skillTooltip(*pPopupParty,
+                        *pCharacter, row.canonicalName,
+                        {overlay.body, {normalDescription, expertDescription, masterDescription,
+                            grandmasterDescription}});
+                    overlay.body = ruled.description;
+                    normalDescription = ruled.masteryLines[0];
+                    expertDescription = ruled.masteryLines[1];
+                    masterDescription = ruled.masteryLines[2];
+                    grandmasterDescription = ruled.masteryLines[3];
+                }
                 if (row.canonicalName == "LethalStrike")
                 {
                     const bool russian = context.settingsSnapshot().minotaurRussianText;
@@ -872,7 +937,12 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
         return;
     }
 
-    tryShowSkillPopup("CharacterSkillsMiscListRegion", "CharacterSkillsMiscLevelHeader", skillUiData.miscRows);
+    if (tryShowSkillPopup("CharacterSkillsMiscListRegion", "CharacterSkillsMiscLevelHeader", skillUiData.miscRows))
+    {
+        return;
+    }
+
+    tryShowSkillPopup("CharacterSkillsTechListRegion", "CharacterSkillsTechLevelHeader", skillUiData.techRows);
 }
 
 void GameplayHudOverlaySupport::updateBuffInspectOverlay(
@@ -909,9 +979,21 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
                 const CharacterBuffState *pBuff = pParty->characterBuff(member, static_cast<CharacterBuffId>(b));
                 if (pBuff != nullptr)
                 {
-                    appendPopupBodyLine(overlay.body, std::string(GameplayPersonalBuffNames[b]) + " - "
-                        + formatRemainingDuration(pBuff->remainingSeconds));
+                    const std::string duration =
+                        formatBuffDuration(*pParty, pBuff->spellId, pBuff->remainingSeconds, formatRemainingDuration);
+                    appendPopupBodyLine(overlay.body,
+                        personalBuffName(context.spellTable(), *pParty, *pCharacter, b, *pBuff) + " - " + duration);
                 }
+            }
+
+            for (const GameplayPotionEffectLine &line : gameplayPotionEffectLines(*pCharacter, context.spellTable()))
+            {
+                appendPopupBodyLine(overlay.body, line.name + " - " + formatRemainingDuration(line.remainingSeconds));
+            }
+
+            for (const GameplayAuraLine &line : gameplayUnslottedAuraLines(*pParty, *pCharacter, context.spellTable()))
+            {
+                appendPopupBodyLine(overlay.body, line.name + " - " + line.heldText);
             }
             if (!overlay.body.empty())
             {
@@ -921,6 +1003,41 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
             {
                 context.interactionState().personalBuffPopupMember.reset();
             }
+        }
+    }
+    // The map progress bar's popup, on hover.
+    if (!overlay.active)
+    {
+        if (const std::optional<GameplayMapProgressBar::Popup> popup =
+                GameplayMapProgressBar::popupAt(context, width, height, pInput->pointerX, pInput->pointerY))
+        {
+            overlay.title = popup->title;
+            overlay.body = popup->body;
+            overlay.above = true;
+            anchor({popup->x, popup->y, popup->width, popup->height, 1.0f});
+        }
+    }
+    // A class counter's popup, on hover over its gems.
+    for (size_t i = 0; !overlay.active && i < std::min<size_t>(5, pParty->members().size()); ++i)
+    {
+        const PortraitCounter counter = pParty->rules().classes.portraitCounter(pParty->members()[i]);
+        const std::string id = std::string(context.currentHudScreenState() == GameplayHudScreenState::Gameplay
+            ? "ObsidianPc" : "ObsidianOverlayPc") + std::to_string(i + 1) + "Health";
+        const UiLayoutManager::LayoutElement *pLayout =
+            counter.kind != PortraitCounterKind::None ? context.findHudLayoutElement(id) : nullptr;
+        const std::optional<GameplayResolvedHudLayoutElement> arc = pLayout != nullptr && pLayout->meterArc
+            ? context.resolveHudLayoutElement(id, width, height, 0, 0) : std::nullopt;
+        const std::optional<GameplayResolvedHudLayoutElement> gems =
+            arc ? portraitCounterGemBounds(counter, *arc, pLayout->meterArc->strokeWidth) : std::nullopt;
+        if (gems && GameplayHudCommon::isPointerInsideResolvedElement(*gems, pInput->pointerX, pInput->pointerY))
+        {
+            overlay.title = counter.title;
+            for (const std::string &line : counter.notes)
+            {
+                appendPopupBodyLine(overlay.body, line);
+            }
+            overlay.above = true;
+            anchor(*gems);
         }
     }
     if (!pInput->rightMouseButton.held || context.currentHudScreenState() != GameplayHudScreenState::Gameplay)
@@ -942,13 +1059,18 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
             const GameplayBuffHudDefinition &definition = GameplayBuffHudDefinitions[size_t(id)];
             if (definition.presentation == panel)
             {
+                const PartyBuffState &buff = *pParty->partyBuff(id);
                 appendPopupBodyLine(overlay.body, std::string(definition.pName) + " - "
-                    + formatRemainingDuration(pParty->partyBuff(id)->remainingSeconds));
+                    + formatBuffDuration(*pParty, buff.spellId, buff.remainingSeconds, formatRemainingDuration));
             }
         }
         if (overlay.body.empty())
         {
             overlay.body = "No active buffs";
+        }
+        if (journalHasAuraPanel(context))
+        {
+            appendPopupBodyLine(overlay.body, "Click: open the aura panel");
         }
         anchor(*rect);
         return;
@@ -968,7 +1090,7 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
     {
         const PartyBuffState *pBuff = pParty->partyBuff(inspected->id);
         overlay.title = GameplayBuffHudDefinitions[size_t(inspected->id)].pName;
-        overlay.body = formatRemainingDuration(pBuff->remainingSeconds);
+        overlay.body = formatBuffDuration(*pParty, pBuff->spellId, pBuff->remainingSeconds, formatRemainingDuration);
         if (pBuff->power > 0)
         {
             appendPopupBodyLine(overlay.body, "Power: " + std::to_string(pBuff->power));
@@ -1049,16 +1171,39 @@ void GameplayHudOverlaySupport::updateCharacterDetailOverlay(
 
     overlay.active = true;
     const std::string characterName = pCharacter->name.empty() ? "Member" : pCharacter->name;
-    const std::string characterClass =
-        displayClassName(!pCharacter->className.empty() ? pCharacter->className : pCharacter->role);
+    const std::string characterClass = party.rules().classes.displayName(party, *pCharacter);
     overlay.title = characterClass.empty() ? characterName : characterName + " the " + characterClass;
     overlay.body.clear();
     overlay.portraitTextureName = defaultCharacterPortraitTextureName(*pCharacter);
     overlay.hitPointsText = std::to_string(summary.health.current) + " / " + std::to_string(summary.health.maximum);
     overlay.spellPointsText =
         std::to_string(summary.spellPoints.current) + " / " + std::to_string(summary.spellPoints.maximum);
+
+    if (memberIndex)
+    {
+        // The share the member's auras hold, which the pool cannot fill (the hatched end of the portrait gauge).
+        const int heldHitPoints = party.rules().spells.reservedHitPoints(party, *memberIndex);
+        const int heldSpellPoints = party.rules().spells.reservedSpellPoints(party, *memberIndex);
+
+        if (heldHitPoints > 0)
+        {
+            overlay.hitPointsText += " (" + std::to_string(heldHitPoints) + " held)";
+        }
+
+        if (heldSpellPoints > 0)
+        {
+            overlay.spellPointsText += " (" + std::to_string(heldSpellPoints) + " held)";
+        }
+    }
     overlay.conditionText = summary.conditionText;
     overlay.quickSpellText = summary.quickSpellText;
+
+    if (const SpellEntry *pQuickSpell = context.spellTable() != nullptr && !pCharacter->quickSpellName.empty()
+            ? context.spellTable()->findByName(pCharacter->quickSpellName)
+            : nullptr)
+    {
+        overlay.quickSpellText = gameRulesFor(context.partyReadOnly()).spells.spellName(*pCharacter, *pQuickSpell);
+    }
     overlay.activeSpells.clear();
 
     if (memberIndex)
@@ -1074,9 +1219,29 @@ void GameplayHudOverlaySupport::updateCharacterDetailOverlay(
             }
 
             GameplayUiController::CharacterDetailOverlayState::ActiveSpellLine line = {};
-            line.name = GameplayPersonalBuffNames[buffIndex];
-            line.duration = formatCharacterDetailDuration(pBuff->remainingSeconds);
+            line.name = personalBuffName(context.spellTable(), party, *pCharacter, buffIndex, *pBuff);
+            line.duration =
+                formatBuffDuration(party, pBuff->spellId, pBuff->remainingSeconds, formatCharacterDetailDuration);
             overlay.activeSpells.push_back(std::move(line));
+        }
+
+        if (const Character *pMember = party.member(*memberIndex))
+        {
+            for (const GameplayPotionEffectLine &potion : gameplayPotionEffectLines(*pMember, context.spellTable()))
+            {
+                GameplayUiController::CharacterDetailOverlayState::ActiveSpellLine line = {};
+                line.name = potion.name;
+                line.duration = formatCharacterDetailDuration(potion.remainingSeconds);
+                overlay.activeSpells.push_back(std::move(line));
+            }
+
+            for (const GameplayAuraLine &aura : gameplayUnslottedAuraLines(party, *pMember, context.spellTable()))
+            {
+                GameplayUiController::CharacterDetailOverlayState::ActiveSpellLine line = {};
+                line.name = aura.name;
+                line.duration = aura.heldText;
+                overlay.activeSpells.push_back(std::move(line));
+            }
         }
     }
 
@@ -1158,20 +1323,47 @@ void GameplayHudOverlaySupport::updateSpellInspectOverlay(
         const SpellbookSchoolUiDefinition *pSpellSchoolDefinition = findSpellbookSchoolUiDefinitionForSpellId(spellId);
         const GameplayUiController::SpellbookSchool spellSchool =
             pSpellSchoolDefinition != nullptr ? pSpellSchoolDefinition->school : context.spellbookReadOnly().school;
-        const Character *pActiveMember =
-            context.partyReadOnly() != nullptr ? context.partyReadOnly()->activeMember() : nullptr;
+        const Party *pParty = context.partyReadOnly();
+        const Character *pActiveMember = pParty != nullptr ? pParty->activeMember() : nullptr;
         const SkillMastery casterMastery = spellInspectCasterMasteryForSpell(pActiveMember, spellId);
+        const GameRules &rules = gameRulesFor(pParty);
+        const std::optional<std::string> schoolSkill = resolveMagicSkillName(spellId);
+        // The cost the caster would pay (the rules may change it); the table cost when they cannot cast it.
+        const std::optional<uint32_t> casterManaCost = pActiveMember != nullptr
+            ? PartySpellSystem::manaCost(*pParty, *pActiveMember, *context.spellTable(), spellId)
+            : std::nullopt;
 
         overlay.school = spellbookSchoolDisplayName(spellSchool);
-        overlay.manaCost = std::max(0, spellInspectManaCostForMastery(*pSpellEntry, casterMastery));
+
+        if (pActiveMember != nullptr && schoolSkill)
+        {
+            const std::string schoolName = rules.skills.skillDisplayName(*pActiveMember, *schoolSkill);
+
+            if (schoolName != displaySkillName(*schoolSkill))
+            {
+                overlay.school = schoolName;
+            }
+        }
+
+        overlay.manaCost = casterManaCost
+            ? int(*casterManaCost)
+            : std::max(0, spellInspectManaCostForMastery(*pSpellEntry, casterMastery));
         overlay.hasManaCost = true;
-        overlay.title = pSpellEntry->name;
-        overlay.body = pSpellEntry->description;
-        overlay.normal = pSpellEntry->normalText.empty() ? "" : "Normal: " + pSpellEntry->normalText;
-        overlay.expert = pSpellEntry->expertText.empty() ? "" : "Expert: " + pSpellEntry->expertText;
-        overlay.master = pSpellEntry->masterText.empty() ? "" : "Master: " + pSpellEntry->masterText;
-        overlay.grandmaster =
-            pSpellEntry->grandmasterText.empty() ? "" : "Grand Master: " + pSpellEntry->grandmasterText;
+        const SpellTooltipText text = pActiveMember != nullptr
+            ? rules.spells.spellTooltip(*pParty, *pActiveMember, *pSpellEntry)
+            : SpellTooltipText {pSpellEntry->name, pSpellEntry->description,
+                  {pSpellEntry->normalText, pSpellEntry->expertText, pSpellEntry->masterText,
+                      pSpellEntry->grandmasterText}};
+        const auto masteryLine = [&text](size_t mastery, const char *pLabel)
+        {
+            return text.masteryLines[mastery].empty() ? std::string() : pLabel + text.masteryLines[mastery];
+        };
+        overlay.title = text.name;
+        overlay.body = text.description;
+        overlay.normal = masteryLine(0, "Normal: ");
+        overlay.expert = masteryLine(1, "Expert: ");
+        overlay.master = masteryLine(2, "Master: ");
+        overlay.grandmaster = masteryLine(3, "Grand Master: ");
         overlay.sourceX = resolved->x;
         overlay.sourceY = resolved->y;
         overlay.sourceWidth = std::max(1.0f, resolved->width);
@@ -1246,5 +1438,130 @@ void GameplayHudOverlaySupport::renderGameplayMouseLookOverlay(
             armLength, stroke),
         gameplayHudPaletteQuad(*dotColorTexel, centerX + armGap, centerY - stroke * 0.5f, armLength, stroke)};
     context.submitHudQuadBatch(quads);
+}
+
+void GameplayHudOverlaySupport::renderItemRarityGlow(
+    GameplayScreenRuntime &context,
+    const InventoryItem &item,
+    const GameplayHudTextureHandle &icon,
+    float x,
+    float y,
+    float width,
+    float height,
+    float scale)
+{
+    const std::string &mode = context.settingsSnapshot().rarityGlow;
+    const GameplayInputFrame *pInput = context.currentGameplayInputFrame();
+
+    if (mode != "always"
+        && !(mode == "hold" && pInput != nullptr && pInput->action(KeyboardAction::ShowItemRarity).held))
+    {
+        return;
+    }
+
+    // A drop the loot filter left where it fell is outlined grey instead (RulesetLootFilter::leaveOnGround).
+    const std::optional<uint32_t> color = item.rulesetFields.lootFiltered != 0
+        ? std::optional<uint32_t>(0x8c8c8cu)
+        : gameRulesFor(context.partyReadOnly()).items.nameColor(item);
+
+    if (!color)
+    {
+        return;
+    }
+
+    // nameColor is 0xRRGGBB; the HUD textures are ABGR.
+    const uint32_t colorAbgr = 0xff000000u | ((*color & 0xffu) << 16) | (*color & 0xff00u) | ((*color >> 16) & 0xffu);
+    const bgfx::TextureHandle silhouette = context.gameplayUiRuntime().ensureHudTextureColor(icon, colorAbgr);
+
+    if (!bgfx::isValid(silhouette))
+    {
+        return;
+    }
+
+    // A faint outer ring and a stronger inner one, each the silhouette shifted eight ways.
+    struct Ring
+    {
+        float radius;
+        uint32_t alpha;
+    };
+    constexpr std::array<Ring, 2> Rings = {Ring{2.4f, 0x55}, Ring{1.2f, 0xc0}};
+    constexpr float Diagonal = 0.70710678f;
+    constexpr std::array<std::pair<float, float>, 8> Directions = {{
+        {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {Diagonal, Diagonal}, {Diagonal, -Diagonal}, {-Diagonal, Diagonal},
+        {-Diagonal, -Diagonal}}};
+    std::array<GameplayHudBatchQuad, Rings.size() * Directions.size()> quads;
+    size_t index = 0;
+
+    for (const Ring &ring : Rings)
+    {
+        const float radius = std::max(1.0f, ring.radius * scale);
+
+        for (const auto &[directionX, directionY] : Directions)
+        {
+            GameplayHudBatchQuad &quad = quads[index++];
+            quad.textureHandle = silhouette;
+            quad.x = x + directionX * radius;
+            quad.y = y + directionY * radius;
+            quad.width = width;
+            quad.height = height;
+            quad.tintAbgr = (ring.alpha << 24) | 0x00ffffffu;
+        }
+    }
+
+    context.gameplayUiRuntime().submitHudQuadBatch(quads);
+}
+
+bool GameplayHudOverlaySupport::bagOverviewActive(const GameplayScreenRuntime &context)
+{
+#if defined(__ANDROID__)
+    // Half-size cells are too small to touch; Android shows one bag at full size.
+    static_cast<void>(context);
+    return false;
+#else
+    const Party *pParty = context.partyReadOnly();
+    return pParty != nullptr && !context.characterScreenReadOnly().inventoryBagZoomed
+        && context.characterScreenReadOnly().page == GameplayUiController::CharacterPage::Inventory
+        && !context.isAdventurersInnCharacterSourceActive()
+        && !(context.utilitySpellOverlayReadOnly().active
+            && context.utilitySpellOverlayReadOnly().mode
+                == GameplayUiController::UtilitySpellOverlayMode::InventoryTarget)
+        && gameRulesFor(pParty).items.bagCount(*pParty) > 1;
+#endif
+}
+
+void GameplayHudOverlaySupport::renderBagTagIcon(
+    GameplayScreenRuntime &context,
+    BagTag tag,
+    float x,
+    float y,
+    float size)
+{
+    const std::optional<GameplayHudTextureHandle> icon = context.gameplayUiRuntime().ensureHudTextureLoaded(
+        tag == BagTag::Crafting ? "obsidian_bag_tag_crafting" : "obsidian_bag_tag_alchemy");
+
+    if (icon)
+    {
+        context.submitHudTexturedQuad(*icon, std::round(x), std::round(y), std::round(size), std::round(size));
+    }
+}
+
+void GameplayHudOverlaySupport::renderBagTagMarks(
+    GameplayScreenRuntime &context,
+    const Character &character,
+    uint8_t bag,
+    float x,
+    float y,
+    float width,
+    float size)
+{
+    if (InventoryBags::hasTag(character, bag, BagTag::Crafting))
+    {
+        renderBagTagIcon(context, BagTag::Crafting, x, y, size);
+    }
+
+    if (InventoryBags::hasTag(character, bag, BagTag::Alchemy))
+    {
+        renderBagTagIcon(context, BagTag::Alchemy, x + width - size, y, size);
+    }
 }
 } // namespace OpenYAMM::Game

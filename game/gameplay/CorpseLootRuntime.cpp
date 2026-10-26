@@ -1,12 +1,15 @@
 #include "game/gameplay/CorpseLootRuntime.h"
+
 #include "game/gameplay/ChestRuntime.h"
 
 #include "game/audio/SoundIds.h"
 #include "game/debug/GameplayDebugTrace.h"
+#include "game/gameplay/GameplayLootFilter.h"
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/party/Party.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 
 #include <algorithm>
@@ -255,15 +258,25 @@ void setHeldInventoryItem(
 
 GameplayCorpseViewState rollMonsterCarriedLoot(
     const std::string &title,
-    const MonsterTable::LootPrototype &loot,
+    const CorpseLoot &corpseLoot,
     const ItemTable *pItemTable,
     Party *pParty,
     const std::string &worldId)
 {
     GameplayCorpseViewState view = {};
     view.title = title;
+    const MonsterTable::LootPrototype &loot = corpseLoot.loot;
 
-    static thread_local std::mt19937 rng(std::random_device{}());
+    static thread_local std::mt19937 freeRng(std::random_device{}());
+    std::mt19937 seededRng;
+
+    if (corpseLoot.seed)
+    {
+        std::seed_seq sequence{uint32_t(*corpseLoot.seed), uint32_t(*corpseLoot.seed >> 32)};
+        seededRng.seed(sequence);
+    }
+
+    std::mt19937 &rng = corpseLoot.seed ? seededRng : freeRng;
 
     if (loot.goldDiceRolls > 0 && loot.goldDiceSides > 0)
     {
@@ -304,6 +317,9 @@ GameplayCorpseViewState rollMonsterCarriedLoot(
                     .treasureLevel = loot.itemLevel,
                     .mode = ItemGenerationMode::MonsterLoot,
                     .worldId = worldId,
+                    .dropLevel = corpseLoot.dropLevel,
+                    .boss = corpseLoot.boss,
+                    .omnipotent = corpseLoot.omnipotent,
                 },
                 pParty,
                 rng,
@@ -313,17 +329,79 @@ GameplayCorpseViewState rollMonsterCarriedLoot(
                 })
             : std::nullopt;
 
-        if (generatedItem && generatedItem->objectDescriptionId != 0)
+        std::optional<InventoryItem> droppedItem = generatedItem;
+        const ItemDefinition *pGeneratedDefinition =
+            droppedItem && pItemTable != nullptr ? pItemTable->get(droppedItem->objectDescriptionId) : nullptr;
+        const FilteredLoot filtered = pGeneratedDefinition != nullptr
+            ? filterDroppedLoot(
+                  *droppedItem, *pGeneratedDefinition, pParty, pStandardItemEnchantTable, pSpecialItemEnchantTable)
+            : FilteredLoot{};
+
+        if (filtered.verdict == LootFilterVerdict::Gold)
+        {
+            // The filtered drop is added to the corpse's gold.
+            const int filteredGold = int(filtered.gold);
+            auto goldIt = std::find_if(
+                view.items.begin(),
+                view.items.end(),
+                [](const GameplayChestItemState &item)
+                {
+                    return item.isGold;
+                });
+
+            if (goldIt == view.items.end())
+            {
+                GameplayChestItemState goldItem = {};
+                goldItem.isGold = true;
+                view.items.push_back(goldItem);
+                goldIt = view.items.end() - 1;
+            }
+
+            goldIt->goldAmount += uint32_t(std::max(1, filteredGold));
+            const GoldHeapVisual goldVisual = classifyGoldHeapVisual(goldIt->goldAmount);
+            goldIt->width = goldVisual.width;
+            goldIt->height = goldVisual.height;
+        }
+        else if (droppedItem && droppedItem->objectDescriptionId != 0)
         {
             GameplayChestItemState item = {};
-            item.item = *generatedItem;
+            item.item = *droppedItem;
             item.itemId = item.item.objectDescriptionId;
             item.quantity = item.item.quantity;
             view.items.push_back(item);
         }
     }
 
+    for (const CorpseLoot::ExtraItem &extra : corpseLoot.extraItems)
+    {
+        if (pItemTable == nullptr || pItemTable->get(extra.itemId) == nullptr)
+        {
+            continue;
+        }
+
+        GameplayChestItemState item = {};
+        item.item = corpseExtraInventoryItem(extra, *pItemTable);
+        item.itemId = item.item.objectDescriptionId;
+        item.quantity = item.item.quantity;
+        view.items.push_back(item);
+    }
+
     return view;
+}
+
+InventoryItem corpseExtraInventoryItem(const CorpseLoot::ExtraItem &extra, const ItemTable &itemTable)
+{
+    InventoryItem item = ItemGenerator::makeInventoryItem(extra.itemId, itemTable, ItemGenerationMode::MonsterLoot);
+    item.rulesetFields.craftState = extra.craftState;
+    item.rulesetFields.dropLevel = extra.dropLevel;
+    item.standardEnchantPower = extra.potionPower > 0 ? extra.potionPower : item.standardEnchantPower;
+
+    if (extra.rulesetFields)
+    {
+        item.rulesetFields = *extra.rulesetFields;
+    }
+
+    return item;
 }
 
 void addGuaranteedCorpseItems(
@@ -386,7 +464,7 @@ GameplayCorpseViewState buildMonsterCorpseView(
     const std::string &worldId,
     const std::vector<uint32_t> &guaranteedItemIds)
 {
-    GameplayCorpseViewState view = rollMonsterCarriedLoot(title, loot, pItemTable, pParty, worldId);
+    GameplayCorpseViewState view = rollMonsterCarriedLoot(title, CorpseLoot{loot}, pItemTable, pParty, worldId);
     addGuaranteedCorpseItems(view, pItemTable, guaranteedItemIds);
     return view;
 }

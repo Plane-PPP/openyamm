@@ -1,8 +1,11 @@
 #include "game/ui/GameplayHudOverlayRenderer.h"
+#include "game/ui/GameplayHudOverlaySupport.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 
 #include "game/items/ItemRuntime.h"
+#include "game/rules/GameRules.h"
+#include "game/ui/GameplayUiSkin.h"
 #include "game/tables/ItemTable.h"
 #include "game/StringUtils.h"
 
@@ -188,6 +191,37 @@ void renderViewportParchmentSidePanels(GameplayScreenRuntime &view, int width, i
 {
     view.renderViewportSidePanels(width, height, "obsidian_reading_surface");
 }
+// Several bags (MAW): a button per bag over a chest's or shop's party inventory, the active member's open bag
+// selected, with its tags in the corners; the bag that takes what is moved there.
+void renderPartyBagButtons(GameplayScreenRuntime &view, int width, int height)
+{
+    const Party *pParty = view.partyReadOnly();
+    const Character *pCharacter = pParty != nullptr ? pParty->activeMember() : nullptr;
+    const int bagCount = pParty != nullptr ? gameRulesFor(pParty).items.bagCount(*pParty) : 1;
+
+    for (int bag = 0; pCharacter != nullptr && bagCount > 1 && bag < bagCount; ++bag)
+    {
+        const std::string id = "ChestInventoryBag" + std::to_string(bag + 1);
+        const GameplayScreenRuntime::HudLayoutElement *pLayout = view.findHudLayoutElement(id);
+
+        if (pLayout == nullptr)
+        {
+            continue;
+        }
+
+        GameplayUiSkin::renderButton(view, id, width, height, pCharacter->rulesetState.currentBag == bag, true);
+        const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> button =
+            view.resolveHudLayoutElement(id, width, height, pLayout->width, pLayout->height);
+
+        if (button)
+        {
+            const float markSize = std::round(11.0f * button->scale);
+            GameplayHudOverlaySupport::renderBagTagMarks(view, *pCharacter, uint8_t(bag),
+                button->x - 2.0f * button->scale, button->y + button->height - markSize + 3.0f * button->scale,
+                button->width + 4.0f * button->scale, markSize);
+        }
+    }
+}
 } // namespace
 
 void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, int width, int height, bool renderAboveHud)
@@ -228,7 +262,8 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
             continue;
         }
 
-        if (normalizedLayoutId.rfind("chestnestedinventory", 0) == 0)
+        if (normalizedLayoutId.rfind("chestnestedinventory", 0) == 0
+            || normalizedLayoutId.rfind("chestinventorybag", 0) == 0)
         {
             continue;
         }
@@ -410,6 +445,9 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
                 static_cast<float>(itemTexture->height) * gridMetrics.scale * pItemDefinition->inventoryDrawScale;
             const InventoryItemScreenRect itemRect =
                 computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight);
+            GameplayHudOverlaySupport::renderItemRarityGlow(
+                view, item.item, *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height,
+                gridMetrics.scale);
             view.submitHudTexturedQuad(*itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
 
             if (pItemDefinition->itemId == 0)
@@ -431,6 +469,12 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
             inspectableItem.height = itemRect.height;
             view.addRenderedInspectableHudItem(inspectableItem);
         }
+    }
+
+    // The bag that takes what is moved out of the chest (the nested inventory draws its own buttons).
+    if (renderAboveHud && !view.inventoryNestedOverlay().active)
+    {
+        renderPartyBagButtons(view, width, height);
     }
 }
 
@@ -498,6 +542,9 @@ void GameplayHudOverlayRenderer::renderInventoryNestedOverlay(
         return;
     }
 
+    // The grid shows the active member's open bag; several bags have a button each.
+    renderPartyBagButtons(view, width, height);
+
     const InventoryGridMetrics gridMetrics = computeInventoryGridMetrics(
         resolvedInventoryGrid->x,
         resolvedInventoryGrid->y,
@@ -543,6 +590,8 @@ void GameplayHudOverlayRenderer::renderInventoryNestedOverlay(
             renderedTexture.textureHandle = tintedTextureHandle;
         }
 
+        GameplayHudOverlaySupport::renderItemRarityGlow(
+            view, item, *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
         view.submitHudTexturedQuad(renderedTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
 
         GameplayRenderedInspectableHudItem inspectableItem = {};

@@ -1290,8 +1290,9 @@ TEST_CASE("ModelAnimation demon LOD meshes share the rig and retain posed bounds
     const ModelMesh &mesh = asset.meshes[asset.nodes[nodeIndex].meshIndex];
     REQUIRE(mesh.lodMeshes.size() == 3);
     REQUIRE(mesh.shadowMeshes.size() == 4);
-    // The installed 55 % reduction (level_generation/creatures/mm6_demon_reduce_claude).
-    const std::array<size_t, 4> triangles = {9060, 4512, 1623, 552};
+    // The installed 55 % reduction (level_generation/creatures/mm6_demon_reduce_claude); levels 2 and 3 from the
+    // monster LOD rebuild of 2026-10-22 (tools/build_actor_lods.py).
+    const std::array<size_t, 4> triangles = {9060, 4512, 2716, 1455};
     for (size_t level = 0; level < 4; ++level)
     {
         const uint32_t meshIndex = level == 0 ? uint32_t(asset.nodes[nodeIndex].meshIndex) : mesh.lodMeshes[level - 1];

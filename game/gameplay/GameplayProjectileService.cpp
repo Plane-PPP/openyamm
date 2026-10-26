@@ -1,15 +1,19 @@
 #include "game/gameplay/GameplayProjectileService.h"
+#include "game/gameplay/GameplayActorShields.h"
 
 #include "game/audio/SoundIds.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/fx/ParticleRecipes.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/items/ItemEnchantRuntime.h"
+#include "game/party/Party.h"
 #include "game/SpriteObjectDefs.h"
 #include "game/party/SkillData.h"
+#include "game/rules/GameRules.h"
 #include "game/StringUtils.h"
 #include "game/party/SpellIds.h"
 #include "game/tables/ObjectTable.h"
+#include "game/tables/SpellTable.h"
 #include "game/tables/SpriteTables.h"
 
 #include <algorithm>
@@ -435,6 +439,7 @@ void GameplayProjectileService::clear()
     m_projectiles.clear();
     m_projectileImpacts.clear();
     m_endedProjectiles.clear();
+    m_recentHomingEnds.clear();
 }
 
 GameplayProjectileService::Snapshot GameplayProjectileService::snapshot() const
@@ -546,6 +551,9 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.damage = request.damage;
         projectile.attackBonus = request.attackBonus;
         projectile.damageType = request.damageType;
+        projectile.shieldTier = request.shieldTier;
+        projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
+        projectile.explosionRadius = request.explosionRadius;
         projectile.useActorHitChance = request.useActorHitChance;
         projectile.turnBasedPendingAction = request.turnBasedPendingAction;
         projectile.lifetimeTicks = request.definition.lifetimeTicks;
@@ -598,6 +606,9 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     projectile.damage = request.damage;
     projectile.attackBonus = request.attackBonus;
     projectile.damageType = request.damageType;
+    projectile.shieldTier = request.shieldTier;
+    projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
+    projectile.explosionRadius = request.explosionRadius;
     projectile.useActorHitChance = request.useActorHitChance;
     projectile.turnBasedPendingAction = request.turnBasedPendingAction;
     projectile.lifetimeTicks = request.definition.lifetimeTicks;
@@ -981,6 +992,99 @@ void GameplayProjectileService::settleProjectile(ProjectileState &projectile) co
         appendProjectileTraceSummary(trace, projectile);
         gameplayProjectileTraceWrite(trace.str());
     );
+}
+
+std::optional<GameplayProjectileService::ProjectileSpawnRequest> GameplayProjectileService::buildChainSpawnRequest(
+    const ProjectileState &projectile,
+    const CombatRules &rules,
+    const IGameplayWorldRuntime &world,
+    size_t struckActorIndex) const
+{
+    constexpr float ChainRange = 768.0f;
+    constexpr float FallbackSpeed = 2000.0f;
+
+    if (projectile.sourceKind != ProjectileState::SourceKind::Party || projectile.spellId == 0)
+    {
+        return std::nullopt;
+    }
+
+    const std::optional<SkillMastery> nextMastery =
+        rules.spellChainMastery(projectile.spellId, SkillMastery(projectile.skillMastery));
+    GameplayRuntimeActorState struck = {};
+
+    if (!nextMastery || !world.actorRuntimeState(struckActorIndex, struck))
+    {
+        return std::nullopt;
+    }
+
+    const float fromZ = struck.preciseZ + float(struck.height) * 0.5f;
+    std::optional<GameplayRuntimeActorState> target;
+    float targetDistance = ChainRange;
+
+    for (size_t actorIndex = 0; actorIndex < world.mapActorCount(); ++actorIndex)
+    {
+        GameplayRuntimeActorState actor = {};
+
+        if (actorIndex == struckActorIndex || !world.actorRuntimeState(actorIndex, actor) || actor.isDead
+            || actor.currentHp <= 0 || !actor.hostileToParty)
+        {
+            continue;
+        }
+
+        const float distance = std::sqrt(std::pow(actor.preciseX - struck.preciseX, 2.0f)
+            + std::pow(actor.preciseY - struck.preciseY, 2.0f)
+            + std::pow(actor.preciseZ + float(actor.height) * 0.5f - fromZ, 2.0f));
+
+        if (distance <= targetDistance)
+        {
+            target = actor;
+            targetDistance = distance;
+        }
+    }
+
+    if (!target)
+    {
+        return std::nullopt;
+    }
+
+    ProjectileSpawnRequest request = {};
+    request.sourceKind = projectile.sourceKind;
+    request.sourceId = projectile.sourceId;
+    request.sourcePartyMemberIndex = projectile.sourcePartyMemberIndex;
+    request.definition.objectDescriptionId = projectile.objectDescriptionId;
+    request.definition.objectSpriteId = projectile.objectSpriteId;
+    request.definition.objectSpriteFrameIndex = projectile.objectSpriteFrameIndex;
+    request.definition.impactObjectDescriptionId = projectile.impactObjectDescriptionId;
+    request.definition.objectFlags = projectile.objectFlags;
+    request.definition.visualMode = projectile.visualMode;
+    request.definition.radius = projectile.radius;
+    request.definition.height = projectile.height;
+    request.definition.spellId = projectile.spellId;
+    request.definition.lifetimeTicks = projectile.lifetimeTicks;
+    request.definition.objectName = projectile.objectName;
+    request.definition.objectSpriteName = projectile.objectSpriteName;
+    const float speed = std::sqrt(projectile.velocityX * projectile.velocityX
+        + projectile.velocityY * projectile.velocityY + projectile.velocityZ * projectile.velocityZ);
+    request.definition.speed = speed > 1.0f ? speed : FallbackSpeed;
+    request.skillLevel = projectile.skillLevel;
+    request.skillMastery = uint32_t(*nextMastery);
+    request.damage = projectile.damage;
+    request.attackBonus = projectile.attackBonus;
+    request.damageType = projectile.damageType;
+    request.shieldTier = projectile.shieldTier;
+    request.weakerOfPhysicalAndFire = projectile.weakerOfPhysicalAndFire;
+    request.explosionRadius = projectile.explosionRadius;
+    request.sourceX = struck.preciseX;
+    request.sourceY = struck.preciseY;
+    request.sourceZ = fromZ;
+    request.targetX = target->preciseX;
+    request.targetY = target->preciseY;
+    request.targetZ = target->preciseZ + float(target->height) * 0.5f;
+    // Leave the struck monster before flying on.
+    request.spawnForwardOffset = float(struck.radius) + float(projectile.radius) + 8.0f;
+    request.sectorId = projectile.sectorId;
+    request.allowInstantImpact = true;
+    return request;
 }
 
 std::vector<GameplayProjectileService::ProjectileSpawnRequest>
@@ -1413,18 +1517,49 @@ int GameplayProjectileService::resolveProjectilePartyImpactDamage(
     }
 }
 
+int GameplayProjectileService::partyWorldSpellDamage(
+    const Party *pParty,
+    const SpellTable *pSpellTable,
+    uint32_t sourcePartyMemberIndex,
+    int spellId,
+    uint32_t skillLevel,
+    uint32_t skillMastery,
+    int trapRoll)
+{
+    const Character *pCaster = pParty != nullptr ? pParty->member(sourcePartyMemberIndex) : nullptr;
+    const SpellEntry *pSpell = pSpellTable != nullptr ? pSpellTable->findById(spellId) : nullptr;
+
+    if (pCaster == nullptr || pSpell == nullptr)
+    {
+        return trapRoll;
+    }
+
+    CharacterSpellCast cast;
+    cast.pCaster = pCaster;
+    cast.pItemTable = pParty->itemTable();
+    cast.pStandardItemEnchantTable = pParty->standardItemEnchantTable();
+    cast.pSpecialItemEnchantTable = pParty->specialItemEnchantTable();
+    cast.pSpell = pSpell;
+    cast.mastery = SkillMastery(skillMastery);
+    cast.skillLevel = skillLevel;
+    cast.partyCount = int(std::max<size_t>(1, pParty->members().size()));
+    return pParty->rules().combat.worldSpellDamage(cast).value_or(trapRoll);
+}
+
 int GameplayProjectileService::resolvePartyProjectileDamageMultiplier(
     const ProjectileState &projectile,
     const Character *pSourceMember,
     const ItemTable *pItemTable,
     const SpecialItemEnchantTable *pSpecialItemEnchantTable,
-    uint32_t targetMonsterKindFlags) const
+    uint32_t targetMonsterKindFlags,
+    const CombatRules &rules) const
 {
     if (projectile.sourceKind != ProjectileState::SourceKind::Party
         || projectile.damage <= 0
         || projectile.spellId != 0
         || pSourceMember == nullptr
-        || pItemTable == nullptr)
+        || pItemTable == nullptr
+        || !rules.weaponKindMultiplierApplies())
     {
         return 1;
     }
@@ -1530,24 +1665,31 @@ GameplayProjectileService::buildProjectileDirectActorImpact(
     if (projectile.sourceKind == ProjectileState::SourceKind::Party)
     {
         impact.damage = projectile.damage;
+        const CombatRules &rules = input.pCombatRules != nullptr ? *input.pCombatRules : standardGameRules().combat;
 
         if (projectile.useActorHitChance)
         {
             std::mt19937 rng(
                 projectile.projectileId
                 ^ static_cast<uint32_t>(input.actorId * 2654435761u));
-            impact.hit = GameMechanics::characterRangedAttackHitsArmorClass(
-                input.targetArmorClass,
-                projectile.attackBonus,
-                input.targetDistance,
-                rng);
+            impact.hit = rules.characterMissileHits(
+                CharacterMissileOnMonster{
+                    .attackBonus = projectile.attackBonus,
+                    .targetArmorClass = input.targetArmorClass,
+                    .targetDistance = input.targetDistance,
+                    .targetFacts = input.targetFacts,
+                    .partyCount = input.partyCount,
+                    .pShooter = input.pShooter,
+                    .pRng = &rng,
+                });
         }
 
         if (impact.hit && impact.damage > 0)
         {
             impact.damage *= input.damageMultiplier;
 
-            if (input.halfIncomingMissileDamage)
+            if (input.halfIncomingMissileDamage
+                && rules.monsterShieldHalvesPartyMissile(uint32_t(std::max(0, projectile.spellId))))
             {
                 impact.damage = std::max(1, (impact.damage + 1) / 2);
             }
@@ -1588,6 +1730,234 @@ void GameplayProjectileService::expireProjectile(
 
     projectile.isExpired = true;
     m_endedProjectiles.push_back({projectile.projectileId, projectile.x, projectile.y, projectile.z});
+}
+
+size_t GameplayProjectileService::attachHoming(
+    uint32_t firstProjectileId,
+    uint32_t sourceActorId,
+    const ProjectileHoming &homing)
+{
+    return attachHomingWhere(
+        firstProjectileId,
+        homing,
+        [sourceActorId](const ProjectileState &projectile)
+        {
+            return projectile.sourceKind == ProjectileState::SourceKind::Actor && projectile.sourceId == sourceActorId;
+        });
+}
+
+size_t GameplayProjectileService::attachPartyHoming(
+    uint32_t firstProjectileId,
+    uint32_t sourcePartyMemberIndex,
+    const ProjectileHoming &homing)
+{
+    return attachHomingWhere(
+        firstProjectileId,
+        homing,
+        [sourcePartyMemberIndex](const ProjectileState &projectile)
+        {
+            return projectile.sourceKind == ProjectileState::SourceKind::Party
+                && projectile.sourcePartyMemberIndex == sourcePartyMemberIndex;
+        });
+}
+
+size_t GameplayProjectileService::attachHomingWhere(
+    uint32_t firstProjectileId,
+    const ProjectileHoming &homing,
+    const std::function<bool(const ProjectileState &)> &fromSource)
+{
+    size_t attached = 0;
+
+    for (ProjectileState &projectile : m_projectiles)
+    {
+        if (projectile.projectileId < firstProjectileId
+            || projectile.isExpired
+            || projectile.isSettled
+            || !fromSource(projectile))
+        {
+            continue;
+        }
+
+        const float speed = std::sqrt(projectile.velocityX * projectile.velocityX
+            + projectile.velocityY * projectile.velocityY
+            + projectile.velocityZ * projectile.velocityZ);
+
+        if (speed <= 0.0f)
+        {
+            continue;
+        }
+
+        projectile.homing = homing;
+        projectile.homing->speed = speed;
+        projectile.homing->elapsedSeconds = 0.0f;
+        projectile.homing->lost = false;
+        ++attached;
+    }
+
+    return attached;
+}
+
+void GameplayProjectileService::recordHomingEnd(
+    const ProjectileState &projectile,
+    const ProjectileFrameResult &result)
+{
+    constexpr size_t MaxRecentHomingEnds = 32;
+
+    if (!projectile.homing || !result.expireProjectile)
+    {
+        return;
+    }
+
+    HomingProjectileEnd end = {};
+    end.projectileId = projectile.projectileId;
+    end.sourceMonsterId = projectile.sourceMonsterId;
+    end.stillHoming = !projectile.homing->lost;
+    end.hit = result.directPartyDamage ? HomingProjectileEnd::Hit::Party
+        : result.directActorImpact ? HomingProjectileEnd::Hit::Actor
+        : result.wardBlock ? HomingProjectileEnd::Hit::Ward
+        : result.logLifetimeExpiry ? HomingProjectileEnd::Hit::Expired
+        : HomingProjectileEnd::Hit::World;
+    end.point = result.endPoint.value_or(GameplayWorldPoint{projectile.x, projectile.y, projectile.z});
+
+    if (m_recentHomingEnds.size() >= MaxRecentHomingEnds)
+    {
+        m_recentHomingEnds.erase(m_recentHomingEnds.begin());
+    }
+
+    m_recentHomingEnds.push_back(end);
+}
+
+bool GameplayProjectileService::steerVelocityToward(
+    float &velocityX,
+    float &velocityY,
+    float &velocityZ,
+    const GameplayWorldPoint &position,
+    const GameplayWorldPoint &target,
+    float speed,
+    float maxTurnRadians)
+{
+    const float currentLength = std::sqrt(velocityX * velocityX + velocityY * velocityY + velocityZ * velocityZ);
+    const float toX = target.x - position.x;
+    const float toY = target.y - position.y;
+    const float toZ = target.z - position.z;
+    const float toLength = std::sqrt(toX * toX + toY * toY + toZ * toZ);
+
+    if (currentLength <= 0.0001f || toLength <= 0.0001f || speed <= 0.0f)
+    {
+        return false;
+    }
+
+    // Unit vectors of the current heading and of the way to the target.
+    const float cx = velocityX / currentLength;
+    const float cy = velocityY / currentLength;
+    const float cz = velocityZ / currentLength;
+    const float dx = toX / toLength;
+    const float dy = toY / toLength;
+    const float dz = toZ / toLength;
+    const float cosine = std::clamp(cx * dx + cy * dy + cz * dz, -1.0f, 1.0f);
+    const float angle = std::acos(cosine);
+    float nx = dx;
+    float ny = dy;
+    float nz = dz;
+
+    if (angle > std::max(maxTurnRadians, 0.0f))
+    {
+        // Rotate the heading by maxTurnRadians about the axis perpendicular to both (any perpendicular axis when
+        // the target lies straight behind).
+        float ax = cy * dz - cz * dy;
+        float ay = cz * dx - cx * dz;
+        float az = cx * dy - cy * dx;
+        float axisLength = std::sqrt(ax * ax + ay * ay + az * az);
+
+        if (axisLength <= 0.0001f)
+        {
+            ax = -cy;
+            ay = cx;
+            az = 0.0f;
+            axisLength = std::sqrt(ax * ax + ay * ay);
+
+            if (axisLength <= 0.0001f)
+            {
+                ax = 1.0f;
+                ay = 0.0f;
+                az = 0.0f;
+                axisLength = 1.0f;
+            }
+        }
+
+        ax /= axisLength;
+        ay /= axisLength;
+        az /= axisLength;
+        const float turnCosine = std::cos(maxTurnRadians);
+        const float turnSine = std::sin(maxTurnRadians);
+        // Rodrigues: c cos + (a x c) sin + a (a . c)(1 - cos), with a . c = 0.
+        const float crossX = ay * cz - az * cy;
+        const float crossY = az * cx - ax * cz;
+        const float crossZ = ax * cy - ay * cx;
+        nx = cx * turnCosine + crossX * turnSine;
+        ny = cy * turnCosine + crossY * turnSine;
+        nz = cz * turnCosine + crossZ * turnSine;
+    }
+
+    velocityX = nx * speed;
+    velocityY = ny * speed;
+    velocityZ = nz * speed;
+    return true;
+}
+
+bool GameplayProjectileService::steerHomingProjectile(
+    ProjectileState &projectile,
+    const GameplayWorldPoint *pTarget,
+    float deltaSeconds)
+{
+    if (!projectile.homing || projectile.isExpired || projectile.isSettled || deltaSeconds <= 0.0f)
+    {
+        return false;
+    }
+
+    ProjectileHoming &homing = *projectile.homing;
+
+    if (homing.lost)
+    {
+        return false;
+    }
+
+    if (homing.maxSeconds > 0.0f && homing.elapsedSeconds >= homing.maxSeconds)
+    {
+        homing.lost = true;
+        return homing.expireAfter;
+    }
+
+    homing.elapsedSeconds += deltaSeconds;
+
+    if (pTarget == nullptr)
+    {
+        homing.lost = true;
+        return false;
+    }
+
+    if (homing.lockConeRadians > 0.0f)
+    {
+        const float headingRadians = std::atan2(projectile.velocityY, projectile.velocityX);
+        const float targetRadians = std::atan2(pTarget->y - projectile.y, pTarget->x - projectile.x);
+        float offRadians = std::fabs(targetRadians - headingRadians);
+        offRadians = std::min(offRadians, 2.0f * 3.14159265f - offRadians);
+
+        if (offRadians >= homing.lockConeRadians)
+        {
+            return false;
+        }
+    }
+
+    steerVelocityToward(
+        projectile.velocityX,
+        projectile.velocityY,
+        projectile.velocityZ,
+        {projectile.x, projectile.y, projectile.z},
+        *pTarget,
+        homing.speed,
+        homing.turnRadiansPerSecond * deltaSeconds);
+    return false;
 }
 
 GameplayProjectileService::ProjectileFrameResult GameplayProjectileService::updateProjectileFrame(
@@ -1750,10 +2120,16 @@ GameplayProjectileService::ProjectileFrameResult GameplayProjectileService::upda
         input.halfIncomingMissileDamage = facts.collision.halfIncomingMissileDamage;
         input.targetDistance = facts.collision.targetDistance;
         input.nonPartyProjectileDamage = facts.nonPartyProjectileDamage;
+        input.pCombatRules = facts.collision.pCombatRules;
+        input.targetFacts = facts.collision.targetFacts;
+        input.partyCount = facts.collision.partyCount;
+        input.pShooter = facts.collision.pShooter;
         result.directActorImpact = buildProjectileDirectActorImpact(projectile, input);
     }
 
-    const float impactRadius = spellImpactDamageRadius(static_cast<uint32_t>(projectile.spellId));
+    const float impactRadius = projectile.explosionRadius > 0.0f
+        ? projectile.explosionRadius
+        : spellImpactDamageRadius(static_cast<uint32_t>(projectile.spellId));
 
     if (impactRadius > 0.0f)
     {
@@ -2215,6 +2591,23 @@ std::vector<GameplayProjectileEndPresentationState> GameplayProjectileService::t
     return std::exchange(m_endedProjectiles, {});
 }
 
+ShieldAttackTier GameplayProjectileService::projectileShieldTier(const ProjectileState &projectile)
+{
+    if (projectile.shieldTier)
+    {
+        return *projectile.shieldTier;
+    }
+
+    if (projectile.spellId > 0)
+    {
+        return ShieldAttackTier::Spell;
+    }
+
+    return shieldAttackTierForDamageType(
+        projectile.damageType,
+        projectile.sourceKind == ProjectileState::SourceKind::Party);
+}
+
 float GameplayProjectileService::spellImpactDamageRadius(uint32_t spellId)
 {
     switch (spellIdFromValue(spellId))
@@ -2230,6 +2623,44 @@ float GameplayProjectileService::spellImpactDamageRadius(uint32_t spellId)
         default:
             return 0.0f;
     }
+}
+
+PartyMissileSource GameplayProjectileService::partyMissileSource(
+    const ProjectileState &projectile,
+    const Party *pParty,
+    const ItemTable *pItemTable,
+    const MonsterTable::MonsterStatsEntry &targetStats,
+    int targetCurrentHp)
+{
+    PartyMissileSource source;
+
+    if (projectile.sourceKind == ProjectileState::SourceKind::Party && pParty != nullptr)
+    {
+        source.pAttacker = pParty->member(projectile.sourcePartyMemberIndex);
+        source.pItemTable = pItemTable;
+        source.spellId = uint32_t(std::max(projectile.spellId, 0));
+        source.targetCurrentHp = targetCurrentHp;
+        source.resistances = monsterDamageResistances(targetStats);
+    }
+
+    return source;
+}
+
+MonsterDamageResistances GameplayProjectileService::monsterDamageResistances(
+    const MonsterTable::MonsterStatsEntry &stats)
+{
+    return MonsterDamageResistances{
+        .fire = stats.fireResistance,
+        .air = stats.airResistance,
+        .water = stats.waterResistance,
+        .earth = stats.earthResistance,
+        .spirit = stats.spiritResistance,
+        .mind = stats.mindResistance,
+        .body = stats.bodyResistance,
+        .light = stats.lightResistance,
+        .dark = stats.darkResistance,
+        .physical = stats.physicalResistance,
+    };
 }
 
 int16_t GameplayProjectileService::waterSplashObjectId()

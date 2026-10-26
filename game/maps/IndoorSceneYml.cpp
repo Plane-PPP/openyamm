@@ -2,6 +2,7 @@
 
 #include "game/StringUtils.h"
 #include "game/maps/MapItemSourceYml.h"
+#include "game/maps/SceneOverlayOperations.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -1457,6 +1458,51 @@ bool IndoorSceneYmlLoader::applyOverlayFromText(
         }
     }
 
+    // Spawn points a ruleset adds (the index may be left out to append) or disables.
+    if (const YAML::Node authoredContentNode = rootNode["authored_content"])
+    {
+        if (const YAML::Node spawnsNode = authoredContentNode["spawns"])
+        {
+            if (!spawnsNode.IsSequence())
+            {
+                errorMessage = "authored_content.spawns must be a sequence";
+                return false;
+            }
+
+            for (const YAML::Node &spawnNode : spawnsNode)
+            {
+                IndoorSceneSpawn spawn = {};
+                spawn.spawnIndex = sceneData.spawns.size();
+
+                if (!spawnNode.IsMap()
+                    || !readScalarNode(spawnNode, "spawn_index", spawn.spawnIndex, errorMessage, false)
+                    || !readScalarNode(spawnNode, "radius", spawn.spawn.radius, errorMessage)
+                    || !readScalarNode(spawnNode, "type_id", spawn.spawn.typeId, errorMessage)
+                    || !readScalarNode(spawnNode, "index", spawn.spawn.index, errorMessage)
+                    || !readScalarNode(spawnNode, "attributes", spawn.spawn.attributes, errorMessage, false)
+                    || !readScalarNode(spawnNode, "group", spawn.spawn.group, errorMessage, false)
+                    || !parsePositionNode(spawnNode["position"], spawn.spawn.x, spawn.spawn.y, spawn.spawn.z,
+                        errorMessage))
+                {
+                    errorMessage = errorMessage.empty() ? "spawn entry must be a map" : errorMessage;
+                    return false;
+                }
+
+                sceneData.spawns.push_back(std::move(spawn));
+                sceneData.hasSpawns = true;
+            }
+        }
+    }
+
+    if (const YAML::Node removalsNode = rootNode["removals"])
+    {
+        if (const YAML::Node spawnRemovals = removalsNode["spawns"];
+            spawnRemovals && !applySceneSpawnRemovals(spawnRemovals, sceneData.spawns, errorMessage))
+        {
+            return false;
+        }
+    }
+
     const YAML::Node initialStateNode = rootNode["initial_state"];
 
     if (initialStateNode)
@@ -1464,6 +1510,13 @@ bool IndoorSceneYmlLoader::applyOverlayFromText(
         if (!initialStateNode.IsMap())
         {
             errorMessage = "initial_state must be a map";
+            return false;
+        }
+
+        if (const YAML::Node actorOverridesNode = initialStateNode["actor_overrides"];
+            actorOverridesNode
+            && !applySceneActorOverrides(actorOverridesNode, sceneData.initialState.actors, errorMessage))
+        {
             return false;
         }
 

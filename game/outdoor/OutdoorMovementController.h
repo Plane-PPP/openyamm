@@ -230,6 +230,8 @@ public:
         float z,
         float maxFloorRise) const;
     void setActorColliders(const std::vector<OutdoorActorCollision> &actorColliders);
+    // Per map entity: decorations that are hidden now (hiddenDecorationEntities) and so do not collide.
+    void setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities);
     void setFaceAttributes(size_t bModelIndex, size_t faceIndex, uint32_t attributes);
     void updateFaceGeometries(const std::vector<OutdoorFaceGeometryData> &geometries);
 
@@ -246,6 +248,7 @@ private:
     size_t m_faceGridWidth = 0;
     size_t m_faceGridHeight = 0;
     std::vector<OutdoorDecorationCollision> m_decorationColliders;
+    std::vector<bool> m_hiddenDecorationEntities;
     std::vector<OutdoorActorCollision> m_actorColliders;
     std::vector<OutdoorSpriteObjectCollision> m_spriteObjectColliders;
     std::vector<std::vector<size_t>> m_spriteObjectGridCells;

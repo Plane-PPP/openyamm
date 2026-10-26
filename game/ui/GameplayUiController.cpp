@@ -11,7 +11,7 @@ namespace
 {
 const std::vector<std::string> GameplayLayoutFiles = {
     "Data/ui/gameplay/gameplay.yml",
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     "Data/ui/gameplay/touch_controls.yml",
 #endif
     "Data/ui/gameplay/chest.yml",
@@ -43,7 +43,9 @@ const std::vector<std::string> GameplayLayoutFiles = {
 
 bool GameplayUiController::alchemyBenchSearchActive(const CharacterScreenState &screen)
 {
-    return screen.open && screen.alchemyBench.active && screen.alchemyBench.recipeSearchActive;
+    return screen.open && screen.alchemyBench.active
+        && (screen.alchemyBench.craftingTab ? screen.alchemyBench.crafting.searchActive
+                                            : screen.alchemyBench.recipeSearchActive);
 }
 
 bool GameplayUiController::journalSearchActive(const JournalScreenState &screen)
@@ -554,7 +556,15 @@ void GameplayUiController::openUtilitySpellOverlay(
 
 void GameplayUiController::closeUtilitySpellOverlay()
 {
-    resolvedState().utilitySpellOverlay = {};
+    State &state = resolvedState();
+
+    // The overlay's hover text (a Town Portal town, a beacon slot) goes with it (audit STD2-3).
+    if (state.utilitySpellOverlay.active && !state.statusBar.hoverTextFromWorld)
+    {
+        clearStatusBarHoverText();
+    }
+
+    state.utilitySpellOverlay = {};
 }
 
 void GameplayUiController::beginHouseBankInput(uint32_t houseId, HouseBankInputMode mode)
@@ -606,7 +616,7 @@ bool GameplayUiController::statusBarEventActive() const
     return state.statusBar.eventRemainingSeconds > 0.0f && !state.statusBar.eventText.empty();
 }
 
-void GameplayUiController::setStatusBarHoverText(const std::string &text)
+void GameplayUiController::setStatusBarHoverText(const std::string &text, bool fromWorld)
 {
     if (text.empty())
     {
@@ -622,11 +632,25 @@ void GameplayUiController::setStatusBarHoverText(const std::string &text)
     }
 
     state.statusBar.hoverText = text;
+    state.statusBar.hoverTextFromWorld = fromWorld;
 }
 
 void GameplayUiController::clearStatusBarHoverText()
 {
     resolvedState().statusBar.hoverText.clear();
+    resolvedState().statusBar.worldItemLabel.clear();
+}
+
+void GameplayUiController::clearWorldStatusBarHoverText()
+{
+    StatusBarState &statusBar = resolvedState().statusBar;
+
+    if (statusBar.hoverTextFromWorld)
+    {
+        statusBar.hoverText.clear();
+    }
+
+    statusBar.worldItemLabel.clear();
 }
 
 void GameplayUiController::updateStatusBarEvent(float deltaSeconds)

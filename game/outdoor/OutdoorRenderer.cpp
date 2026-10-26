@@ -3226,7 +3226,6 @@ void OutdoorRenderer::updateDecorationModels(OutdoorGameView &view, const Outdoo
     {
         const DecorationBillboard &billboard = billboards[index];
         const uint16_t sprite = OutdoorInteractionController::resolveDecorationBillboardSpriteId(view, billboard, hidden);
-        hidden = hidden || OutdoorInteractionController::isInteractiveDecorationHidden(view, billboard.entityIndex);
         state = OutdoorInteractionController::interactiveDecorationState(view, billboard.entityIndex);
         return sprite;
     });
@@ -3462,6 +3461,10 @@ bool OutdoorRenderer::initializeWorldRenderResources(
         return Engine::ModelEmissivePrograms{loadProgramHandle("vs_model", "fs_model_emissive"),
             loadProgramHandle("vs_model_skinned_instanced", "fs_model_emissive"),
             loadProgramHandle("vs_model_instanced", "fs_model_emissive")};
+    });
+    view.m_modelRenderer.setShieldShellProgramLoader([]()
+    {
+        return loadProgramHandle("vs_model_shield", "fs_model_shield");
     });
     view.m_outdoorTexturedFogProgramHandle =
         loadProgramHandle("vs_outdoor_textured_fog", "fs_outdoor_textured_fog");

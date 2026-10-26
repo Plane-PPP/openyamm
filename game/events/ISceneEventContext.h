@@ -7,6 +7,7 @@
 namespace OpenYAMM::Game
 {
 struct MapDeltaData;
+struct GameplayMonsterSpawnRequest;
 
 class ISceneEventContext
 {
@@ -66,6 +67,13 @@ public:
         uint32_t group,
         uint32_t uniqueNameId
     ) = 0;
+
+    // Places a script's monsters (MAW's pseudoSpawnpoint) and returns their actor indices.
+    virtual std::vector<size_t> spawnMonsters(const GameplayMonsterSpawnRequest &request)
+    {
+        (void)request;
+        return {};
+    }
 
     virtual bool summonEventItem(
         uint32_t itemId,

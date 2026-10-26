@@ -5,6 +5,7 @@
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/party/Party.h"
+#include "game/rules/GameRules.h"
 
 #include <SDL3/SDL.h>
 
@@ -32,11 +33,6 @@ constexpr int MinimumPlayerRecoveryTicks = 30;
 constexpr float ActorTurnActionMaxTicks = 384.0f;
 constexpr int ArrivedActorInitiative = 1;
 constexpr int ArrivedCharacterInitiative = 100;
-
-float ticksToRecoverySeconds(int ticks)
-{
-    return std::max(0.0f, static_cast<float>(ticks) / TurnTicksPerSecond * OeRealtimeRecoveryScale);
-}
 
 int recoverySecondsToTicks(float recoverySeconds)
 {
@@ -434,6 +430,21 @@ bool TurnBasedCombatRuntime::update(Party *pParty, IGameplayWorldRuntime *pWorld
     }
     else if (m_stage == TurnBasedCombatStage::Movement)
     {
+        // The rules may also end the walk by distance from where it began (MAW's Doom modes and Austerity).
+        if (pWorldRuntime != nullptr)
+        {
+            if (!m_movementStart)
+            {
+                m_movementStart = std::pair(pWorldRuntime->partyX(), pWorldRuntime->partyY());
+            }
+            else if (const std::optional<float> limit = pParty->rules().combat.turnBasedWalkLimit();
+                limit && std::hypot(pWorldRuntime->partyX() - m_movementStart->first,
+                    pWorldRuntime->partyY() - m_movementStart->second) > *limit)
+            {
+                m_movementFinished = true;
+            }
+        }
+
         if (m_movementFinished || m_movementActionPoints <= 0)
         {
             GAMEPLAY_DEBUG_TRACE(
@@ -1224,6 +1235,7 @@ void TurnBasedCombatRuntime::enterMovementStage()
     m_pendingGameTimeAdvanceMinutes += CompletedTurnGameTimeMinutes;
     m_movementActionPoints = TurnMovementActionPoints;
     m_movementFinished = false;
+    m_movementStart.reset();
     m_movementStepThisFrame = false;
     m_movementStepSeconds = 0.0f;
     m_waitingForActorActionResolution = false;

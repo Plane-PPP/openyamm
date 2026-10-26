@@ -1,5 +1,8 @@
 #include "game/gameplay/GameplaySpeechRules.h"
 
+#include "game/gameplay/GameMechanics.h"
+#include "game/party/Party.h"
+
 namespace OpenYAMM::Game
 {
 namespace
@@ -23,6 +26,24 @@ bool bypassSpeechCooldown(SpeechId speechId)
             return false;
     }
 }
+}
+
+bool canMemberSpeak(const Character &member, SpeechId speechId)
+{
+    switch (speechId)
+    {
+        case SpeechId::Dying:
+        case SpeechId::CheatedDeath:
+            return true;
+
+        case SpeechId::Awaken:
+            return !member.conditions.test(size_t(CharacterCondition::Dead))
+                && !member.conditions.test(size_t(CharacterCondition::Petrified))
+                && !member.conditions.test(size_t(CharacterCondition::Eradicated));
+
+        default:
+            return GameMechanics::canAct(member);
+    }
 }
 
 bool canPlaySpeechReactionForPresentationState(

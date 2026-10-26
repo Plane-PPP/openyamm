@@ -7,6 +7,7 @@
 
 #include "game/gameplay/HouseServiceRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/StringUtils.h"
 
@@ -1278,6 +1279,21 @@ void GameplayDialogueRenderer::renderHouseShopOverlay(
         }
     }
 
+    // A ruleset that lets the stock be rerolled (MAW) shows the button with its price.
+    const std::optional<int> rerollCost = *stockMode != HouseStockMode::GuildSpellbooks
+        ? gameRulesFor(&party).items.shopRerollCost(party, *pHouseEntry)
+        : std::nullopt;
+    const GameplayScreenRuntime::HudLayoutElement *pRerollLayout =
+        view.findHudLayoutElement("DialogueShopRerollButton");
+
+    if (rerollCost && pRerollLayout != nullptr
+        && shouldRenderInCurrentPass(renderAboveHud, hudZThreshold, pRerollLayout->zIndex))
+    {
+        const std::string label = "New stock: " + std::to_string(*rerollCost) + " gold";
+        GameplayUiSkin::renderButton(
+            view, "DialogueShopRerollButton", width, height, false, party.gold() >= *rerollCost, &label);
+    }
+
     if (!hoveredItem && (view.statusBarEventRemainingSeconds() <= 0.0f || view.statusBarEventText().empty()))
     {
         dialogueResponseHintText = "LMB buy  RMB inspect  Esc close";
@@ -1309,7 +1325,8 @@ void GameplayDialogueRenderer::renderDialogueTextureElement(
 
     if (normalizedLayoutId == "dialoguenpcportrait"
         || normalizedLayoutId == "dialoguetext"
-        || normalizedLayoutId == "dialogueshopoverlayframe")
+        || normalizedLayoutId == "dialogueshopoverlayframe"
+        || normalizedLayoutId == "dialogueshoprerollbutton")
     {
         return;
     }

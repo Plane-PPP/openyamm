@@ -535,6 +535,11 @@ IndoorMovementController::IndoorMovementController(
 {
 }
 
+void IndoorMovementController::setSlopeRule(IndoorSlopeRule slopeRule)
+{
+    m_slopeRule = slopeRule;
+}
+
 void IndoorMovementController::setActorColliders(const std::vector<IndoorActorCollision> &actorColliders)
 {
     m_actorColliders = actorColliders;
@@ -1784,6 +1789,18 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
     const std::vector<uint8_t> &collisionFaceMask = runtimeCache.collisionFaceMask;
     const MapDeltaData *pMapDeltaData =
         m_pMapDeltaData != nullptr && m_pMapDeltaData->has_value() ? &m_pMapDeltaData->value() : nullptr;
+    const bool steepSlopesClimbable = m_slopeRule == IndoorSlopeRule::Party;
+    const auto floorTooSteepForUphillStep =
+        [&](const IndoorFloorSample &floor, float currentFootZ) -> bool
+    {
+        return !steepSlopesClimbable
+            && indoorFloorTooSteepForUphillStep(*m_pIndoorMapData, pMapDeltaData, floor, currentFootZ);
+    };
+    const auto steepFloorCollisionResponse =
+        [&](const bx::Vec3 &step, const IndoorFaceGeometryData *pGeometry) -> bx::Vec3
+    {
+        return steepSlopesClimbable ? step : applySteepFloorCollisionResponse(step, pGeometry, deltaSeconds);
+    };
 
     const SweptCollisionRequest sweptRequest = buildSweptCollisionRequest(
         state,
@@ -2088,11 +2105,7 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
                 && leadingFootprintFloor.hasFloor
                 && leadingFootprintFloor.faceIndex != floor.faceIndex
                 && std::abs(leadingFootprintFloor.height - floor.height) > CoplanarFloorHeightTolerance
-                && !indoorFloorTooSteepForUphillStep(
-                    *m_pIndoorMapData,
-                    pMapDeltaData,
-                    leadingFootprintFloor,
-                    state.footZ)
+                && !floorTooSteepForUphillStep(leadingFootprintFloor, state.footZ)
                 && leadingFootprintFloor.height <= state.footZ + MaximumStepUpFromCurrentFootZ)
             {
                 floor = leadingFootprintFloor;
@@ -2102,16 +2115,12 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
         if (floor.hasFloor
             && !flying
             && !sweptRequest.jumpRequested
-            && indoorFloorTooSteepForUphillStep(*m_pIndoorMapData, pMapDeltaData, floor, state.footZ))
+            && floorTooSteepForUphillStep(floor, state.footZ))
         {
             if (leadingFootprintFloor.hasFloor)
             {
                 if (leadingFootprintFloor.faceIndex != floor.faceIndex
-                    && !indoorFloorTooSteepForUphillStep(
-                        *m_pIndoorMapData,
-                        pMapDeltaData,
-                        leadingFootprintFloor,
-                        state.footZ)
+                    && !floorTooSteepForUphillStep(leadingFootprintFloor, state.footZ)
                     && leadingFootprintFloor.height <= state.footZ + MaximumStepUpFromCurrentFootZ)
                 {
                     floor = leadingFootprintFloor;
@@ -2122,7 +2131,7 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
         if (floor.hasFloor
             && !flying
             && !sweptRequest.jumpRequested
-            && indoorFloorTooSteepForUphillStep(*m_pIndoorMapData, pMapDeltaData, floor, state.footZ))
+            && floorTooSteepForUphillStep(floor, state.footZ))
         {
             const IndoorFaceGeometryData *pSteepFloorGeometry =
                 geometryCache.geometryForFace(*m_pIndoorMapData, vertices, floor.faceIndex);
@@ -2703,7 +2712,7 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
                     &supportFaceMask);
 
                 if (!floor.hasFloor
-                    || indoorFloorTooSteepForUphillStep(*m_pIndoorMapData, pMapDeltaData, floor, baseState.footZ)
+                    || floorTooSteepForUphillStep(floor, baseState.footZ)
                     || recoveryTraceBlockedByFace(baseState, candidateX, candidateY))
                 {
                     continue;
@@ -3044,7 +3053,8 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
         // Use the sweep's contact normal. Reconstructing it at the backed-off
         // position tilts a tangent slide into the opposite floor or ceiling.
         bx::Vec3 slideDirection = normalizeVec(projectIndoorVelocityAlongPlane(step, hit.normal, 1.0f));
-        if (pHitGeometry != nullptr
+        if (!steepSlopesClimbable
+            && pHitGeometry != nullptr
             && indoorFaceIsSteepFloorCollisionSurface(*pHitGeometry)
             && slideDirection.z > 0.0f)
         {
@@ -3057,7 +3067,7 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
 
         const bx::Vec3 responseStep = scaleVec(slideDirection, dotVec(step, slideDirection) * SlideFactor);
         return lockVerticalStep(
-            applySteepFloorCollisionResponse(responseStep, pHitGeometry, deltaSeconds),
+            steepFloorCollisionResponse(responseStep, pHitGeometry),
             pHitGeometry);
     };
 
@@ -3265,7 +3275,7 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
                 const bx::Vec3 projectedSlideStep =
                     projectIndoorVelocityAlongPlane(remainingStep, fullMoveWallCollision.normal, SlideFactor);
                 const bx::Vec3 slideStep = lockVerticalStep(
-                    applySteepFloorCollisionResponse(projectedSlideStep, pWallGeometry, deltaSeconds),
+                    steepFloorCollisionResponse(projectedSlideStep, pWallGeometry),
                     pWallGeometry);
 
                 if (movementDistance(slideStep.x, slideStep.y, slideStep.z) > 0.0001f)
@@ -3454,7 +3464,7 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
                 projectIndoorVelocityAlongPlane(leftoverStep, nearestHit->normal, responseDamping);
             remainingStep =
                 lockVerticalStep(
-                    applySteepFloorCollisionResponse(responseStep, pNearestHitGeometry, deltaSeconds),
+                    steepFloorCollisionResponse(responseStep, pNearestHitGeometry),
                     pNearestHitGeometry);
         }
 

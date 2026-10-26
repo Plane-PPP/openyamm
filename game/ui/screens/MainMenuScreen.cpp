@@ -9,8 +9,10 @@
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <set>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace OpenYAMM::Game
 {
@@ -37,16 +39,113 @@ std::string lower(std::string value)
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return char(std::tolower(c)); });
     return value;
 }
+
+// The catalog section whose rows are the ruleset options of the game in progress.
+constexpr const char *GameSection = "game";
+
+std::string rulesetSettingValue(const RulesetOptions &options, const std::string &id)
+{
+    const auto flag = [](bool value) { return std::string(value ? "true" : "false"); };
+    if (id == "ruleset_difficulty")
+    {
+        return std::string(rulesetDifficultyId(options.difficulty));
+    }
+    if (id == "ruleset_progression")
+    {
+        return std::string(rulesetProgressionId(options.progression));
+    }
+    if (id == "ruleset_challenge")
+    {
+        return std::string(rulesetChallengeModeId(options.challengeMode));
+    }
+    if (id == "ruleset_randomizer")
+    {
+        return flag(options.randomizer);
+    }
+    if (id == "ruleset_homing")
+    {
+        return flag(options.preferences.homingProjectiles);
+    }
+    if (id == "ruleset_friendly_fire")
+    {
+        return flag(options.preferences.friendlyFire);
+    }
+    if (id == "ruleset_disintegrate")
+    {
+        return flag(options.preferences.disintegration);
+    }
+    if (id == "ruleset_loot_filter")
+    {
+        // The whole filter, so a changed kind or "stay on the ground" counts as a change too.
+        const RulesetLootFilter &filter = options.preferences.lootFilter;
+        return std::string(rulesetLootFilterPresetId(filter.preset)) + ":" + std::to_string(filter.goldKinds) + ":"
+            + (filter.leaveOnGround ? "ground" : "gold");
+    }
+    return {};
+}
+
+void setRulesetSettingValue(RulesetOptions &options, const std::string &id, const std::string &value)
+{
+    if (id == "ruleset_difficulty")
+    {
+        options.difficulty = parseRulesetDifficulty(value).value_or(options.difficulty);
+    }
+    else if (id == "ruleset_progression")
+    {
+        options.progression = parseRulesetProgression(value).value_or(options.progression);
+    }
+    else if (id == "ruleset_homing")
+    {
+        options.preferences.homingProjectiles = value == "true";
+    }
+    else if (id == "ruleset_friendly_fire")
+    {
+        options.preferences.friendlyFire = value == "true";
+    }
+    else if (id == "ruleset_disintegrate")
+    {
+        options.preferences.disintegration = value == "true";
+    }
+    else if (id == "ruleset_loot_filter")
+    {
+        // A preset id, or the whole filter as rulesetSettingValue writes it.
+        const size_t separator = value.find(':');
+        const std::optional<RulesetLootFilterPreset> preset = parseRulesetLootFilterPreset(value.substr(0, separator));
+        if (preset)
+        {
+            options.preferences.lootFilter =
+                rulesetLootFilterWithPreset(*preset, options.preferences.lootFilter.leaveOnGround);
+            const size_t second = separator == std::string::npos ? std::string::npos : value.find(':', separator + 1);
+            if (second != std::string::npos)
+            {
+                options.preferences.lootFilter.goldKinds =
+                    uint8_t(std::strtoul(value.substr(separator + 1, second - separator - 1).c_str(), nullptr, 10)
+                            & ((1u << RulesetLootKindCount) - 1));
+                options.preferences.lootFilter.leaveOnGround = value.substr(second + 1) == "ground";
+            }
+        }
+    }
+}
 } // namespace
 
 MainMenuScreen::MainMenuScreen(const Engine::AssetFileSystem &assets, const GameDataRepository &gameData,
                                GameAudioSystem *pAudio, const GameSettings &settings, Actions actions,
                                std::string &settingsSection, bool paused, std::string location, std::string date,
-                               GameUpdater *pUpdater)
+                               GameUpdater *pUpdater, std::optional<CurrentGame> currentGame)
     : MenuDesignScreen(assets, paused, pAudio), m_actions(std::move(actions)), m_gameData(gameData),
-      m_committed(settings), m_draft(settings), m_section(settingsSection), m_location(std::move(location)),
-      m_date(std::move(date)), m_paused(paused), m_pUpdater(paused ? nullptr : pUpdater)
+      m_committed(settings), m_draft(settings), m_currentGame(std::move(currentGame)), m_section(settingsSection),
+      m_location(std::move(location)), m_date(std::move(date)), m_paused(paused),
+      m_pUpdater(paused ? nullptr : pUpdater)
 {
+    if (m_currentGame)
+    {
+        m_rulesetDraft = m_currentGame->selection.options;
+    }
+    // A section left open in another game may not exist in this one.
+    if (m_section == GameSection && !m_currentGame)
+    {
+        m_section = "gameplay";
+    }
     if (!paused)
     {
         m_latestSave = LoadGameScreen::mostRecentSave(m_latestSaveMap);
@@ -85,7 +184,8 @@ void MainMenuScreen::loadCatalog()
     const YAML::Node catalog = YAML::Load(*text);
     for (const YAML::Node &item : catalog["sections"])
     {
-        if (item["updater_only"].as<bool>(false) && m_pUpdater == nullptr)
+        if ((item["updater_only"].as<bool>(false) && m_pUpdater == nullptr)
+            || (item["game_only"].as<bool>(false) && !m_currentGame))
         {
             continue;
         }
@@ -99,6 +199,10 @@ void MainMenuScreen::loadCatalog()
         setting.group = item["group"].as<std::string>();
         setting.name = item["name"].as<std::string>();
         setting.description = item["desc"].as<std::string>();
+        if (m_currentGame && item["ruleset_desc"])
+        {
+            setting.description = item["ruleset_desc"].as<std::string>();
+        }
         setting.type = item["type"].as<std::string>();
         setting.unit = item["unit"].as<std::string>("");
         setting.depends = item["depends"].as<std::string>("");
@@ -116,9 +220,63 @@ void MainMenuScreen::loadCatalog()
         {
             continue;
         }
+        if (setting.section == GameSection)
+        {
+            if (!m_currentGame)
+            {
+                continue;
+            }
+            // The choices are the ruleset's own.
+            const RulesetDefinition &definition = m_currentGame->definition;
+            const auto offered = [&](const std::string &value)
+            {
+                if (setting.id == "ruleset_difficulty")
+                {
+                    const std::optional<RulesetDifficulty> difficulty = parseRulesetDifficulty(value);
+                    return difficulty && std::find(definition.choices.difficulties.begin(),
+                                                   definition.choices.difficulties.end(),
+                                                   *difficulty) != definition.choices.difficulties.end();
+                }
+                if (setting.id == "ruleset_progression")
+                {
+                    const std::optional<RulesetProgression> progression = parseRulesetProgression(value);
+                    return progression && std::find(definition.choices.progressions.begin(),
+                                                    definition.choices.progressions.end(),
+                                                    *progression) != definition.choices.progressions.end();
+                }
+                return true;
+            };
+            std::erase_if(setting.options, [&](const auto &option) { return !offered(option.first); });
+            if (setting.id == "ruleset_name")
+            {
+                setting.options = {{m_currentGame->selection.id, definition.name}};
+            }
+            if ((setting.id == "ruleset_progression" && definition.choices.progressions.empty())
+                || (setting.id == "ruleset_randomizer" && !definition.choices.randomizer)
+                // Disintegration happens only in Road to Insanity and Beyond Madness.
+                || (setting.id == "ruleset_disintegrate"
+                    && m_currentGame->selection.options.challengeMode != RulesetChallengeMode::RoadToInsanity
+                    && m_currentGame->selection.options.challengeMode != RulesetChallengeMode::BeyondMadness)
+                || (setting.id.starts_with("ruleset_") && setting.group == "Preferences"
+                    && !definition.choices.preferences))
+            {
+                continue;
+            }
+            m_settings.push_back(std::move(setting));
+            continue;
+        }
         menuSettingValue(m_draft, setting.id); // An unknown catalog field is an installation error.
         // Settings of the self-updater only exist where the game updates itself.
         if (item["updater_only"].as<bool>(false) && m_pUpdater == nullptr)
+        {
+            continue;
+        }
+        // A setting only one ruleset uses is left out of the pause menu of another ruleset's game; the main menu lists
+        // it (audit STD4-2-5: the rarity glow does nothing in Standard).
+        // A Standard game's pause menu has no m_currentGame.
+        const std::string gameRuleset = item["game_ruleset"].as<std::string>("");
+        if (!gameRuleset.empty() && m_paused
+            && (m_currentGame ? m_currentGame->selection.id : std::string(StandardRulesetId)) != gameRuleset)
         {
             continue;
         }
@@ -133,13 +291,19 @@ void MainMenuScreen::loadCatalog()
     for (const YAML::Node &item : catalog["bindings"])
     {
         const std::string id = item["id"].as<std::string>();
+        // A ruleset's keys are listed only in the pause menu of a game with that ruleset.
+        const std::string ruleset = item["ruleset"].as<std::string>("");
+        const bool listed = ruleset.empty() || (m_currentGame && m_currentGame->selection.id == ruleset);
         bool found = false;
         for (const KeyboardBindingDefinition &definition : keyboardBindingDefinitions())
         {
             if (definition.implemented && definition.iniKey == id)
             {
-                m_bindings.push_back(
-                    {definition.action, id, item["name"].as<std::string>(), item["group"].as<std::string>()});
+                if (listed)
+                {
+                    m_bindings.push_back({definition.action, id, item["name"].as<std::string>(),
+                                          item["group"].as<std::string>(), item["context"].as<std::string>("")});
+                }
                 found = true;
             }
         }
@@ -324,6 +488,10 @@ void MainMenuScreen::drawUpdates()
             confirm("Update Undone", "OpenYAMM " + *failed + " did not start, so OpenYAMM "
                         + m_pUpdater->installedVersion() + " was restored. Your saves are unchanged.",
                     {"OK"}, [](int) {});
+        }
+        else if (m_committed.keepModifiedPacks)
+        {
+            // Updates are off and would replace the packs the player changed; Check Now says so (GameUpdater).
         }
         else if (m_committed.updateCheck == "ask")
         {
@@ -579,7 +747,7 @@ size_t MainMenuScreen::dirtyCount() const
     size_t count = 0;
     for (const Setting &setting : m_settings)
     {
-        if (menuSettingValue(m_draft, setting.id) != menuSettingValue(m_committed, setting.id))
+        if (settingValue(setting) != settingValue(setting, true))
         {
             ++count;
         }
@@ -599,6 +767,39 @@ size_t MainMenuScreen::dirtyCount() const
     return count;
 }
 
+std::string MainMenuScreen::settingValue(const Setting &setting, bool applied) const
+{
+    if (setting.section != GameSection)
+    {
+        return menuSettingValue(applied ? m_committed : m_draft, setting.id);
+    }
+    if (setting.id == "ruleset_name")
+    {
+        return m_currentGame->selection.id;
+    }
+    return rulesetSettingValue(applied ? m_currentGame->selection.options : m_rulesetDraft, setting.id);
+}
+
+bool MainMenuScreen::settingEnabled(const Setting &setting) const
+{
+    if (setting.section != GameSection)
+    {
+        return (setting.depends.empty() || menuSettingValue(m_draft, setting.depends) == "true")
+            && !(setting.id == "resolution" && m_draft.windowMode == WindowMode::WindowedFullscreen);
+    }
+    const RulesetOptions &applied = m_currentGame->selection.options;
+    if (setting.id == "ruleset_difficulty")
+    {
+        // Nightmare and the challenge modes keep their difficulty.
+        return !applied.difficultyLocked() && setting.options.size() > 1;
+    }
+    if (setting.id == "ruleset_progression")
+    {
+        return !rulesetChallengeModeProgression(applied.challengeMode) && setting.options.size() > 1;
+    }
+    return setting.group == "Preferences";
+}
+
 void MainMenuScreen::leaveSettings()
 {
     if (dirtyCount() == 0)
@@ -613,6 +814,10 @@ void MainMenuScreen::leaveSettings()
                 if (choice == 1)
                 {
                     m_draft = m_committed;
+                    if (m_currentGame)
+                    {
+                        m_rulesetDraft = m_currentGame->selection.options;
+                    }
                     m_page = Page::Home;
                     setTextEditing(false);
                 }
@@ -637,6 +842,16 @@ void MainMenuScreen::revertDisplay()
 
 void MainMenuScreen::applySettings(bool leaveAfter)
 {
+    if (m_currentGame && m_rulesetDraft != m_currentGame->selection.options)
+    {
+        std::string rulesetError;
+        if (!m_actions.applyRuleset || !m_actions.applyRuleset(m_rulesetDraft, rulesetError))
+        {
+            m_status = rulesetError;
+            return;
+        }
+        m_currentGame->selection.options = m_rulesetDraft;
+    }
     const bool displayChanged =
         m_draft.windowMode != m_committed.windowMode || m_draft.resolutionWidth != m_committed.resolutionWidth ||
         m_draft.resolutionHeight != m_committed.resolutionHeight || m_draft.verticalSync != m_committed.verticalSync;
@@ -703,6 +918,22 @@ void MainMenuScreen::restoreDefaults()
                 const GameSettings defaults = GameSettings::createDefault();
                 // Menu setting ids are the INI key names; released keys follow later default changes again.
                 std::vector<std::string> restoredKeys;
+                if (m_section == GameSection)
+                {
+                    // What the ruleset lets the player change: its default preferences, difficulty and progression.
+                    const RulesetOptions defaults = m_currentGame->definition.defaultOptions();
+                    const RulesetOptions &applied = m_currentGame->selection.options;
+                    m_rulesetDraft.preferences = defaults.preferences;
+                    if (!applied.difficultyLocked())
+                    {
+                        m_rulesetDraft.difficulty = defaults.difficulty;
+                    }
+                    if (!rulesetChallengeModeProgression(applied.challengeMode))
+                    {
+                        m_rulesetDraft.progression = defaults.progression;
+                    }
+                    return;
+                }
                 if (m_section == "keyboard")
                 {
                     m_draft.keyboard.restoreDefaults(m_draft.controlScheme);
@@ -739,6 +970,28 @@ void MainMenuScreen::restoreDefaults()
 
 void MainMenuScreen::editSetting(const Setting &setting, const std::string &value)
 {
+    if (setting.section == GameSection)
+    {
+        if (setting.id == "ruleset_difficulty" && value == rulesetDifficultyId(RulesetDifficulty::Nightmare)
+            && m_rulesetDraft.difficulty != RulesetDifficulty::Nightmare)
+        {
+            confirm("Choose Nightmare?", "Nightmare can never be lowered again in this adventure.",
+                    {"Cancel", "Nightmare"},
+                    [this, setting, value](int choice)
+                    {
+                        if (choice == 1)
+                        {
+                            setRulesetSettingValue(m_rulesetDraft, setting.id, value);
+                        }
+                    });
+        }
+        else
+        {
+            setRulesetSettingValue(m_rulesetDraft, setting.id, value);
+        }
+        m_status.clear();
+        return;
+    }
     if (setting.id == "control_scheme" && menuSettingValue(m_draft, setting.id) != value)
     {
         confirm("Change Control Preset?", "This also resets the keyboard bindings for the selected preset.",
@@ -821,6 +1074,11 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
     loadDesign("gameplay/settings_" + m_section);
     beginDesign(prefix);
     drawDesign();
+    if (m_lootFilterOpen)
+    {
+        drawLootFilter();
+        return;
+    }
     if (m_displayPreview)
     {
         m_displaySeconds -= deltaSeconds;
@@ -860,6 +1118,10 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
     if (action(prefix + "RevertButton", dirtyCount() > 0))
     {
         m_draft = m_committed;
+        if (m_currentGame)
+        {
+            m_rulesetDraft = m_currentGame->selection.options;
+        }
         m_status.clear();
     }
     if (action(prefix + "ApplyButton", dirtyCount() > 0))
@@ -875,10 +1137,23 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
         drawKeyboard(prefix, viewport);
         return;
     }
+    // A row left out of this menu (game_ruleset) leaves no scroll room or group heading behind; such rows close their
+    // section.
+    std::unordered_set<std::string> listedDescriptions;
+    std::unordered_set<std::string> listedGroups;
+    for (const Setting &setting : m_settings)
+    {
+        if (setting.section == m_section)
+        {
+            listedDescriptions.insert(prefix + capitalized(setting.id) + "Description");
+            listedGroups.insert(setting.group);
+        }
+    }
     float contentHeight = 0;
     for (const std::string &id : m_designLayouts.sortedLayoutIdsForScreenCached(prefix))
     {
-        if (id.find("Description") == std::string::npos || id == prefix + "Description")
+        if (id.find("Description") == std::string::npos || id == prefix + "Description"
+            || (id.ends_with("Description") && !listedDescriptions.contains(id)))
         {
             continue;
         }
@@ -899,7 +1174,10 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
         {
             break;
         }
-        label(id, pItem->labelText, 0, -m_scroll);
+        if (listedGroups.contains(pItem->labelText))
+        {
+            label(id, pItem->labelText, 0, -m_scroll);
+        }
     }
     for (const Setting &setting : m_settings)
     {
@@ -912,9 +1190,8 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
         label(id + "Description", setting.description, 0, -m_scroll);
         Rect rect = designRect(id + "Control");
         rect.y -= m_scroll * designScale();
-        const bool enabled = (setting.depends.empty() || menuSettingValue(m_draft, setting.depends) == "true") &&
-                             !(setting.id == "resolution" && m_draft.windowMode == WindowMode::WindowedFullscreen);
-        const std::string value = menuSettingValue(m_draft, setting.id);
+        const bool enabled = settingEnabled(setting);
+        const std::string value = settingValue(setting);
         if (setting.type == "toggle")
         {
             if (button(id, rect, "", value == "true" ? "toggle_on" : "toggle_off", enabled))
@@ -938,6 +1215,22 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
             if (selectBox(id, rect, display, enabled))
             {
                 chooseSetting(setting);
+            }
+        }
+        else if (setting.type == "window")
+        {
+            // The loot filter: its preset, and a window with the rest.
+            std::string display = value.substr(0, value.find(':'));
+            for (const auto &[option, name] : setting.options)
+            {
+                if (option == display)
+                {
+                    display = name;
+                }
+            }
+            if (selectBox(id, rect, display, enabled))
+            {
+                m_lootFilterOpen = true;
             }
         }
         else if (setting.type == "steps")
@@ -1148,16 +1441,20 @@ void MainMenuScreen::acceptBinding(InputBinding binding)
     {
         return;
     }
-    if (reservedMenuBinding(binding))
+    const KeyboardAction target = *m_capture;
+    if (reservedMenuBinding(binding, target))
     {
         setModalBody("That key is reserved. Choose another key.");
         return;
     }
-    const KeyboardAction target = *m_capture;
+    const auto targetBinding = std::find_if(m_bindings.begin(), m_bindings.end(),
+                                            [target](const Binding &candidate) { return candidate.action == target; });
+    const std::string context = targetBinding != m_bindings.end() ? targetBinding->context : "";
     std::optional<KeyboardAction> conflict;
     for (const Binding &candidate : m_bindings)
     {
-        if (candidate.action != target && sameMenuBinding(m_draft.keyboard.binding(candidate.action), binding))
+        if (candidate.action != target && candidate.context == context
+            && sameMenuBinding(m_draft.keyboard.binding(candidate.action), binding))
         {
             conflict = candidate.action;
         }

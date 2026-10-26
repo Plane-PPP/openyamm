@@ -6,7 +6,9 @@
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/items/ItemEnchantRuntime.h"
 #include "game/items/ItemRuntime.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
+#include "game/tables/SpellTable.h"
 
 #include <algorithm>
 #include <cmath>
@@ -320,6 +322,21 @@ void playSpeechReaction(
     }
 }
 
+// The combat log while it records (the combat_log setting), else null: the one the damage rules feed.
+CombatLog *recordingCombatLog()
+{
+    CombatLog *pLog = boundCombatLog();
+    return pLog != nullptr && pLog->recording() ? pLog : nullptr;
+}
+
+// A spell's name for the combat log; "a spell" where no spell table is at hand.
+std::string combatLogSpellName(GameplayScreenRuntime *pRuntime, int spellId)
+{
+    const SpellTable *pSpells = pRuntime != nullptr ? pRuntime->spellTable() : nullptr;
+    const SpellEntry *pSpell = pSpells != nullptr ? pSpells->findById(spellId) : nullptr;
+    return pSpell != nullptr && !pSpell->name.empty() ? pSpell->name : "a spell";
+}
+
 void showHitStatus(
     GameplayScreenRuntime *pRuntime,
     const std::string &status)
@@ -398,6 +415,57 @@ bool monsterImpactRequiresArmorHitRoll(
         && event.spellId == 0;
 }
 
+// The token of a monster's missile attack ("Fire", "Arrow"), from its monster's attack; empty for blows and spells.
+std::string monsterMissileToken(
+    const GameplayCombatController::PendingCombatEventContext &context,
+    const GameplayCombatController::CombatEvent &event)
+{
+    const MonsterTable *pMonsterTable =
+        context.pWorldRuntime != nullptr ? context.pWorldRuntime->monsterTable() : nullptr;
+
+    if (event.type != GameplayCombatController::CombatEventType::PartyProjectileImpact || event.spellId != 0
+        || pMonsterTable == nullptr)
+    {
+        return {};
+    }
+
+    const std::optional<GameplayCombatActorInfo> source = resolveActor(context, event.sourceId);
+    const MonsterTable::MonsterStatsEntry *pStats =
+        source ? pMonsterTable->findStatsById(source->monsterId) : nullptr;
+
+    if (pStats == nullptr)
+    {
+        return {};
+    }
+
+    return event.ability == GameplayActorAttackAbility::Attack2 ? pStats->attack2MissileType
+        : event.ability == GameplayActorAttackAbility::Attack1  ? pStats->attack1MissileType
+                                                                : std::string();
+}
+
+MonsterAttackOnCharacter monsterAttackOnCharacter(
+    const GameplayCombatController::PendingCombatEventContext &context,
+    const GameplayCombatController::CombatEvent &event,
+    const Character &member,
+    int monsterLevel)
+{
+    MonsterAttackOnCharacter attack = {};
+    attack.pCharacter = &member;
+    attack.pItemTable = context.pRuntime != nullptr ? context.pRuntime->itemTable() : nullptr;
+    attack.pStandardItemEnchantTable =
+        context.pRuntime != nullptr ? context.pRuntime->standardItemEnchantTable() : nullptr;
+    attack.pSpecialItemEnchantTable =
+        context.pRuntime != nullptr ? context.pRuntime->specialItemEnchantTable() : nullptr;
+    attack.type = event.damageType;
+    attack.melee = event.type == GameplayCombatController::CombatEventType::MonsterMeleeImpact;
+    attack.spellId = event.spellId;
+    attack.affectsAllParty = event.affectsAllParty;
+    attack.monsterLevel = monsterLevel;
+    attack.partyCount = int(std::max<size_t>(1, context.party.members().size()));
+    attack.missileToken = monsterMissileToken(context, event);
+    return attack;
+}
+
 MonsterImpactHitCheck resolveMonsterImpactHitCheck(
     const GameplayCombatController::PendingCombatEventContext &context,
     const GameplayCombatController::CombatEvent &event,
@@ -439,88 +507,144 @@ MonsterImpactHitCheck resolveMonsterImpactHitCheck(
             static_cast<int>(std::max<uint32_t>(1, pMember->level)),
             result.bolsterAffectsArmorClass);
     std::mt19937 rng = buildMonsterAttackRng(event, targetMemberIndex, animationTicks(context.pRuntime));
-    result.hit = GameMechanics::monsterAttackHitsArmorClass(
-        result.adjustedArmorClass,
-        result.monsterLevel,
-        result.attackBonus,
-        rng);
+    MonsterAttackOnCharacter attack = monsterAttackOnCharacter(context, event, *pMember, sourceActor.monsterLevel);
+    attack.armorClass = result.adjustedArmorClass;
+    attack.attackBonus = result.attackBonus;
+    attack.pRng = &rng;
+    result.hit = context.party.rules().combat.monsterAttackLands(attack);
     return result;
 }
 
-int characterCombatSkillLevel(const Character &character, const std::string &skillName)
-{
-    const CharacterSkill *pSkill = character.findSkill(skillName);
-    const int bonusLevel = character.skillBonus(skillName);
-    return (pSkill != nullptr ? static_cast<int>(pSkill->level) : 0) + bonusLevel;
-}
-
-SkillMastery characterCombatSkillMastery(const Character &character, const std::string &skillName)
-{
-    const CharacterSkill *pSkill = character.findSkill(skillName);
-    return pSkill != nullptr ? pSkill->mastery : SkillMastery::None;
-}
-
 bool characterEvadesMonsterImpact(
+    const GameplayCombatController::PendingCombatEventContext &context,
     const Character &character,
     const GameplayCombatController::CombatEvent &event,
-    size_t targetMemberIndex,
-    uint32_t frameTicks)
+    const std::optional<GameplayCombatActorInfo> &sourceActor,
+    size_t targetMemberIndex)
 {
-    const bool canEvadeMelee = event.type == GameplayCombatController::CombatEventType::MonsterMeleeImpact;
-    const bool canEvadeProjectile =
-        event.type == GameplayCombatController::CombatEventType::PartyProjectileImpact
-        && !event.affectsAllParty
-        && event.spellId == 0
-        && event.damageType == CombatDamageType::Physical;
+    std::mt19937 rng =
+        buildMonsterAttackRng(event, targetMemberIndex, animationTicks(context.pRuntime) ^ 0x9e3779b9u);
+    MonsterAttackOnCharacter attack =
+        monsterAttackOnCharacter(context, event, character, sourceActor ? sourceActor->monsterLevel : 0);
+    attack.pRng = &rng;
+    return context.party.rules().combat.characterEvades(attack);
+}
 
-    if ((!canEvadeMelee && !canEvadeProjectile)
-        || characterCombatSkillMastery(character, "Unarmed") < SkillMastery::Grandmaster)
+// A personal shield sound through the world's pending sounds (played by name, its placeholder fallback meanwhile).
+void playPersonalShieldSound(
+    const GameplayCombatController::PendingCombatEventContext &context,
+    const MonsterTable *pMonsterTable,
+    const std::string &soundName)
+{
+    EventRuntimeState *pEventRuntimeState =
+        context.pWorldRuntime != nullptr ? context.pWorldRuntime->eventRuntimeState() : nullptr;
+
+    if (pEventRuntimeState == nullptr || soundName.empty())
     {
-        return false;
+        return;
     }
 
-    const int unarmedLevel = characterCombatSkillLevel(character, "Unarmed");
+    EventRuntimeState::PendingSound request = {};
+    request.soundScope = SoundScope::World;
+    request.soundName = soundName;
+    const ShieldSoundDefinition *pSound =
+        pMonsterTable != nullptr ? pMonsterTable->shields().findSound(soundName) : nullptr;
+    request.fallbackSoundName = pSound != nullptr ? pSound->fallback : std::string();
+    pEventRuntimeState->pendingSounds.push_back(std::move(request));
+}
 
-    if (unarmedLevel <= 0)
+// The member's personal shield takes the hit first (Physical and Energy; every school at Shield Tech Master); what
+// passes it reaches the body, Energy from a monster that follows the shield rules (shields.yml) x the exposed
+// multiplier once the shield is down (x1.25 at Shield Tech Grandmaster). Members without a shield, hit by monsters
+// without a shield profile (every MM6-MM9 monster), take the damage unchanged.
+int personalShieldPassedDamage(
+    const GameplayCombatController::PendingCombatEventContext &context,
+    const GameplayCombatController::CombatEvent &event,
+    const std::optional<GameplayCombatActorInfo> &sourceActor,
+    size_t memberIndex)
+{
+    const Character *pMember = context.party.member(memberIndex);
+    const MonsterTable *pMonsterTable =
+        context.pWorldRuntime != nullptr ? context.pWorldRuntime->monsterTable() : nullptr;
+    const bool attackerFollowsShieldRules = pMonsterTable != nullptr && sourceActor
+        && pMonsterTable->findShieldProfile(sourceActor->monsterId) != nullptr;
+
+    if (pMember == nullptr || event.damage <= 0
+        || (pMember->personalShieldCapacity <= 0 && !attackerFollowsShieldRules))
     {
-        return false;
+        return event.damage;
     }
 
-    std::mt19937 rng = buildMonsterAttackRng(event, targetMemberIndex, frameTicks ^ 0x9e3779b9u);
-    return std::uniform_int_distribution<int>(1, 100)(rng) <= std::min(100, unarmedLevel);
+    const CharacterSkill *pShieldTech = pMember->findSkill("ShieldTech");
+    const SkillMastery shieldTechMastery = pShieldTech != nullptr ? pShieldTech->mastery : SkillMastery::None;
+    const bool absorbable = event.damageType == CombatDamageType::Physical
+        || event.damageType == CombatDamageType::Energy
+        || shieldTechMastery >= SkillMastery::Master;
+    int damage = event.damage;
+
+    if (absorbable)
+    {
+        const Party::PersonalShieldHit hit = context.party.absorbPersonalShieldHit(memberIndex, damage);
+        damage = hit.passedDamage;
+        const PartyShieldRules &rules = context.party.personalShieldRules();
+
+        if (hit.broke)
+        {
+            playPersonalShieldSound(context, pMonsterTable, rules.breakSound);
+        }
+        else if (hit.absorbed)
+        {
+            playPersonalShieldSound(context, pMonsterTable, rules.hitSound);
+        }
+    }
+
+    if (attackerFollowsShieldRules && event.damageType == CombatDamageType::Energy && damage > 0
+        && pMember->personalShield <= 0.0f)
+    {
+        const float multiplier = shieldTechMastery >= SkillMastery::Grandmaster
+            ? context.party.personalShieldRules().hardenedExposedMultiplier
+            : pMonsterTable->shields().exposedEnergyMultiplier();
+        damage = int(std::lround(float(damage) * multiplier));
+    }
+
+    return damage;
 }
 
 int adjustedIncomingDamageForMember(
     const GameplayCombatController::PendingCombatEventContext &context,
     const GameplayCombatController::CombatEvent &event,
+    const std::optional<GameplayCombatActorInfo> &sourceActor,
     const Character &member,
     size_t memberIndex,
     bool isPhysicalProjectile,
+    int incomingDamage,
+    bool coverHalved = false,
     MinotaurDamageObservation *pObservation = nullptr)
 {
-    int damage = event.damage;
-
-    if (isPhysicalProjectile && member.halfMissileDamage)
-    {
-        damage = GameMechanics::resolveShieldedPhysicalProjectileDamage(damage);
-    }
-
-    if (event.damageType == CombatDamageType::Physical)
-    {
-        damage = std::max(0, static_cast<int>(std::round(
-            static_cast<float>(damage) * member.physicalDamageTakenMultiplier)));
-    }
-
     std::mt19937 rng = buildMonsterAttackRng(event, memberIndex, animationTicks(context.pRuntime));
-    return GameMechanics::resolveCharacterIncomingDamage(
-        member,
-        context.pRuntime != nullptr ? context.pRuntime->itemTable() : nullptr,
-        context.pRuntime != nullptr ? context.pRuntime->standardItemEnchantTable() : nullptr,
-        context.pRuntime != nullptr ? context.pRuntime->specialItemEnchantTable() : nullptr,
-        damage,
-        event.damageType,
-        rng,
-        pObservation);
+    CharacterDamageHit hit = {};
+    hit.amount = incomingDamage;
+    hit.type = event.damageType;
+    hit.pCharacter = &member;
+    hit.pItemTable = context.pRuntime != nullptr ? context.pRuntime->itemTable() : nullptr;
+    hit.pStandardItemEnchantTable =
+        context.pRuntime != nullptr ? context.pRuntime->standardItemEnchantTable() : nullptr;
+    hit.pSpecialItemEnchantTable =
+        context.pRuntime != nullptr ? context.pRuntime->specialItemEnchantTable() : nullptr;
+    hit.monsterAttack = true;
+    hit.physicalProjectile = isPhysicalProjectile;
+    hit.attackerLevel = sourceActor ? sourceActor->monsterLevel : 0;
+    hit.attackerFacts = sourceActor ? sourceActor->rulesetFacts : ActorRulesetFacts{};
+    hit.attack2 = event.ability == GameplayActorAttackAbility::Attack2;
+    hit.spellId = event.spellId;
+    hit.rolledAmount = event.damage;
+    hit.attackerDebuffed = sourceActor && sourceActor->damageDebuffed;
+    hit.coverHalved = coverHalved;
+    hit.partyCount = int(std::max<size_t>(1, context.party.members().size()));
+    hit.pRng = &rng;
+    hit.pMinotaurObservation = pObservation;
+    // What shields absorb is taken where every hit lands (Party::applyDamageToMember).
+    return context.party.rules().combat.damageToCharacter(hit);
 }
 
 void traceMinotaurDamage(
@@ -1007,7 +1131,8 @@ bool applyMonsterSpecialAttack(
         memberIndex,
         animationTicks(context.pRuntime) ^ 0x85ebca6bu);
 
-    if (!shouldApplyMonsterSpecialAttack(event, sourceActor, rng))
+    if (!shouldApplyMonsterSpecialAttack(event, sourceActor, rng)
+        || context.party.rules().combat.monsterMissileRules(monsterMissileToken(context, event)).noSpecialAttack)
     {
         return false;
     }
@@ -1050,7 +1175,8 @@ bool applyMonsterSpecialAttack(
         pStandardItemEnchantTable,
         pSpecialItemEnchantTable);
 
-    if (memberImmuneToMonsterSpecialAttack(summary, sourceActor.specialAttackKind))
+    if (memberImmuneToMonsterSpecialAttack(summary, sourceActor.specialAttackKind)
+        || context.party.rules().combat.immuneToMonsterSpecialAttacks(*pMember))
     {
         return false;
     }
@@ -1060,7 +1186,8 @@ bool applyMonsterSpecialAttack(
             summary,
             sourceActor.specialAttackKind,
             pBreakCandidate,
-            rng))
+            rng)
+        && !context.party.rules().combat.piercesConditionSave(context.party))
     {
         return false;
     }
@@ -1075,6 +1202,11 @@ bool applyMonsterSpecialAttack(
         const bool alreadyHadCondition =
             conditionIndex < CharacterConditionCount && pMember->conditions.test(conditionIndex);
 
+        if (!alreadyHadCondition && context.party.rules().combat.blocksMonsterCondition(context.party, *condition))
+        {
+            return false;
+        }
+
         if (alreadyHadCondition || !context.party.blockConditionWithProtectionFromMagic(*condition))
         {
             const float gameMinutes = context.pWorldRuntime != nullptr ? context.pWorldRuntime->gameMinutes() : 0.0f;
@@ -1087,13 +1219,19 @@ bool applyMonsterSpecialAttack(
     }
     else if (sourceActor.specialAttackKind == MonsterSpecialAttackKind::ManaDrain)
     {
-        applied = pMember->spellPoints > 0;
-        pMember->spellPoints = 0;
+        if (!pMember->manaDrainImmune)
+        {
+            applied = pMember->spellPoints > 0;
+            pMember->spellPoints = 0;
+        }
     }
     else if (sourceActor.specialAttackKind == MonsterSpecialAttackKind::Aging)
     {
-        ++pMember->ageModifier;
-        applied = true;
+        if (!pMember->agingImmune)
+        {
+            ++pMember->ageModifier;
+            applied = true;
+        }
     }
     else if (pBreakCandidate != nullptr)
     {
@@ -1143,7 +1281,8 @@ void applyPainReflection(
         return;
     }
 
-    if (context.party.characterBuff(memberIndex, CharacterBuffId::PainReflection) == nullptr)
+    if (context.party.characterBuff(memberIndex, CharacterBuffId::PainReflection) == nullptr
+        || context.party.rules().combat.monsterMissileRules(monsterMissileToken(context, event)).noPainReflection)
     {
         return;
     }
@@ -1237,11 +1376,31 @@ bool GameplayCombatController::partyHitLands(int appliedDamage, bool stunsTarget
 std::string GameplayCombatController::formatPartyProjectileActorImpactStatusText(
     const std::string &sourceName,
     const std::string &targetName,
-    const CombatEvent &event)
+    const CombatEvent &event,
+    const CombatRules *pRules,
+    int monstersHit,
+    int totalDamage)
 {
     if (!event.hit)
     {
         return {};
+    }
+
+    if (pRules != nullptr && (event.killed || partyHitLands(event.damage, false)))
+    {
+        PartyHitStatus status;
+        status.attackerName = sourceName;
+        status.targetName = targetName;
+        status.damage = monstersHit >= 2 ? totalDamage : event.damage;
+        status.killed = event.killed;
+        status.missile = true;
+        status.spellId = uint32_t(std::max(0, event.spellId));
+        status.monstersHit = monstersHit;
+
+        if (const std::optional<std::string> text = pRules->partyHitStatusText(status))
+        {
+            return *text;
+        }
     }
 
     if (event.killed)
@@ -1262,7 +1421,8 @@ std::string GameplayCombatController::formatPartyAttackStatusText(
     const std::string &targetName,
     const CharacterAttackResult &attack,
     bool killed,
-    std::optional<int> appliedDamage)
+    std::optional<int> appliedDamage,
+    const CombatRules *pRules)
 {
     if (!attack.canAttack)
     {
@@ -1285,6 +1445,23 @@ std::string GameplayCombatController::formatPartyAttackStatusText(
     }
 
     const int statusDamage = std::max(0, appliedDamage.value_or(attack.damage));
+
+    if (pRules != nullptr && (killed || partyHitLands(statusDamage, attack.stunTarget)))
+    {
+        PartyHitStatus status;
+        status.attackerName = attackerName;
+        status.targetName = targetName;
+        status.damage = statusDamage;
+        status.killed = killed;
+        status.critical = attack.criticalDamage;
+        status.missile = attack.mode == CharacterAttackMode::Bow || attack.mode == CharacterAttackMode::Wand
+            || attack.mode == CharacterAttackMode::Blaster || attack.mode == CharacterAttackMode::DragonBreath;
+
+        if (const std::optional<std::string> text = pRules->partyHitStatusText(status))
+        {
+            return *text;
+        }
+    }
 
     if (killed)
     {
@@ -1407,15 +1584,91 @@ void GameplayCombatController::handlePartyAttackPresentation(
                 attack.targetName,
                 attack.attack,
                 attack.killed,
-                attack.appliedDamage));
+                attack.appliedDamage,
+                &boundGameRules().combat));
     }
 
+    // Missiles and spells are logged when they land (handlePendingCombatEvents).
+    CombatLog *pLog = recordingCombatLog();
+
+    if (pLog != nullptr && attack.actionPerformed && attack.attack.mode == CharacterAttackMode::Melee
+        && attack.attacked && attack.attack.hit && attack.appliedDamage && *attack.appliedDamage > 0)
+    {
+        CombatLogEntry entry;
+        entry.kind = CombatLogKind::Dealt;
+        entry.attacker = attack.attackerName;
+        entry.verb = "hits";
+        entry.target = attack.targetName;
+        entry.amount = *attack.appliedDamage;
+        entry.critical = attack.attack.criticalDamage;
+        entry.killed = attack.killed;
+        pLog->add(std::move(entry));
+    }
+}
+
+namespace
+{
+// A monster's hit on a party member, for the combat log: "<monster> hits <member> for N", killing when it fell.
+void logMonsterHit(
+    GameplayCombatController::PendingCombatEventContext &context,
+    const GameplayCombatController::CombatEvent &event,
+    const std::optional<GameplayCombatActorInfo> &sourceActor,
+    size_t memberIndex,
+    int damage)
+{
+    const Character *pMember = context.party.member(memberIndex);
+    CombatLog *pLog = recordingCombatLog();
+
+    if (pLog == nullptr || pMember == nullptr || damage <= 0)
+    {
+        return;
+    }
+
+    CombatLogEntry entry;
+    entry.kind = CombatLogKind::Taken;
+    entry.attacker = sourceActor && !sourceActor->displayName.empty() ? sourceActor->displayName : "A monster";
+    entry.verb = event.type == GameplayCombatController::CombatEventType::MonsterMeleeImpact ? "hits"
+        : event.spellId > 0                                                                    ? "casts"
+                                                                                               : "shoots";
+    entry.spell = event.spellId > 0 ? combatLogSpellName(context.pRuntime, event.spellId) : std::string();
+    entry.target = pMember->name;
+    entry.amount = damage;
+    entry.killed = pMember->conditions.test(size_t(CharacterCondition::Dead))
+        || pMember->conditions.test(size_t(CharacterCondition::Eradicated));
+    pLog->add(std::move(entry));
+}
 }
 
 void GameplayCombatController::handlePendingCombatEvents(
     PendingCombatEventContext &context,
     const std::vector<CombatEvent> &events)
 {
+    // A spell that hit several monsters in one frame (an area spell's explosion): the status line can give its total.
+    std::vector<std::pair<std::pair<uint32_t, int>, std::pair<int, int>>> spellTotals;
+    std::vector<std::pair<uint32_t, int>> loggedSpellTotals;
+
+    for (const CombatEvent &event : events)
+    {
+        if (event.type != CombatEventType::PartyProjectileActorImpact || !event.hit || event.spellId <= 0)
+        {
+            continue;
+        }
+
+        const std::pair<uint32_t, int> key(event.sourcePartyMemberIndex, event.spellId);
+        const auto found = std::find_if(spellTotals.begin(), spellTotals.end(),
+            [&key](const auto &entry) { return entry.first == key; });
+
+        if (found == spellTotals.end())
+        {
+            spellTotals.push_back({key, {1, event.damage}});
+        }
+        else
+        {
+            found->second.first += 1;
+            found->second.second += event.damage;
+        }
+    }
+
     for (const CombatEvent &event : events)
     {
         if (event.type == CombatEventType::PartyProjectileActorImpact)
@@ -1480,9 +1733,73 @@ void GameplayCombatController::handlePendingCombatEvents(
                 playSpeechReaction(context.pRuntime, event.sourcePartyMemberIndex, SpeechId::AttackHit, false);
             }
 
-            showHitStatus(
-                context.pRuntime,
-                formatPartyProjectileActorImpactStatusText(sourceName, targetName, event));
+            const auto total = std::find_if(spellTotals.begin(), spellTotals.end(),
+                [&event](const auto &entry)
+                {
+                    return entry.first == std::pair<uint32_t, int>(event.sourcePartyMemberIndex, event.spellId);
+                });
+            const int monstersHit = total != spellTotals.end() ? total->second.first : 1;
+            const std::string status = formatPartyProjectileActorImpactStatusText(sourceName, targetName, event,
+                &context.party.rules().combat,
+                monstersHit,
+                total != spellTotals.end() ? total->second.second : event.damage);
+            showHitStatus(context.pRuntime, status);
+
+            // An area spell's hits are one line with their total, logged once (its first hit), without stages.
+            if (CombatLog *pLog = recordingCombatLog(); pLog != nullptr && event.hit && event.damage > 0)
+            {
+                CombatLogEntry entry;
+                entry.kind = CombatLogKind::Dealt;
+                entry.attacker = sourceName;
+                entry.verb = event.spellId > 0 ? "casts" : "shoots";
+                entry.spell = event.spellId > 0 ? combatLogSpellName(context.pRuntime, event.spellId) : std::string();
+                entry.target = targetName;
+                entry.amount = event.damage;
+                entry.killed = event.killed;
+
+                if (monstersHit <= 1)
+                {
+                    pLog->add(std::move(entry));
+                }
+                else if (std::find(loggedSpellTotals.begin(), loggedSpellTotals.end(), total->first)
+                    == loggedSpellTotals.end())
+                {
+                    loggedSpellTotals.push_back(total->first);
+                    entry.target = std::to_string(monstersHit) + " monsters";
+                    entry.amount = total->second.second;
+                    entry.killed = false;
+                    pLog->add(std::move(entry), false);
+                }
+            }
+
+            // Only rules with hit effects need the hit, and its actor found by a scan of the map's actors (STD3-4).
+            if (event.hit && event.damage > 0 && targetActor && context.party.rules().combat.usesPartyHitEffects())
+            {
+                PartyHitOnMonster hit;
+                hit.memberIndex = event.sourcePartyMemberIndex;
+                hit.pTarget = &targetActor->rulesetFacts;
+                hit.damage = event.damage;
+                hit.type = event.damageType;
+                hit.spellId = uint32_t(std::max(0, event.spellId));
+                hit.killed = event.killed;
+                hit.pWorld = context.pWorldRuntime;
+
+                for (size_t actorIndex = 0; context.pWorldRuntime != nullptr
+                     && actorIndex < context.pWorldRuntime->mapActorCount();
+                     ++actorIndex)
+                {
+                    GameplayRuntimeActorState state;
+
+                    if (context.pWorldRuntime->actorRuntimeState(actorIndex, state)
+                        && state.actorId == targetActor->actorId)
+                    {
+                        hit.targetActorIndex = actorIndex;
+                        break;
+                    }
+                }
+
+                context.party.rules().combat.applyPartyHitEffects(context.party, hit);
+            }
 
             if (event.hit
                 && event.damage > 0
@@ -1514,12 +1831,79 @@ void GameplayCombatController::handlePendingCombatEvents(
         }
 
         std::optional<size_t> targetMemberIndex = std::nullopt;
+        bool coverHalved = false;
 
         if (!event.affectsAllParty)
         {
-            targetMemberIndex = context.party.chooseMonsterAttackTarget(
-                sourceAttackPreferences,
-                event.sourceId ^ static_cast<uint32_t>(event.damage) ^ static_cast<uint32_t>(event.spellId));
+            targetMemberIndex = sourceActor
+                ? context.party.rules().combat.monsterAttackTarget(context.party, sourceActor->rulesetFacts)
+                : std::nullopt;
+
+            // A target the rules chose cannot be covered (MAW's Fixator).
+            if (!targetMemberIndex)
+            {
+                targetMemberIndex = context.party.chooseMonsterAttackTarget(
+                    sourceAttackPreferences,
+                    event.sourceId ^ static_cast<uint32_t>(event.damage) ^ static_cast<uint32_t>(event.spellId));
+
+                // Some missiles strike a conscious member at random instead (MAW's elemental missiles).
+                if (context.party.rules().combat.monsterMissileRules(monsterMissileToken(context, event)).randomTarget)
+                {
+                    std::vector<size_t> conscious;
+
+                    for (size_t memberIndex = 0; memberIndex < context.party.members().size(); ++memberIndex)
+                    {
+                        if (GameMechanics::canAct(*context.party.member(memberIndex)))
+                        {
+                            conscious.push_back(memberIndex);
+                        }
+                    }
+
+                    if (!conscious.empty())
+                    {
+                        std::mt19937 targetRng =
+                            buildMonsterAttackRng(event, 0x51ed270bu, animationTicks(context.pRuntime));
+                        targetMemberIndex =
+                            conscious[std::uniform_int_distribution<size_t>(0, conscious.size() - 1)(targetRng)];
+                    }
+                }
+
+                if (targetMemberIndex && sourceActor)
+                {
+                    std::mt19937 coverRng =
+                        buildMonsterAttackRng(event, *targetMemberIndex + 16, animationTicks(context.pRuntime));
+                    const std::optional<CoverOutcome> cover = context.party.rules().combat.coverMonsterAttack(
+                        context.party,
+                        MonsterAttackCover {*targetMemberIndex, event.spellId != 0, event.damageType, &coverRng});
+
+                    if (cover)
+                    {
+                        const Character *pCoverer = context.party.member(cover->memberIndex);
+                        const Character *pCovered = context.party.member(*targetMemberIndex);
+
+                        if (pCoverer != nullptr && pCovered != nullptr)
+                        {
+                            showHitStatus(context.pRuntime, cover->halved
+                                ? pCoverer->name + " covers the blow"
+                                : pCoverer->name + " covers " + pCovered->name);
+                        }
+
+                        // As MAW shows it (zzMaw-Monsters.lua:3970-3971): the Shield spell's portrait flash on the
+                        // member the blow was meant for (SetPlayerBuffAnim, Shield) and the skill-increase face on
+                        // the coverer (ShowFaceAnimation(14)).
+                        if (context.pRuntime != nullptr)
+                        {
+                            context.pRuntime->triggerPortraitEventFxWithoutSpeech(
+                                *targetMemberIndex, PortraitFxEventKind::Cover);
+                            triggerPortraitFaceAnimation(
+                                context.pRuntime, cover->memberIndex, FaceAnimationId::SkillIncreased);
+                        }
+
+                        targetMemberIndex = cover->memberIndex;
+                        coverHalved = cover->halved;
+                    }
+                }
+            }
         }
 
         Character *pTargetMember = targetMemberIndex ? context.party.member(*targetMemberIndex) : nullptr;
@@ -1652,11 +2036,7 @@ void GameplayCombatController::handlePendingCombatEvents(
                     continue;
                 }
 
-                if (characterEvadesMonsterImpact(
-                        *pMember,
-                        event,
-                        memberIndex,
-                        animationTicks(context.pRuntime)))
+                if (characterEvadesMonsterImpact(context, *pMember, event, sourceActor, memberIndex))
                 {
                     GAMEPLAY_COMBAT_TRACE_BLOCK(
                     {
@@ -1679,9 +2059,12 @@ void GameplayCombatController::handlePendingCombatEvents(
 
                 MinotaurDamageObservation observation;
                 const int healthBefore = pMember->health;
-                const int adjustedDamage = adjustedIncomingDamageForMember(
-                    context, event, *pMember, memberIndex, isPhysicalProjectile,
-                    gameplayMinotaurDamageTraceEnabled() ? &observation : nullptr);
+                const int shieldedDamage = personalShieldPassedDamage(context, event, sourceActor, memberIndex);
+                const int adjustedDamage = shieldedDamage > 0
+                    ? adjustedIncomingDamageForMember(
+                        context, event, sourceActor, *pMember, memberIndex, isPhysicalProjectile, shieldedDamage, false,
+                        gameplayMinotaurDamageTraceEnabled() ? &observation : nullptr)
+                    : 0;
                 const bool applied = context.party.applyDamageToMember(memberIndex, adjustedDamage, "", true);
                 damagedParty = applied || damagedParty;
                 traceMinotaurDamage(
@@ -1709,6 +2092,7 @@ void GameplayCombatController::handlePendingCombatEvents(
                 if (applied)
                 {
                     damagedMembers.push_back({memberIndex, adjustedDamage});
+                    logMonsterHit(context, event, sourceActor, memberIndex, adjustedDamage);
                 }
             }
         }
@@ -1716,23 +2100,9 @@ void GameplayCombatController::handlePendingCombatEvents(
         {
             MinotaurDamageObservation observation;
             const int healthBefore = pTargetMember != nullptr ? pTargetMember->health : 0;
-            const int adjustedDamage =
-                pTargetMember != nullptr && targetMemberIndex
-                    ? adjustedIncomingDamageForMember(
-                        context,
-                        event,
-                        *pTargetMember,
-                        *targetMemberIndex,
-                        isPhysicalProjectile,
-                        gameplayMinotaurDamageTraceEnabled() ? &observation : nullptr)
-                    : event.damage;
             const bool evaded =
                 pTargetMember != nullptr && targetMemberIndex
-                    ? characterEvadesMonsterImpact(
-                        *pTargetMember,
-                        event,
-                        *targetMemberIndex,
-                        animationTicks(context.pRuntime))
+                    ? characterEvadesMonsterImpact(context, *pTargetMember, event, sourceActor, *targetMemberIndex)
                     : false;
 
             if (evaded)
@@ -1769,6 +2139,26 @@ void GameplayCombatController::handlePendingCombatEvents(
             {
                 specialAttackMembers.push_back(*targetMemberIndex);
             }
+
+            // After the evasion roll, so an evaded hit leaves the personal shield untouched.
+            const int shieldedDamage = pTargetMember != nullptr && targetMemberIndex && !evaded
+                ? personalShieldPassedDamage(context, event, sourceActor, *targetMemberIndex)
+                : event.damage;
+            const int adjustedDamage =
+                pTargetMember != nullptr && targetMemberIndex
+                    ? (shieldedDamage > 0
+                        ? adjustedIncomingDamageForMember(
+                            context,
+                            event,
+                            sourceActor,
+                            *pTargetMember,
+                            *targetMemberIndex,
+                            isPhysicalProjectile,
+                            shieldedDamage,
+                            coverHalved,
+                            gameplayMinotaurDamageTraceEnabled() ? &observation : nullptr)
+                        : 0)
+                    : event.damage;
 
             damagedParty = targetMemberIndex
                 ? (!evaded && context.party.applyDamageToMember(*targetMemberIndex, adjustedDamage, ""))
@@ -1816,6 +2206,7 @@ void GameplayCombatController::handlePendingCombatEvents(
             if (damagedParty && targetMemberIndex.has_value())
             {
                 damagedMembers.push_back({*targetMemberIndex, adjustedDamage});
+                logMonsterHit(context, event, sourceActor, *targetMemberIndex, adjustedDamage);
             }
         }
 
@@ -1834,6 +2225,18 @@ void GameplayCombatController::handlePendingCombatEvents(
             {
                 applyIncomingHitSideEffects(context, damagedMember.memberIndex);
                 applyPainReflection(context, event, damagedMember.memberIndex, damagedMember.damage);
+
+                if (sourceActor)
+                {
+                    context.party.rules().combat.applyMonsterHitEffects(
+                        context.party,
+                        context.pWorldRuntime,
+                        damagedMember.memberIndex,
+                        sourceActor->rulesetFacts,
+                        sourceActor->actorId,
+                        damagedMember.damage,
+                        event.damageType);
+                }
             }
 
             if (sourceActor)

@@ -40,6 +40,8 @@ struct ChestTrapMemberResult
 struct ChestTrapOpenResult
 {
     bool shouldOpenChest = true;
+    // Why the rules keep the chest shut before any trap (MAW's Doom chests); empty when they do not.
+    std::string refusal;
     bool trapWasPresent = false;
     bool trapDisarmed = false;
     bool trapDischarged = false;

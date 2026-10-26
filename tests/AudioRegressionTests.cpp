@@ -882,6 +882,128 @@ TEST_CASE("major damage threshold queues minor and major speech reactions")
     CHECK_EQ(requests[1].speechId, OpenYAMM::Game::SpeechId::DamageMajor);
 }
 
+namespace
+{
+size_t countSpeech(const OpenYAMM::Game::Party &party, size_t memberIndex, OpenYAMM::Game::SpeechId speechId)
+{
+    size_t count = 0;
+
+    for (const OpenYAMM::Game::Party::PendingAudioRequest &request : party.pendingAudioRequests())
+    {
+        if (request.kind == OpenYAMM::Game::Party::PendingAudioRequest::Kind::Speech
+            && request.memberIndex == memberIndex
+            && request.speechId == speechId)
+        {
+            ++count;
+        }
+    }
+
+    return count;
+}
+}
+
+TEST_CASE("an unconscious member hit by area damage queues no dying speech")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Game::Party party = makeAudioRegressionParty(gameData);
+    const size_t memberIndex = party.activeMemberIndex();
+    OpenYAMM::Game::Character *pMember = party.activeMember();
+
+    REQUIRE(pMember != nullptr);
+
+    pMember->health = -5;
+    pMember->conditions.set(size_t(OpenYAMM::Game::CharacterCondition::Unconscious));
+    party.clearPendingAudioRequests();
+
+    REQUIRE(party.applyDamageToMember(memberIndex, 5, "", true));
+    CHECK_LT(pMember->health, -5);
+
+    for (const OpenYAMM::Game::Party::PendingAudioRequest &request : party.pendingAudioRequests())
+    {
+        CHECK_FALSE((request.kind == OpenYAMM::Game::Party::PendingAudioRequest::Kind::Speech
+            && request.memberIndex == memberIndex));
+    }
+}
+
+TEST_CASE("dying speech is queued once, when health crosses zero")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Game::Party party = makeAudioRegressionParty(gameData);
+    const size_t memberIndex = party.activeMemberIndex();
+    OpenYAMM::Game::Character *pMember = party.activeMember();
+
+    REQUIRE(pMember != nullptr);
+
+    pMember->health = 3;
+    party.clearPendingAudioRequests();
+
+    REQUIRE(party.applyDamageToMember(memberIndex, 10, ""));
+    CHECK_EQ(countSpeech(party, memberIndex, OpenYAMM::Game::SpeechId::Dying), 1u);
+    CHECK_EQ(countSpeech(party, memberIndex, OpenYAMM::Game::SpeechId::DamageMinor), 0u);
+}
+
+TEST_CASE("falling speech needs a member who could act before the fall")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Game::Party party = makeAudioRegressionParty(gameData);
+    const size_t memberIndex = party.activeMemberIndex();
+    OpenYAMM::Game::Character *pMember = party.activeMember();
+
+    REQUIRE(pMember != nullptr);
+
+    pMember->health = pMember->maxHealth;
+    party.clearPendingAudioRequests();
+    REQUIRE(party.applyDamageToMember(memberIndex, 1, "falling"));
+    CHECK_EQ(countSpeech(party, memberIndex, OpenYAMM::Game::SpeechId::Falling), 1u);
+
+    pMember->conditions.set(size_t(OpenYAMM::Game::CharacterCondition::Asleep));
+    party.clearPendingAudioRequests();
+    REQUIRE(party.applyDamageToMember(memberIndex, 1, "falling"));
+    CHECK_EQ(countSpeech(party, memberIndex, OpenYAMM::Game::SpeechId::Falling), 0u);
+}
+
+TEST_CASE("incapacitated members only speak about their state")
+{
+    using OpenYAMM::Game::CharacterCondition;
+    using OpenYAMM::Game::SpeechId;
+    using OpenYAMM::Game::canMemberSpeak;
+    OpenYAMM::Game::Character healthy;
+    healthy.maxHealth = 50;
+    healthy.health = 50;
+
+    for (SpeechId speechId : {SpeechId::AttackHit, SpeechId::KillWeakEnemy, SpeechId::Falling, SpeechId::Dying,
+             SpeechId::CheatedDeath, SpeechId::Awaken, SpeechId::DamageMinor})
+    {
+        CAPTURE(uint32_t(speechId));
+        CHECK(canMemberSpeak(healthy, speechId));
+    }
+
+    OpenYAMM::Game::Character unconscious = healthy;
+    unconscious.health = -3;
+    unconscious.conditions.set(size_t(CharacterCondition::Unconscious));
+    CHECK_FALSE(canMemberSpeak(unconscious, SpeechId::AttackHit));
+    CHECK_FALSE(canMemberSpeak(unconscious, SpeechId::KillWeakEnemy));
+    CHECK_FALSE(canMemberSpeak(unconscious, SpeechId::DamageMinor));
+    CHECK(canMemberSpeak(unconscious, SpeechId::Dying));
+    CHECK(canMemberSpeak(unconscious, SpeechId::CheatedDeath));
+    CHECK(canMemberSpeak(unconscious, SpeechId::Awaken));
+
+    OpenYAMM::Game::Character asleep = healthy;
+    asleep.conditions.set(size_t(CharacterCondition::Asleep));
+    CHECK_FALSE(canMemberSpeak(asleep, SpeechId::AttackMiss));
+    CHECK(canMemberSpeak(asleep, SpeechId::Awaken));
+
+    for (CharacterCondition condition :
+        {CharacterCondition::Dead, CharacterCondition::Petrified, CharacterCondition::Eradicated})
+    {
+        OpenYAMM::Game::Character member = healthy;
+        member.conditions.set(size_t(condition));
+        CAPTURE(size_t(condition));
+        CHECK_FALSE(canMemberSpeak(member, SpeechId::Awaken));
+        CHECK_FALSE(canMemberSpeak(member, SpeechId::KillStrongEnemy));
+    }
+}
+
 TEST_CASE("damage minor speech ignores combat cooldown")
 {
     OpenYAMM::Game::GameplayPortraitPresentationState presentationState = {};

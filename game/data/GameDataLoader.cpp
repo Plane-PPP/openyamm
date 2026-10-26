@@ -11,6 +11,9 @@
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/maps/ActorModelManifest.h"
 #include "game/maps/MapIdentity.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/MonsterRules.h"
+#include "game/rules/maw/MawNpcPresence.h"
 #include "game/StringUtils.h"
 
 #include <algorithm>
@@ -331,32 +334,57 @@ bool isLuaMapOverlayFileName(const std::string &entryName, const std::string &ba
         || lowerEntryName == lowerBaseName + ".fixup.lua";
 }
 
+// Map overlays of the mounted packages, then those of the active ruleset's package (`rulesetRoot`, empty for
+// Standard), which run last.
 std::vector<std::string> buildLuaScriptOverlayPathCandidates(
     const Engine::AssetFileSystem &assetFileSystem,
-    const std::string &baseName)
+    const std::string &baseName,
+    const std::string &rulesetRoot)
 {
+    std::vector<std::string> directories = {"events/maps"};
     std::vector<std::string> candidates;
 
-    for (const std::string &entryName : assetFileSystem.enumerate("events/maps"))
+    if (!rulesetRoot.empty())
     {
-        if (isLuaMapOverlayFileName(entryName, baseName))
+        directories.push_back(rulesetRoot + "events/maps");
+    }
+
+    for (const std::string &directory : directories)
+    {
+        for (const std::string &entryName : assetFileSystem.enumerate(directory))
         {
-            candidates.push_back("events/maps/" + entryName);
+            if (isLuaMapOverlayFileName(entryName, baseName))
+            {
+                candidates.push_back(directory + "/" + entryName);
+            }
         }
     }
 
     return candidates;
 }
 
-std::vector<std::string> buildLuaGlobalScriptOverlayPathCandidates(const Engine::AssetFileSystem &assetFileSystem)
+// Global overlays of the mounted packages, then those of the active ruleset's package (`rulesetRoot`, empty for
+// Standard), which run last.
+std::vector<std::string> buildLuaGlobalScriptOverlayPathCandidates(
+    const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &rulesetRoot)
 {
+    std::vector<std::string> directories = {"events"};
     std::vector<std::string> candidates;
 
-    for (const std::string &entryName : assetFileSystem.enumerate("events"))
+    if (!rulesetRoot.empty())
     {
-        if (isLuaMapOverlayFileName(entryName, "Global"))
+        directories.push_back(rulesetRoot + "events");
+    }
+
+    for (const std::string &directory : directories)
+    {
+        for (const std::string &entryName : assetFileSystem.enumerate(directory))
         {
-            candidates.push_back("events/" + entryName);
+            if (isLuaMapOverlayFileName(entryName, "Global"))
+            {
+                candidates.push_back(directory + "/" + entryName);
+            }
         }
     }
 
@@ -400,12 +428,13 @@ std::vector<std::filesystem::path> buildLuaScriptSidecarPathCandidates(
 std::string appendLuaScriptOverlays(
     const Engine::AssetFileSystem &assetFileSystem,
     const std::string &baseName,
+    const std::string &rulesetRoot,
     const std::string &luaSource,
     std::string &resolvedPath)
 {
     std::string combinedLuaSource = luaSource;
 
-    for (const std::string &overlayPath : buildLuaScriptOverlayPathCandidates(assetFileSystem, baseName))
+    for (const std::string &overlayPath : buildLuaScriptOverlayPathCandidates(assetFileSystem, baseName, rulesetRoot))
     {
         const std::optional<std::string> overlaySource = assetFileSystem.readTextFile(overlayPath);
 
@@ -424,12 +453,13 @@ std::string appendLuaScriptOverlays(
 
 std::string appendLuaGlobalScriptOverlays(
     const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &rulesetRoot,
     const std::string &luaSource,
     std::string &resolvedPath)
 {
     std::string combinedLuaSource = luaSource;
 
-    for (const std::string &overlayPath : buildLuaGlobalScriptOverlayPathCandidates(assetFileSystem))
+    for (const std::string &overlayPath : buildLuaGlobalScriptOverlayPathCandidates(assetFileSystem, rulesetRoot))
     {
         const std::optional<std::string> overlaySource = assetFileSystem.readTextFile(overlayPath);
 
@@ -1486,6 +1516,42 @@ void GameDataLoader::setActiveWorldId(const std::string &worldId)
     m_activeWorldId = normalizedWorldId;
 }
 
+void GameDataLoader::setActiveRuleset(const RulesetDefinition &ruleset)
+{
+    m_activeRuleset = ruleset;
+    m_appliedRulesetContributions.clear();
+    setSkillDisplayNameOverrides(ruleset.skillNames);
+    recordActiveRulesetSchema();
+}
+
+void GameDataLoader::recordActiveRulesetSchema()
+{
+    // A ruleset's saves need its package at the schema they were written with ("rulesets/<id>").
+    std::erase_if(m_loadedContentPackageSchemas,
+        [](const auto &entry) { return entry.first.starts_with(RulesetContentPackagePrefix); });
+
+    if (m_activeRuleset.id != StandardRulesetId)
+    {
+        m_loadedContentPackageSchemas[RulesetContentPackagePrefix + m_activeRuleset.id] =
+            m_activeRuleset.contentSchemaVersion;
+    }
+}
+
+const RulesetDefinition &GameDataLoader::activeRuleset() const
+{
+    return m_activeRuleset;
+}
+
+const std::set<std::string> &GameDataLoader::appliedRulesetContributions() const
+{
+    return m_appliedRulesetContributions;
+}
+
+std::string GameDataLoader::activeRulesetRoot() const
+{
+    return m_activeRuleset.id != StandardRulesetId ? rulesetPackageRoot(m_activeRuleset.id) : std::string();
+}
+
 void GameDataLoader::setActorModels(bool enabled, const std::string &overrideManifestPath)
 {
     if (m_actorModelsEnabled != enabled || m_actorModelManifestOverride != overrideManifestPath)
@@ -2376,7 +2442,8 @@ bool GameDataLoader::loadMapStats(const Engine::AssetFileSystem &assetFileSystem
         rows.push_back(parsedTable->getRow(rowIndex));
     }
 
-    if (!m_mapStats.loadFromRows(rows, DefaultWorldId))
+    // The ruleset's map changes (treasure levels, encounter monsters and counts; audit DAT-1).
+    if (!applyActiveRulesetTable(assetFileSystem, mapStatsPath, rows) || !m_mapStats.loadFromRows(rows, DefaultWorldId))
     {
         return false;
     }
@@ -2587,6 +2654,52 @@ bool GameDataLoader::loadMonsterTable(const Engine::AssetFileSystem &assetFileSy
     {
         std::cerr << "Failed to parse monster relation table: " << monsterRelationPath << '\n';
         return false;
+    }
+
+    // World add-ons over the engine tables: relations.yml (factions and relations), shields.yml (energy shields) and
+    // modifiers.yml (true aim, blink, ...), keyed by the world's own monster ids. Monsters no world lists keep the
+    // engine's behaviour.
+    m_monsterTable.relationAddOns().clear();
+    m_monsterTable.shields().clear();
+    m_monsterTable.modifiers().clear();
+
+    for (const WorldManifest &manifest : mountedWorlds)
+    {
+        for (const char *pFileName : {"relations.yml", "shields.yml", "modifiers.yml"})
+        {
+            const std::string addOnPath = "worlds/" + manifest.id + "/" + pFileName;
+
+            if (!assetFileSystem.exists(addOnPath))
+            {
+                continue;
+            }
+
+            const ContentIdRangeDefinition *pMonsterRange = manifest.findIdRange("monsters");
+            const std::optional<std::string> text = assetFileSystem.readTextFile(addOnPath);
+            std::string addOnError;
+
+            if (pMonsterRange == nullptr || !text)
+            {
+                std::cerr << "Failed to load " << addOnPath << ": the world needs a monsters id range\n";
+                return false;
+            }
+
+            const std::string fileName = pFileName;
+            const bool loaded = fileName == "relations.yml"
+                ? m_monsterTable.relationAddOns().loadWorldYaml(
+                    *text, manifest.id, pMonsterRange->begin, pMonsterRange->end, addOnError)
+                : fileName == "shields.yml"
+                ? m_monsterTable.shields().loadWorldYaml(
+                    *text, manifest.id, pMonsterRange->begin, pMonsterRange->end, addOnError)
+                : m_monsterTable.modifiers().loadWorldYaml(
+                    *text, manifest.id, pMonsterRange->begin, pMonsterRange->end, addOnError);
+
+            if (!loaded)
+            {
+                std::cerr << "Failed to load " << addOnError << '\n';
+                return false;
+            }
+        }
     }
 
     std::vector<std::vector<std::string>> meleeHitMaterialRows;
@@ -3649,10 +3762,10 @@ bool GameDataLoader::loadMergedBaseTables(const Engine::AssetFileSystem &assetFi
         };
 
     const auto loadBaseYamlTable =
-        [&assetFileSystem](const char *pFileName, auto &table, const char *pDisplayName) -> bool
+        [this, &assetFileSystem](const char *pFileName, auto &table, const char *pDisplayName) -> bool
         {
             const std::string tablePath = engineDataTablePath(pFileName);
-            const std::optional<std::string> fileContents = assetFileSystem.readTextFile(tablePath);
+            const std::optional<std::string> fileContents = readRulesetDataFile(assetFileSystem, tablePath);
 
             if (!fileContents)
             {
@@ -3800,7 +3913,158 @@ bool GameDataLoader::loadMergedBaseTables(const Engine::AssetFileSystem &assetFi
         && loadBaseTable(
             "transport_locations.txt",
             m_mergedTransportLocationTable,
-            "Transport Locations.txt");
+            "Transport Locations.txt")
+        && loadPotionEffects(assetFileSystem)
+        && loadRulesetData(assetFileSystem);
+}
+
+bool GameDataLoader::loadRulesetData(const Engine::AssetFileSystem &assetFileSystem)
+{
+    m_mawMapLevels.reset();
+    m_mawItemData.reset();
+    m_mawPromotionData.reset();
+    m_mawCraftingData.reset();
+    m_mawDimensionData.reset();
+    m_mawTextData.reset();
+    m_npcDialogTable.setExtraHouses({});
+
+    if (m_activeRuleset.id != MawRulesetId)
+    {
+        return true;
+    }
+
+    const std::string path = rulesetPackageRoot(m_activeRuleset.id) + "data/map_levels.yml";
+    const std::optional<std::string> text = assetFileSystem.readTextFile(path);
+    MawMapLevels mapLevels;
+    std::string error;
+
+    if (!text || !mapLevels.loadFromYaml(*text, error))
+    {
+        std::cerr << "Failed to load " << path << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_mawMapLevels = std::move(mapLevels);
+
+    const std::string itemPath = rulesetPackageRoot(m_activeRuleset.id) + "data/items.yml";
+    const std::optional<std::string> itemText = assetFileSystem.readTextFile(itemPath);
+    MawItemData itemData;
+
+    if (!itemText || !itemData.loadFromYaml(*itemText, error))
+    {
+        std::cerr << "Failed to load " << itemPath << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_mawItemData = std::move(itemData);
+
+    const std::string npcPath = rulesetPackageRoot(m_activeRuleset.id) + "data/npc_extra_houses.yml";
+    const std::optional<std::string> npcText = assetFileSystem.readTextFile(npcPath);
+    std::unordered_map<uint32_t, std::vector<uint32_t>> extraHouses;
+
+    if (!npcText || !loadMawNpcExtraHouses(*npcText, extraHouses, error))
+    {
+        std::cerr << "Failed to load " << npcPath << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_npcDialogTable.setExtraHouses(std::move(extraHouses));
+
+    const std::string promotionPath = rulesetPackageRoot(m_activeRuleset.id) + "data/promotions.yml";
+    const std::optional<std::string> promotionText = assetFileSystem.readTextFile(promotionPath);
+    MawPromotionData promotionData;
+
+    if (!promotionText || !promotionData.loadFromYaml(*promotionText, error))
+    {
+        std::cerr << "Failed to load " << promotionPath << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_mawPromotionData = std::move(promotionData);
+
+    const std::string craftingPath = rulesetPackageRoot(m_activeRuleset.id) + "data/crafting.yml";
+    const std::optional<std::string> craftingText = assetFileSystem.readTextFile(craftingPath);
+    MawCraftingData craftingData;
+
+    if (!craftingText || !craftingData.loadFromYaml(*craftingText, error))
+    {
+        std::cerr << "Failed to load " << craftingPath << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_mawCraftingData = std::move(craftingData);
+
+    const std::string dimensionPath = rulesetPackageRoot(m_activeRuleset.id) + "data/dimension_maps.yml";
+    const std::optional<std::string> dimensionText = assetFileSystem.readTextFile(dimensionPath);
+    MawDimensionData dimensionData;
+
+    if (!dimensionText || !dimensionData.loadFromYaml(*dimensionText, error))
+    {
+        std::cerr << "Failed to load " << dimensionPath << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_mawDimensionData = std::move(dimensionData);
+
+    const std::string textsPath = rulesetPackageRoot(m_activeRuleset.id) + "data/texts.yml";
+    const std::optional<std::string> textsText = assetFileSystem.readTextFile(textsPath);
+    MawTextData textData;
+
+    if (!textsText || !textData.loadFromYaml(*textsText, error))
+    {
+        std::cerr << "Failed to load " << textsPath << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_mawTextData = std::move(textData);
+    return true;
+}
+
+const MawMapLevels *GameDataLoader::mawMapLevels() const
+{
+    return m_mawMapLevels ? &*m_mawMapLevels : nullptr;
+}
+
+const MawPromotionData *GameDataLoader::mawPromotionData() const
+{
+    return m_mawPromotionData ? &*m_mawPromotionData : nullptr;
+}
+
+const MawCraftingData *GameDataLoader::mawCraftingData() const
+{
+    return m_mawCraftingData ? &*m_mawCraftingData : nullptr;
+}
+
+const MawDimensionData *GameDataLoader::mawDimensionData() const
+{
+    return m_mawDimensionData ? &*m_mawDimensionData : nullptr;
+}
+
+const MawTextData *GameDataLoader::mawTextData() const
+{
+    return m_mawTextData ? &*m_mawTextData : nullptr;
+}
+
+const MawItemData *GameDataLoader::mawItemData() const
+{
+    return m_mawItemData ? &*m_mawItemData : nullptr;
+}
+
+bool GameDataLoader::loadPotionEffects(const Engine::AssetFileSystem &assetFileSystem)
+{
+    const std::string path = engineDataTablePath("potion_effects.yml");
+    const std::optional<std::string> text = readRulesetDataFile(assetFileSystem, path);
+    PotionEffectTable effects;
+    std::string error;
+
+    if (!text || !effects.loadFromYaml(*text, error))
+    {
+        std::cerr << "Failed to load potion effects " << path << (error.empty() ? "" : ": " + error) << '\n';
+        return false;
+    }
+
+    m_mergedPotionSettingTable.setEffects(std::move(effects));
+    return true;
 }
 
 bool GameDataLoader::applyMergedRuntimeTables()
@@ -4005,7 +4269,7 @@ bool GameDataLoader::loadFirstTextTableRows(
 
         if (!rows.empty())
         {
-            return true;
+            return applyActiveRulesetTable(assetFileSystem, virtualPath, rows);
         }
     }
 
@@ -4115,6 +4379,53 @@ bool GameDataLoader::loadMonsterProjectileTable(const Engine::AssetFileSystem &a
         return false;
     }
 
+    // World add-ons: a world's own missile tokens and their objects (worlds/<world>/monster_projectiles.yml, objects
+    // in the world's objects id range). MM's tokens stay as they are; monsters naming a world token become ranged.
+    std::vector<WorldManifest> mountedWorlds;
+    std::string manifestError;
+
+    if (!loadMountedWorldManifests(assetFileSystem, mountedWorlds, manifestError))
+    {
+        std::cerr << "Failed to resolve monster projectile add-ons: " << manifestError << '\n';
+        return false;
+    }
+
+    std::vector<std::string> worldTokens;
+    const size_t engineTokenCount = m_monsterProjectileTable.entries().size();
+
+    for (const WorldManifest &manifest : mountedWorlds)
+    {
+        const std::string addOnPath = "worlds/" + manifest.id + "/monster_projectiles.yml";
+
+        if (!assetFileSystem.exists(addOnPath))
+        {
+            continue;
+        }
+
+        const ContentIdRangeDefinition *pObjectRange = manifest.findIdRange("objects");
+        const std::optional<std::string> text = assetFileSystem.readTextFile(addOnPath);
+        std::string addOnError;
+
+        if (pObjectRange == nullptr || !text)
+        {
+            std::cerr << "Failed to load " << addOnPath << ": the world needs an objects id range\n";
+            return false;
+        }
+
+        if (!m_monsterProjectileTable.loadWorldYaml(
+                *text, manifest.id, pObjectRange->begin, pObjectRange->end, addOnError))
+        {
+            std::cerr << "Failed to load " << addOnError << '\n';
+            return false;
+        }
+    }
+
+    for (size_t index = engineTokenCount; index < m_monsterProjectileTable.entries().size(); ++index)
+    {
+        worldTokens.push_back(m_monsterProjectileTable.entries()[index].token);
+    }
+
+    m_monsterTable.acceptWorldMissileTokens(worldTokens);
     return true;
 }
 
@@ -4163,7 +4474,17 @@ bool GameDataLoader::loadItemTable(const Engine::AssetFileSystem &assetFileSyste
     for (const WorldManifest &manifest : mountedWorlds)
     {
         m_loadedContentPackageSchemas[manifest.id] = manifest.contentSchemaVersion;
+
+        if (const std::optional<std::string> domain =
+                overlappingContentIdRange(m_activeRuleset.idRanges, manifest.idRanges))
+        {
+            std::cerr << "Ruleset " << m_activeRuleset.id << " and world " << manifest.id << " both claim " << *domain
+                      << " ids\n";
+            return false;
+        }
     }
+
+    recordActiveRulesetSchema();
 
     std::vector<ItemTableContributionRows> itemContributions;
 
@@ -4416,6 +4737,109 @@ bool GameDataLoader::loadTextTableRows(
         rows.push_back(parsedTable->getRow(rowIndex));
     }
 
+    return applyActiveRulesetTable(assetFileSystem, virtualPath, rows);
+}
+
+std::optional<std::string> GameDataLoader::readRulesetDataFile(
+    const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &virtualPath
+) const
+{
+    const std::vector<const RulesetTableContribution *> tables = m_activeRuleset.findTables(virtualPath);
+
+    if (tables.empty())
+    {
+        return assetFileSystem.readTextFile(virtualPath);
+    }
+
+    if (tables.size() != 1 || tables.front()->mode != TableContributionMode::Replace)
+    {
+        std::cerr << "Ruleset " << m_activeRuleset.id << " can only replace " << virtualPath << '\n';
+        return std::nullopt;
+    }
+
+    m_appliedRulesetContributions.insert(tables.front()->path);
+    return assetFileSystem.readTextFile(rulesetPackageRoot(m_activeRuleset.id) + tables.front()->path);
+}
+
+bool GameDataLoader::applyActiveRulesetTable(
+    const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &virtualPath,
+    std::vector<std::vector<std::string>> &rows
+) const
+{
+    const auto readRows = [&](const std::string &path) -> std::optional<std::vector<std::vector<std::string>>>
+    {
+        const std::optional<std::string> contents = assetFileSystem.readTextFile(path);
+        const std::optional<Engine::TextTable> table =
+            contents ? Engine::TextTable::parseTabSeparated(*contents) : std::nullopt;
+
+        if (!table)
+        {
+            std::cerr << "Failed to read ruleset table: " << path << '\n';
+            return std::nullopt;
+        }
+
+        std::vector<std::vector<std::string>> tableRows;
+
+        for (size_t rowIndex = 0; rowIndex < table->getRowCount(); ++rowIndex)
+        {
+            tableRows.push_back(table->getRow(rowIndex));
+        }
+
+        return tableRows;
+    };
+
+    for (const RulesetTableContribution *pTable : m_activeRuleset.findTables(virtualPath))
+    {
+        const std::string patchPath = rulesetPackageRoot(m_activeRuleset.id) + pTable->path;
+        std::optional<std::vector<std::vector<std::string>>> patchRows = readRows(patchPath);
+        m_appliedRulesetContributions.insert(pTable->path);
+
+        if (!patchRows)
+        {
+            return false;
+        }
+
+        if (pTable->mode == TableContributionMode::Replace)
+        {
+            rows = std::move(*patchRows);
+            continue;
+        }
+
+        std::string error;
+
+        if (!applyTableCellOverrides(rows, *patchRows, pTable->keyColumn, pTable->headerRow, error))
+        {
+            std::cerr << "Failed to apply ruleset table " << patchPath << ": " << error << '\n';
+            return false;
+        }
+
+        if (!pTable->appendPath.empty())
+        {
+            const std::string appendPath = rulesetPackageRoot(m_activeRuleset.id) + pTable->appendPath;
+            const std::optional<std::vector<std::vector<std::string>>> appendRows = readRows(appendPath);
+
+            if (!appendRows || !appendTableRows(rows, *appendRows, pTable->keyColumn, pTable->headerRow, error))
+            {
+                std::cerr << "Failed to append ruleset table " << appendPath << ": " << error << '\n';
+                return false;
+            }
+        }
+
+        if (!pTable->appendColumnsPath.empty())
+        {
+            const std::string columnsPath = rulesetPackageRoot(m_activeRuleset.id) + pTable->appendColumnsPath;
+            const std::optional<std::vector<std::vector<std::string>>> columns = readRows(columnsPath);
+
+            if (!columns || !appendTableColumns(rows, *columns, pTable->keyColumn, pTable->headerRow, error))
+            {
+                std::cerr << "Failed to append ruleset table columns " << columnsPath << ": " << error << '\n';
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -4473,12 +4897,17 @@ bool GameDataLoader::loadSelectedMap(
     m_selectedMapRenderSourcePixelsReleased = false;
     m_lastReleasedMapRenderSourcePixelBytes = 0;
     m_mapAssetLoadSharedCache.beginLoad(assetFileSystem.contentGeneration());
-    const std::optional<MapStatsEntry> selectedMap = m_mapRegistry.findById(mapId);
+    std::optional<MapStatsEntry> selectedMap = m_mapRegistry.findById(mapId);
 
     if (!selectedMap)
     {
         std::cerr << "Failed to select map from map registry: id=" << mapId << '\n';
         return false;
+    }
+
+    if (mapLoadPurpose == MapLoadPurpose::FullGameplay || mapLoadPurpose == MapLoadPurpose::HeadlessGameplay)
+    {
+        boundGameRules().monsters.enterMap(*selectedMap, m_monsterTable);
     }
 
     GameDataLoadTimingLogger timingLogger(selectedMap->fileName, "game_data_loader");
@@ -4493,7 +4922,7 @@ bool GameDataLoader::loadSelectedMap(
         m_monsterTable,
         m_objectTable,
         mapLoadPurpose,
-        {},
+        MapCompanionLoadOptions{.rulesetRoot = activeRulesetRoot()},
         progressPump,
         &m_mapAssetLoadSharedCache,
         m_pActorModelManifest);
@@ -4551,6 +4980,7 @@ bool GameDataLoader::loadSelectedMap(
             const std::string mapLuaSource = appendLuaScriptOverlays(
                 assetFileSystem,
                 localScriptBaseName,
+                activeRulesetRoot(),
                 *luaSource,
                 resolvedLuaPath);
             const std::string combinedLuaSource =
@@ -4584,7 +5014,11 @@ bool GameDataLoader::loadSelectedMap(
         {
             std::string error;
             const std::string globalLuaSource =
-                appendLuaGlobalScriptOverlays(assetFileSystem, *luaSource, resolvedLuaPath);
+                appendLuaGlobalScriptOverlays(
+                    assetFileSystem,
+                    activeRulesetRoot(),
+                    *luaSource,
+                    resolvedLuaPath);
             const std::string combinedLuaSource =
                 prependLuaSupport(supportLuaSource, worldCommonLuaSource, globalLuaSource);
             std::optional<ScriptedEventProgram> program = ScriptedEventProgram::loadFromLuaText(

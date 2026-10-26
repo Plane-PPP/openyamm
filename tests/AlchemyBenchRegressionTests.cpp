@@ -10,6 +10,12 @@
 
 namespace
 {
+// The planner's tests mix as an Alchemy Expert of level 4.
+OpenYAMM::Game::AlchemistInfo level4Alchemist()
+{
+    return {std::nullopt, OpenYAMM::Game::SkillMastery::Expert, 4};
+}
+
 using namespace OpenYAMM::Game;
 
 constexpr uint32_t BottleItemId = 220;
@@ -385,7 +391,7 @@ TEST_CASE("alchemy chain planner brews a compound potion from bottles and reagen
     addItem(party, 0, PoppyPodItemId);
     const AlchemyBenchTables tables = benchTables(gameData);
     const AlchemyBook book = knownBook(party, tables, {CureDiseaseNoteId, HasteNoteId});
-    const AlchemyChainPlanner planner(party, book, 4, tables);
+    const AlchemyChainPlanner planner(party, book, level4Alchemist(), tables);
 
     const AlchemyChainPlan plan = planner.plan(HasteItemId, 99);
 
@@ -420,7 +426,7 @@ TEST_CASE("alchemy chain planner uses carried potions before brewing replacement
     const AlchemyBenchTables tables = benchTables(gameData);
     const AlchemyBook book = knownBook(party, tables, {CureDiseaseNoteId, HasteNoteId});
 
-    const AlchemyChainPlan plan = AlchemyChainPlanner(party, book, 4, tables).plan(HasteItemId, 99);
+    const AlchemyChainPlan plan = AlchemyChainPlanner(party, book, level4Alchemist(), tables).plan(HasteItemId, 99);
 
     CHECK_EQ(plan.brewCount, 1u);
     CHECK_EQ(plan.steps.size(), 2u);
@@ -441,18 +447,21 @@ TEST_CASE("alchemy chain planner names the step that blocks a chain")
     const AlchemyBenchTables tables = benchTables(gameData);
 
     const AlchemyChainPlan unknown =
-        AlchemyChainPlanner(party, knownBook(party, tables, {HasteNoteId}), 4, tables).plan(HasteItemId, 1);
+        AlchemyChainPlanner(party, knownBook(party, tables, {HasteNoteId}), level4Alchemist(), tables)
+            .plan(HasteItemId, 1);
     CHECK_EQ(unknown.brewCount, 0u);
     CHECK_EQ(unknown.block, AlchemyChainBlock::UnknownRecipe);
     CHECK_EQ(unknown.blockItemId, CureDiseaseItemId);
 
     const AlchemyChainPlan noReagent = AlchemyChainPlanner(party,
-        knownBook(party, tables, {HasteNoteId, CureDiseaseNoteId}), 4, tables).plan(HasteItemId, 1);
+        knownBook(party, tables, {HasteNoteId, CureDiseaseNoteId}), level4Alchemist(), tables)
+        .plan(HasteItemId, 1);
     CHECK_EQ(noReagent.block, AlchemyChainBlock::MissingBottle);
 
     giveAlchemy(party, 0, 4, SkillMastery::Normal);
     const AlchemyChainPlan tooHard = AlchemyChainPlanner(party,
-        knownBook(party, tables, {HasteNoteId, CureDiseaseNoteId}), 4, tables).plan(HasteItemId, 1);
+        knownBook(party, tables, {HasteNoteId, CureDiseaseNoteId}), level4Alchemist(), tables)
+        .plan(HasteItemId, 1);
     CHECK_EQ(tooHard.block, AlchemyChainBlock::NeedsMastery);
     CHECK_EQ(tooHard.blockItemId, HasteItemId);
 }

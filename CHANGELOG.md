@@ -1,3 +1,13 @@
+# Minotaur on OpenYAMM 1.13 (2026-10-26)
+
+Implemented; automatic Windows validation pending, not manually tested:
+- Port existing v0.4 + Luck/Axe/Damage Resistance to official 1.13 without intended balance changes.
+- Keep old mod save mappings, including production 1.10/v95; write separate mod130/schema129.
+- Preserve official skill IDs, move Lethal Strike/teacher references to48 and keep named saved skills.
+- Detect patch installation from game root or child folder; report the selected missing path clearly.
+- Retain numeric skill-console mastery alongside upstream spelling/techpoints commands.
+User confirmed prior patch installation with explicit InstallationRoot; game/save retest not reported.
+
 # Minotaur — incremental ZIP packaging (2026-10-23)
 
 Implemented / Windows tested / first ZIP packaged ([run40000571371](https://github.com/Plane-PPP/openyamm/actions/runs/40000571371)); manual gameplay pending:

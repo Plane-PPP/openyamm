@@ -15,6 +15,8 @@ namespace
 {
 struct GoblinwatchDetectionFixture
 {
+    // Outlives the loader: the map load parses the sprite frame table on a worker that reads these assets.
+    OpenYAMM::Engine::AssetFileSystem assets;
     GameDataLoader data;
     IndoorMapData map;
     Party party;
@@ -23,7 +25,6 @@ struct GoblinwatchDetectionFixture
 
     GoblinwatchDetectionFixture(int actorX = -640, int actorY = 3456)
     {
-        OpenYAMM::Engine::AssetFileSystem assets;
         const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
         REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", OpenYAMM::Engine::AssetScaleTier::X1, "mm6"));
         REQUIRE(data.loadForHeadlessGameplay(assets));

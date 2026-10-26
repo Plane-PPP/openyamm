@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/gameplay/ActorTurretScan.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/party/SkillData.h"
 
@@ -189,6 +190,8 @@ struct ActorStatusFacts
     bool defaultHostileToParty = false;
     bool suppressLowHealthFlee = false;
     bool forceFleeFromParty = false;
+    // Seconds since the actor's energy shield broke while it stays down (GameplayActorShields); -1 otherwise.
+    float shieldDownSinceBreakSeconds = -1.0f;
 };
 
 struct ActorTargetCandidateFacts
@@ -256,6 +259,14 @@ struct ActorMovementFacts
     float homeYawRadians = 0.0f;
 };
 
+// What an actor does when its energy shield breaks (tactics `shield_break`).
+enum class ActorShieldBreakReaction : uint8_t
+{
+    None,
+    // Flees its target (the native flee) while the shield stays down, up to ActorTacticsFacts::shieldBreakSeconds.
+    FallBack,
+};
+
 // Optional combat tactics from world data (worlds/<id>/behaviors.yml `tactics`, keyed by monster id and applied by
 // ActorBehaviorRuntime::applyAiFacts). The defaults leave the native AI unchanged.
 struct ActorTacticsFacts
@@ -273,6 +284,22 @@ struct ActorTacticsFacts
     // (0: unlimited), and with no target walks back and faces its placement direction instead of wandering.
     bool holdPost = false;
     float postLeashRadius = 0.0f;
+    // A stationary turret's idle scan (ActorTurretScan.h) and the hold of its last aim after losing a target; needs a
+    // traverse rate. Disabled by default.
+    TurretScanSettings scan;
+    // Aims ahead of a moving target by its velocity times this (the facing, the barrel and the shot); needs a traverse
+    // rate. 0: aims at the target itself.
+    float leadSeconds = 0.0f;
+    // A hostile actor's reaction to its shield breaking, for at most shieldBreakSeconds while the shield stays down.
+    ActorShieldBreakReaction shieldBreakReaction = ActorShieldBreakReaction::None;
+    float shieldBreakSeconds = 8.0f;
+
+    // Filled by ActorBehaviorRuntime every AI step, not data. idleAimActive: the actor has no target and its scan (or
+    // the hold of its last aim) gives the facing it turns to, idleAimYawRadians. aimLead: the lead (leadSeconds) the
+    // AI adds to its target's position.
+    bool idleAimActive = false;
+    float idleAimYawRadians = 0.0f;
+    GameplayWorldPoint aimLead = {};
 
     bool keepsRangedBand() const
     {
@@ -404,6 +431,8 @@ struct ActorProjectileRequest
     size_t sourceActorIndex = static_cast<size_t>(-1);
     GameplayActorAttackAbility ability = GameplayActorAttackAbility::Attack1;
     ActorAiTargetKind targetKind = ActorAiTargetKind::None;
+    // The target actor (targetKind Actor), for a true_aim monster's homing shots.
+    size_t targetActorIndex = static_cast<size_t>(-1);
     uint32_t objectId = 0;
     uint32_t spellId = 0;
     uint32_t skillLevel = 0;

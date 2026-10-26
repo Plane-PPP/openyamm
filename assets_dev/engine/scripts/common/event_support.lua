@@ -191,6 +191,11 @@ support.varTag = support.varTag or {
     Invisible = 0x013A,
     ItemEquipped = 0x013B,
     Players = 0x013E,
+    -- OpenYAMM's technology skills (no EVT encoding).
+    EnergyGunsSkill = 0x0140,
+    EnergyBladesSkill = 0x0141,
+    ShieldTechSkill = 0x0142,
+    HackingSkill = 0x0143,
 }
 
 support.houseId = support.houseId or {
@@ -412,6 +417,7 @@ support.itemType = support.itemType or {
     Weapon_ = 20,
     Armor_ = 21,
     Misc = 22,
+    Amulet = 12,
     Ring_ = 40,
     Scroll_ = 43,
 }
@@ -437,6 +443,11 @@ support.damage = support.damage or {
 support.skills = support.skills or {
     Perception = 31,
     DisarmTraps = 33,
+    -- The technology skills check by their event variables.
+    EnergyGuns = 0x0140,
+    EnergyBlades = 0x0141,
+    ShieldTech = 0x0142,
+    Hacking = 0x0143,
 }
 
 support.skillCheck = support.skillCheck or {
@@ -468,6 +479,8 @@ support.actorKillCheck = support.actorKillCheck or {
     MonsterId = 2,
     ActorIdOe = 3,
     UniqueNameId = 4,
+    -- OpenYAMM's own: every actor except the party's summons and other allies.
+    Hostile = 5,
 }
 
 support.skillJoinedMask = support.skillJoinedMask or {
@@ -506,6 +519,18 @@ local function ensureMetaScope(scopeName)
     meta.timers = meta.timers or {}
 
     return meta
+end
+
+-- Global hooks and on-load events add new events, so their id must not belong to another event: replacing would
+-- silently take it over (the 2026-10-24 audit, CNT-1: MAW's hooks took the Amethyst and Diamond crystal events). The
+-- same event registering again (its script runs once for the global program and again beside a map's) is fine.
+local function requireFreeGlobalEvent(eventId, title)
+    local meta = ensureMetaScope("global")
+
+    if evt.global[eventId] ~= nil and meta.title[eventId] ~= title then
+        error(string.format("global event %d (%s) is already registered as '%s'; use a free id",
+            eventId, tostring(title), tostring(meta.title[eventId])), 3)
+    end
 end
 
 local function removeArrayValue(values, value)
@@ -1069,6 +1094,7 @@ function support.appendGlobalOnLoadEvent(eventId)
 end
 
 function support.registerGlobalOnLoadEvent(eventId, title, handler, hint)
+    requireFreeGlobalEvent(eventId, title)
     support.registerGlobalEvent(eventId, title, handler, hint)
     support.appendGlobalOnLoadEvent(eventId)
 end
@@ -1105,6 +1131,7 @@ local function registerMapHook(hookName, eventId, title, handler)
 end
 
 local function registerGlobalHook(hookName, eventId, title, handler)
+    requireFreeGlobalEvent(eventId, title)
     support.replaceGlobalEvent(eventId, title, function()
         handler(evt.GetHookContext())
     end)
@@ -1318,6 +1345,10 @@ function support.playerKnowsSpell(playerIndex, spellId)
     return evt.PartyMemberKnowsSpell(playerIndex, spellId or 0)
 end
 
+function support.forgetPlayerSpell(playerIndex, spellId)
+    return evt.ForgetPartyMemberSpell(playerIndex, spellId or 0)
+end
+
 function support.removePlayerItem(playerIndex, itemId, quantity)
     return evt.RemovePartyMemberItem(playerIndex, itemId or 0, quantity or 1)
 end
@@ -1336,6 +1367,16 @@ end
 
 function support.canPlayerLearnSkill(playerIndex, skillName, requiredMastery)
     return evt.CanPlayerLearnSkill(playerIndex, skillName or "", requiredMastery or 1)
+end
+
+-- Returns the base level and the mastery (0 none .. 4 Grandmaster) of a skill.
+function support.getPlayerSkill(playerIndex, skillName)
+    return evt.GetPlayerSkill(playerIndex, skillName or "")
+end
+
+-- Level or mastery 0 removes the skill.
+function support.setPlayerSkill(playerIndex, skillName, level, mastery)
+    return evt.SetPlayerSkill(playerIndex, skillName or "", level or 0, mastery or 0)
 end
 
 local function normalizeClassId(classIdOrName)
@@ -1656,11 +1697,14 @@ PlayerItemCount = support.playerItemCount
 PlayerHasItem = support.playerHasItem
 GivePlayerItem = support.givePlayerItem
 PlayerKnowsSpell = support.playerKnowsSpell
+ForgetPlayerSpell = support.forgetPlayerSpell
 RemovePlayerItem = support.removePlayerItem
 ApplyLichTransformation = support.applyLichTransformation
 GetClassSkillCap = support.getClassSkillCap
 CanClassLearnSkill = support.canClassLearnSkill
 CanPlayerLearnSkill = support.canPlayerLearnSkill
+GetPlayerSkill = support.getPlayerSkill
+SetPlayerSkill = support.setPlayerSkill
 PlayerClassMatches = support.playerClassMatches
 ApplyPlayerRewards = support.applyPlayerRewards
 PromotePlayers = support.promotePlayers
@@ -1761,11 +1805,14 @@ setPlayerClass = support.setPlayerClass
 playerItemCount = support.playerItemCount
 playerHasItem = support.playerHasItem
 playerKnowsSpell = support.playerKnowsSpell
+forgetPlayerSpell = support.forgetPlayerSpell
 removePlayerItem = support.removePlayerItem
 applyLichTransformation = support.applyLichTransformation
 getClassSkillCap = support.getClassSkillCap
 canClassLearnSkill = support.canClassLearnSkill
 canPlayerLearnSkill = support.canPlayerLearnSkill
+getPlayerSkill = support.getPlayerSkill
+setPlayerSkill = support.setPlayerSkill
 playerClassMatches = support.playerClassMatches
 applyPlayerRewards = support.applyPlayerRewards
 promotePlayers = support.promotePlayers

@@ -7,6 +7,8 @@ namespace OpenYAMM::Game
 // Original yellow alert range: a hostile actor this close (edge distance) blocks Town Portal, Invisibility and
 // leaving an indoor map.
 constexpr float PartyYellowAlertDistance = 5120.0f;
+// Red alert: a hostile actor within melee range.
+constexpr float PartyRedAlertDistance = 307.2f;
 
 bool actorRaisesPartyYellowAlert(
     const GameplayRuntimeActorState &actor,
@@ -14,4 +16,5 @@ bool actorRaisesPartyYellowAlert(
     float partyY,
     float partyFootZ);
 bool partyHasYellowAlert(const IGameplayWorldRuntime &worldRuntime);
+bool partyHasRedAlert(const IGameplayWorldRuntime &worldRuntime);
 }

@@ -8,11 +8,14 @@
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
 #include "game/party/SpellIds.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/SpellRules.h"
 #include "game/party/Party.h"
 #include "game/items/PriceCalculator.h"
 #include "game/party/SkillData.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <random>
@@ -22,7 +25,6 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr int TavernFoodTarget = 14;
 constexpr int MinutesPerDay = 24 * 60;
 constexpr uint32_t LorettaPriceQuestBit = 1140;
 constexpr uint32_t LorettaPriceCompleteBit = 1141;
@@ -40,6 +42,9 @@ constexpr uint32_t Mm7MountNighonTrainingHouseId = 1576;
 constexpr uint32_t OeMm7PitTrainingHouseId = 94;
 constexpr uint32_t OeMm7MountNighonTrainingHouseId = 95;
 constexpr uint32_t PrisonTermsAwardId = 87;
+constexpr uint32_t DeyjaTavernHouseId = 243;
+constexpr uint32_t PitTavernHouseId = 246;
+constexpr uint32_t MountNighonTavernHouseId = 248;
 constexpr const char *pArcomageDeckRequiredMessage = "You must have your own card deck to play here.";
 constexpr const char *pLorettaPriceFixingLabel = "Price Fixing";
 constexpr const char *pLorettaPriceFixingMessage =
@@ -47,6 +52,12 @@ constexpr const char *pLorettaPriceFixingMessage =
     "But you better get all the other companies to sign up!";
 
 int effectiveReputationForWorld(const IGameplayWorldRuntime *pWorldRuntime);
+
+// A tavern fills the packs to the house's Val in days, the same value that scales its prices.
+int tavernFoodTarget(const HouseEntry &houseEntry)
+{
+    return static_cast<int>(houseEntry.priceMultiplier);
+}
 
 bool tavernDrinkMakesPartyDrunk()
 {
@@ -224,8 +235,14 @@ int templeDonationTriggerIndexFromGameMinutes(float currentGameMinutes)
     return dayOfMonthFromGameMinutes(currentGameMinutes) % 7;
 }
 
-void castTempleDonationSpell(IGameplayWorldRuntime &worldRuntime, uint32_t spellId, uint32_t spellLevel)
+void castTempleDonationSpell(
+    IGameplayWorldRuntime &worldRuntime,
+    Party &party,
+    uint32_t spellId,
+    uint32_t spellLevel)
 {
+    // The party's rules may hold the blessing as the temple's (MAW); the event cast still shows it.
+    party.rules().spells.castSourceBuff(party, spellId, BuffSource::Temple);
     worldRuntime.castEventSpell(
         spellId,
         spellLevel,
@@ -240,6 +257,7 @@ void castTempleDonationSpell(IGameplayWorldRuntime &worldRuntime, uint32_t spell
 
 void tryApplyTempleDonationBuffs(
     IGameplayWorldRuntime &worldRuntime,
+    Party &party,
     EventRuntimeState::DialogueRuntimeState &dialogueState,
     size_t activeMemberIndex)
 {
@@ -260,27 +278,27 @@ void tryApplyTempleDonationBuffs(
 
     if (reputation <= -5)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::Bless), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::Bless), spellLevel);
     }
 
     if (reputation <= -10)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::Preservation), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::Preservation), spellLevel);
     }
 
     if (reputation <= -15)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::ProtectionFromMagic), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::ProtectionFromMagic), spellLevel);
     }
 
     if (reputation <= -20)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::HourOfPower), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::HourOfPower), spellLevel);
     }
 
     if (reputation <= -25)
     {
-        castTempleDonationSpell(worldRuntime, spellIdValue(SpellId::DayOfProtection), spellLevel);
+        castTempleDonationSpell(worldRuntime, party, spellIdValue(SpellId::DayOfProtection), spellLevel);
     }
 }
 
@@ -349,17 +367,80 @@ std::optional<uint32_t> skillGuildMembershipType(const HouseEntry &houseEntry)
     return std::nullopt;
 }
 
+// MMerge StdQuestsFunctions.lua (DrawLearnTopics, DrawShopTopics): magic guild house types 5-15 need membership on
+// Enroth and Antagarich, except Antagarich's Light and Dark guilds, which its light/dark path gates instead. Jadame's
+// guilds are always open.
+std::optional<uint32_t> magicGuildMembershipType(const HouseEntry &houseEntry)
+{
+    struct Mapping
+    {
+        const char *pType;
+        uint32_t guildType;
+    };
+
+    constexpr std::array<Mapping, 11> mappings = {{
+        {"Fire Guild", 5},
+        {"Air Guild", 6},
+        {"Water Guild", 7},
+        {"Earth Guild", 8},
+        {"Spirit Guild", 9},
+        {"Mind Guild", 10},
+        {"Body Guild", 11},
+        {"Light Guild", 12},
+        {"Dark Guild", 13},
+        {"Elemental Guild", 14},
+        {"Self Guild", 15},
+    }};
+    constexpr uint32_t LightGuildType = 12;
+    constexpr uint32_t DarkGuildType = 13;
+    const bool antagarich = houseEntry.worldId == "mm7";
+    const bool enroth = houseEntry.worldId == "mm6";
+
+    if (!antagarich && !enroth)
+    {
+        return std::nullopt;
+    }
+
+    for (const Mapping &mapping : mappings)
+    {
+        if (houseEntry.type != mapping.pType)
+        {
+            continue;
+        }
+
+        if (antagarich && (mapping.guildType == LightGuildType || mapping.guildType == DarkGuildType))
+        {
+            return std::nullopt;
+        }
+
+        return mapping.guildType;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<uint32_t> requiredGuildMembershipType(const HouseEntry &houseEntry)
+{
+    const std::optional<uint32_t> skillGuildType = skillGuildMembershipType(houseEntry);
+    return skillGuildType.has_value() ? skillGuildType : magicGuildMembershipType(houseEntry);
+}
+
 bool isSkillGuildHouse(const HouseEntry &houseEntry)
 {
     return skillGuildMembershipType(houseEntry).has_value();
 }
 
-bool hasSkillGuildMembership(
+bool requiresGuildMembership(const HouseEntry &houseEntry)
+{
+    return requiredGuildMembershipType(houseEntry).has_value();
+}
+
+bool hasGuildMembership(
     const HouseEntry &houseEntry,
     const Party *pParty,
     const IGameplayWorldRuntime *pWorldRuntime)
 {
-    const std::optional<uint32_t> guildType = skillGuildMembershipType(houseEntry);
+    const std::optional<uint32_t> guildType = requiredGuildMembershipType(houseEntry);
 
     if (!guildType.has_value())
     {
@@ -390,6 +471,11 @@ const Character *selectedMember(const Party *pParty)
 
 const Character *partyMerchantMember(const Party *pParty)
 {
+    if (const Character *pRulesMerchant = pParty != nullptr ? PriceCalculator::rulesMerchantMember(*pParty) : nullptr)
+    {
+        return pRulesMerchant;
+    }
+
     const Character *pMerchant = pParty != nullptr ? pParty->bestPartyWideUtilitySkillMember("Merchant") : nullptr;
     return pMerchant != nullptr ? pMerchant : selectedMember(pParty);
 }
@@ -619,6 +705,19 @@ HouseEntry::TransportRoute effectiveTransportRoute(
     return route;
 }
 
+float innRestDurationMinutes(uint32_t houseId, float currentGameMinutes)
+{
+    // An inn room lasts until an hour after dawn; the Deyja, Pit and Mount Nighon inns add twelve hours.
+    float durationMinutes = minutesUntilNextDawn(currentGameMinutes) + 60.0f;
+
+    if (houseId == DeyjaTavernHouseId || houseId == PitTavernHouseId || houseId == MountNighonTavernHouseId)
+    {
+        durationMinutes += 12.0f * 60.0f;
+    }
+
+    return durationMinutes;
+}
+
 bool isHouseOpenAtGameMinute(const HouseEntry &houseEntry, float currentGameMinutes)
 {
     if (currentGameMinutes < 0.0f || houseEntry.openHour == houseEntry.closeHour)
@@ -767,9 +866,9 @@ bool activeMemberNeedsTempleHealing(const Party &party, const HouseEntry &houseE
     return pMember != nullptr && templeCanTreatActiveMemberNeed(houseEntry, *pMember);
 }
 
-int templeHealCost(const HouseEntry &houseEntry, const Character *pMember, float gameMinutes)
+int templeHealCost(const HouseEntry &houseEntry, const Character *pMember)
 {
-    return PriceCalculator::templeHealPrice(pMember, houseEntry, gameMinutes);
+    return PriceCalculator::templeHealPrice(pMember, houseEntry);
 }
 
 int templeDonationCost(const HouseEntry &houseEntry)
@@ -792,21 +891,22 @@ int skillLearningCost(
 
 int trainingCost(const HouseEntry &houseEntry, const Party &party, int effectiveReputation = 0)
 {
-    return PriceCalculator::trainingPrice(
-        party.activeMember(),
-        partyMerchantMember(&party),
-        houseEntry,
-        effectiveReputation);
+    // The rules may price the hall by the trainee (MAW's Insanity).
+    HouseEntry pricedHouse = houseEntry;
+    const Character *pTrainee = party.activeMember();
+
+    if (pTrainee != nullptr)
+    {
+        pricedHouse.priceMultiplier =
+            party.rules().skills.trainingPriceMultiplier(*pTrainee, houseEntry.priceMultiplier);
+    }
+
+    return PriceCalculator::trainingPrice(pTrainee, partyMerchantMember(&party), pricedHouse, effectiveReputation);
 }
 
-uint64_t experienceRequiredForNextLevel(uint32_t currentLevel)
+std::optional<uint64_t> trainingExperienceShortfall(const Party &party, const Character &member)
 {
-    return 1000ull * currentLevel * (currentLevel + 1) / 2;
-}
-
-std::optional<uint64_t> trainingExperienceShortfall(const Character &member)
-{
-    const uint64_t requiredExperience = experienceRequiredForNextLevel(member.level);
+    const uint64_t requiredExperience = party.rules().experience.experienceForNextLevel(member.level);
 
     if (member.experience >= requiredExperience)
     {
@@ -852,8 +952,11 @@ std::vector<std::string> collectLearnableSkills(
     }
 
     std::unordered_set<std::string> seenSkills;
+    std::vector<std::string> offeredSkills = houseEntry.offeredSkills;
+    const std::vector<std::string> extraSkills = pParty->rules().skills.extraHouseSkills(houseEntry.type);
+    offeredSkills.insert(offeredSkills.end(), extraSkills.begin(), extraSkills.end());
 
-    for (const std::string &offeredSkill : houseEntry.offeredSkills)
+    for (const std::string &offeredSkill : offeredSkills)
     {
         const std::string canonicalSkill = canonicalSkillName(offeredSkill);
 
@@ -891,8 +994,7 @@ std::string selectedMemberLine(const Party *pParty)
         return "Selected: no character";
     }
 
-    const std::string className = !pMember->className.empty() ? pMember->className : pMember->role;
-    return "Selected: " + pMember->name + " the " + displayClassName(className);
+    return "Selected: " + pMember->name + " the " + pParty->rules().classes.displayName(*pParty, *pMember);
 }
 
 std::string houseWelcomeLine(const HouseEntry &houseEntry)
@@ -966,6 +1068,20 @@ HouseServiceType resolveHouseServiceType(const HouseEntry &houseEntry)
     return HouseServiceType::None;
 }
 
+HouseSoundType houseEntrySoundType(
+    const HouseEntry &houseEntry,
+    const Party *pParty,
+    const IGameplayWorldRuntime *pWorldRuntime)
+{
+    // Only magic guilds greet a non-member with their members-only line (OpenEnroth UIHouses.cpp).
+    if (magicGuildMembershipType(houseEntry).has_value() && !hasGuildMembership(houseEntry, pParty, pWorldRuntime))
+    {
+        return HouseSoundType::MagicGuildMembersOnly;
+    }
+
+    return HouseSoundType::GeneralGreeting;
+}
+
 std::optional<uint32_t> deriveHouseSoundId(const HouseEntry &houseEntry, HouseSoundType soundType)
 {
     if (soundType == HouseSoundType::None)
@@ -996,9 +1112,9 @@ std::vector<std::string> buildHouseServiceInfoLines(
     std::vector<std::string> lines;
     const HouseServiceType serviceType = resolveHouseServiceType(houseEntry);
 
-    if (isSkillGuildHouse(houseEntry)
+    if (requiresGuildMembership(houseEntry)
         && menuId == DialogueMenuId::None
-        && !hasSkillGuildMembership(houseEntry, pParty, nullptr))
+        && !hasGuildMembership(houseEntry, pParty, nullptr))
     {
         lines.push_back("You must be a member of this guild to study here.");
         return lines;
@@ -1197,7 +1313,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             options.push_back(makeOption(
                 HouseActionId::TempleHeal,
-                "Heal " + std::to_string(templeHealCost(houseEntry, pMember, currentGameMinutes)) + " gold",
+                "Heal " + std::to_string(templeHealCost(houseEntry, pMember)) + " gold",
                 isHouseOpenNow,
                 closedReason
             ));
@@ -1239,9 +1355,10 @@ std::vector<HouseActionOption> buildHouseActionOptions(
             closedReason
         ));
 
+        const int foodTarget = tavernFoodTarget(houseEntry);
         HouseActionOption food = makeOption(
             HouseActionId::TavernBuyFood,
-            "Fill packs to " + std::to_string(TavernFoodTarget) + " days for "
+            "Fill packs to " + std::to_string(foodTarget) + " days for "
                 + std::to_string(PriceCalculator::tavernFoodPrice(
                     pMember,
                     houseEntry,
@@ -1250,7 +1367,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
             closedReason
         );
 
-        if (food.enabled && pParty != nullptr && pParty->food() >= TavernFoodTarget)
+        if (food.enabled && pParty != nullptr && pParty->food() >= foodTarget)
         {
             food.enabled = false;
             food.disabledReason = "Your packs are already full enough.";
@@ -1280,16 +1397,16 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         if (pParty != nullptr && pParty->activeMember() != nullptr)
         {
             const Character &member = *pParty->activeMember();
+            const int trainingCap = pParty->rules().experience.trainingLevelCap(houseEntry.trainingMaxLevel);
 
-            if (houseEntry.trainingMaxLevel > 0
-                && member.level >= static_cast<uint32_t>(houseEntry.trainingMaxLevel))
+            if (trainingCap > 0 && member.level >= static_cast<uint32_t>(trainingCap))
             {
                 label = "With your skills, you should be working here as a teacher\n\n"
                     "Sorry, but we are unable to train you.";
                 trainingAvailable = false;
                 trainingUnavailableReason = label;
             }
-            else if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(member))
+            else if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(*pParty, member))
             {
                 label = "You need "
                     + std::to_string(*experienceShortfall)
@@ -1374,8 +1491,8 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
     if (serviceType == HouseServiceType::Guild)
     {
-        if (isSkillGuildHouse(houseEntry)
-            && !hasSkillGuildMembership(houseEntry, pParty, pWorldRuntime))
+        if (requiresGuildMembership(houseEntry)
+            && !hasGuildMembership(houseEntry, pParty, pWorldRuntime))
         {
             HouseActionOption learnSkills =
                 makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason);
@@ -1512,6 +1629,13 @@ std::vector<HouseActionOption> buildHouseActionOptions(
             noRoute.disabledReason = "Sorry, come back another day";
             options.push_back(std::move(noRoute));
         }
+    }
+
+    // A house of no MM service type whose row lists offered skills (house_data's last column, unused by MM data)
+    // teaches their Novice for gold, like a guild without membership: Hesper's service houses.
+    if (serviceType == HouseServiceType::None && !houseEntry.offeredSkills.empty())
+    {
+        options.push_back(makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
     }
 
     return finalizeHouseActionOptions(houseEntry, serviceType, menuId, pParty, pWorldRuntime, currentGameMinutes, std::move(options));
@@ -1676,8 +1800,7 @@ HouseActionResult performHouseAction(
                 return result;
             }
 
-            const float gameMinutes = pWorldRuntime != nullptr ? pWorldRuntime->gameMinutes() : 0.0f;
-            const int price = templeHealCost(houseEntry, pMember, gameMinutes);
+            const int price = templeHealCost(houseEntry, pMember);
 
             if (party.gold() < price)
             {
@@ -1738,6 +1861,7 @@ HouseActionResult performHouseAction(
                     const size_t activeMemberIndex = party.activeMemberIndex();
                     tryApplyTempleDonationBuffs(
                         *pWorldRuntime,
+                        party,
                         pEventRuntimeState->dialogueState,
                         activeMemberIndex);
 
@@ -1777,7 +1901,9 @@ HouseActionResult performHouseAction(
 
         case HouseActionId::TavernBuyFood:
         {
-            if (party.food() >= TavernFoodTarget)
+            const int foodTarget = tavernFoodTarget(houseEntry);
+
+            if (party.food() >= foodTarget)
             {
                 result.messages.push_back("Your packs are already full enough.");
                 result.speechId = SpeechId::TavernPacksFull;
@@ -1798,8 +1924,8 @@ HouseActionResult performHouseAction(
             }
 
             party.addGold(-price);
-            party.addFood(TavernFoodTarget - party.food());
-            result.messages.push_back("The innkeeper fills your packs to " + std::to_string(TavernFoodTarget) + " days.");
+            party.addFood(foodTarget - party.food());
+            result.messages.push_back("The innkeeper fills your packs to " + std::to_string(foodTarget) + " days.");
             result.succeeded = true;
             result.soundType = HouseSoundType::TavernBuyFood;
             return result;
@@ -1973,8 +2099,9 @@ HouseActionResult performHouseAction(
                 party,
                 effectiveReputationForWorld(pWorldRuntime));
 
-            if (houseEntry.trainingMaxLevel > 0
-                && pMember->level >= static_cast<uint32_t>(houseEntry.trainingMaxLevel))
+            const int trainingCap = party.rules().experience.trainingLevelCap(houseEntry.trainingMaxLevel);
+
+            if (trainingCap > 0 && pMember->level >= static_cast<uint32_t>(trainingCap))
             {
                 result.messages.push_back(
                     "With your skills, you should be working here as a teacher\n\n"
@@ -1984,7 +2111,7 @@ HouseActionResult performHouseAction(
                 return result;
             }
 
-            if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(*pMember))
+            if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(party, *pMember))
             {
                 result.messages.push_back(
                     "You need "
@@ -2008,7 +2135,7 @@ HouseActionResult performHouseAction(
             uint32_t skillPointsEarned = 0;
 
             if (!party.trainActiveMember(
-                    houseEntry.trainingMaxLevel > 0 ? static_cast<uint32_t>(houseEntry.trainingMaxLevel) : 0,
+                    trainingCap > 0 ? static_cast<uint32_t>(trainingCap) : 0,
                     newLevel,
                     skillPointsEarned))
             {
@@ -2040,7 +2167,8 @@ HouseActionResult performHouseAction(
 
                 if (pWorldRuntime != nullptr)
                 {
-                    const float trainingMinutes = oeTrainingDurationMinutes(houseEntry, pWorldRuntime->gameMinutes());
+                    const float trainingMinutes = party.rules().experience.trainingDurationMinutes(
+                        oeTrainingDurationMinutes(houseEntry, pWorldRuntime->gameMinutes()));
                     pWorldRuntime->advanceGameMinutes(trainingMinutes);
                     party.advanceTimedStates(trainingMinutes * 60.0f);
                 }

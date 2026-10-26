@@ -29,7 +29,9 @@ struct IndoorFace
     std::vector<int16_t> textureVs;
     int16_t textureDeltaU = 0;
     int16_t textureDeltaV = 0;
-    uint16_t textureFrameTableIndex = 0;
+    // Face +0x3A: the engine's texture index. Animated faces store their texture frame table sequence here, which
+    // the original engines use instead of the texture name.
+    int16_t textureFrameTableIndex = -1;
     uint16_t textureFrameTableCog = 0;
     uint16_t cogNumber = 0;
     uint16_t cogTriggered = 0;

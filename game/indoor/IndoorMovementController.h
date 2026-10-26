@@ -135,6 +135,14 @@ struct IndoorCollisionTraceInfo
     bool suddenDrop = false;
 };
 
+// The original MM8 party movement (0x472e86) has no steepness test on indoor faces: an in-between (type 4) slope of
+// any angle answers a push with its normal and is climbed. Actors (0x46fb6d) keep the steep-floor slide.
+enum class IndoorSlopeRule : uint8_t
+{
+    Actor,
+    Party
+};
+
 class IndoorMovementController
 {
 public:
@@ -195,6 +203,7 @@ public:
         const IndoorMoveState &end,
         const IndoorBodyDimensions &body
     ) const;
+    void setSlopeRule(IndoorSlopeRule slopeRule);
     void setActorColliders(const std::vector<IndoorActorCollision> &actorColliders);
     void updateActorColliderPosition(size_t actorIndex, int16_t sectorId, float x, float y, float z);
     void setDecorationColliders(const std::vector<IndoorCylinderCollision> &decorationColliders);
@@ -456,6 +465,7 @@ private:
         bool ignoreActorCollisions,
         bool *pHitActor
     ) const;
+    IndoorSlopeRule m_slopeRule = IndoorSlopeRule::Actor;
     std::vector<IndoorActorCollision> m_actorColliders;
     std::vector<IndoorCylinderCollision> m_decorationColliders;
     std::vector<IndoorCylinderCollision> m_spriteObjectColliders;

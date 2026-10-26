@@ -1,4 +1,5 @@
 #include "game/render/RuntimeShader.h"
+#include "game/rules/GameRules.h"
 #include "game/render/CinematicGrading.h"
 #include "game/indoor/IndoorRenderer.h"
 #include "game/render/WaterGeometry.h"
@@ -540,6 +541,8 @@ std::optional<RuntimeActorBillboard> buildRuntimeActorBillboard(
     {
         billboard.heightScale = std::clamp(pActorAiState->spellEffects.shrinkDamageMultiplier, 0.25f, 1.0f);
     }
+
+    billboard.heightScale *= boundGameRules().monsters.actorDrawScale(actor.rulesetFacts, true);
     billboard.useStaticFrame = false;
     GameplayRuntimeActorState runtimeActorState = {};
     billboard.isFriendly =
@@ -1812,21 +1815,21 @@ std::string resolveFaceTextureName(
         return face.textureName;
     }
 
-    const uint32_t faceIndexCandidate =
-        faceIndex <= static_cast<size_t>(std::numeric_limits<uint32_t>::max())
-            ? static_cast<uint32_t>(faceIndex)
-            : 0;
-    const uint32_t cogCandidates[3] = {faceIndexCandidate, face.cogNumber, face.textureFrameTableCog};
+    // evt.SetTexture swaps one face named by its index (MMerge's MM6 maps), or every face of a cog number, as MM7's
+    // and MM8's SetTexture (the face extra's sCogNumber); cog 0 names no face.
+    const uint32_t keys[2] = {
+        faceIndex < 0x80000000u ? EventRuntime::indoorFaceTextureOverrideKey(static_cast<uint32_t>(faceIndex)) : 0,
+        face.cogNumber};
 
-    for (uint32_t cogCandidate : cogCandidates)
+    for (uint32_t key : keys)
     {
-        if (cogCandidate == 0)
+        if (key == 0)
         {
             continue;
         }
 
         const std::unordered_map<uint32_t, std::string>::const_iterator iterator =
-            eventRuntimeState->textureOverrides.find(cogCandidate);
+            eventRuntimeState->textureOverrides.find(key);
 
         if (iterator != eventRuntimeState->textureOverrides.end() && !iterator->second.empty())
         {
@@ -3017,6 +3020,10 @@ bool IndoorRenderer::initialize(
             loadProgram("vs_model_skinned_instanced", "fs_model_emissive"),
             loadProgram("vs_model_instanced", "fs_model_emissive")};
     });
+    m_modelRenderer.setShieldShellProgramLoader([]()
+    {
+        return loadProgram("vs_model_shield", "fs_model_shield");
+    });
     m_textureSamplerHandle = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
     m_hudTintUniformHandle = bgfx::createUniform("u_menuTint", bgfx::UniformType::Vec4);
     m_indoorLightPositionsUniformHandle =
@@ -3790,8 +3797,10 @@ void IndoorRenderer::render(
     const float deltaMilliseconds = deltaSeconds * 1000.0f;
     m_elapsedTime += std::max(deltaSeconds, 0.0f);
 
-    if (allowWorldSimulation && m_pSceneRuntime != nullptr && !gameSession.turnBasedCombatRuntime().active())
+    if (allowWorldSimulation && m_pSceneRuntime != nullptr)
     {
+        // Turn-based mode freezes game time, but doors and lifts keep moving.
+        const bool turnBasedActive = gameSession.turnBasedCombatRuntime().active();
         const bool collectDiagnostics = m_logIndoorPerformanceDiagnostics;
         const uint64_t mechanismBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
         const uint64_t simulationBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
@@ -3800,7 +3809,9 @@ void IndoorRenderer::render(
             pPreviousEventRuntimeState != nullptr
                 ? pPreviousEventRuntimeState->mechanisms
                 : std::unordered_map<uint32_t, RuntimeMechanismState>();
-        const bool simulationAdvanced = m_pSceneRuntime->advanceSimulation(deltaMilliseconds);
+        const bool simulationAdvanced = turnBasedActive
+            ? m_pSceneRuntime->advanceMechanisms(deltaMilliseconds)
+            : m_pSceneRuntime->advanceSimulation(deltaMilliseconds);
 
         if (collectDiagnostics)
         {
@@ -3878,6 +3889,16 @@ void IndoorRenderer::render(
                 ++m_indoorPerformanceDiagnostics.movingUpdateFailures;
             }
         }
+    }
+
+    // A surface change an event made outside the simulation (evt.SetTexture or a face hidden from a click or the
+    // console) shows at once, not when a timer or a moving door next rebuilds the batches.
+    if (bgfx::getRendererType() != bgfx::RendererType::Noop
+        && m_indoorTextureSet
+        && m_texturedBatchGeometryRevision != currentTexturedBatchGeometryRevision()
+        && !rebuildDerivedGeometryResources())
+    {
+        std::cerr << "IndoorRenderer: failed to rebuild after a surface change\n";
     }
 
     if (bgfx::getRendererType() != bgfx::RendererType::Noop
@@ -6022,7 +6043,7 @@ std::optional<size_t> IndoorRenderer::gameplayHoveredActorIndex() const
     return m_cachedInspectHit.index;
 }
 
-std::optional<size_t> IndoorRenderer::gameplayClosestVisibleHostileActorIndex() const
+std::vector<size_t> IndoorRenderer::gameplayVisibleHostileActorIndices() const
 {
     if (!m_isInitialized
         || !m_isRenderable
@@ -6030,7 +6051,7 @@ std::optional<size_t> IndoorRenderer::gameplayClosestVisibleHostileActorIndex() 
         || m_lastRenderWidth <= 0
         || m_lastRenderHeight <= 0)
     {
-        return std::nullopt;
+        return {};
     }
 
     const float aspectRatio = float(m_lastRenderWidth) / float(m_lastRenderHeight);
@@ -6064,8 +6085,7 @@ std::optional<size_t> IndoorRenderer::gameplayClosestVisibleHostileActorIndex() 
     );
     bx::mtxMul(viewProjectionMatrix, viewMatrix, projectionMatrix);
 
-    std::optional<size_t> nearestActorIndex;
-    float nearestDistanceSquared = std::numeric_limits<float>::max();
+    std::vector<std::pair<float, size_t>> visible;
     IGameplayWorldRuntime &worldRuntime = m_pSceneRuntime->worldRuntime();
 
     for (size_t actorIndex = 0; actorIndex < worldRuntime.mapActorCount(); ++actorIndex)
@@ -6075,8 +6095,7 @@ std::optional<size_t> IndoorRenderer::gameplayClosestVisibleHostileActorIndex() 
         if (!worldRuntime.actorRuntimeState(actorIndex, actorState)
             || actorState.isDead
             || actorState.isInvisible
-            || !actorState.hostileToParty
-            || !actorState.hasDetectedParty)
+            || !actorState.hostileToParty)
         {
             continue;
         }
@@ -6116,14 +6135,19 @@ std::optional<size_t> IndoorRenderer::gameplayClosestVisibleHostileActorIndex() 
         const float deltaZ = actorState.preciseZ - eye.z;
         const float distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
 
-        if (distanceSquared < nearestDistanceSquared)
-        {
-            nearestDistanceSquared = distanceSquared;
-            nearestActorIndex = actorIndex;
-        }
+        visible.emplace_back(distanceSquared, actorIndex);
     }
 
-    return nearestActorIndex;
+    std::sort(visible.begin(), visible.end());
+    std::vector<size_t> actorIndices;
+    actorIndices.reserve(visible.size());
+
+    for (const auto &[distanceSquared, actorIndex] : visible)
+    {
+        actorIndices.push_back(actorIndex);
+    }
+
+    return actorIndices;
 }
 
 std::optional<bx::Vec3> IndoorRenderer::gameplayActorTargetPoint(size_t actorIndex) const
@@ -6588,6 +6612,7 @@ void IndoorRenderer::shutdown()
     m_spriteLoadCache = {};
     m_runtimeBillboardLoadWarningKeys.clear();
     m_indoorTextureSet.reset();
+    m_missingSwapTextureNames.clear();
     m_map.reset();
     m_monsterTable.reset();
     m_objectTable.reset();
@@ -10488,6 +10513,50 @@ bool IndoorRenderer::submitTexturedBatch(const TexturedBatch &batch, uint16_t vi
     return true;
 }
 
+void IndoorRenderer::ensureIndoorSwapTexture(const std::string &textureName)
+{
+    if (!m_indoorTextureSet || textureName.empty() || m_pAssetFileSystem == nullptr)
+    {
+        return;
+    }
+
+    const std::string normalizedTextureName = toLowerCopy(textureName);
+
+    for (const OutdoorBitmapTexture &texture : m_indoorTextureSet->textures)
+    {
+        if (toLowerCopy(texture.textureName) == normalizedTextureName)
+        {
+            return;
+        }
+    }
+
+    if (m_missingSwapTextureNames.contains(normalizedTextureName))
+    {
+        return;
+    }
+
+    std::optional<OutdoorBitmapTexture> texture;
+
+    try
+    {
+        texture = loadSurfaceTexture(*m_pAssetFileSystem, normalizedTextureName);
+    }
+    catch (const std::exception &exception)
+    {
+        std::cerr << "IndoorRenderer: swapped-in texture " << normalizedTextureName << ": " << exception.what()
+                  << '\n';
+    }
+
+    if (!texture)
+    {
+        std::cerr << "IndoorRenderer: swapped-in texture " << normalizedTextureName << " not found\n";
+        m_missingSwapTextureNames.insert(normalizedTextureName);
+        return;
+    }
+
+    m_indoorTextureSet->textures.push_back(std::move(*texture));
+}
+
 bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanoseconds)
 {
     m_waterGeometryDirty = true;
@@ -10531,6 +10600,16 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
             eventRuntimeState ? &eventRuntimeState.value() : nullptr,
             m_indoorDecorationBillboardSet ? &m_indoorDecorationBillboardSet.value() : nullptr,
             true);
+
+    // A texture an event swaps onto faces (evt.SetTexture) that no face of the map uses is loaded now, before the
+    // pointers below into the texture set are taken.
+    if (eventRuntimeState)
+    {
+        for (const auto &[cogNumber, overrideTextureName] : eventRuntimeState->textureOverrides)
+        {
+            ensureIndoorSwapTexture(overrideTextureName);
+        }
+    }
 
     std::unordered_map<std::string, const OutdoorBitmapTexture *> texturesByName;
     for (const OutdoorBitmapTexture &texture : m_indoorTextureSet->textures)

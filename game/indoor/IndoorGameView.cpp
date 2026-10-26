@@ -899,11 +899,6 @@ bool isResidentSelectionMode(const EventDialogContent &dialog)
             });
 }
 
-uint32_t currentDialogueHostHouseId(const EventRuntimeState *pEventRuntimeState)
-{
-    return pEventRuntimeState != nullptr ? pEventRuntimeState->dialogueState.hostHouseId : 0;
-}
-
 bool indoorActorExplicitlyHostile(const MapDeltaActor &actor)
 {
     return (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Hostile)) != 0
@@ -1212,7 +1207,7 @@ void IndoorGameView::render(int width, int height, const GameplayInputFrame &inp
     }
 
     updateFootstepAudio(deltaSeconds);
-    updateDialogueVideoPlayback(deltaSeconds);
+    m_gameSession.gameplayScreenRuntime().updateHouseDialoguePresentation(deltaSeconds);
 
     presentPendingEventFeedback();
 
@@ -1275,6 +1270,23 @@ void IndoorGameView::updateCombatFeedback(float deltaSeconds)
                             ? makeCombatHudColor(255, 225, 106, 255)
                             : makeCombatHudColor(238, 235, 216, 255),
                         .fontScale = combatDamageFontScale(event.damage),
+                    });
+            }
+            else if (event.shieldDamage > 0 && m_settings.combatText)
+            {
+                // A hit a raised energy shield took whole: its number in shield blue, apart from body damage.
+                m_combatFloatingTexts.push_back(
+                    CombatFloatingText{
+                        .actorIndex = event.actorIndex,
+                        .amount = event.shieldDamage,
+                        .text = std::to_string(event.shieldDamage),
+                        .x = event.x,
+                        .y = event.y,
+                        .z = GameplayUiSkin::combatDamageTextOriginZ(event.z, event.height),
+                        .remainingSeconds = 0.6f,
+                        .durationSeconds = 0.6f,
+                        .colorAbgr = makeCombatHudColor(150, 220, 255, 255),
+                        .fontScale = combatDamageFontScale(event.shieldDamage),
                     });
             }
         }
@@ -1381,6 +1393,7 @@ void IndoorGameView::shutdown()
     m_pGameAudioSystem = nullptr;
     m_gameSession.gameplayScreenRuntime().clearSceneAdapter(this);
     m_gameSession.gameplayScreenRuntime().bindAudioSystem(nullptr);
+    m_gameSession.gameplayScreenRuntime().resetHouseEntryAudio();
     m_map.reset();
     GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
     screenRuntime.clearHudRenderBackend();
@@ -1673,49 +1686,6 @@ void IndoorGameView::setStatusBarEvent(
     GameplayUiController::StatusBarEventPriority priority)
 {
     m_gameSession.gameplayScreenRuntime().setStatusBarEvent(text, durationSeconds, priority);
-}
-
-void IndoorGameView::updateDialogueVideoPlayback(float deltaSeconds)
-{
-    const EventRuntimeState *pEventRuntimeState =
-        worldRuntime() != nullptr ? worldRuntime()->eventRuntimeState() : nullptr;
-    const uint32_t hostHouseId = currentDialogueHostHouseId(pEventRuntimeState);
-    const HouseEntry *pHostHouseEntry =
-        hostHouseId != 0 ? m_gameSession.data().houseTable().get(hostHouseId) : nullptr;
-    GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
-    const EventDialogContent &activeDialog = screenRuntime.activeEventDialog();
-
-    if (!activeDialog.isActive
-        || screenRuntime.currentHudScreenState() != GameplayHudScreenState::Dialogue
-        || !activeEventDialogAllowsHouseVideoPlayback(activeDialog))
-    {
-        screenRuntime.stopHouseVideoPlayback();
-        return;
-    }
-
-    if (!activeDialog.videoName.empty())
-    {
-        if (activeDialog.videoDirectory.empty())
-        {
-            screenRuntime.playHouseVideo(activeDialog.videoName);
-        }
-        else
-        {
-            screenRuntime.playHouseVideo(activeDialog.videoName, activeDialog.videoDirectory);
-        }
-
-        screenRuntime.updateHouseVideoPlayback(deltaSeconds);
-        return;
-    }
-
-    if (pHostHouseEntry == nullptr || pHostHouseEntry->videoName.empty())
-    {
-        screenRuntime.stopHouseVideoPlayback();
-        return;
-    }
-
-    screenRuntime.playHouseVideo(pHostHouseEntry->videoName);
-    screenRuntime.updateHouseVideoPlayback(deltaSeconds);
 }
 
 void IndoorGameView::presentPendingEventFeedback()
@@ -2123,6 +2093,7 @@ void IndoorGameView::updateActorInspectOverlayState(int width, int height, const
 
     actorInspectOverlay.active = true;
     actorInspectOverlay.runtimeActorIndex = pick->runtimeActorIndex;
+    actorInspectOverlay.rawNumbers = input.altHeld();
     actorInspectOverlay.sourceX = pick->sourceX;
     actorInspectOverlay.sourceY = pick->sourceY;
     actorInspectOverlay.sourceWidth = pick->sourceWidth;
@@ -2193,7 +2164,15 @@ void IndoorGameView::updateActorInspectOverlayState(int width, int height, const
 
         if (pParty != nullptr && pMember != nullptr && pStats != nullptr)
         {
-            const SpeechId speechId = GameMechanics::resolveIdentifyMonsterSpeech(*pMember, pStats->level);
+            GameplayRuntimeActorState actorState = {};
+            const int monsterLevel = pWorldRuntime->actorRuntimeState(pick->runtimeActorIndex, actorState)
+                    && actorState.rulesetFacts.level > 0
+                ? actorState.rulesetFacts.level
+                : pStats->level;
+            const SpeechId speechId = GameMechanics::resolveIdentifyMonsterSpeech(
+                pParty->rules().skills.identifyMonsterReveal(*pParty, monsterLevel),
+                *pMember,
+                monsterLevel);
 
             if (speechId != SpeechId::None)
             {

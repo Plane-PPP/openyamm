@@ -2,10 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 namespace OpenYAMM::Game
 {
-bool actorRaisesPartyYellowAlert(
+namespace
+{
+// The edge distance of a living, visible hostile actor that has seen the party; none for the others.
+std::optional<float> alertingActorDistance(
     const GameplayRuntimeActorState &actor,
     float partyX,
     float partyY,
@@ -13,18 +17,17 @@ bool actorRaisesPartyYellowAlert(
 {
     if (actor.isDead || actor.isInvisible || !actor.hostileToParty || !actor.hasDetectedParty)
     {
-        return false;
+        return std::nullopt;
     }
 
     const float deltaX = actor.preciseX - partyX;
     const float deltaY = actor.preciseY - partyY;
     const float deltaZ = actor.preciseZ - partyFootZ;
     const float centerDistance = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-    const float edgeDistance = std::max(0.0f, centerDistance - static_cast<float>(actor.radius));
-    return edgeDistance < PartyYellowAlertDistance;
+    return std::max(0.0f, centerDistance - static_cast<float>(actor.radius));
 }
 
-bool partyHasYellowAlert(const IGameplayWorldRuntime &worldRuntime)
+bool partyHasAlertWithin(const IGameplayWorldRuntime &worldRuntime, float distance)
 {
     const float partyX = worldRuntime.partyX();
     const float partyY = worldRuntime.partyY();
@@ -34,13 +37,38 @@ bool partyHasYellowAlert(const IGameplayWorldRuntime &worldRuntime)
     {
         GameplayRuntimeActorState actor = {};
 
-        if (worldRuntime.actorRuntimeState(actorIndex, actor)
-            && actorRaisesPartyYellowAlert(actor, partyX, partyY, partyFootZ))
+        if (worldRuntime.actorRuntimeState(actorIndex, actor))
         {
-            return true;
+            const std::optional<float> edgeDistance = alertingActorDistance(actor, partyX, partyY, partyFootZ);
+
+            if (edgeDistance && *edgeDistance < distance)
+            {
+                return true;
+            }
         }
     }
 
     return false;
+}
+}
+
+bool actorRaisesPartyYellowAlert(
+    const GameplayRuntimeActorState &actor,
+    float partyX,
+    float partyY,
+    float partyFootZ)
+{
+    const std::optional<float> edgeDistance = alertingActorDistance(actor, partyX, partyY, partyFootZ);
+    return edgeDistance && *edgeDistance < PartyYellowAlertDistance;
+}
+
+bool partyHasYellowAlert(const IGameplayWorldRuntime &worldRuntime)
+{
+    return partyHasAlertWithin(worldRuntime, PartyYellowAlertDistance);
+}
+
+bool partyHasRedAlert(const IGameplayWorldRuntime &worldRuntime)
+{
+    return partyHasAlertWithin(worldRuntime, PartyRedAlertDistance);
 }
 }

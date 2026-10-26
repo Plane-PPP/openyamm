@@ -12,6 +12,7 @@
 
 namespace OpenYAMM::Game
 {
+class CombatRules;
 class GameplayScreenRuntime;
 class IGameplayWorldRuntime;
 
@@ -72,12 +73,17 @@ public:
         const std::string &targetName,
         const CharacterAttackResult &attack,
         bool killed,
-        std::optional<int> appliedDamage = std::nullopt);
+        std::optional<int> appliedDamage = std::nullopt,
+        const CombatRules *pRules = nullptr);
 
+    // With rules, an area spell's `monstersHit` and `totalDamage` sum what its explosion did this frame.
     static std::string formatPartyProjectileActorImpactStatusText(
         const std::string &sourceName,
         const std::string &targetName,
-        const CombatEvent &event);
+        const CombatEvent &event,
+        const CombatRules *pRules = nullptr,
+        int monstersHit = 1,
+        int totalDamage = 0);
 
     static void handlePartyAttackPresentation(
         GameplayScreenRuntime *pRuntime,

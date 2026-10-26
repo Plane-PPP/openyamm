@@ -1,6 +1,9 @@
 #include "game/ui/EnemyHealthBarRenderer.h"
 
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/party/Party.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/MonsterRules.h"
 #include "game/ui/GameplayUiSkin.h"
 
 #include <array>
@@ -142,6 +145,25 @@ void EnemyHealthBarRenderer::render(const GameplayScreenRuntime &context, const 
             quad(diamond->textureHandle, -3.5f * scale, -barHeight * 0.5f - 3.5f * scale, 7 * scale, 7 * scale);
         }
     }
+    // The rules' badges (MAW: a boss's skull left of the bar, its affix right of it).
+    const std::vector<std::string> badges = context.partyReadOnly() != nullptr
+        ? context.partyReadOnly()->rules().monsters.actorBadges(actor.rulesetFacts)
+        : std::vector<std::string>{};
+    const float badgeSize = 15.0f * scale;
+    const float badgeGap = 1.0f * scale;
+
+    for (size_t badge = 0; badge < badges.size(); ++badge)
+    {
+        const std::optional<GameplayHudTextureHandle> icon = ui.ensureHudTextureLoaded(badges[badge]);
+
+        if (icon)
+        {
+            const float x = badge == 0 ? left - badgeGap - badgeSize
+                                       : width * 0.5f + badgeGap + float(badge - 1) * (badgeSize + badgeGap);
+            quad(icon->textureHandle, x, -badgeSize * 0.5f, badgeSize, badgeSize);
+        }
+    }
+
     const std::string &valuesMode = context.settingsSnapshot().enemyHealthBarValues;
     const bool showValues = valuesMode == "all" || (valuesMode == "target" && focused);
     if (focused || showValues)

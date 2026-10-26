@@ -1,6 +1,7 @@
 #include "game/gameplay/ActorBehaviorCatalog.h"
 
 #include "engine/AssetFileSystem.h"
+#include "game/tables/MonsterModifiers.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -20,7 +21,59 @@ constexpr float DegreesToRadians = std::numbers::pi_v<float> / 180.0f;
 constexpr float DefaultFireToleranceDegrees = 6.0f;
 constexpr float MaximumTacticDistance = 10240.0f;
 
-// One `tactics` entry: traverse_degrees_per_second, fire_within_degrees, ranged_band: [min, max] and post: {leash}.
+// A turret's idle `scan`: {half_width_degrees, degrees_per_second, pause_seconds: [min, max], pitch_degrees,
+// hold_seconds}; half_width_degrees and degrees_per_second are required.
+bool parseTurretScan(const YAML::Node &node, TurretScanSettings &scan, std::string &error)
+{
+    if (!node.IsMap() || !node["half_width_degrees"] || !node["degrees_per_second"])
+    {
+        error = "tactic scan needs half_width_degrees and degrees_per_second";
+        return false;
+    }
+
+    for (const auto &option : node)
+    {
+        const std::string key = option.first.as<std::string>();
+
+        if (key != "half_width_degrees" && key != "degrees_per_second" && key != "pause_seconds"
+            && key != "pitch_degrees" && key != "hold_seconds")
+        {
+            error = "unknown tactic scan option " + key;
+            return false;
+        }
+    }
+
+    const float halfWidth = node["half_width_degrees"].as<float>();
+    const float rate = node["degrees_per_second"].as<float>();
+    const std::vector<float> pause = node["pause_seconds"]
+        ? node["pause_seconds"].as<std::vector<float>>() : std::vector<float>{0.8f, 2.4f};
+    const float pitch = node["pitch_degrees"].as<float>(0.0f);
+    const float hold = node["hold_seconds"].as<float>(3.0f);
+    const auto finiteIn = [](float value, float low, float high)
+    {
+        return std::isfinite(value) && value >= low && value <= high;
+    };
+
+    if (!finiteIn(halfWidth, 0.0f, 180.0f) || !finiteIn(rate, 1.0f, 360.0f) || pause.size() != 2
+        || !finiteIn(pause[0], 0.0f, 60.0f) || !finiteIn(pause[1], pause[0], 60.0f) || !finiteIn(pitch, 0.0f, 45.0f)
+        || !finiteIn(hold, 0.0f, 60.0f))
+    {
+        error = "tactic scan: half_width_degrees 0-180, degrees_per_second 1-360, pause_seconds [min, max] 0-60, "
+            "pitch_degrees 0-45, hold_seconds 0-60";
+        return false;
+    }
+
+    scan.halfWidthRadians = halfWidth * DegreesToRadians;
+    scan.radiansPerSecond = rate * DegreesToRadians;
+    scan.pauseMinSeconds = pause[0];
+    scan.pauseMaxSeconds = pause[1];
+    scan.pitchRadians = pitch * DegreesToRadians;
+    scan.holdSeconds = hold;
+    return true;
+}
+
+// One `tactics` entry: traverse_degrees_per_second, fire_within_degrees, lead_seconds, scan: {...},
+// ranged_band: [min, max], post: {leash} and shield_break: {react: fall_back, max_seconds}.
 bool parseTactics(const YAML::Node &node, ActorTacticsFacts &tactics, std::string &error)
 {
     if (!node.IsMap())
@@ -34,7 +87,7 @@ bool parseTactics(const YAML::Node &node, ActorTacticsFacts &tactics, std::strin
         const std::string key = option.first.as<std::string>();
 
         if (key != "traverse_degrees_per_second" && key != "fire_within_degrees" && key != "ranged_band"
-            && key != "post")
+            && key != "post" && key != "scan" && key != "lead_seconds" && key != "shield_break")
         {
             error = "unknown tactic option " + key;
             return false;
@@ -60,10 +113,26 @@ bool parseTactics(const YAML::Node &node, ActorTacticsFacts &tactics, std::strin
         tactics.traverseRadiansPerSecond = degrees * DegreesToRadians;
         tactics.fireToleranceRadians = tolerance * DegreesToRadians;
     }
-    else if (node["fire_within_degrees"])
+    else if (node["fire_within_degrees"] || node["scan"] || node["lead_seconds"])
     {
-        error = "fire_within_degrees requires traverse_degrees_per_second";
+        error = "fire_within_degrees, scan and lead_seconds require traverse_degrees_per_second";
         return false;
+    }
+
+    if (node["scan"] && !parseTurretScan(node["scan"], tactics.scan, error))
+    {
+        return false;
+    }
+
+    if (node["lead_seconds"])
+    {
+        tactics.leadSeconds = node["lead_seconds"].as<float>();
+
+        if (!finiteIn(tactics.leadSeconds, 0.0f, 2.0f))
+        {
+            error = "tactic lead_seconds must be 0-2";
+            return false;
+        }
     }
 
     if (node["ranged_band"])
@@ -95,6 +164,27 @@ bool parseTactics(const YAML::Node &node, ActorTacticsFacts &tactics, std::strin
         if (!finiteIn(tactics.postLeashRadius, 0.0f, MaximumTacticDistance))
         {
             error = "post leash must be 0-10240";
+            return false;
+        }
+    }
+
+    if (const YAML::Node shieldBreak = node["shield_break"])
+    {
+        const std::string react = shieldBreak.IsMap() ? shieldBreak["react"].as<std::string>("") : "";
+
+        if (!shieldBreak.IsMap() || react != "fall_back"
+            || (shieldBreak.size() > 1 && (shieldBreak.size() != 2 || !shieldBreak["max_seconds"])))
+        {
+            error = "shield_break takes react: fall_back and max_seconds";
+            return false;
+        }
+
+        tactics.shieldBreakReaction = ActorShieldBreakReaction::FallBack;
+        tactics.shieldBreakSeconds = shieldBreak["max_seconds"].as<float>(8.0f);
+
+        if (!finiteIn(tactics.shieldBreakSeconds, 0.1f, 120.0f))
+        {
+            error = "shield_break max_seconds must be 0.1-120";
             return false;
         }
     }
@@ -318,6 +408,31 @@ bool ActorBehaviorCatalog::hasMonsterDefaults() const
 void ActorBehaviorCatalog::setMonsterTactics(int16_t monsterId, const ActorTacticsFacts &tactics)
 {
     m_monsterTactics[monsterId] = tactics;
+}
+
+bool ActorBehaviorCatalog::applyMonsterModifiers(const MonsterModifierTable &modifiers, std::string &error)
+{
+    for (const auto &[monsterId, set] : modifiers.sets())
+    {
+        if (!set.kitesParty)
+        {
+            continue;
+        }
+
+        ActorTacticsFacts &tactics = m_monsterTactics[monsterId];
+
+        if (tactics.keepsRangedBand())
+        {
+            error = "monster " + std::to_string(monsterId)
+                + " has both the kites_party modifier and a tactics ranged_band; keep one";
+            return false;
+        }
+
+        tactics.rangedMinDistance = set.kitesParty->minDistance;
+        tactics.rangedMaxDistance = set.kitesParty->maxDistance;
+    }
+
+    return true;
 }
 
 const ActorTacticsFacts *ActorBehaviorCatalog::tacticsForMonster(int16_t monsterId) const

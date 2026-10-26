@@ -2,7 +2,10 @@
 
 #include "game/gameplay/CharacterAttackTuning.h"
 #include "game/party/Party.h"
+#include "game/rules/ExperienceRules.h"
+#include "game/tables/MonsterShields.h"
 
+#include <array>
 #include <optional>
 #include <random>
 #include <string>
@@ -75,6 +78,8 @@ enum class CombatDamageType
     Energy,
     Irresistible,
 };
+
+constexpr size_t CombatDamageTypeCount = size_t(CombatDamageType::Irresistible) + 1;
 
 struct ElementalDamageBonuses
 {
@@ -157,6 +162,12 @@ struct CharacterAttackProfile
     AxeAttackObservation axe;
     float meleeRecoverySeconds = 1.0f;
     float rangedRecoverySeconds = 1.0f;
+    // What the attacks are to an energy shield: EnergyBlade weapons and Energy Guns items are Kreegan energy.
+    ShieldAttackTier meleeShieldTier = ShieldAttackTier::Physical;
+    ShieldAttackTier rangedShieldTier = ShieldAttackTier::Physical;
+    // Energy Blades Grandmaster with an energy blade: melee hits may overload a raised shield
+    // (MonsterShieldTable::overloadRules).
+    bool meleeShieldOverload = false;
 };
 
 struct CharacterAttackResult
@@ -180,9 +191,28 @@ struct CharacterAttackResult
     int spellId = 0;
     CombatDamageType damageType = CombatDamageType::Physical;
     AxeAttackObservation axe;
+    ShieldAttackTier shieldTier = ShieldAttackTier::Physical;
+    // A melee hit that may overload a raised shield (CharacterAttackProfile::meleeShieldOverload).
+    bool shieldOverload = false;
     bool criticalDamage = false;
+    // Elemental damage the rules add to the blow, each part resisted by its own element (MAW's Shaman Fire).
+    ElementalDamageBonuses rulesElementalDamage;
+    // The rules' elemental damage replaces the item table's weapon enchantments (MAW's level-scaled enchantments).
+    bool rulesWeaponElements = false;
+    // Damage the rules add after the monster's other stages, by damage type, each resisted by its own (MAW's artifact
+    // on-hit damage).
+    std::array<int, CombatDamageTypeCount> rulesLateDamage = {};
+    // The rules fire this arrow burning: the fire-arrow object, resisted by the weaker of physical and fire (MAW's
+    // Grandmaster bow).
+    bool fireArrow = false;
+    // A Carnage bow's arrow: fire, it cannot miss, and it explodes like a fireball where it strikes.
+    bool explosiveArrow = false;
     bool stunTarget = false;
+    // Whether the weapon's item effects stunned, before the weapon skill's own roll (rules that replace it keep this).
+    bool itemStunTarget = false;
     bool paralyzeTarget = false;
+    // How long the paralysis lasts when the rules set it (MAW's Retaliation); otherwise the skill level in minutes.
+    std::optional<float> paralyzeSeconds;
     bool fearTarget = false;
     bool enrageTarget = false;
     bool halveTargetArmorClass = false;
@@ -240,12 +270,16 @@ struct IdentifyMonsterReveal
     }
 };
 
+// Recovery ticks (128 per second of the original real-time pace) as real-time recovery seconds.
+float ticksToRecoverySeconds(int ticks);
+
 class GameMechanics
 {
 public:
     static void bindClassMultiplierTable(const ClassMultiplierTable *pClassMultiplierTable);
-    static uint64_t experienceRequiredForNextLevel(uint32_t currentLevel);
-    static uint32_t maximumTrainableLevelFromExperience(const Character &character);
+    static uint32_t maximumTrainableLevelFromExperience(
+        const Character &character,
+        const ExperienceRules &experienceRules = standardExperienceRules());
     static int calculateBaseCharacterMaxHealth(
         const Character &character,
         const ClassMultiplierTable *pClassMultiplierTable = nullptr);
@@ -262,7 +296,9 @@ public:
         Character &character,
         bool restoreCurrentToMaximum = false,
         const ClassMultiplierTable *pClassMultiplierTable = nullptr);
-    static std::string buildExperienceInspectSupplement(const Character &character);
+    static std::string buildExperienceInspectSupplement(
+        const Character &character,
+        const ExperienceRules &experienceRules = standardExperienceRules());
     static int resolveCharacterItemSkillBonus(const Character &character, const std::string &skillName);
     static int resolveCharacterDisplayedBasePrimaryStat(
         const Character &character,
@@ -276,12 +312,14 @@ public:
         const ItemTable *pItemTable,
         const StandardItemEnchantTable *pStandardItemEnchantTable = nullptr,
         const SpecialItemEnchantTable *pSpecialItemEnchantTable = nullptr);
+    // The training fields use `experienceRules`: the party's rules where the sheet is shown.
     static CharacterSheetSummary buildCharacterSheetSummary(
         const Character &character,
         const ItemTable *pItemTable,
         const StandardItemEnchantTable *pStandardItemEnchantTable = nullptr,
         const SpecialItemEnchantTable *pSpecialItemEnchantTable = nullptr,
-        CharacterAttackTuning attackTuning = {});
+        CharacterAttackTuning attackTuning = {},
+        const ExperienceRules &experienceRules = standardExperienceRules());
     static CharacterAttackProfile buildCharacterAttackProfile(
         const Character &character,
         const ItemTable *pItemTable,
@@ -314,6 +352,11 @@ public:
         int monsterLevel);
     static IdentifyMonsterReveal resolveIdentifyMonsterReveal(const Character &character, int monsterLevel);
     static SpeechId resolveIdentifyMonsterSpeech(const Character &character, int monsterLevel);
+    // The speaker's comment on what the party learned (the rules' reveal) about a monster of this level.
+    static SpeechId resolveIdentifyMonsterSpeech(
+        const IdentifyMonsterReveal &reveal,
+        const Character &speaker,
+        int monsterLevel);
     static CombatDamageType parseCombatDamageType(const std::string &value);
     static CombatDamageType spellCombatDamageType(uint32_t spellId, const SpellTable *pSpellTable);
     static uint32_t lethalStrikePlayerLevel(const Character &character);

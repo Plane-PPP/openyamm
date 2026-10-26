@@ -159,9 +159,10 @@ class WindowsInstallerTests(Fixture):
         self.shell = shutil.which('powershell.exe')
         self.assertIsNotNone(self.shell)
 
-    def apply(self, directory, success=True, check_only=False):
+    def apply(self, directory, success=True, check_only=False, explicit_root=True):
         args = [self.shell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-                str(directory / 'Apply-MinotaurUpdate.ps1'), '-InstallationRoot', str(self.install)]
+                str(directory / 'Apply-MinotaurUpdate.ps1')]
+        if explicit_root: args += ['-InstallationRoot', str(self.install)]
         if check_only: args.append('-CheckOnly')
         environment = os.environ.copy()
         # The parent CI shell is PowerShell7. Give the Windows5.1 child its own built-in modules,
@@ -186,6 +187,19 @@ class WindowsInstallerTests(Fixture):
         self.assertEqual((self.install / 'app/previous').read_text().strip(), self.base['version'])
         self.assertTrue((self.install / 'app' / self.base['version'] / 'openyamm.exe').is_file())
         self.apply(directory)
+
+    def test_auto_detect_when_unpacked_in_game_root(self):
+        manifest, _, directory = self.update()
+        shutil.copytree(directory, self.install, dirs_exist_ok=True)
+        self.apply(self.install, explicit_root=False)
+        self.assertEqual(self.current(), manifest['target']['version'])
+
+    def test_auto_detect_when_unpacked_in_subfolder(self):
+        manifest, _, directory = self.update()
+        nested = self.install / directory.name
+        shutil.copytree(directory, nested)
+        self.apply(nested, explicit_root=False)
+        self.assertEqual(self.current(), manifest['target']['version'])
 
     def test_patch_chain_handles_compression_variant_and_changed_table(self):
         first, _, directory = self.update(compressed=True)

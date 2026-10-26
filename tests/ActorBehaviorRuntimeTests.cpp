@@ -666,6 +666,32 @@ TEST_CASE("actor behaviour catalogue rejects malformed tactics")
     }
 }
 
+TEST_CASE("actor behaviour catalogue reads the shield_break tactic and rejects unknown reactions")
+{
+    ActorBehaviorCatalog catalog;
+    std::string error;
+    REQUIRE_MESSAGE(loadTacticsCatalog(
+        "schema: openyamm.actorBehaviors.v1\n"
+        "tactics:\n"
+        "  10010: {shield_break: {react: fall_back, max_seconds: 5}}\n"
+        "  10072: {shield_break: {react: fall_back}, ranged_band: [768, 2304]}\n",
+        catalog, error), error);
+    const OpenYAMM::Game::ActorTacticsFacts *pTrooper = catalog.tacticsForMonster(10010);
+    REQUIRE(pTrooper != nullptr);
+    CHECK(pTrooper->shieldBreakReaction == OpenYAMM::Game::ActorShieldBreakReaction::FallBack);
+    CHECK(pTrooper->shieldBreakSeconds == doctest::Approx(5.0f));
+    CHECK(catalog.tacticsForMonster(10072)->shieldBreakSeconds == doctest::Approx(8.0f));
+
+    for (const char *pTactics : {"{shield_break: {react: blink}}", "{shield_break: fall_back}",
+             "{shield_break: {react: fall_back, max_seconds: 0}}", "{shield_break: {react: fall_back, seconds: 3}}"})
+    {
+        ActorBehaviorCatalog bad;
+        CHECK_FALSE(loadTacticsCatalog(
+            std::string("schema: openyamm.actorBehaviors.v1\ntactics:\n  10010: ") + pTactics + "\n", bad, error));
+        CHECK(error.find("shield_break") != std::string::npos);
+    }
+}
+
 TEST_CASE("actor behaviour runtime applies tactics only to their monster and posts only to immobile placements")
 {
     ActorBehaviorCatalog catalog;
@@ -716,4 +742,335 @@ TEST_CASE("actor behaviour runtime applies tactics only to their monster and pos
     idle.actorId = 101;
     runtime.applyPresentation(1, idle);
     CHECK_FALSE(idle.hasAimTarget);
+}
+
+namespace
+{
+constexpr float ScanDegrees = 3.14159265358979323846f / 180.0f;
+
+OpenYAMM::Game::TurretScanSettings makeScanSettings()
+{
+    OpenYAMM::Game::TurretScanSettings scan = {};
+    scan.halfWidthRadians = 50.0f * ScanDegrees;
+    scan.radiansPerSecond = 15.0f * ScanDegrees;
+    scan.pauseMinSeconds = 0.8f;
+    scan.pauseMaxSeconds = 2.4f;
+    scan.pitchRadians = 4.0f * ScanDegrees;
+    scan.holdSeconds = 3.0f;
+    return scan;
+}
+
+// A Landfall-style wall turret: tactics with a traverse rate, an idle scan and a lead, placed `immobile` facing +y.
+ActorBehaviorCatalog makeTurretCatalog()
+{
+    ActorBehaviorCatalog catalog;
+    OpenYAMM::Game::ActorTacticsFacts tactics = {};
+    tactics.traverseRadiansPerSecond = 120.0f * ScanDegrees;
+    tactics.fireToleranceRadians = 5.0f * ScanDegrees;
+    tactics.holdPost = true;
+    tactics.scan = makeScanSettings();
+    tactics.leadSeconds = 0.25f;
+    catalog.setMonsterTactics(10065, tactics);
+    return catalog;
+}
+
+ActorAiFacts makeTurretFacts(size_t index, uint32_t actorId)
+{
+    ActorAiFacts facts = {};
+    facts.actorIndex = index;
+    facts.actorId = actorId;
+    facts.identity.monsterId = 10065;
+    facts.movement.placedImmobile = true;
+    facts.movement.hasHomeYaw = true;
+    facts.movement.homeYawRadians = 1.5f;
+    facts.runtime.yawRadians = 1.5f;
+    return facts;
+}
+
+// One AI step of the runtime over these actors; the actors keep the facing the runtime asked for (a perfect AI).
+void stepTurrets(ActorBehaviorRuntime &runtime, std::vector<ActorAiFacts> &actors, bool followIdleAim = true)
+{
+    ActorAiFrameFacts frame = {};
+    frame.fixedStepSeconds = 1.0f / 128.0f;
+    frame.activeActors = actors;
+
+    for (ActorAiFacts &actor : frame.activeActors)
+    {
+        actor.tactics = {};
+    }
+
+    runtime.applyAiFacts(frame);
+
+    for (size_t index = 0; index < actors.size(); ++index)
+    {
+        actors[index].tactics = frame.activeActors[index].tactics;
+
+        if (followIdleAim && actors[index].tactics.idleAimActive)
+        {
+            actors[index].runtime.yawRadians = actors[index].tactics.idleAimYawRadians;
+        }
+    }
+}
+}
+
+TEST_CASE("actor behaviour catalogue reads a turret's idle scan and lead")
+{
+    ActorBehaviorCatalog catalog;
+    std::string error;
+    REQUIRE_MESSAGE(loadTacticsCatalog(
+        "schema: openyamm.actorBehaviors.v1\n"
+        "tactics:\n"
+        "  10065: {traverse_degrees_per_second: 120, post: {}, lead_seconds: 0.2,\n"
+        "          scan: {half_width_degrees: 50, degrees_per_second: 15, pause_seconds: [0.5, 2],\n"
+        "                 pitch_degrees: 4, hold_seconds: 3.5}}\n"
+        "  10066: {traverse_degrees_per_second: 75, scan: {half_width_degrees: 30, degrees_per_second: 10}}\n",
+        catalog, error), error);
+
+    const OpenYAMM::Game::ActorTacticsFacts *pWard = catalog.tacticsForMonster(10065);
+    REQUIRE(pWard != nullptr);
+    CHECK(pWard->scan.enabled());
+    CHECK(pWard->scan.halfWidthRadians == doctest::Approx(50.0f * ScanDegrees));
+    CHECK(pWard->scan.radiansPerSecond == doctest::Approx(15.0f * ScanDegrees));
+    CHECK(pWard->scan.pauseMinSeconds == 0.5f);
+    CHECK(pWard->scan.pauseMaxSeconds == 2.0f);
+    CHECK(pWard->scan.pitchRadians == doctest::Approx(4.0f * ScanDegrees));
+    CHECK(pWard->scan.holdSeconds == 3.5f);
+    CHECK(pWard->leadSeconds == doctest::Approx(0.2f));
+    const OpenYAMM::Game::ActorTacticsFacts *pBastion = catalog.tacticsForMonster(10066);
+    REQUIRE(pBastion != nullptr);
+    CHECK(pBastion->scan.pauseMaxSeconds > pBastion->scan.pauseMinSeconds);
+    CHECK(pBastion->scan.holdSeconds > 0.0f);
+    CHECK(pBastion->leadSeconds == 0.0f);
+
+    for (const char *pTactics : {"{scan: {half_width_degrees: 50, degrees_per_second: 15}}", "{lead_seconds: 0.2}",
+             "{traverse_degrees_per_second: 90, scan: {half_width_degrees: 50}}",
+             "{traverse_degrees_per_second: 90, scan: {half_width_degrees: 50, degrees_per_second: 15, speed: 1}}",
+             "{traverse_degrees_per_second: 90, scan: {half_width_degrees: 50, degrees_per_second: 15, "
+             "pause_seconds: [3, 1]}}",
+             "{traverse_degrees_per_second: 90, lead_seconds: 5}"})
+    {
+        ActorBehaviorCatalog rejected;
+        CHECK_FALSE(loadTacticsCatalog(
+            std::string("schema: openyamm.actorBehaviors.v1\ntactics:\n  10065: ") + pTactics + "\n", rejected, error));
+        CHECK(error.find("tactic") != std::string::npos);
+    }
+}
+
+TEST_CASE("turret scan sweeps both ways within its width, eases every turnaround and pauses")
+{
+    const OpenYAMM::Game::TurretScanSettings settings = makeScanSettings();
+    OpenYAMM::Game::TurretScanState state;
+    OpenYAMM::Game::startTurretScan(state, 4242u, 0.0f, 0.0f, 0.0f, 1.0f);
+    constexpr float Step = 1.0f / 128.0f;
+    float previous = OpenYAMM::Game::turretScanPose(state).yawOffsetRadians;
+    float previousVelocity = 0.0f;
+    float lowest = 0.0f;
+    float highest = 0.0f;
+    float stillSeconds = 0.0f;
+    float longestStill = 0.0f;
+    int reversals = 0;
+    float largestReversalVelocity = 0.0f;
+    float lowestPitch = 0.0f;
+    float highestPitch = 0.0f;
+
+    for (int step = 0; step < 128 * 120; ++step)
+    {
+        const OpenYAMM::Game::TurretScanPose pose = OpenYAMM::Game::advanceTurretScan(state, settings, Step);
+        const float velocity = (pose.yawOffsetRadians - previous) / Step;
+        // Never faster than its peak rate, so never a snap.
+        CHECK(std::abs(velocity) <= settings.radiansPerSecond * 1.02f);
+        CHECK(std::abs(pose.yawOffsetRadians) <= settings.halfWidthRadians + 1.0e-4f);
+        CHECK(std::abs(pose.pitchRadians) <= settings.pitchRadians + 1.0e-5f);
+        lowest = std::min(lowest, pose.yawOffsetRadians);
+        highest = std::max(highest, pose.yawOffsetRadians);
+        lowestPitch = std::min(lowestPitch, pose.pitchRadians);
+        highestPitch = std::max(highestPitch, pose.pitchRadians);
+
+        if (std::abs(velocity) < 1.0e-6f)
+        {
+            stillSeconds += Step;
+            longestStill = std::max(longestStill, stillSeconds);
+        }
+        else
+        {
+            if (previousVelocity != 0.0f && (velocity > 0.0f) != (previousVelocity > 0.0f))
+            {
+                ++reversals;
+                largestReversalVelocity = std::max(largestReversalVelocity, std::abs(velocity));
+            }
+
+            previousVelocity = velocity;
+            stillSeconds = 0.0f;
+        }
+
+        previous = pose.yawOffsetRadians;
+    }
+
+    // Ping-pong across most of the width, with eased turnarounds (they start from rest) and pauses in the range.
+    CHECK(lowest < -0.5f * settings.halfWidthRadians);
+    CHECK(highest > 0.5f * settings.halfWidthRadians);
+    CHECK(reversals >= 6);
+    CHECK(largestReversalVelocity < 0.05f * settings.radiansPerSecond);
+    CHECK(longestStill >= settings.pauseMinSeconds);
+    CHECK(longestStill <= settings.pauseMaxSeconds + 0.05f);
+    CHECK(highestPitch - lowestPitch > settings.pitchRadians);
+}
+
+TEST_CASE("turret scan differs per seed and returns from outside its width at the return rate")
+{
+    const OpenYAMM::Game::TurretScanSettings settings = makeScanSettings();
+    OpenYAMM::Game::TurretScanState first;
+    OpenYAMM::Game::TurretScanState second;
+    OpenYAMM::Game::startTurretScan(first, 1u, 0.0f, 0.0f, 0.0f, 0.0f);
+    OpenYAMM::Game::startTurretScan(second, 2u, 0.0f, 0.0f, 0.0f, 0.0f);
+    float difference = 0.0f;
+
+    for (int step = 0; step < 128 * 30; ++step)
+    {
+        difference = std::max(difference, std::abs(
+            OpenYAMM::Game::advanceTurretScan(first, settings, 1.0f / 128.0f).yawOffsetRadians
+            - OpenYAMM::Game::advanceTurretScan(second, settings, 1.0f / 128.0f).yawOffsetRadians));
+    }
+
+    CHECK(difference > 0.3f);
+
+    // Back from a fight 2.5 rad round: a beat's delay, then an eased return into the sweep at the return rate.
+    OpenYAMM::Game::TurretScanState back;
+    const float returnRate = 60.0f * ScanDegrees;
+    OpenYAMM::Game::startTurretScan(back, 3u, 2.5f, 0.0f, 0.4f, returnRate);
+    CHECK(OpenYAMM::Game::advanceTurretScan(back, settings, 0.3f).yawOffsetRadians == 2.5f);
+    float previous = 2.5f;
+    float fastest = 0.0f;
+    float seconds = 0.3f;
+
+    while (previous > settings.halfWidthRadians && seconds < 20.0f)
+    {
+        const float yaw = OpenYAMM::Game::advanceTurretScan(back, settings, 1.0f / 128.0f).yawOffsetRadians;
+        fastest = std::max(fastest, (previous - yaw) * 128.0f);
+        CHECK(yaw <= previous + 1.0e-6f);
+        previous = yaw;
+        seconds += 1.0f / 128.0f;
+    }
+
+    CHECK(previous <= settings.halfWidthRadians);
+    CHECK(fastest > 0.9f * returnRate);
+    CHECK(fastest <= returnRate * 1.02f);
+    CHECK(seconds < 0.4f + 1.5f * 2.5f / returnRate + 0.1f);
+}
+
+TEST_CASE("actor behaviour runtime scans an idle turret, holds a lost target's aim, then eases back into the scan")
+{
+    const ActorBehaviorCatalog catalog = makeTurretCatalog();
+    ActorBehaviorRuntime runtime;
+    runtime.bind(&catalog, nullptr);
+    CHECK(runtime.turnsAtTraverseRate(10065));
+    CHECK_FALSE(runtime.turnsAtTraverseRate(194));
+    std::vector<ActorAiFacts> actors = {makeTurretFacts(0, 500), makeTurretFacts(1, 501)};
+
+    // Idle: a scan around the placement facing, each turret on its own phase.
+    float spread = 0.0f;
+    float farthest = 0.0f;
+
+    for (int step = 0; step < 128 * 20; ++step)
+    {
+        stepTurrets(runtime, actors);
+        REQUIRE(actors[0].tactics.idleAimActive);
+        farthest = std::max(farthest, std::abs(actors[0].runtime.yawRadians - 1.5f));
+        spread = std::max(spread, std::abs(actors[0].runtime.yawRadians - actors[1].runtime.yawRadians));
+    }
+
+    CHECK(farthest > 0.4f);
+    CHECK(farthest <= 50.0f * ScanDegrees + 1.0e-3f);
+    CHECK(spread > 0.2f);
+    GameplayRuntimeActorState scanning = {};
+    scanning.actorId = 500;
+    runtime.applyPresentation(0, scanning);
+    CHECK(scanning.aimScanning);
+    CHECK_FALSE(scanning.hasAimTarget);
+
+    // Engaged: no idle aim (the AI tracks the target); the aim leads a target moving at 400 units/s along x.
+    actors[0].target.currentKind = ActorAiTargetKind::Actor;
+    actors[0].target.currentActorIndex = 7;
+    actors[0].target.currentCanSense = true;
+    actors[0].target.currentPosition = {0.0f, 2000.0f, 300.0f};
+
+    for (int step = 0; step < 128 * 2; ++step)
+    {
+        actors[0].target.currentPosition.x += 400.0f / 128.0f;
+        stepTurrets(runtime, actors);
+        CHECK_FALSE(actors[0].tactics.idleAimActive);
+    }
+
+    CHECK(actors[0].tactics.aimLead.x == doctest::Approx(400.0f * 0.25f).epsilon(0.05));
+    CHECK(std::abs(actors[0].tactics.aimLead.y) < 1.0f);
+    GameplayRuntimeActorState engaged = {};
+    engaged.actorId = 500;
+    runtime.applyPresentation(0, engaged);
+    REQUIRE(engaged.hasAimTarget);
+    CHECK_FALSE(engaged.aimScanning);
+    CHECK(engaged.aimTargetX == doctest::Approx(actors[0].target.currentPosition.x + actors[0].tactics.aimLead.x));
+
+    // The target dies: the facing and the barrel hold the last aim for the hold time.
+    const float heldYaw = 0.7f;
+    actors[0].runtime.yawRadians = heldYaw;
+    const float lastAimX = engaged.aimTargetX;
+    actors[0].target = {};
+
+    for (int step = 0; step < int(128 * 2.9f); ++step)
+    {
+        stepTurrets(runtime, actors);
+        REQUIRE(actors[0].tactics.idleAimActive);
+        CHECK(actors[0].tactics.idleAimYawRadians == heldYaw);
+        CHECK(actors[0].tactics.aimLead.x == 0.0f);
+    }
+
+    GameplayRuntimeActorState holding = {};
+    holding.actorId = 500;
+    runtime.applyPresentation(0, holding);
+    REQUIRE(holding.hasAimTarget);
+    CHECK(holding.aimTargetX == doctest::Approx(lastAimX));
+
+    // Then the scan resumes from where it points, after a beat, and eases back towards its centre without a jump.
+    float previous = actors[0].runtime.yawRadians;
+    float fastest = 0.0f;
+
+    for (int step = 0; step < 128 * 8; ++step)
+    {
+        stepTurrets(runtime, actors);
+        fastest = std::max(fastest, std::abs(actors[0].runtime.yawRadians - previous) * 128.0f);
+        previous = actors[0].runtime.yawRadians;
+    }
+
+    CHECK(std::abs(actors[0].runtime.yawRadians - 1.5f) <= 50.0f * ScanDegrees + 1.0e-3f);
+    CHECK(fastest <= 60.0f * ScanDegrees * 1.05f);
+    GameplayRuntimeActorState resumed = {};
+    resumed.actorId = 500;
+    runtime.applyPresentation(0, resumed);
+    CHECK(resumed.aimScanning);
+    CHECK_FALSE(resumed.hasAimTarget);
+}
+
+TEST_CASE("actor behaviour runtime leaves actors without a turret scan untouched")
+{
+    ActorBehaviorCatalog catalog;
+    OpenYAMM::Game::ActorTacticsFacts tactics = {};
+    tactics.traverseRadiansPerSecond = 1.0f;
+    tactics.holdPost = true;
+    catalog.setMonsterTactics(10065, tactics);
+    ActorBehaviorRuntime runtime;
+    runtime.bind(&catalog, nullptr);
+    std::vector<ActorAiFacts> actors = {makeTurretFacts(0, 500)};
+
+    for (int step = 0; step < 128; ++step)
+    {
+        stepTurrets(runtime, actors);
+        CHECK_FALSE(actors[0].tactics.idleAimActive);
+        CHECK(actors[0].runtime.yawRadians == 1.5f);
+    }
+
+    GameplayRuntimeActorState state = {};
+    state.actorId = 500;
+    runtime.applyPresentation(0, state);
+    CHECK_FALSE(state.aimScanning);
+    CHECK_FALSE(state.hasAimTarget);
 }

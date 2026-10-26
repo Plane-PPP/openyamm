@@ -154,7 +154,8 @@ public:
         float &screenX,
         float &screenY) const;
     std::optional<size_t> gameplayHoveredActorIndex() const;
-    std::optional<size_t> gameplayClosestVisibleHostileActorIndex() const;
+    // The hostile actors on screen in line of sight that have noticed the party, closest first.
+    std::vector<size_t> gameplayVisibleHostileActorIndices() const;
     std::optional<bx::Vec3> gameplayActorTargetPoint(size_t actorIndex) const;
     std::optional<bx::Vec3> gameplayActorNearestOpaquePoint(
         size_t actorIndex,
@@ -531,6 +532,8 @@ private:
     bool texturedBatchesNeedFullRebuild() const;
     void rebuildIndoorRenderMemberships();
     void rebuildMechanismBindings();
+    // Adds a texture an event swaps onto faces (evt.SetTexture) to the texture set when no face of the map uses it.
+    void ensureIndoorSwapTexture(const std::string &textureName);
     bool rebuildAllTexturedBatches(uint64_t &texturedBuildNanoseconds);
     bool updateWaterGeometry();
     // pLightGrid: the main view's grid for the batch's dynamic lights; without it the batch takes `lights`.
@@ -695,6 +698,8 @@ private:
     std::vector<std::vector<uint16_t>> m_neighboringSectorIds;
     IndoorSceneRuntime *m_pSceneRuntime = nullptr;
     std::optional<IndoorTextureSet> m_indoorTextureSet;
+    // Swapped-in texture names already looked for and not found (not searched again each rebuild).
+    std::unordered_set<std::string> m_missingSwapTextureNames;
     std::optional<DecorationBillboardSet> m_indoorDecorationBillboardSet;
     std::optional<ActorPreviewBillboardSet> m_indoorActorPreviewBillboardSet;
     std::optional<SpriteObjectBillboardSet> m_indoorSpriteObjectBillboardSet;

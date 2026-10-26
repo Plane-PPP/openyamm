@@ -1,7 +1,9 @@
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 #include "game/ui/GameplayBuffHud.h"
+#include "game/ui/GameplayJournalAuras.h"
 #include "game/gameplay/GameplayHudInputController.h"
 
+#include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
@@ -340,6 +342,14 @@ void GameplayHudInputController::handleGameplayHudButtonInput(
         return;
     }
 
+    // The wheel over the combat log scrolls it: up to older lines.
+    if (const GameplayInputFrame *pInput = context.currentGameplayInputFrame();
+        pInput != nullptr && pInput->mouseWheelDelta != 0
+        && context.combatLogPanel().contains(config.pointerX, config.pointerY))
+    {
+        context.combatLogPanel().scroll(pInput->mouseWheelDelta > 0 ? 1 : -1, context.combatLog());
+    }
+
     const HudPointerState pointerState = {
         config.pointerX,
         config.pointerY,
@@ -389,6 +399,27 @@ void GameplayHudInputController::handleGameplayHudButtonInput(
                 && pointerInsideHudElement(context, config, "OutdoorMobileContextActionButton", pointerX, pointerY))
             {
                 return context.interactionState().gameplayHudPressedTarget;
+            }
+
+            if (context.settingsSnapshot().combatLog
+                && pointerInsideHudElement(context, config, "CombatLogToggle", pointerX, pointerY))
+            {
+                return {GameplayHudPointerTargetType::CombatLogToggleButton};
+            }
+
+            if (context.combatLogPanel().contains(pointerX, pointerY))
+            {
+                if (const std::optional<CombatLogFilter> filter = context.combatLogPanel().filterAt(pointerX, pointerY))
+                {
+                    return {GameplayHudPointerTargetType::CombatLogFilter, size_t(*filter)};
+                }
+
+                if (const std::optional<uint32_t> entryId = context.combatLogPanel().entryAt(pointerX, pointerY))
+                {
+                    return {GameplayHudPointerTargetType::CombatLogEntry, *entryId};
+                }
+
+                return {GameplayHudPointerTargetType::CombatLogPanel};
             }
 
             if (pointerInsideHudElement(context, config, "OutdoorFollowerToggle", pointerX, pointerY))
@@ -579,7 +610,13 @@ void GameplayHudInputController::handleGameplayHudButtonInput(
                 context.interactionState().partyBuffPopupOpen = false;
                 break;
             case GameplayHudPointerTargetType::PartyBuff:
+                break;
             case GameplayHudPointerTargetType::PartyBuffPanel:
+                // Rules with auras (MAW) open the aura panel from the party buff panels.
+                if (journalHasAuraPanel(context))
+                {
+                    openJournalAuraPanel(context);
+                }
                 break;
             case GameplayHudPointerTargetType::DismissBuffs:
                 context.interactionState().partyBuffPopupOpen = false;
@@ -700,6 +737,17 @@ void GameplayHudInputController::handleGameplayHudButtonInput(
                 break;
             case GameplayHudPointerTargetType::FollowerPanelToggleButton:
                 context.interactionState().followerPanelOpen = !context.interactionState().followerPanelOpen;
+                break;
+            case GameplayHudPointerTargetType::CombatLogToggleButton:
+                context.combatLogPanel().toggle();
+                break;
+            case GameplayHudPointerTargetType::CombatLogEntry:
+                context.combatLogPanel().toggleEntry(uint32_t(target.index));
+                break;
+            case GameplayHudPointerTargetType::CombatLogFilter:
+                context.combatLogPanel().setFilter(CombatLogFilter(target.index));
+                break;
+            case GameplayHudPointerTargetType::CombatLogPanel:
                 break;
             case GameplayHudPointerTargetType::FollowerPanelPortrait:
                 context.openFollowerNpcDialogue(target.index);

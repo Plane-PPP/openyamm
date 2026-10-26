@@ -33,6 +33,7 @@ public:
         bool mapShortcutPressed,
         bool storyShortcutPressed,
         bool notesShortcutPressed,
+        bool progressShortcutPressed,
         bool zoomInPressed,
         bool zoomOutPressed,
         float mouseWheelDelta);

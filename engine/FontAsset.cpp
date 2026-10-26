@@ -563,4 +563,59 @@ std::optional<FontAtlasImage> loadFontAtlas(
     }
     return image;
 }
+
+std::string utf8ToCp1252(const std::string &text)
+{
+    std::string result;
+    result.reserve(text.size());
+
+    for (size_t index = 0; index < text.size();)
+    {
+        const uint8_t lead = uint8_t(text[index]);
+        const size_t length = lead < 0x80 ? 1 : (lead & 0xe0) == 0xc0 ? 2 : (lead & 0xf0) == 0xe0 ? 3
+            : (lead & 0xf8) == 0xf0 ? 4 : 0;
+
+        if (length == 0 || index + length > text.size())
+        {
+            return text;
+        }
+
+        uint32_t point = length == 1 ? lead : lead & (0xff >> (length + 1));
+
+        for (size_t offset = 1; offset < length; ++offset)
+        {
+            const uint8_t next = uint8_t(text[index + offset]);
+
+            if ((next & 0xc0) != 0x80)
+            {
+                return text;
+            }
+
+            point = (point << 6) | (next & 0x3f);
+        }
+
+        index += length;
+        char byte = '?';
+
+        if (point < 0x80 || (point >= 0xa0 && point <= 0xff))
+        {
+            byte = char(point);
+        }
+        else
+        {
+            for (int character = 0x80; character < 0xa0; ++character)
+            {
+                if (cp1252CodePoint(character) == point)
+                {
+                    byte = char(character);
+                    break;
+                }
+            }
+        }
+
+        result.push_back(byte);
+    }
+
+    return result;
+}
 }

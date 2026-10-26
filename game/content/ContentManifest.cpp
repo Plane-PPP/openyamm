@@ -256,39 +256,9 @@ bool parseManifestRoot(const YAML::Node &root, WorldManifest &manifest, std::str
         }
     }
 
-    const YAML::Node idRangesNode = root["idRanges"];
-    if (idRangesNode)
+    if (!parseContentIdRanges(root["idRanges"], "world.yml", manifest.idRanges, errorMessage))
     {
-        if (!idRangesNode.IsMap())
-        {
-            errorMessage = "world.yml idRanges must be a map";
-            return false;
-        }
-
-        std::unordered_set<std::string> domains;
-
-        for (YAML::const_iterator iterator = idRangesNode.begin(); iterator != idRangesNode.end(); ++iterator)
-        {
-            if (!iterator->first.IsScalar() || !iterator->second.IsMap())
-            {
-                errorMessage = "world.yml idRanges entries must map a domain to a range";
-                return false;
-            }
-
-            ContentIdRangeDefinition range = {};
-            range.domain = normalizedToken(iterator->first.as<std::string>());
-            range.begin = scalarUint32OrDefault(iterator->second, "begin", 0);
-            range.end = scalarUint32OrDefault(iterator->second, "end", 0);
-
-            if (range.domain.empty() || range.begin == 0 || range.begin > range.end
-                || !domains.insert(range.domain).second)
-            {
-                errorMessage = "world.yml idRanges contain an invalid or duplicate domain range";
-                return false;
-            }
-
-            manifest.idRanges.push_back(std::move(range));
-        }
+        return false;
     }
 
     const YAML::Node contributionsNode = root["tableContributions"];
@@ -438,4 +408,66 @@ WorldManifest loadActiveWorldManifestOrDefault(
     return manifest;
 }
 
+
+bool parseContentIdRanges(
+    const YAML::Node &node,
+    const std::string &owner,
+    std::vector<ContentIdRangeDefinition> &ranges,
+    std::string &errorMessage)
+{
+    if (!node)
+    {
+        return true;
+    }
+
+    if (!node.IsMap())
+    {
+        errorMessage = owner + " idRanges must be a map";
+        return false;
+    }
+
+    std::unordered_set<std::string> domains;
+
+    for (YAML::const_iterator iterator = node.begin(); iterator != node.end(); ++iterator)
+    {
+        if (!iterator->first.IsScalar() || !iterator->second.IsMap())
+        {
+            errorMessage = owner + " idRanges entries must map a domain to a range";
+            return false;
+        }
+
+        ContentIdRangeDefinition range = {};
+        range.domain = normalizedToken(iterator->first.as<std::string>());
+        range.begin = scalarUint32OrDefault(iterator->second, "begin", 0);
+        range.end = scalarUint32OrDefault(iterator->second, "end", 0);
+
+        if (range.domain.empty() || range.begin == 0 || range.begin > range.end || !domains.insert(range.domain).second)
+        {
+            errorMessage = owner + " idRanges contain an invalid or duplicate domain range";
+            return false;
+        }
+
+        ranges.push_back(std::move(range));
+    }
+
+    return true;
+}
+
+std::optional<std::string> overlappingContentIdRange(
+    const std::vector<ContentIdRangeDefinition> &left,
+    const std::vector<ContentIdRangeDefinition> &right)
+{
+    for (const ContentIdRangeDefinition &first : left)
+    {
+        for (const ContentIdRangeDefinition &second : right)
+        {
+            if (first.domain == second.domain && first.begin <= second.end && second.begin <= first.end)
+            {
+                return first.domain;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
 }

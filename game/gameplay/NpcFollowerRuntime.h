@@ -52,7 +52,10 @@ int hiredNpcCrossMapDayReduction(const EventRuntimeState &eventRuntimeState);
 int hiredNpcWalkingTravelDays(int baseDays, const EventRuntimeState &eventRuntimeState);
 int hiredNpcRestFoodReduction(const EventRuntimeState &eventRuntimeState);
 int hiredNpcCampingFoodCost(int baseCost, const EventRuntimeState &eventRuntimeState);
-int hiredNpcSkillBonus(std::span<const HiredNpcFollower> followers, const std::string &skillName);
+int hiredNpcSkillBonus(
+    std::span<const HiredNpcFollower> followers,
+    const std::string &skillName,
+    bool strongestOnly = false);
 int hiredNpcPrimaryStatBonus(std::span<const HiredNpcFollower> followers, const std::string &statName);
 int hiredNpcResistanceBonus(std::span<const HiredNpcFollower> followers, const std::string &resistanceName);
 FoundGold resolveFoundGold(uint32_t goldAmount, const EventRuntimeState *pEventRuntimeState);

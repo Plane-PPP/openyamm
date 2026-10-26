@@ -19,6 +19,8 @@ constexpr float MaxAccumulatedMovementSeconds = 0.1f;
 constexpr float HardLandingDistance = 512.0f;
 constexpr float EventHoldSeconds = 0.75f;
 constexpr float DamageTickSeconds = 1.0f;
+// The original's flight ceiling, for maps whose scene sets none.
+constexpr float DefaultFlightCeiling = 4000.0f;
 
 const char *supportKindName(OutdoorSupportKind supportKind)
 {
@@ -104,8 +106,10 @@ OutdoorMovementDriver::OutdoorMovementDriver(
         outdoorDecorationCollisionSet,
         outdoorActorCollisionSet,
         outdoorSpriteObjectCollisionSet
-    )
+    ),
+    m_flightCeiling(outdoorMapData.flightCeiling.value_or(DefaultFlightCeiling))
 {
+    m_tuning.maxFlightHeight = m_flightCeiling;
 }
 
 void OutdoorMovementDriver::initialize(float x, float y, float footZHint)
@@ -113,6 +117,7 @@ void OutdoorMovementDriver::initialize(float x, float y, float footZHint)
     m_state = m_movementController.initializeStateForBody(x, y, footZHint, m_bodyDimensions.radius);
     m_partyMovementState = {};
     m_tuning = {};
+    m_tuning.maxFlightHeight = m_flightCeiling;
     m_lastEvents = {};
     m_lastConsequences = {};
     m_pendingEffects = {};
@@ -126,6 +131,7 @@ void OutdoorMovementDriver::initialize(float x, float y, float footZHint)
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_dashSeconds = 0.0f;
     m_flyingAvailable = false;
     m_movementAccumulatorSeconds = 0.0f;
     m_startedFallingEventSeconds = 0.0f;
@@ -152,6 +158,7 @@ void OutdoorMovementDriver::restoreState(
     m_state = state;
     m_partyMovementState = partyMovementState;
     m_tuning = {};
+    m_tuning.maxFlightHeight = m_flightCeiling;
     m_lastEvents = {};
     m_lastConsequences = {};
     m_pendingEffects = {};
@@ -164,6 +171,7 @@ void OutdoorMovementDriver::restoreState(
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_dashSeconds = 0.0f;
     m_movementAccumulatorSeconds = 0.0f;
     m_startedFallingEventSeconds = 0.0f;
     m_landedEventSeconds = 0.0f;
@@ -398,11 +406,13 @@ void OutdoorMovementDriver::update(
         OutdoorMoveDebugInfo debugInfo = {};
         OutdoorMoveDebugInfo *pDebugInfo = traceOutdoorMovement ? &debugInfo : nullptr;
         const uint64_t collisionBeginTickCount = pPerformanceDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
+        const bool dashing = m_dashSeconds > 0.0f;
+        m_dashSeconds = std::max(0.0f, m_dashSeconds - OutdoorMovementStepSeconds);
         m_state = m_movementController.resolveMoveForBody(
             m_state,
             m_bodyDimensions,
-            moveVelocityX + impulseVelocityX,
-            moveVelocityY + impulseVelocityY,
+            moveVelocityX + impulseVelocityX + (dashing ? m_dashVelocityX : 0.0f),
+            moveVelocityY + impulseVelocityY + (dashing ? m_dashVelocityY : 0.0f),
             moveVelocityZ + m_pendingFlyHeightDelta / OutdoorMovementStepSeconds,
             jumpRequestedThisStep,
             input.flyUp,
@@ -922,9 +932,21 @@ void OutdoorMovementDriver::requestSpecialJump(float velocityX, float velocityY,
     m_pendingImpulseVelocityZ = velocityZ;
 }
 
+void OutdoorMovementDriver::requestDash(float velocityX, float velocityY, float seconds)
+{
+    m_dashVelocityX = velocityX;
+    m_dashVelocityY = velocityY;
+    m_dashSeconds = seconds;
+}
+
 void OutdoorMovementDriver::setActorColliders(const std::vector<OutdoorActorCollision> &actorColliders)
 {
     m_movementController.setActorColliders(actorColliders);
+}
+
+void OutdoorMovementDriver::setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities)
+{
+    m_movementController.setHiddenDecorationEntities(hiddenEntities);
 }
 
 void OutdoorMovementDriver::setFaceAttributes(size_t bModelIndex, size_t faceIndex, uint32_t attributes)
@@ -935,6 +957,15 @@ void OutdoorMovementDriver::setFaceAttributes(size_t bModelIndex, size_t faceInd
 void OutdoorMovementDriver::updateFaceGeometries(const std::vector<OutdoorFaceGeometryData> &geometries)
 {
     m_movementController.updateFaceGeometries(geometries);
+}
+
+void OutdoorMovementDriver::lift(float height)
+{
+    m_state.footZ += height;
+    m_state.verticalVelocity = 0.0f;
+    m_state.airborne = true;
+    m_state.supportKind = OutdoorSupportKind::None;
+    m_state.fallStartZ = m_state.footZ;
 }
 
 bool OutdoorMovementDriver::translateWithSupportedBModel(

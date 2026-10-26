@@ -18,6 +18,7 @@ const T &requireBound(const T *pValue)
 
 void GameDataRepository::clear()
 {
+    m_rulesetGuideUrl.clear();
     m_pMapStats = nullptr;
     m_pMonsterTable = nullptr;
     m_pMonsterProjectileTable = nullptr;
@@ -67,6 +68,7 @@ void GameDataRepository::clear()
     m_pMergedContinentSettingTable = nullptr;
     m_pMergedMonsterPortraitTable = nullptr;
     m_pMergedPotionSettingTable = nullptr;
+    m_pMawMapLevels = nullptr;
     m_pMergedReagentSettingTable = nullptr;
     m_pMergedComplexItemPictureTable = nullptr;
     m_pMergedTeacherTopicTable = nullptr;
@@ -125,6 +127,13 @@ void GameDataRepository::bind(const GameDataLoader &loader)
     m_pMergedContinentSettingTable = &loader.getMergedContinentSettingTable();
     m_pMergedMonsterPortraitTable = &loader.getMergedMonsterPortraitTable();
     m_pMergedPotionSettingTable = &loader.getMergedPotionSettingTable();
+    m_pMawMapLevels = loader.mawMapLevels();
+    m_pMawItemData = loader.mawItemData();
+    m_pMawPromotionData = loader.mawPromotionData();
+    m_pMawCraftingData = loader.mawCraftingData();
+    m_pMawDimensionData = loader.mawDimensionData();
+    m_pMawTextData = loader.mawTextData();
+    m_rulesetGuideUrl = loader.activeRuleset().guideUrl;
     m_pMergedReagentSettingTable = &loader.getMergedReagentSettingTable();
     m_pMergedComplexItemPictureTable = &loader.getMergedComplexItemPictureTable();
     m_pMergedTeacherTopicTable = &loader.getMergedTeacherTopicTable();
@@ -389,6 +398,41 @@ const MergedMonsterPortraitTable &GameDataRepository::mergedMonsterPortraitTable
 const MergedPotionSettingTable &GameDataRepository::mergedPotionSettingTable() const
 {
     return requireBound(m_pMergedPotionSettingTable);
+}
+
+const MawMapLevels *GameDataRepository::mawMapLevels() const
+{
+    return m_pMawMapLevels;
+}
+
+const MawPromotionData *GameDataRepository::mawPromotionData() const
+{
+    return m_pMawPromotionData;
+}
+
+const MawCraftingData *GameDataRepository::mawCraftingData() const
+{
+    return m_pMawCraftingData;
+}
+
+const MawDimensionData *GameDataRepository::mawDimensionData() const
+{
+    return m_pMawDimensionData;
+}
+
+const std::string &GameDataRepository::rulesetGuideUrl() const
+{
+    return m_rulesetGuideUrl;
+}
+
+const MawTextData *GameDataRepository::mawTextData() const
+{
+    return m_pMawTextData;
+}
+
+const MawItemData *GameDataRepository::mawItemData() const
+{
+    return m_pMawItemData;
 }
 
 const MergedReagentSettingTable &GameDataRepository::mergedReagentSettingTable() const

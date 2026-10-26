@@ -13,6 +13,8 @@ class AssetFileSystem;
 
 namespace OpenYAMM::Game
 {
+class MonsterModifierTable;
+
 struct ActorBehaviorDefinition
 {
     std::string id;
@@ -35,6 +37,9 @@ public:
     void addBehavior(const std::string &id, const std::string &sourcePath, const std::string &source);
     void setMonsterDefault(int16_t monsterId, const std::string &behaviorId);
     void setMonsterTactics(int16_t monsterId, const ActorTacticsFacts &tactics);
+    // The monster modifiers that are tactics (kites_party: the ranged band). False, with error, for a monster whose
+    // tactics already set a ranged band: one of the two must go.
+    bool applyMonsterModifiers(const MonsterModifierTable &modifiers, std::string &error);
 
     const std::string &worldId() const;
     const std::string &librarySourcePath() const;

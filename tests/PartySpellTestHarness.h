@@ -103,6 +103,7 @@ public:
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;
+        int32_t summonerMemberIndex = -1;
     };
 
     struct HostileSummonRequest
@@ -123,6 +124,11 @@ public:
     void bindParty(Game::Party *pParty)
     {
         m_pParty = pParty;
+
+        if (m_pParty != nullptr)
+        {
+            m_pParty->setGameMinutes(m_gameMinutes);
+        }
     }
 
     void bindEventRuntimeState(Game::EventRuntimeState *pEventRuntimeState)
@@ -174,6 +180,17 @@ public:
     {
         m_actors.push_back(actor);
         return m_actors.size() - 1;
+    }
+
+    Game::GameplayRuntimeActorState &actor(size_t actorIndex)
+    {
+        return m_actors[actorIndex];
+    }
+
+    // The debuffs actorInspectState reports for the actor (its HP stay the actor's).
+    void setActorInspectState(size_t actorIndex, const Game::GameplayActorInspectState &state)
+    {
+        m_actorInspectStates[actorIndex] = state;
     }
 
     void setActorLoot(size_t actorIndex, const Game::GameplayCorpseViewState &loot)
@@ -363,6 +380,26 @@ public:
     void advanceGameMinutes(float minutes) override
     {
         m_gameMinutes += minutes;
+
+        if (m_pParty != nullptr)
+        {
+            m_pParty->setGameMinutes(m_gameMinutes);
+        }
+    }
+
+    void refreshRulesetMonsters() override
+    {
+    }
+
+    bool healMapActor(size_t, int) override
+    {
+        return false;
+    }
+
+    Game::ActorRulesetFacts *mutableActorRulesetFacts(size_t actorIndex) override
+    {
+        return actorIndex < m_actors.size() && !m_actors[actorIndex].isDead ? &m_actors[actorIndex].rulesetFacts
+                                                                           : nullptr;
     }
 
     int currentLocationReputation() const override
@@ -676,10 +713,19 @@ public:
         uint32_t animationTicks,
         Game::GameplayActorInspectState &state) const override
     {
-        (void)actorIndex;
         (void)animationTicks;
-        (void)state;
-        return false;
+
+        if (actorIndex >= m_actors.size())
+        {
+            return false;
+        }
+
+        const auto inspectIterator = m_actorInspectStates.find(actorIndex);
+        state = inspectIterator != m_actorInspectStates.end() ? inspectIterator->second
+                                                               : Game::GameplayActorInspectState {};
+        state.currentHp = m_actors[actorIndex].currentHp;
+        state.maxHp = m_actors[actorIndex].maxHp;
+        return true;
     }
 
     std::optional<Game::GameplayCombatActorInfo> combatActorInfoById(uint32_t actorId) const override
@@ -789,7 +835,8 @@ public:
         float durationSeconds,
         float x,
         float y,
-        float z) override
+        float z,
+        int32_t summonerMemberIndex) override
     {
         m_friendlySummonRequests.push_back({
             .monsterId = monsterId,
@@ -797,7 +844,8 @@ public:
             .durationSeconds = durationSeconds,
             .x = x,
             .y = y,
-            .z = z
+            .z = z,
+            .summonerMemberIndex = summonerMemberIndex
         });
 
         for (uint32_t summonIndex = 0; summonIndex < count; ++summonIndex)
@@ -811,6 +859,7 @@ public:
             actor.height = 96;
             actor.hostileToParty = false;
             actor.hasDetectedParty = false;
+            actor.summonerMemberIndex = summonerMemberIndex;
             m_actors.push_back(actor);
         }
 
@@ -889,11 +938,13 @@ public:
         return {};
     }
 
-    bool applyPartyAttackMeleeDamage(size_t actorIndex, int damage, const Game::GameplayWorldPoint &source) override
+    bool applyPartyAttackMeleeDamage(size_t actorIndex, int damage, const Game::GameplayWorldPoint &source,
+        Game::ShieldAttackTier shieldTier) override
     {
         (void)actorIndex;
         (void)damage;
         (void)source;
+        (void)shieldTier;
         return false;
     }
 
@@ -950,22 +1001,31 @@ public:
 
     std::optional<size_t> spellActionHoveredActorIndex() const override
     {
-        return std::nullopt;
+        return m_hoveredActorIndex;
     }
 
-    std::optional<size_t> spellActionClosestVisibleHostileActorIndex() const override
+    // The actor under the cursor, as the views report it: any picked actor.
+    void setHoveredActorIndex(std::optional<size_t> actorIndex)
     {
+        m_hoveredActorIndex = actorIndex;
+    }
+
+    // Every living hostile actor, in index order as the closest-first order.
+    std::vector<size_t> spellActionVisibleHostileActorIndices() const override
+    {
+        std::vector<size_t> actorIndices;
+
         for (size_t actorIndex = 0; actorIndex < m_actors.size(); ++actorIndex)
         {
             const Game::GameplayRuntimeActorState &actor = m_actors[actorIndex];
 
             if (!actor.isDead && !actor.isInvisible && actor.hostileToParty)
             {
-                return actorIndex;
+                actorIndices.push_back(actorIndex);
             }
         }
 
-        return std::nullopt;
+        return actorIndices;
     }
 
     std::optional<bx::Vec3> spellActionActorTargetPoint(size_t actorIndex) const override
@@ -1159,6 +1219,7 @@ private:
     const Game::MergedBolsterMonsterTable *m_pBolsterMonsterTable = nullptr;
     std::optional<Game::GameplayWorldPoint> m_bountyHuntSpawnPoint;
     std::vector<Game::GameplayRuntimeActorState> m_actors;
+    std::optional<size_t> m_hoveredActorIndex;
     std::vector<Game::GameplayPartySpellProjectileRequest> m_projectileRequests;
     std::vector<AppliedSpellToActor> m_appliedSpellRequests;
     std::vector<Game::GameplayWorldHit> m_activatedWorldHits;
@@ -1184,5 +1245,6 @@ private:
     int m_turnBasedActorRecoveryTicks = 100;
     std::map<size_t, float> m_actorAttackCooldownSeconds;
     std::map<size_t, Game::GameplayCorpseViewState> m_actorLoot;
+    std::map<size_t, Game::GameplayActorInspectState> m_actorInspectStates;
 };
 }

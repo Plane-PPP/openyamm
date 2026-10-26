@@ -1,0 +1,11 @@
+# Lever 35 also clears the lava wall face 2255 (vlcwl3a, x 1024-1152, y 4608), which door 53 lists but cannot move
+# (the door has no vertices); a fix MAW carries (devdocs/maw/MAPS_CONTENT.md §3.1). The map gives the face no cog
+# number, so it gets an unused one here for evt.SetFacetBit (../events/maps/6d18_mmmerge.lua).
+format_version: 1
+kind: "indoor_scene_overlay"
+source:
+  geometry_file: "6d18.blv"
+initial_state:
+  face_attribute_overrides:
+    - face_index: 2255
+      cog_number: 1

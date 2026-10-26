@@ -596,17 +596,6 @@ private:
     using SpriteLoadCache = GameplayAssetLoadCache;
 
 public:
-    enum class InteractiveDecorationFamily
-    {
-        None,
-        Barrel,
-        Cauldron,
-        TrashHeap,
-        CampFire,
-        Cask,
-        Crystal,
-    };
-
     struct InteractiveDecorationBinding
     {
         bool active = false;
@@ -653,7 +642,6 @@ private:
         uint16_t spriteFrameIndex,
         const char *pLoadPhase = "warmup");
     void queueSpriteFrameWarmup(uint16_t spriteFrameIndex);
-    void updateHouseVideoPlayback(float deltaSeconds);
     const GameplayWorldHit &rightMouseInspectWorldHit(
         int width,
         int height,
@@ -683,7 +671,6 @@ private:
     bool tryCastSpellRequest(const PartySpellCastRequest &request, const std::string &spellName) override;
     bool beginSaveWithPreview(const std::filesystem::path &path, const std::string &saveName, bool closeUiOnSuccess);
     void clearWorldInteractionInputLatches();
-    float innRestDurationMinutes(uint32_t houseId) const;
     void syncGameplayMouseLookMode(SDL_Window *pWindow, bool enabled);
     void syncCursorToGameplayCrosshair(SDL_Window *pWindow = nullptr);
     void refreshViewDistanceCache();
@@ -941,7 +928,6 @@ private:
     bool m_hasLastFootstepPosition;
     float m_walkingMotionHoldSeconds = 0.0f;
     std::optional<SoundId> m_activeWalkingSoundId;
-    uint32_t m_activeHouseAudioHostId;
     bool m_showTerrainWireframe;
     bool m_showBModels;
     bool m_showBModelWireframe;

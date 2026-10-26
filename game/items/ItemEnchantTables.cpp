@@ -1,6 +1,7 @@
 #include "game/items/ItemEnchantTables.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 
 namespace OpenYAMM::Game
@@ -556,6 +557,16 @@ SpecialItemEnchantKind parseSpecialEnchantKind(const std::string &value)
         return SpecialItemEnchantKind::FeatherFalling;
     }
 
+    static const std::array<const char *, 9> RulesetSpecials = {
+        "of ascension", "lichs'", "paladins'", "warriormage'", "shadows'", "rangers'", "elementals'", "selfs'",
+        "divines'",
+    };
+
+    if (std::find(RulesetSpecials.begin(), RulesetSpecials.end(), normalized) != RulesetSpecials.end())
+    {
+        return SpecialItemEnchantKind::RulesetSpecial;
+    }
+
     return SpecialItemEnchantKind::None;
 }
 
@@ -635,6 +646,13 @@ bool SpecialItemEnchantTable::load(const std::vector<std::vector<std::string>> &
     {
         const std::string name = getCell(row, 0);
         const std::string suffix = getCell(row, 1);
+
+        // The enchantments end at the first blank row; the notes below it are not enchantments, so a ruleset can
+        // add ids after the last one.
+        if (name.empty() && suffix.empty() && !m_entries.empty())
+        {
+            break;
+        }
 
         if (name.empty() || suffix.empty() || name == "Bonus Stat")
         {

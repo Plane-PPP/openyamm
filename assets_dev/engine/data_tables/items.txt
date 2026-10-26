@@ -656,7 +656,7 @@ Item #	Pic File	Name	Value	Equip Stat	Skill Group	Mod1	Mod2	material	ID/Rep/St	N
 653	item321	Ogre Ear	0	N / A	Misc	0	0	0	0	Ear	122	0	0	0	0	"Used to keep track of kills, some bounty hunters collect these gruesome reminders of battles past."
 654	item322	Wasp Stingers	0	N / A	Misc	0	0	0	0	Stinger	123	0	0	0	0	The stinger of a giant wasp.
 655	item329	Green Apple	5	N / A	Misc	0	0	0	0	Apple	124	0	0	0	0	"Jadamean green apples are crunchy, slightly tart and a good source of nutrition.  (To use the apple, pick it up and left-click over a character's portrait in the inventory screen.)"
-656	item326	Horseshoe	100	N / A	Misc	0	0	0	0	Horseshoe	125	0	0	0	0	"This flawless horseshoe is made of silver. To use, pick the horseshoe up and right-click over a character's portrait."
+656	item326	Horseshoe	0	N / A	Misc	0	0	0	0	Horseshoe	125	0	0	0	0	"This flawless horseshoe is made of silver. To use, pick the horseshoe up and right-click over a character's portrait."
 657	item327	Enchanted Amulet	0	N / A	Misc	0	0	0	0	Amulet	126	0	0	0	0	"A pretty bauble favored by the Pirates of Regna for it appearance, not for any magical enchantment it may have."
 658	item323	Wheel of Frelandeau	0	N / A	Misc	0	0	0	0	Cheese	127	0	0	0	0	"Quest Item: A wheel of prized unicorn's-milk frelandeau cheese. Sliced onto crackers, it is the perfect compliment to a snifter of fine tobersk brandy."
 659	item324	Log of Eldenbrie	0	N / A	Misc	0	0	0	0	Cheese	128	0	0	0	0	"Quest Item: A log of Vori eldenbrie cheese. Though many have tried to duplicate its subtle, smoky flavor, only the master Frost Giant cheese masters of the frozen Vori wastes know the secrets of its formulation."
@@ -1448,7 +1448,7 @@ Item #	Pic File	Name	Value	Equip Stat	Skill Group	Mod1	Mod2	material	ID/Rep/St	N
 1445	7item372	Golem right leg	0	N / A	Misc	0	0	6	0	Golem part	273	0	0	0	0	Quest Item:  The massive right leg of a mighty golem.  It appears to require a bit of assembly before being fully functional.
 1446	7item373	Golem right arm	0	N / A	Misc	0	0	1	0	Golem part	274	0	0	0	0	Quest Item:  The powerful right arm of a mighty golem.  It appears to require a bit of assembly before being fully functional.
 1447	7item374	Golem left arm	0	N / A	Misc	0	0	5	0	Golem part	275	0	0	0	0	Quest Item:  The powerful left arm of a mighty golem.  It appears to require a bit of assembly before being fully functional.
-1448	7item290	Horseshoe	100	N / A	Misc	0	0	5	0	Horseshoe	276	0	0	0	0	"This flawless horseshoe is made of silver.  To use, pick the horseshoe up and right-click over a character's portrait."
+1448	7item290	Horseshoe	0	N / A	Misc	0	0	5	0	Horseshoe	276	0	0	0	0	"This flawless horseshoe is made of silver.  To use, pick the horseshoe up and right-click over a character's portrait."
 1449	7item291	Dragon Egg	0	N / A	Misc	0	0	1	0	Egg	277	0	0	0	0	"Quest Item:  Rough, leathery, and strangely warm, this egg appears nearly ready to hatch."
 1450	7item292	Lantern of Light	0	N / A	Misc	0	0	4	0	Lantern	278	0	0	0	0	"Quest Item:  This lantern shines with a faint, holy light, though no flame appears to be lit inside."
 1451	7item293	Worn Belt	0	N / A	Misc	0	0	4	0	Belt	279	0	0	0	0	"Quest Item:  This belt is worn to the point where it should only last about an hour.  Hopefully, that will be long enough."
@@ -2083,7 +2083,7 @@ Item #	Pic File	Name	Value	Equip Stat	Skill Group	Mod1	Mod2	material	ID/Rep/St	N
 2080	rose	Rose	0	N / A	Misc	0	0	1	0	Rose	368	0	0	0	0	"The top of a perfect, long stemmed rose.  It seems curiously fresh, as though plucked moments ago."
 2081	bell	Tanir's Bell	0	N / A	Misc	0	0	3	0	Bell	369	0	0	0	0	Quest Item:  The tone given by this small silver bell seems…wrong.  It should be much higher than it is.
 2082	gong	Temple Gong	0	N / A	Misc	0	0	3	0	Gong	370	0	0	0	0	"A small gong, used during temple services."
-2083	horsshu	Horseshoe	100	N / A	Misc	0	0	Special	0	Horseshoe	371	0	0	0	0	"This flawless horseshoe is made of silver.  To use,  pick the horseshoe up and right-click over a character's portrait."
+2083	horsshu	Horseshoe	0	N / A	Misc	0	0	0	0	Horseshoe	371	0	0	0	0	"This flawless horseshoe is made of silver.  To use,  pick the horseshoe up and right-click over a character's portrait."
 2084	skull	Ethric's Skull	0	N / A	Misc	0	0	3	0	Skull	372	0	0	0	0	"Quest Item: Ethric's skull tingles almost imperceptibly to the touch, evidence of the powerful magics that have bound his body so long after his death."
 2085	6thybone	Bone	0	N / A	Misc	0	0	3	0	Bone	373	0	0	0	0	A thighbone from a human or humanoid monster.
 2086	crysskull	Crystal Skull	0	N / A	Misc	0	0	2	0	Crystal Skull	374	0	0	0	0	"A single piece of bluish crystal, carved into the shape of a human skull."

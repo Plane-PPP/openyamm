@@ -7,6 +7,8 @@
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
 #include "game/party/Party.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/ItemRules.h"
 #include "game/tables/ItemTable.h"
 
 #include <optional>
@@ -108,7 +110,10 @@ bool GameplayHeldItemController::tryDisplaceHeldInventoryItem(
     const ItemDefinition *pItemDefinition =
         pItemTable != nullptr ? pItemTable->get(heldInventoryItem.item.objectDescriptionId) : nullptr;
 
-    if (pWorldRuntime == nullptr || (pItemDefinition != nullptr && !ItemRuntime::canDrop(*pItemDefinition)))
+    const bool droppable = pItemDefinition == nullptr
+        || gameRulesFor(runtime.partyReadOnly()).items.canDropToWorld(heldInventoryItem.item, *pItemDefinition);
+
+    if (pWorldRuntime == nullptr || !droppable)
     {
         return false;
     }
@@ -166,7 +171,7 @@ void GameplayHeldItemController::applyGrantedEventItemsToHeldInventory(
         {
             forceEventGrantedItemIdentificationState(grantedItem, itemTable);
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
             Party *pParty = runtime.party();
             size_t recipientMemberIndex = 0;
 

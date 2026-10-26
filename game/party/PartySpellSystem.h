@@ -12,6 +12,7 @@
 
 namespace OpenYAMM::Game
 {
+class SpellRules;
 class SpellTable;
 
 enum class PartySpellCastTargetKind : uint8_t
@@ -91,6 +92,8 @@ struct PartySpellCastRequest
     SkillMastery skillMasteryOverride = SkillMastery::None;
     // Scrolls and wands provide fixed spell power without requiring the caster to know the spell mastery.
     bool bypassRequiredMastery = false;
+    // Read from a scroll: the party's rules may hold its buff as a fixed aura (SpellRules::castSourceBuff).
+    bool fromScroll = false;
     // NPC and scripted casts can use a party member as the UI speaker without requiring that member to be ready.
     bool bypassGameplayCasterValidation = false;
     // Gate Master opens Town Portal directly from an NPC caster in the original game.
@@ -164,7 +167,47 @@ class PartySpellSystem
 public:
     static std::optional<PartySpellDescriptor> describeSpell(uint32_t spellId);
     // Mana an ordinary cast would spend, or nullopt when the caster lacks the skill for the spell.
-    static std::optional<uint32_t> manaCost(const Character &caster, const SpellTable &spellTable, uint32_t spellId);
+    // What the spell costs this caster, under the party's rules.
+    static std::optional<uint32_t> manaCost(
+        const Party &party,
+        const Character &caster,
+        const SpellTable &spellTable,
+        uint32_t spellId);
+    // The member a quick or attack spell on a member targets: the dead for Raise Dead and Resurrection, the
+    // petrified for Stone to Flesh; for a heal the lowest HP share among members at or below a third of their
+    // maximum, else the one who gains the most from this cast (ties to the lowest share); a cure's condition; for
+    // the rest the wounded member with the fewest HP. Nothing when nobody fits.
+    static std::optional<size_t> quickCastCharacterTarget(
+        const Party &party,
+        size_t casterIndex,
+        uint32_t spellId,
+        const SpellTable *pSpellTable);
+    // The monster a quick cast takes when none is under the cursor: the closest visible hostile within
+    // SpellActorTargetRange, whether or not it has noticed the party, or, for a spell the
+    // rules spread (SpellRules::quickCastSpreadsDebuff, MAW), the visible hostile within 4800 whose debuff of the spell
+    // ends soonest (an undead one for Control Undead), the closer on a tie (SPL-18).
+    static std::optional<size_t> quickCastActorTarget(
+        const IGameplayWorldRuntime &worldRuntime,
+        const SpellRules &spellRules,
+        uint32_t spellId);
+    // The original pick depth of spell and missile targets (MM7/MM8; OpenEnroth's RangedAttackDepth). The player's
+    // actor-targeted casts reach no further; scripted casts are not limited.
+    static constexpr float SpellActorTargetRange = 5120.0f;
+    // Whether the actor, alive or dead, is within SpellActorTargetRange of the party's feet.
+    static bool isActorWithinSpellTargetRange(const IGameplayWorldRuntime &worldRuntime, size_t actorIndex);
+    // A living, visible actor within spell reach of the party; with `requireHostile` (the targets the game picks for
+    // a quick or attack spell) only a hostile one.
+    static bool isUsableSpellActorTarget(
+        const IGameplayWorldRuntime &worldRuntime,
+        size_t actorIndex,
+        bool requireHostile);
+    // The HP the caster's heal spell would give one member, as a cast applies it (the ruleset's heal, else Standard's
+    // Heal), before any crit; nothing for a spell that does not heal or a caster without the skill.
+    static std::optional<int> healAmount(
+        const Party &party,
+        const Character &caster,
+        const SpellTable &spellTable,
+        uint32_t spellId);
 
     static PartySpellCastResult castSpell(
         Party &party,

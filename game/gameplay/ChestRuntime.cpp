@@ -1,9 +1,11 @@
 #include "game/gameplay/ChestRuntime.h"
 
 #include "game/events/EvtEnums.h"
+#include "game/gameplay/GameplayLootFilter.h"
 #include "game/items/ItemEnchantRuntime.h"
 #include "game/items/ItemGenerator.h"
 #include "game/party/Party.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ChestTable.h"
 #include "game/tables/ItemTable.h"
 
@@ -329,7 +331,8 @@ bool readChestItemRecordInt32(
     return true;
 }
 
-std::optional<int> legacyGoldHeapFallbackTreasureLevel(uint32_t itemId, int normalizedMapTreasureLevel)
+// The size of a gold pile item: 0 small, 1 medium, 2 large.
+std::optional<int> goldPileSize(uint32_t itemId)
 {
     switch (itemId)
     {
@@ -337,23 +340,35 @@ std::optional<int> legacyGoldHeapFallbackTreasureLevel(uint32_t itemId, int norm
         case 197:
         case 999:
         case 1799:
-            return std::clamp(normalizedMapTreasureLevel, 1, 2);
+            return 0;
 
         case 188:
         case 198:
         case 1000:
         case 1800:
-            return std::clamp(normalizedMapTreasureLevel, 3, 4);
+            return 1;
 
         case 189:
         case 199:
         case 1001:
         case 1801:
-            return std::clamp(normalizedMapTreasureLevel, 5, 6);
+            return 2;
 
         default:
             return std::nullopt;
     }
+}
+
+std::optional<int> legacyGoldHeapFallbackTreasureLevel(uint32_t itemId, int normalizedMapTreasureLevel)
+{
+    const std::optional<int> size = goldPileSize(itemId);
+
+    if (!size)
+    {
+        return std::nullopt;
+    }
+
+    return std::clamp(normalizedMapTreasureLevel, *size * 2 + 1, *size * 2 + 2);
 }
 
 std::pair<int, int> remapTreasureLevelRange(int itemTreasureLevel, int mapTreasureLevel)
@@ -441,7 +456,10 @@ GameplayChestViewState buildMaterializedChestView(
                     return generatedItems;
                 }
 
-                const ItemDefinition *pItemDefinition = pItemTable->get(uint32_t(rawItemId));
+                const ItemRules &itemRules = gameRulesFor(pParty).items;
+                std::mt19937 potionRng(makeChestSeed(sessionChestSeed, mapId, chestId, uint32_t(recordIndex)));
+                const uint32_t placedItemId = itemRules.placedItemId(uint32_t(rawItemId), potionRng);
+                const ItemDefinition *pItemDefinition = pItemTable->get(placedItemId);
 
                 if (pItemDefinition == nullptr)
                 {
@@ -449,11 +467,7 @@ GameplayChestViewState buildMaterializedChestView(
                 }
 
                 GameplayChestItemState item = {};
-                item.item = ItemGenerator::makeInventoryItem(
-                    uint32_t(rawItemId),
-                    *pItemTable,
-                    ItemGenerationMode::ChestLoot);
-                std::mt19937 potionRng(makeChestSeed(sessionChestSeed, mapId, chestId, uint32_t(recordIndex)));
+                item.item = ItemGenerator::makeInventoryItem(placedItemId, *pItemTable, ItemGenerationMode::ChestLoot);
                 ItemGenerator::assignPlacedPotionPower(item.item, *pItemTable, potionRng);
                 item.itemId = item.item.objectDescriptionId;
                 item.quantity = item.item.quantity;
@@ -462,8 +476,16 @@ GameplayChestViewState buildMaterializedChestView(
                 {
                     int32_t rawGoldAmount = 0;
                     uint32_t goldAmount = 0;
+                    const std::optional<int> pileSize = goldPileSize(placedItemId);
+                    std::mt19937 goldRng(makeChestSeed(sessionChestSeed, mapId, chestId, uint32_t(recordIndex)));
+                    const std::optional<uint32_t> rulesGold =
+                        pileSize ? itemRules.chestGoldAmount(*pileSize, goldRng) : std::nullopt;
 
-                    if (readChestItemRecordInt32(chest, recordIndex, ChestItemGoldAmountOffset, rawGoldAmount)
+                    if (rulesGold)
+                    {
+                        goldAmount = *rulesGold;
+                    }
+                    else if (readChestItemRecordInt32(chest, recordIndex, ChestItemGoldAmountOffset, rawGoldAmount)
                         && rawGoldAmount > 0)
                     {
                         goldAmount = uint32_t(rawGoldAmount);
@@ -472,7 +494,7 @@ GameplayChestViewState buildMaterializedChestView(
                     if (goldAmount == 0)
                     {
                         const std::optional<int> fallbackTreasureLevel =
-                            legacyGoldHeapFallbackTreasureLevel(uint32_t(rawItemId), normalizedMapTreasureLevel);
+                            legacyGoldHeapFallbackTreasureLevel(placedItemId, normalizedMapTreasureLevel);
 
                         if (fallbackTreasureLevel.has_value())
                         {
@@ -493,6 +515,18 @@ GameplayChestViewState buildMaterializedChestView(
                     item.goldAmount = goldAmount;
                     item.goldRollCount = 1u;
                     item.isGold = true;
+                }
+                else if (const FilteredLoot filtered = filterDroppedLoot(item.item, *pItemDefinition, pParty,
+                             pStandardItemEnchantTable, pSpecialItemEnchantTable);
+                    filtered.verdict == LootFilterVerdict::Gold)
+                {
+                    // The loot filter turns placed items into their gold too.
+                    item.goldAmount = filtered.gold;
+                    item.goldRollCount = 1;
+                    item.isGold = true;
+                    item.item = {};
+                    item.itemId = 0;
+                    item.quantity = 0;
                 }
 
                 resolveChestItemSize(item, pItemTable);
@@ -562,9 +596,10 @@ GameplayChestViewState buildMaterializedChestView(
 
                 if (roll < 60)
                 {
-                    item.goldAmount = uint32_t(generateGoldAmount(
-                        std::min(resolvedTreasureLevel, SpawnableItemTreasureLevels),
-                        rng));
+                    const int goldLevel = std::min(resolvedTreasureLevel, SpawnableItemTreasureLevels);
+                    const std::optional<uint32_t> rulesGold =
+                        gameRulesFor(pParty).items.chestGoldAmount((goldLevel - 1) / 2, rng);
+                    item.goldAmount = rulesGold ? *rulesGold : uint32_t(generateGoldAmount(goldLevel, rng));
                     item.goldRollCount = item.goldAmount > 0 ? 1u : 0u;
                     item.isGold = item.goldAmount > 0;
 
@@ -582,7 +617,7 @@ GameplayChestViewState buildMaterializedChestView(
                         continue;
                     }
 
-                    const std::optional<InventoryItem> generatedItem =
+                    std::optional<InventoryItem> generatedItem =
                         ItemGenerator::generateRandomInventoryItem(
                             *pItemTable,
                             *pStandardItemEnchantTable,
@@ -600,9 +635,25 @@ GameplayChestViewState buildMaterializedChestView(
                         continue;
                     }
 
-                    item.item = *generatedItem;
-                    item.itemId = item.item.objectDescriptionId;
-                    item.quantity = item.item.quantity;
+                    const ItemDefinition *pDefinition = pItemTable->get(generatedItem->objectDescriptionId);
+                    const FilteredLoot filtered = pDefinition != nullptr
+                        ? filterDroppedLoot(*generatedItem, *pDefinition, pParty, pStandardItemEnchantTable,
+                              pSpecialItemEnchantTable)
+                        : FilteredLoot{};
+
+                    if (filtered.verdict == LootFilterVerdict::Gold)
+                    {
+                        // The loot filter leaves the item's gold in its place.
+                        item.goldAmount = filtered.gold;
+                        item.goldRollCount = 1;
+                        item.isGold = true;
+                    }
+                    else
+                    {
+                        item.item = *generatedItem;
+                        item.itemId = item.item.objectDescriptionId;
+                        item.quantity = item.item.quantity;
+                    }
                 }
 
                 resolveChestItemSize(item, pItemTable);
@@ -772,6 +823,8 @@ bool takeChestItem(GameplayChestViewState &view, size_t itemIndex, GameplayChest
     }
 
     item = view.items[itemIndex];
+    // Taken, the loot filter's mark is gone (it only greys a drop where it fell).
+    item.item.rulesetFields.lootFiltered = 0;
     view.items.erase(view.items.begin() + ptrdiff_t(itemIndex));
     tryPlaceHiddenChestItems(view);
     return true;
@@ -787,6 +840,8 @@ bool takeChestItemAt(GameplayChestViewState &view, uint8_t gridX, uint8_t gridY,
         }
 
         item = view.items[itemIndex];
+        // Taken, the loot filter's mark is gone (it only greys a drop where it fell).
+        item.item.rulesetFields.lootFiltered = 0;
         view.items.erase(view.items.begin() + ptrdiff_t(itemIndex));
         tryPlaceHiddenChestItems(view);
         return true;
@@ -856,6 +911,13 @@ ChestTrapOpenResult resolveChestTrapOpen(
     ChestTrapOpenResult result = {};
     result.openedByTelekinesis = context.openedByTelekinesis;
 
+    if (const std::optional<std::string> refusal = party.rules().items.chestOpenRefusal(party, map.disarmDifficulty))
+    {
+        result.shouldOpenChest = false;
+        result.refusal = *refusal;
+        return result;
+    }
+
     if ((chestFlags & ChestTrapFlag) == 0)
     {
         return result;
@@ -917,14 +979,16 @@ ChestTrapOpenResult resolveChestTrapOpen(
         }
         else
         {
-            memberResult.damage = GameMechanics::resolveCharacterIncomingDamage(
-                *pMember,
-                pItemTable,
-                pStandardItemEnchantTable,
-                pSpecialItemEnchantTable,
-                result.trapDamage,
-                result.damageType,
-                rng);
+            CharacterDamageHit hit = {};
+            hit.amount = result.trapDamage;
+            hit.type = result.damageType;
+            hit.pCharacter = pMember;
+            hit.pItemTable = pItemTable;
+            hit.pStandardItemEnchantTable = pStandardItemEnchantTable;
+            hit.pSpecialItemEnchantTable = pSpecialItemEnchantTable;
+            hit.partyCount = int(std::max<size_t>(1, party.members().size()));
+            hit.pRng = &rng;
+            memberResult.damage = party.rules().combat.damageToCharacter(hit);
         }
 
         result.memberResults.push_back(memberResult);

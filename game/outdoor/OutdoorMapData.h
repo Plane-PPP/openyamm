@@ -258,6 +258,8 @@ struct OutdoorMapData
     OutdoorLocationType locationType = OutdoorLocationType::Exterior;
     float lightmapBrightnessScale = 1.0f;
     float viewDistanceScale = 1.0f;
+    // The scene's movement.flight_ceiling; the default ceiling when absent.
+    std::optional<float> flightCeiling;
     bool noTerrain = false;
     std::string skyTexture;
     std::string groundTilesetName;

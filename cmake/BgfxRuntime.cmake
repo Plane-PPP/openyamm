@@ -7,6 +7,8 @@ function(openyamm_bgfx_shader_platform outputVariable)
         set(shaderPlatform "android")
     elseif (WIN32)
         set(shaderPlatform "windows")
+    elseif (IOS)
+        set(shaderPlatform "ios")
     elseif (APPLE)
         set(shaderPlatform "osx")
     else()
@@ -24,7 +26,8 @@ function(openyamm_bgfx_shader_targets outputVariable)
     elseif (WIN32)
         set(shaderTargets "windows|150|glsl")
     elseif (APPLE)
-        set(shaderTargets "osx|150|glsl")
+        openyamm_bgfx_shader_platform(shaderPlatform)
+        set(shaderTargets "${shaderPlatform}|metal|metal")
     else()
         set(shaderTargets "linux|150|glsl")
     endif()
@@ -112,6 +115,7 @@ function(openyamm_compile_bgfx_shader_for_target sourcePath shaderType outputNam
             "${CMAKE_SOURCE_DIR}/game/shaders/outdoor_lighting.sh"
             "${CMAKE_SOURCE_DIR}/game/shaders/sky_common.sh"
             "${CMAKE_SOURCE_DIR}/game/shaders/weather_wetness.sh"
+            "${CMAKE_SOURCE_DIR}/game/shaders/shield_common.sh"
             "${OPENYAMM_BGFX_SOURCE_DIR}/examples/common/shaderlib.sh"
             openyamm_shaderc
         VERBATIM
@@ -163,7 +167,7 @@ function(openyamm_configure_bgfx_runtime)
     if (NOT TARGET openyamm_bgfx)
         find_package(Threads REQUIRED)
 
-        if (NOT ANDROID)
+        if (NOT ANDROID AND NOT APPLE)
             find_package(OpenGL REQUIRED)
         endif()
 
@@ -205,7 +209,13 @@ function(openyamm_configure_bgfx_runtime)
             )
         endif()
 
-        if (WIN32 OR OPENYAMM_USE_VULKAN)
+        if (APPLE)
+            set(openyammMetalSource "${OPENYAMM_BGFX_SOURCE_DIR}/src/renderer_mtl.cpp")
+            set_source_files_properties("${openyammMetalSource}" PROPERTIES LANGUAGE OBJCXX)
+            target_sources(openyamm_bgfx PRIVATE "${openyammMetalSource}")
+        endif()
+
+        if (WIN32 OR OPENYAMM_USE_VULKAN OR APPLE)
             target_sources(openyamm_bgfx PRIVATE
                 ${OPENYAMM_BGFX_SOURCE_DIR}/src/shader_dxbc.cpp
             )
@@ -228,7 +238,16 @@ function(openyamm_configure_bgfx_runtime)
         )
 
         target_compile_features(openyamm_bgfx PUBLIC cxx_std_20)
-        if (ANDROID)
+        if (IOS)
+            target_include_directories(openyamm_bgfx PRIVATE ${OPENYAMM_BX_SOURCE_DIR}/include/compat/ios)
+        elseif (APPLE)
+            target_include_directories(openyamm_bgfx PRIVATE ${OPENYAMM_BX_SOURCE_DIR}/include/compat/osx)
+        endif()
+        if (APPLE)
+            set(openyammBgfxOpenGlVersion 0)
+            set(openyammBgfxOpenGlesVersion 0)
+            set(openyammBgfxDebug "$<IF:$<CONFIG:Debug>,1,0>")
+        elseif (ANDROID)
             set(openyammBgfxOpenGlVersion 0)
             set(openyammBgfxOpenGlesVersion 30)
             set(openyammBgfxDebug 0)
@@ -252,7 +271,7 @@ function(openyamm_configure_bgfx_runtime)
             PRIVATE
                 BGFX_CONFIG_RENDERER_DIRECT3D11=0
                 BGFX_CONFIG_RENDERER_DIRECT3D12=0
-                BGFX_CONFIG_RENDERER_METAL=0
+                BGFX_CONFIG_RENDERER_METAL=$<BOOL:${APPLE}>
                 BGFX_CONFIG_RENDERER_VULKAN=$<BOOL:${OPENYAMM_USE_VULKAN}>
                 BGFX_CONFIG_RENDERER_WEBGPU=0
                 BGFX_CONFIG_RENDERER_OPENGL=${openyammBgfxOpenGlVersion}
@@ -271,7 +290,14 @@ function(openyamm_configure_bgfx_runtime)
 
         target_link_libraries(openyamm_bgfx PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 
-        if (ANDROID)
+        if (APPLE)
+            target_link_libraries(openyamm_bgfx PUBLIC
+                "-framework Foundation" "-framework Metal" "-framework QuartzCore"
+            )
+            if (NOT IOS)
+                target_link_libraries(openyamm_bgfx PUBLIC "-framework IOKit")
+            endif()
+        elseif (ANDROID)
             target_link_libraries(openyamm_bgfx PUBLIC EGL GLESv3 android log)
         else()
             target_link_libraries(openyamm_bgfx PUBLIC OpenGL::GL)
@@ -375,9 +401,14 @@ function(openyamm_configure_bgfx_runtime)
 
         add_executable(openyamm_shaderc ${openyammShadercSources})
 
-        if (OPENYAMM_USE_VULKAN)
+        if (OPENYAMM_USE_VULKAN OR APPLE)
             include(BgfxSpirv)
             openyamm_configure_spirv_compiler()
+        endif()
+
+        if (APPLE)
+            target_sources(openyamm_shaderc PRIVATE ${OPENYAMM_BGFX_SOURCE_DIR}/tools/shaderc/shaderc_metal.cpp)
+            target_compile_definitions(openyamm_shaderc PRIVATE OPENYAMM_SHADERC_ENABLE_METAL=1)
         endif()
 
         target_include_directories(openyamm_shaderc PRIVATE
@@ -540,6 +571,11 @@ function(openyamm_configure_runtime_shaders)
         "${CMAKE_SOURCE_DIR}/game/shaders/vs_shield_dome.sc" "vertex" "vs_shield_dome.bin")
     openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/fs_shield_dome.sc" "fragment" "fs_shield_dome.bin")
+    # Energy shield shells over creatures (loaded the first time a shielded creature draws).
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/vs_model_shield.sc" "vertex" "vs_model_shield.bin")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_model_shield.sc" "fragment" "fs_model_shield.bin")
     openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/vs_model.sc"
         "vertex"
@@ -668,6 +704,7 @@ function(openyamm_configure_runtime_shaders)
         fs_particle.bin
         vs_effect_ribbon.bin fs_effect_ribbon.bin
         vs_shield_dome.bin fs_shield_dome.bin
+        vs_model_shield.bin fs_model_shield.bin
         vs_model.bin
         fs_model.bin
         vs_model_shadow.bin fs_model_shadow.bin
@@ -709,4 +746,6 @@ function(openyamm_configure_runtime_shaders)
         DEPENDS
             ${runtimeShaderOutputs}
     )
+    # Apple app bundles carry the shader files as resources.
+    set_property(GLOBAL PROPERTY OPENYAMM_RUNTIME_SHADER_OUTPUTS "${runtimeShaderOutputs}")
 endfunction()

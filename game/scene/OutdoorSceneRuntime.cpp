@@ -1,4 +1,5 @@
 #include "game/scene/OutdoorSceneRuntime.h"
+#include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/FaceEnums.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/TravelRuntime.h"
@@ -338,6 +339,7 @@ OutdoorSceneRuntime::AdvanceFrameResult OutdoorSceneRuntime::advanceFrame(
 
     uint64_t stageBeginTickCount = pPerformanceDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
     m_pPartyRuntime->setActorColliders(buildRuntimeActorColliders(*m_pWorldRuntime));
+    m_pPartyRuntime->setHiddenDecorationEntities(m_pWorldRuntime->refreshHiddenDecorationEntities());
     if (pPerformanceDiagnostics != nullptr)
     {
         pPerformanceDiagnostics->actorColliderBuildNanoseconds += SDL_GetTicksNS() - stageBeginTickCount;
@@ -594,6 +596,8 @@ bool OutdoorSceneRuntime::executeEventById(
     const std::optional<ScriptedEventProgram> emptyLocalProgram;
     const std::optional<ScriptedEventProgram> &effectiveLocalEventProgram =
         activeDecorationContext.has_value() && allowGlobalFallback ? emptyLocalProgram : localEventProgram;
+    const std::vector<int64_t> statsBefore =
+        activeDecorationContext ? partyBaseStatSnapshot(m_pPartyRuntime->party()) : std::vector<int64_t>{};
 
     const bool executed = m_eventRuntime.executeEventById(
         effectiveLocalEventProgram,
@@ -606,6 +610,12 @@ bool OutdoorSceneRuntime::executeEventById(
         allowGlobalFallback
     );
     pEventRuntimeState->activeDecorationContext.reset();
+
+    if (executed && activeDecorationContext)
+    {
+        reportDecorationStatGain(
+            m_pPartyRuntime->party(), *pEventRuntimeState, activeDecorationContext->decorVarIndex, statsBefore);
+    }
 
     if (!executed)
     {

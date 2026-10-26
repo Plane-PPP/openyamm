@@ -17,6 +17,7 @@ def check_model_selection():
                 "world.yml": b"id: mm6\n",
                 "sprites/grass.png": b"grass",
                 "models/actors.yml": b"actors:\n- model: worlds/mm6/models/demon.glb\n",
+                "models/projectiles.yml": b"projectiles: []\n",
                 "models/demon.glb": b"model",
                 "models/textures/0123.oytex": b"cooked texture",
                 "models/README.md": b"notes",
@@ -35,7 +36,7 @@ def check_model_selection():
             package(source, output)
             with zipfile.ZipFile(output) as archive:
                 assert set(archive.namelist()) == {
-                    "world.yml", "sprites/grass.png", "models/actors.yml", "models/demon.glb",
+                    "world.yml", "sprites/grass.png", "models/actors.yml", "models/projectiles.yml", "models/demon.glb",
                     "models/textures/0123.oytex", "effects/mm9/models/spells/bugpath.glb",
                     "world_items/items.yml", "world_items/models/boots.glb", "world_items/models/textures/boots.oytex"
                 }, archive.namelist()

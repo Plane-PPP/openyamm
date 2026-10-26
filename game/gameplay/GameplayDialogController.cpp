@@ -28,6 +28,9 @@
 #include "game/tables/SpellTable.h"
 #include "game/party/Party.h"
 #include "game/party/SpellIds.h"
+#include "game/rules/ExperienceRules.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/MonsterRules.h"
 #include "game/tables/RosterTable.h"
 
 #include <algorithm>
@@ -99,6 +102,8 @@ const char *eventDialogActionKindName(EventDialogActionKind kind)
             return "npc_btb";
         case EventDialogActionKind::MapTransitionConfirm:
             return "map_transition_confirm";
+        case EventDialogActionKind::MapTransitionReset:
+            return "map_transition_reset";
         case EventDialogActionKind::MapTransitionCancel:
             return "map_transition_cancel";
         case EventDialogActionKind::RosterJoinOffer:
@@ -1459,13 +1464,26 @@ void cancelMapTransition(GameplayDialogController::Context &context)
     }
 }
 
+// A topic that paid the party gold and the first member experience may pay extra gold under the rules (MAW).
 bool executeNpcTopicEvent(
     GameplayDialogController::Context &context,
     uint16_t eventId,
     size_t &previousMessageCount)
 {
-    return context.pWorldRuntime != nullptr
+    const Character *pFirst = context.pParty != nullptr ? context.pParty->member(0) : nullptr;
+    const int goldBefore = context.pParty != nullptr ? context.pParty->gold() : 0;
+    const uint32_t experienceBefore = pFirst != nullptr ? pFirst->experience : 0;
+    const bool executed = context.pWorldRuntime != nullptr
         && context.pWorldRuntime->executeNpcTopicEvent(eventId, previousMessageCount);
+    pFirst = context.pParty != nullptr ? context.pParty->member(0) : nullptr;
+
+    if (executed && pFirst != nullptr && context.pParty->gold() > goldBefore && pFirst->experience > experienceBefore)
+    {
+        context.pParty->addGold(context.pParty->rules().experience.questGoldBonus(
+            context.pParty->gold() - goldBefore, context.eventRuntimeState.activeHistoryContinentId));
+    }
+
+    return executed;
 }
 
 bool executeBuiltInNpcTopic(
@@ -1652,7 +1670,8 @@ bool castNpcFollowerPartySpell(
 
     const float durationSeconds = spellId == spellIdValue(SpellId::Bless) || spellId == spellIdValue(SpellId::Heroism)
         ? 7200.0f : 0.0f;
-    if (!tryApplyEventSpellBuffs(*context.pParty, spellId, skillLevel, rawSkillMastery, durationSeconds))
+    if (!tryApplyEventSpellBuffs(
+            *context.pParty, spellId, skillLevel, rawSkillMastery, durationSeconds, BuffSource::Hireling))
     {
         return false;
     }
@@ -1941,6 +1960,11 @@ int effectiveReputationForContext(const GameplayDialogController::Context &conte
 
 const Character *mm9TransportMerchantMember(const Party &party)
 {
+    if (const Character *pRulesMerchant = PriceCalculator::rulesMerchantMember(party))
+    {
+        return pRulesMerchant;
+    }
+
     const Character *pMerchant = party.bestPartyWideUtilitySkillMember("Merchant");
     return pMerchant != nullptr ? pMerchant : party.activeMember();
 }
@@ -2512,7 +2536,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         return result;
     }
 
-    if (action.kind == EventDialogActionKind::MapTransitionConfirm)
+    if (action.kind == EventDialogActionKind::MapTransitionConfirm
+        || action.kind == EventDialogActionKind::MapTransitionReset)
     {
         if (context.pParty != nullptr)
         {
@@ -2569,6 +2594,13 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             context.eventRuntimeState.pendingMapMove =
                 *context.eventRuntimeState.pendingDialogueContext->transitionMapMove;
             context.eventRuntimeState.pendingMapMove->travelTimeApplied = travelTimeApplied;
+
+            if (action.kind == EventDialogActionKind::MapTransitionReset
+                && context.eventRuntimeState.pendingMapMove->mapName)
+            {
+                gameRulesFor(context.pParty).monsters.resetMap(*context.eventRuntimeState.pendingMapMove->mapName);
+            }
+
             result.shouldCloseActiveDialog = true;
             return result;
         }
@@ -3553,6 +3585,12 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 context.pNpcDialogTable,
                 533,
                 "You already have enough followers."));
+        }
+        else if (const std::optional<FollowerHireRefusal> refusal =
+                     context.pParty->rules().classes.followerHireRefusal(
+                         currentDialogueHostHouseId(context.eventRuntimeState)))
+        {
+            context.eventRuntimeState.messages.push_back(refusal->message);
         }
         else if (context.pParty->gold() < static_cast<int>(pProfession->weeklyCost))
         {

@@ -2102,7 +2102,7 @@ TEST_CASE("mm6 Dragoons Caverns flour sack states use MMMerge food search and cl
         REQUIRE_EQ(runtimeState.statusMessages.size(), 1u);
         CHECK_EQ(
             runtimeState.statusMessages.front(),
-            foundFood > 0 ? "You found " + std::to_string(foundFood) + " food!" : "Empty sack");
+            foundFood > 0 ? "You find " + std::to_string(foundFood) + " food" : "Empty sack");
         CHECK_EQ(runtimeState.decorVars[0], bindingSpec->eventCount);
         CHECK(OpenYAMM::Game::interactiveDecorationIsCleared(
             runtimeState.decorVars[0],
@@ -2188,6 +2188,29 @@ TEST_CASE("food inventory items explicitly retain the eating sound")
     CHECK_EQ(*result.soundId, OpenYAMM::Game::SoundId::Eat);
     CHECK_EQ(party.food(), initialFood + 1);
     CHECK(party.pendingAudioRequests().empty());
+}
+
+TEST_CASE("only food items are eaten, not items whose names contain a food word")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+
+    // Green Apple, Red Apple, Apple and Tobersk Fruit.
+    for (uint32_t foodItemId : {655u, 1432u, 2104u, 643u})
+    {
+        OpenYAMM::Game::InventoryItem food = {};
+        food.objectDescriptionId = foodItemId;
+        CHECK_MESSAGE(
+            OpenYAMM::Game::InventoryItemUseRuntime::classifyItemUse(food, gameData.itemTable)
+                == OpenYAMM::Game::InventoryItemUseAction::EatFoodItem,
+            foodItemId);
+    }
+
+    // Labyrinth Grapple is a polearm; its name contains "apple".
+    OpenYAMM::Game::InventoryItem grapple = {};
+    grapple.objectDescriptionId = 50;
+    CHECK_NE(
+        OpenYAMM::Game::InventoryItemUseRuntime::classifyItemUse(grapple, gameData.itemTable),
+        OpenYAMM::Game::InventoryItemUseAction::EatFoodItem);
 }
 
 TEST_CASE("mm7 shoals scene overlay combines always dark fog with underwater tint")
@@ -5198,7 +5221,7 @@ TEST_CASE("outdoor steep terrain slides stationary party downhill")
     CHECK_FALSE(resolved.airborne);
 }
 
-TEST_CASE("outdoor steep terrain rejects uphill input and keeps sliding downhill")
+TEST_CASE("outdoor steep terrain keeps uphill input against the slide")
 {
     OpenYAMM::Game::OutdoorMapData mapData = {};
     mapData.heightMap.assign(
@@ -5248,9 +5271,9 @@ TEST_CASE("outdoor steep terrain rejects uphill input and keeps sliding downhill
         4000.0f,
         0.1f);
 
-    CHECK_GT(resolved.x, state.x);
-    CHECK_LT(resolved.y, state.y);
-    CHECK_LE(resolved.footZ, state.footZ);
+    // MM8 0x474cea keeps the input on a steep terrain triangle, so walking uphill gains ground against the slide
+    // (re_mm8/PARTY_SLOPE_CLIMBING.md, gap 2).
+    CHECK_GT(resolved.footZ, state.footZ);
     CHECK_FALSE(resolved.airborne);
 }
 
@@ -6710,19 +6733,10 @@ TEST_CASE("recovery enchant increases recovery progress")
     REQUIRE(pRingDefinition != nullptr);
 
     OpenYAMM::Game::InventoryItem enchantedRing = {
-        pRingDefinition->itemId,
-        1,
-        pRingDefinition->inventoryWidth,
-        pRingDefinition->inventoryHeight,
-        0,
-        0,
-        true,
-        false,
-        false,
-        0,
-        0,
-        *recoveryEnchantId,
-        0
+        .objectDescriptionId = pRingDefinition->itemId,
+        .width = pRingDefinition->inventoryWidth,
+        .height = pRingDefinition->inventoryHeight,
+        .specialEnchantId = *recoveryEnchantId,
     };
     std::optional<OpenYAMM::Game::InventoryItem> heldReplacement;
 
@@ -6908,6 +6922,51 @@ TEST_CASE("event experience variable awards direct member experience without lea
     REQUIRE(eventRuntime.executeEventById(scriptedProgram, std::nullopt, 1, runtimeState, &party, nullptr));
     CHECK_EQ(pFirst->experience, 50u);
     CHECK_EQ(pSecond->experience, 50u);
+}
+
+TEST_CASE("lua evt.GiveItem grants an item identified when asked (audit FCOR-2-82)")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> scriptedProgram = loadSyntheticScriptedProgram(
+        "evt.map[1] = function()\n"
+        "    for _ = 1, 20 do\n"
+        "        evt.GiveItem(5, 12)\n"
+        "        evt.GiveItem(5, 12, {identified = true})\n"
+        "    end\n"
+        "end\n",
+        "@SyntheticGiveItem.lua",
+        OpenYAMM::Game::ScriptedEventScope::Map);
+    REQUIRE(scriptedProgram.has_value());
+
+    OpenYAMM::Game::Party party = {};
+    party.setItemTable(&gameData.itemTable);
+    party.setItemEnchantTables(&gameData.standardItemEnchantTable, &gameData.specialItemEnchantTable);
+    party.seed(createRegressionPartySeed());
+    OpenYAMM::Game::EventRuntime eventRuntime = {};
+    OpenYAMM::Game::EventRuntimeState runtimeState = {};
+    REQUIRE(eventRuntime.executeEventById(scriptedProgram, std::nullopt, 1, runtimeState, &party, nullptr));
+    REQUIRE_EQ(runtimeState.grantedItems.size(), 40u);
+    bool plainUnidentified = false;
+
+    for (size_t index = 0; index < runtimeState.grantedItems.size(); ++index)
+    {
+        const OpenYAMM::Game::InventoryItem &item = runtimeState.grantedItems[index];
+        const OpenYAMM::Game::ItemDefinition *pDefinition = gameData.itemTable.get(item.objectDescriptionId);
+        REQUIRE(pDefinition != nullptr);
+        CHECK_EQ(pDefinition->equipStat, "Amulet");
+
+        if (index % 2 == 1)
+        {
+            CHECK(item.identified);
+        }
+        else
+        {
+            plainUnidentified = plainUnidentified || !item.identified;
+        }
+    }
+
+    // Without the option an amulet keeps the generator's state: unidentified.
+    CHECK(plainUnidentified);
 }
 
 TEST_CASE("lua event runtime supports evt jump alias")
@@ -7238,7 +7297,78 @@ TEST_CASE("interactive decoration rules cover MM6 and MM7 indoor loot decoration
     CHECK_EQ(mm8BeaconFireSpec->eventCount, 7u);
     CHECK(mm8BeaconFireSpec->useSeededInitialState);
 
+    // MMerge's campfires by name (GlobalEventsNewHandler.lua): the MM6 fires give food; MM8's dec04 does not.
+    const std::vector<std::pair<std::string, std::string>> campFires = {
+        {"ckfyr00", "fire"}, {"cmpfyr00", "fire"}, {"fire01", "large fire"}, {"7dec02", "campfire"},
+        {"dec24", "campfire"}, {"dec25", "campfire"}};
+    for (const auto &[internalName, hint] : campFires)
+    {
+        CAPTURE(internalName);
+        const std::optional<OpenYAMM::Game::InteractiveDecorationBindingSpec> campFireSpec =
+            OpenYAMM::Game::resolveInteractiveDecorationBindingSpec(makeDecoration(internalName, hint), internalName);
+        REQUIRE(campFireSpec.has_value());
+        CHECK_EQ(campFireSpec->family, OpenYAMM::Game::InteractiveDecorationFamily::CampFire);
+        CHECK_EQ(campFireSpec->baseEventId, 285u);
+        CHECK_EQ(campFireSpec->eventCount, 2u);
+        CHECK(campFireSpec->hideWhenCleared);
+    }
+    CHECK_FALSE(OpenYAMM::Game::resolveInteractiveDecorationBindingSpec(makeDecoration("dec04", "campfire"), "dec04")
+        .has_value());
+
     CHECK_FALSE(OpenYAMM::Game::resolveInteractiveDecorationBindingSpec(makeDecoration("", "bag"), "").has_value());
+}
+
+TEST_CASE("legacy save decoration states follow MMerge's campfire list")
+{
+    using namespace OpenYAMM::Game;
+    DecorationTable decorationTable;
+    REQUIRE(decorationTable.loadRows(loadSourceTabSeparatedRows("assets_dev/engine/data_tables/decoration_data.txt")));
+
+    // An old save numbered the barrels 0 and 2 and MM8's dec04 1; the MM6 cookpot fire before them was not counted.
+    // Now the fire is 0 and the barrels 1 and 2; the fire with its own event (an ambush) is never interactive.
+    std::vector<OutdoorEntity> entities(5);
+    entities[0].name = "ckfyr00";
+    entities[1].name = "bigbarel";
+    entities[2].name = "dec04";
+    entities[3].name = "bigbarel";
+    entities[4].name = "ckfyr00";
+    entities[4].eventIdSecondary = 222;
+
+    const std::vector<int16_t> remap = legacyCampFireDecorVarRemap(entities, decorationTable);
+    CHECK_EQ(remap, std::vector<int16_t>{1, -1, 2});
+
+    EventRuntimeState state = {};
+    state.decorVars[0] = 5;
+    state.decorVars[1] = 1;
+    state.decorVars[2] = 3;
+    state.decorVars[40] = 9;
+    state.legacyCampFireDecorVars = true;
+
+    // Only marked states are renumbered (markLegacyCampFireDecorVars marks every map state of a save before 129).
+    GameSaveData saveData = {};
+    saveData.outdoorWorldStates["oute3.odm"].eventRuntimeState = EventRuntimeState{};
+    markLegacyCampFireDecorVars(saveData, 129);
+    CHECK_FALSE(saveData.outdoorWorldStates["oute3.odm"].eventRuntimeState->legacyCampFireDecorVars);
+    markLegacyCampFireDecorVars(saveData, 128);
+    CHECK(saveData.outdoorWorldStates["oute3.odm"].eventRuntimeState->legacyCampFireDecorVars);
+
+    const Party party;
+    renumberLegacyCampFireDecorVars(state, "oute3.odm", entities, decorationTable, party);
+    CHECK_FALSE(state.legacyCampFireDecorVars);
+    CHECK_EQ(state.decorVars[0], 0u);
+    CHECK_EQ(state.decorVars[1], 5u);
+    CHECK_EQ(state.decorVars[2], 3u);
+    CHECK_EQ(state.decorVars[40], 9u);
+
+    // Renumbering happens once.
+    renumberLegacyCampFireDecorVars(state, "oute3.odm", entities, decorationTable, party);
+    CHECK_EQ(state.decorVars[1], 5u);
+    CHECK_EQ(state.decorVars[2], 3u);
+
+    std::vector<OutdoorEntity> unchanged(2);
+    unchanged[0].name = "bigbarel";
+    unchanged[1].name = "dec24";
+    CHECK(legacyCampFireDecorVarRemap(unchanged, decorationTable).empty());
 }
 
 TEST_CASE("MM6 one-shot bags clear after empty item and gold searches")

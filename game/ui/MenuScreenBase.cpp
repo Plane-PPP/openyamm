@@ -39,7 +39,7 @@ std::string toLowerCopy(const std::string &value)
 bool isIndependentOutlineFont(const std::string &fontName)
 {
     const std::string name = toLowerCopy(fontName);
-    return name.starts_with("menu_") || name == "fondamento";
+    return name.starts_with("menu_") || name == "fondamento" || name == "alegreya_semibold";
 }
 
 std::filesystem::path getShaderPath(bgfx::RendererType::Enum rendererType, const char *pShaderName)
@@ -63,6 +63,10 @@ std::filesystem::path getShaderPath(bgfx::RendererType::Enum rendererType, const
 
     case bgfx::RendererType::Vulkan:
         rendererDirectory = "spirv";
+        break;
+
+    case bgfx::RendererType::Metal:
+        rendererDirectory = "metal";
         break;
 
     default:

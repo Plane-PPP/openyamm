@@ -1513,15 +1513,15 @@ Q Bit	Quest Note Text	Notes	Owner
 1512		NPC	
 1513		NPC	
 1514		NPC	
-1515		NPC	
-1516		NPC	
-1517		NPC	
-1518		NPC	
-1519		NPC	
-1520		NPC	
-1521		NPC	
-1522		NPC	
-1523		NPC	
+1515	Price fixing: King's Highway in Kriegspire has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1515
+1516	Price fixing: Blackshire Coach and Buggy in Blackshire has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1516
+1517	Price fixing: White Cap Transport Co. in the Frozen Highlands has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1517
+1518	Price fixing: Free Haven Travel East in Free Haven has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1518
+1519	Price fixing: Free Haven Travel West in Free Haven has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1519
+1520	Price fixing: Darkmoor Travel in the Mire of the Damned has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1520
+1521	Price fixing: Abdul's Discount Travel in Silver Cove has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1521
+1522	Price fixing: Royal Lines in Castle Ironfist has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1522
+1523	Price fixing: New Sorpigal Coach Company in New Sorpigal has not yet agreed to raise its prices.	NPC	Loretta Fleise stable, shown while the quest is open	1140	1523
 1524		marks quest items	scroll of dark containment
 1525		marks quest items	
 1526		marks quest items	

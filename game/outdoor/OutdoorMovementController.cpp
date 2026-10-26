@@ -30,6 +30,9 @@ constexpr float BModelEdgeSupportMoveSlack = 2.0f;
 constexpr float BModelEdgeSupportVelocitySlack = 1.0f;
 constexpr float BModelGroundSupportRise = 128.0f;
 constexpr float SlopeSlideGravityMultiplier = 4.0f;
+// MM8 pulls the party down steep terrain with 8 x gravity (lea esi,[ecx+eax*8] at 0x474d03); GrayFace's ClimbBetter,
+// default in the MM7/MM8 patches and MMerge, lowers it to 2 x. GravityPerSecond is already 2 x gravity.
+constexpr float TerrainSlopeSlideGravityMultiplier = 1.0f;
 // OE outdoor party gravity is -2 * dtTicks * Gravity, with default Gravity = 5 and dt at 128 Hz.
 constexpr float GravityPerSecond = 1280.0f;
 constexpr uint8_t PolygonFloor = 0x3;
@@ -910,9 +913,10 @@ void collideOutdoorWithModels(
 
 void collideOutdoorWithDecorations(
     CollisionState &collisionState,
-    const std::vector<OutdoorDecorationCollision> &decorationColliders)
+    const std::vector<OutdoorDecorationCollision> &decorationColliders,
+    const std::vector<bool> &hiddenEntities)
 {
-    auto collideOnce = [&collisionState, &decorationColliders](
+    auto collideOnce = [&collisionState, &decorationColliders, &hiddenEntities](
                            const bx::Vec3 &position,
                            float radius,
                            float heightOffset)
@@ -920,6 +924,12 @@ void collideOutdoorWithDecorations(
         for (size_t decorationIndex = 0; decorationIndex < decorationColliders.size(); ++decorationIndex)
         {
             const OutdoorDecorationCollision &collider = decorationColliders[decorationIndex];
+
+            if (collider.entityIndex < hiddenEntities.size() && hiddenEntities[collider.entityIndex])
+            {
+                continue;
+            }
+
             const bx::Vec3 centerLo = {
                 static_cast<float>(collider.worldX),
                 static_cast<float>(collider.worldY),
@@ -2054,22 +2064,23 @@ OutdoorMoveState OutdoorMovementController::resolveMoveForBody(
     {
         partyInputSpeed.z -= GravityPerSecond * deltaSeconds;
     }
-    else if ((!currentFloor.fromBModel && partyAtHighSlope) || partyOnSteepBModel)
+    else if (!currentFloor.fromBModel && partyAtHighSlope)
+    {
+        // MM8 0x474cea: on a steep terrain triangle the party keeps its input; gravity pulls along the slope and the
+        // terrain reflects the velocity (v += n * |n.v|), so walking uphill still gains ground against the slide.
+        slopeSlideActive = true;
+        partyNewPosition.z = currentGroundLevel;
+        const bx::Vec3 slopeNormal =
+            sampleOutdoorRenderedTerrainNormal(*m_pOutdoorMapData, partyNewPosition.x, partyNewPosition.y);
+        partyInputSpeed.z -= GravityPerSecond * TerrainSlopeSlideGravityMultiplier * deltaSeconds;
+        const float normalVelocity = vecDot(partyInputSpeed, slopeNormal);
+        partyInputSpeed = vecAdd(partyInputSpeed, vecScale(slopeNormal, std::fabs(normalVelocity)));
+    }
+    else if (partyOnSteepBModel)
     {
         slopeSlideActive = true;
-        bx::Vec3 slopeNormal = {0.0f, 0.0f, 1.0f};
-        if (!currentFloor.fromBModel)
-        {
-            partyNewPosition.z = currentGroundLevel;
-            slopeNormal =
-                sampleOutdoorRenderedTerrainNormal(*m_pOutdoorMapData, partyNewPosition.x, partyNewPosition.y);
-        }
-        else
-        {
-            slopeNormal = pCurrentBModelGeometry->normal;
-        }
-        const float terrainDownhillLengthSquared =
-            slopeNormal.x * slopeNormal.x + slopeNormal.y * slopeNormal.y;
+        const bx::Vec3 slopeNormal = pCurrentBModelGeometry->normal;
+        const float terrainDownhillLengthSquared = slopeNormal.x * slopeNormal.x + slopeNormal.y * slopeNormal.y;
 
         if (terrainDownhillLengthSquared > CollisionEpsilon * CollisionEpsilon)
         {
@@ -2276,7 +2287,7 @@ OutdoorMoveState OutdoorMovementController::resolveMoveForBody(
                 collisionState.bboxMaxY,
                 candidateFaceIndices);
             collideOutdoorWithModels(collisionState, m_faces, &candidateFaceIndices, bModelGround);
-            collideOutdoorWithDecorations(collisionState, m_decorationColliders);
+            collideOutdoorWithDecorations(collisionState, m_decorationColliders, m_hiddenDecorationEntities);
             collideOutdoorWithActors(collisionState, m_actorColliders, ignoredActorCollider);
             collectSpriteObjectCandidates(
                 collisionState.bboxMinX,
@@ -3125,7 +3136,7 @@ OutdoorMoveState OutdoorMovementController::resolveOutdoorActorMove(
             collisionState.bboxMaxY,
             candidateFaceIndices);
         collideOutdoorWithModels(collisionState, m_faces, &candidateFaceIndices, bModelGround);
-        collideOutdoorWithDecorations(collisionState, m_decorationColliders);
+        collideOutdoorWithDecorations(collisionState, m_decorationColliders, m_hiddenDecorationEntities);
         collideOutdoorWithActors(collisionState, m_actorColliders, ignoredActorCollider);
         collectSpriteObjectCandidates(
             collisionState.bboxMinX,
@@ -3407,6 +3418,11 @@ OutdoorMoveState OutdoorMovementController::resolveOutdoorActorMove(
     }
 
     return result;
+}
+
+void OutdoorMovementController::setHiddenDecorationEntities(const std::vector<bool> &hiddenEntities)
+{
+    m_hiddenDecorationEntities = hiddenEntities;
 }
 
 void OutdoorMovementController::setActorColliders(const std::vector<OutdoorActorCollision> &actorColliders)

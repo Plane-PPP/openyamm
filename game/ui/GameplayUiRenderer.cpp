@@ -1,7 +1,10 @@
 #include "game/ui/GameplayHudGeometry.h"
 #include "game/ui/GameplayUiSkin.h"
+#include "game/ui/GameplayPortraitGems.h"
 #include "game/ui/GameplayBuffHud.h"
 #include "game/ui/GameplayClock.h"
+#include "game/ui/GameplayMapProgressBar.h"
+#include "game/ui/GameplayQuickItems.h"
 #include "game/ui/GameplayUiRenderer.h"
 
 #include "game/gameplay/GameMechanics.h"
@@ -10,6 +13,8 @@
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
+#include "game/rules/ClassRules.h"
+#include "game/rules/GameRules.h"
 #include "game/StringUtils.h"
 #include "game/tables/MergedBaseTables.h"
 #include "game/tables/NpcDialogTable.h"
@@ -34,7 +39,7 @@ constexpr int EventNpcPortraitNativeWidth = 63;
 constexpr int EventNpcPortraitNativeHeight = 73;
 constexpr float EventNpcPortraitUvCropX = 2.0f;
 constexpr float EventNpcPortraitUvCropY = 2.0f;
-constexpr uint32_t MistformPortraitModulationAbgr = 0x80ffffffu;
+constexpr uint32_t TranslucentPortraitModulationAbgr = 0x80ffffffu;
 
 enum class PortraitAggroIndicator
 {
@@ -462,10 +467,11 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
         if (portrait && face)
         {
             bgfx::TextureHandle texture = portrait->textureHandle;
-            if (party.hasCharacterBuff(i, CharacterBuffId::Mistform))
+            // Mistform and party invisibility both show the portrait at half opacity.
+            if (party.hasCharacterBuff(i, CharacterBuffId::Mistform) || party.hasPartyBuff(PartyBuffId::Invisibility))
             {
                 texture = context.gameplayUiRuntime().ensureHudTextureColorModulated(
-                    *portrait, MistformPortraitModulationAbgr);
+                    *portrait, TranslucentPortraitModulationAbgr);
             }
             if (!GameMechanics::canAct(member))
             {
@@ -553,9 +559,27 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
         {
             hasPersonalBuff |= party.hasCharacterBuff(i, static_cast<CharacterBuffId>(b));
         }
+        // Potions a ruleset times on the member show as personal buffs too.
+        hasPersonalBuff = hasPersonalBuff || !gameplayPotionEffectLines(member, nullptr).empty()
+            || !gameplayUnslottedAuraLines(party, member, nullptr).empty();
+
         if (hasPersonalBuff)
         {
             draw(id + "PersonalBuffs");
+        }
+
+        // The class counter's gems beside the HP arc (MAW's combo points and Elementalist stacks).
+        if (const PortraitCounter counter = party.rules().classes.portraitCounter(member);
+            counter.kind != PortraitCounterKind::None)
+        {
+            const UiLayoutManager::LayoutElement *pHealthLayout = context.findHudLayoutElement(id + "Health");
+            const std::optional<GameplayResolvedHudLayoutElement> healthArc =
+                context.resolveHudLayoutElement(id + "Health", width, height, 0, 0);
+            if (pHealthLayout != nullptr && pHealthLayout->meterArc && healthArc)
+            {
+                renderPortraitCounterGems(context, counter, *healthArc, pHealthLayout->meterArc->strokeWidth,
+                    id + "Counter");
+            }
         }
         const int maximumHealth = GameMechanics::calculateEffectiveCharacterMaxHealth(member);
         const int maximumMana = GameMechanics::calculateEffectiveCharacterMaxSpellPoints(member);
@@ -593,6 +617,16 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
                     arc.startDegrees, arc.sweepDegrees, ArcMaterial::TrackEdge);
                 GameplayUiSkin::renderArc(context, *rect, arc.strokeWidth + 0.5f,
                     arc.startDegrees, arc.sweepDegrees, ArcMaterial::Track);
+                // The end of the gauge the member's auras hold, which the pool cannot fill.
+                const int reservedPoints = isHealth ? party.rules().spells.reservedHitPoints(party, i)
+                    : party.rules().spells.reservedSpellPoints(party, i);
+                const float reserved = std::clamp(
+                    float(reservedPoints) / std::max(1, isHealth ? maximumHealth : maximumMana), 0.0f, 1.0f);
+                if (reserved > 0)
+                {
+                    GameplayUiSkin::renderReservedArc(context, *rect, arc.strokeWidth,
+                        arc.startDegrees, arc.sweepDegrees, 1 - reserved, isHealth);
+                }
                 if (isHealth && trail > health)
                 {
                     GameplayUiSkin::renderArc(context, *rect, arc.strokeWidth,
@@ -607,6 +641,35 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
                 {
                     GameplayUiSkin::renderArc(context, *rect, arc.strokeWidth,
                         arc.startDegrees, arc.sweepDegrees, material, 0, amount);
+                }
+                if (reserved > 0)
+                {
+                    GameplayUiSkin::renderReservedMark(context, *rect, arc.strokeWidth,
+                        arc.startDegrees, arc.sweepDegrees, 1 - reserved);
+                }
+                if (isHealth && member.personalShieldCapacity > 0)
+                {
+                    // The personal energy shield: a thin cyan rim just outside the HP arc; it flashes white as it
+                    // breaks and stays dark while down (COMBAT.md, Party shields).
+                    const float offset = (arc.strokeWidth * 0.5f + 1.5f) * rect->scale;
+                    const GameplayResolvedHudLayoutElement rim = {rect->x - offset, rect->y - offset,
+                        rect->width + 2.0f * offset, rect->height + 2.0f * offset, rect->scale};
+                    const float shield = std::clamp(
+                        member.personalShield / float(member.personalShieldCapacity), 0.0f, 1.0f);
+                    const bool breaking = member.personalShieldSecondsSinceBreak >= 0.0f
+                        && member.personalShieldSecondsSinceBreak < 0.4f && shield <= 0.0f;
+                    GameplayUiSkin::renderArc(context, rim, 1.3f, arc.startDegrees, arc.sweepDegrees,
+                        ArcMaterial::ShieldDown);
+                    if (breaking)
+                    {
+                        GameplayUiSkin::renderArc(context, rim, 1.8f, arc.startDegrees, arc.sweepDegrees,
+                            ArcMaterial::ShieldFlash);
+                    }
+                    else if (shield > 0.0f)
+                    {
+                        GameplayUiSkin::renderArc(context, rim, 1.3f, arc.startDegrees, arc.sweepDegrees,
+                            ArcMaterial::Shield, 0, shield);
+                    }
                 }
                 continue;
             }
@@ -1076,7 +1139,7 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
         }
     }
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     if (hudScreenState == GameplayHudScreenState::Gameplay)
     {
         const GameplayInputFrame *pInputFrame = context.currentGameplayInputFrame();
@@ -1129,7 +1192,39 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
         if (context.worldRuntime() != nullptr)
         {
             label("ObsidianMinimapClock", formatGameplayClock(context.worldRuntime()->gameMinutes()));
+
+            // The map progress bar in the party frame's top band, while the rules give a progress (MAW).
+            if (hudScreenState == GameplayHudScreenState::Gameplay)
+            {
+                GameplayMapProgressBar::renderHud(context, width, height);
+            }
+
+            // The combat log's button and docked panel, while its setting is on.
+            if (context.settingsSnapshot().combatLog)
+            {
+                // The followers' tab frame with a sword (CombatLogToggleIcon).
+                flushQueuedHudQuads();
+                GameplayUiSkin::renderButton(
+                    context, "CombatLogToggle", width, height, context.combatLogPanel().open());
+
+                flushQueuedHudQuads();
+                context.combatLogPanel().render(context, width, height);
+            }
+
+            if (const std::optional<int> seconds =
+                    party.rules().experience.deathPendingSeconds(context.worldRuntime()->gameMinutes()))
+            {
+                // Red while a death is pending (an R5G6B5 colour code, as the clearing share's).
+                draw("ObsidianDeathTimerPlate");
+                label("ObsidianDeathTimer", "\f63488" + std::to_string(*seconds));
+            }
         }
+    }
+
+    // The quick item buttons at the portraits and the open ring (the potion radial), over the gameplay HUD.
+    if (!isLimitedOverlayHud && hudScreenState == GameplayHudScreenState::Gameplay)
+    {
+        GameplayQuickItems::renderHud(context, width, height);
     }
 }
 

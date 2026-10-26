@@ -139,7 +139,8 @@ TEST_CASE("indoor faction alerts preserve detection and leave Goblinwatch's unse
 
     const IndoorWorldRuntime::Snapshot before = fixture.world.snapshot();
     const std::vector<MapDeltaActor> actorsBefore = fixture.delta->actors;
-    REQUIRE(fixture.world.applyPartyAttackMeleeDamage(0, damage, {1356.65f, 4589.76f, 96.0f}));
+    REQUIRE(fixture.world.applyPartyAttackMeleeDamage(
+        0, damage, {1356.65f, 4589.76f, 96.0f}, ShieldAttackTier::Physical));
     const IndoorWorldRuntime::Snapshot after = fixture.world.snapshot();
 
     CHECK(after.mapActorAiStates[0].hostileToParty);
@@ -175,7 +176,7 @@ TEST_CASE("indoor faction alerts preserve detection and leave Goblinwatch's unse
 TEST_CASE("indoor faction alert survives restore without granting detection and allows a later encounter")
 {
     GoblinwatchFactionFixture fixture;
-    REQUIRE(fixture.world.applyPartyAttackMeleeDamage(0, 1, {1356.65f, 4589.76f, 96.0f}));
+    REQUIRE(fixture.world.applyPartyAttackMeleeDamage(0, 1, {1356.65f, 4589.76f, 96.0f}, ShieldAttackTier::Physical));
     const IndoorWorldRuntime::Snapshot saved = fixture.world.snapshot();
     fixture.world.restoreSnapshot(saved);
     fixture.world.updateActorAi(0.1f);

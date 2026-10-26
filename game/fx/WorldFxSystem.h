@@ -228,8 +228,10 @@ public:
     // Projectile visuals: engine/effects/projectiles.yml binds recipes (and monsters' variants of them) to named
     // flight, settled and impact effects that replace the recipe's trail particles, beam and impact burst, and may
     // override the native sprite and the flight light.
-    // The binding for a projectile of this recipe thrown by this monster (0: none); null when nothing is bound.
-    const ProjectileEffectBinding *projectileEffectBinding(FxRecipes::ProjectileRecipe recipe, int16_t monsterId) const;
+    // The binding for a projectile of this recipe thrown by this monster (0: none) as this object (its object_list
+    // name; a world's own missile is bound by it); null when nothing is bound.
+    const ProjectileEffectBinding *projectileEffectBinding(FxRecipes::ProjectileRecipe recipe, int16_t monsterId,
+        const std::string &objectName = std::string()) const;
     // Projectile models (engine/models/projectiles.yml): a bound projectile draws its model, pointed along its
     // flight, instead of its native sprite, in both projectile styles. Loads the bindings and their models.
     bool loadProjectileModels(const Engine::AssetFileSystem &assets, std::string &error);

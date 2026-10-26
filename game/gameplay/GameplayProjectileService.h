@@ -3,6 +3,7 @@
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 
 #include <cstddef>
+#include <functional>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -10,6 +11,10 @@
 
 namespace OpenYAMM::Game
 {
+class ItemTable;
+class Party;
+struct PartyMissileSource;
+class CombatRules;
 struct Character;
 class ItemTable;
 struct ObjectEntry;
@@ -26,6 +31,34 @@ public:
         Attack2,
         Spell1,
         Spell2,
+    };
+
+    // Homing of a true_aim monster's projectile (MonsterModifiers): each step it turns toward its target's current
+    // position. Runtime only, never saved: a projectile in flight at a save flies straight on after the load.
+    struct ProjectileHoming
+    {
+        enum class TargetKind : uint8_t
+        {
+            Party,
+            Actor,
+        };
+
+        TargetKind targetKind = TargetKind::Party;
+        size_t targetActorIndex = static_cast<size_t>(-1);
+        uint32_t targetActorId = 0;
+        float turnRadiansPerSecond = 0.0f;
+        // Seconds it homes (0: its whole flight); then it flies straight on or, with expireAfter, expires.
+        float maxSeconds = 0.0f;
+        bool expireAfter = false;
+        // Its speed when it was attached (kept while it turns).
+        float speed = 0.0f;
+        float elapsedSeconds = 0.0f;
+        // The target is gone (dead or removed): it flies straight on.
+        bool lost = false;
+        // Homes only while its flight points within this many radians of the target, seen from above, tested again
+        // each frame: outside the cone it flies straight on until its line crosses the target again (0: no cone).
+        // MAW's monster missiles (FSPS-2-10).
+        float lockConeRadians = 0.0f;
     };
 
     struct ProjectileState
@@ -71,8 +104,16 @@ public:
         int damage = 0;
         int attackBonus = 0;
         CombatDamageType damageType = CombatDamageType::Physical;
+        // Set for party attacks (CharacterAttackResult::shieldTier); otherwise the tier follows from the spell and
+        // damage type (projectileShieldTier). Not saved: a projectile in flight at a save falls back to that.
+        std::optional<ShieldAttackTier> shieldTier;
+        // Resisted by the lower of the monster's physical and fire resistance (MAW's fire arrows); not saved.
+        bool weakerOfPhysicalAndFire = false;
+        // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); not saved.
+        float explosionRadius = 0.0f;
         bool useActorHitChance = false;
         bool turnBasedPendingAction = false;
+        std::optional<ProjectileHoming> homing;
         uint32_t timeSinceCreatedTicks = 0;
         float lifetimeTickAccumulator = 0.0f;
         uint32_t lifetimeTicks = 0;
@@ -139,6 +180,11 @@ public:
         int damage = 0;
         int attackBonus = 0;
         CombatDamageType damageType = CombatDamageType::Physical;
+        std::optional<ShieldAttackTier> shieldTier;
+        // Resisted by the lower of the monster's physical and fire resistance (MAW's fire arrows); not saved.
+        bool weakerOfPhysicalAndFire = false;
+        // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); not saved.
+        float explosionRadius = 0.0f;
         bool useActorHitChance = false;
         bool turnBasedPendingAction = false;
         uint32_t impactSoundIdOverride = 0;
@@ -333,6 +379,12 @@ public:
         bool halfIncomingMissileDamage = false;
         float targetDistance = 0.0f;
         int nonPartyProjectileDamage = 0;
+        // The rules a party missile's hit is rolled by (Standard when null), and what they know of the target.
+        const CombatRules *pCombatRules = nullptr;
+        ActorRulesetFacts targetFacts;
+        int partyCount = 1;
+        // The party member who fired a party missile, while in the party.
+        const Character *pShooter = nullptr;
     };
 
     struct ProjectileDirectActorImpact
@@ -366,6 +418,11 @@ public:
         int damageMultiplier = 1;
         bool halfIncomingMissileDamage = false;
         float targetDistance = 0.0f;
+        const CombatRules *pCombatRules = nullptr;
+        ActorRulesetFacts targetFacts;
+        int partyCount = 1;
+        // The party member who fired a party missile, while in the party.
+        const Character *pShooter = nullptr;
         bool waterTerrainImpact = false;
         ProjectileBounceSurfaceFacts bounceSurface;
     };
@@ -463,6 +520,25 @@ public:
         std::optional<ProjectileWardBlock> wardBlock;
         // Where a projectile that hit something ends: the hit point, not its last stepped position.
         std::optional<GameplayWorldPoint> endPoint;
+    };
+
+    // How a homing projectile ended (recentHomingEnds): what it hit, where, and whether it was still homing.
+    struct HomingProjectileEnd
+    {
+        enum class Hit
+        {
+            Party,
+            Actor,
+            World,
+            Ward,
+            Expired,
+        };
+
+        uint32_t projectileId = 0;
+        int16_t sourceMonsterId = 0;
+        Hit hit = Hit::Expired;
+        bool stillHoming = false;
+        GameplayWorldPoint point;
     };
 
     struct ProjectileActorRelationFacts
@@ -579,7 +655,16 @@ public:
     uint32_t allocateProjectileId();
     uint32_t allocateProjectileImpactId();
     static uint32_t ticksFromDeltaSeconds(float deltaSeconds);
+    // What the projectile is to an energy shield: its party attack tier, else a spell, else by damage type.
+    static ShieldAttackTier projectileShieldTier(const ProjectileState &projectile);
     ProjectileSpawnResult spawnProjectile(const ProjectileSpawnRequest &request);
+    // A party spell that leaps on from the monster it hit (MAW's Chain Lightning): a copy, one mastery lower, from that
+    // monster to the nearest other living hostile one within 768; nothing when the rules stop it or none is near.
+    std::optional<ProjectileSpawnRequest> buildChainSpawnRequest(
+        const ProjectileState &projectile,
+        const CombatRules &rules,
+        const IGameplayWorldRuntime &world,
+        size_t struckActorIndex) const;
     ProjectileSpawnEffects buildProjectileSpawnEffects(
         const ProjectileSpawnResult &result) const;
     ProjectileSpawnEffects buildProjectileSpawnEffects(
@@ -613,6 +698,37 @@ public:
     ProjectileFrameResult updateProjectileFrame(
         ProjectileState &projectile,
         const ProjectileFrameFacts &facts) const;
+    // Gives every live projectile of actor sourceActorId spawned since firstProjectileId (nextProjectileId() before
+    // the spawn) this homing, at its current speed; returns how many.
+    size_t attachHoming(uint32_t firstProjectileId, uint32_t sourceActorId, const ProjectileHoming &homing);
+    // The same for the missiles party member sourcePartyMemberIndex fired since firstProjectileId.
+    size_t attachPartyHoming(
+        uint32_t firstProjectileId,
+        uint32_t sourcePartyMemberIndex,
+        const ProjectileHoming &homing);
+    // Turns the velocity toward target by at most maxTurnRadians and sets its length to speed. False when the
+    // velocity is zero or the target lies at the position.
+    static bool steerVelocityToward(
+        float &velocityX,
+        float &velocityY,
+        float &velocityZ,
+        const GameplayWorldPoint &position,
+        const GameplayWorldPoint &target,
+        float speed,
+        float maxTurnRadians);
+    // Records how a homing projectile ended by this frame result (scenario checks, debug); others are not recorded.
+    void recordHomingEnd(const ProjectileState &projectile, const ProjectileFrameResult &result);
+    // The last 32 homing ends, oldest first.
+    const std::vector<HomingProjectileEnd> &recentHomingEnds() const
+    {
+        return m_recentHomingEnds;
+    }
+    // One step of a homing projectile before its motion: steers toward pTarget, or with no target (null) stops
+    // homing and flies straight on. True when its homing time ran out and it is to expire (expireAfter).
+    static bool steerHomingProjectile(
+        ProjectileState &projectile,
+        const GameplayWorldPoint *pTarget,
+        float deltaSeconds);
     static std::optional<ProjectileWardBlock> findProjectileWardBlock(
         const ProjectileState &projectile,
         const ProjectileMotionSegment &motion,
@@ -696,12 +812,23 @@ public:
         float z) const;
     std::optional<ProjectileAudioRequest> buildWaterSplashAudioRequest(float x, float y, float z) const;
     int resolveProjectilePartyImpactDamage(const ProjectilePartyImpactDamageInput &input) const;
+    // A party spell the world rolls itself (Fire Spike trap, Armageddon): the rules' roll (MAW rolls the spell), else
+    // `trapRoll`, the world's own.
+    static int partyWorldSpellDamage(
+        const Party *pParty,
+        const SpellTable *pSpellTable,
+        uint32_t sourcePartyMemberIndex,
+        int spellId,
+        uint32_t skillLevel,
+        uint32_t skillMastery,
+        int trapRoll);
     int resolvePartyProjectileDamageMultiplier(
         const ProjectileState &projectile,
         const Character *pSourceMember,
         const ItemTable *pItemTable,
         const SpecialItemEnchantTable *pSpecialItemEnchantTable,
-        uint32_t targetMonsterKindFlags) const;
+        uint32_t targetMonsterKindFlags,
+        const CombatRules &rules) const;
     ProjectileAreaImpact buildProjectileAreaImpact(
         const ProjectileState &projectile,
         const ProjectileAreaImpactInput &input) const;
@@ -745,9 +872,19 @@ public:
     std::vector<GameplayProjectileEndPresentationState> takeEndedProjectiles();
 
     static int16_t waterSplashObjectId();
+    // How far a spell's impact damage reaches (Fireball's also sets a Carnage arrow's); 0 for a single target.
+    static float spellImpactDamageRadius(uint32_t spellId);
+    // Who sent a party projectile, for the rules' damage to the monster it struck (no attacker for any other).
+    static PartyMissileSource partyMissileSource(
+        const ProjectileState &projectile,
+        const Party *pParty,
+        const ItemTable *pItemTable,
+        const MonsterTable::MonsterStatsEntry &targetStats,
+        int targetCurrentHp);
+    // A monster's every resistance, for the rules that pick among them.
+    static MonsterDamageResistances monsterDamageResistances(const MonsterTable::MonsterStatsEntry &stats);
 
 private:
-    static float spellImpactDamageRadius(uint32_t spellId);
     static uint32_t fireSpikeLimitForMastery(uint32_t skillMastery);
     std::optional<int> buildProjectileDirectPartyDamage(
         const ProjectileState &projectile,
@@ -755,11 +892,17 @@ private:
     const ProjectileImpactState &addProjectileImpact(ProjectileImpactState impact);
     uint32_t allocateFireSpikeTrapId();
 
+    size_t attachHomingWhere(
+        uint32_t firstProjectileId,
+        const ProjectileHoming &homing,
+        const std::function<bool(const ProjectileState &)> &fromSource);
+
     uint32_t m_nextProjectileId = 1;
     uint32_t m_nextProjectileImpactId = 1;
     uint32_t m_nextFireSpikeTrapId = 1;
     std::vector<ProjectileState> m_projectiles;
     std::vector<ProjectileImpactState> m_projectileImpacts;
     std::vector<GameplayProjectileEndPresentationState> m_endedProjectiles;
+    std::vector<HomingProjectileEnd> m_recentHomingEnds;
 };
 }

@@ -2,14 +2,19 @@
 
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayInputFrame.h"
+#include "game/gameplay/GameplayPartyOverlayInputController.h"
 #include "game/gameplay/GameplaySaveLoadUiSupport.h"
 #include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/HouseServiceRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/RulesetProgress.h"
 #include "game/StringUtils.h"
 #include "game/tables/ItemTable.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/ui/GameplayJournalAuras.h"
+#include "game/ui/GameplayJournalProgress.h"
 #include "game/ui/KeyboardScreenLayout.h"
 #include "game/ui/GameplayJournalMapUi.h"
 #include "game/ui/HouseShopLayout.h"
@@ -22,6 +27,7 @@
 #include <limits>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -431,7 +437,9 @@ enum class JournalShortcutView : uint8_t
     None = 0,
     Map,
     Story,
-    Notes
+    Notes,
+    Progress,
+    Auras
 };
 
 float snappedHudFontScale(float scale)
@@ -596,8 +604,9 @@ InventoryItem chestItemAsInventoryItem(const GameplayChestItemState &chestItem)
     return item;
 }
 
-// Takes all gold, then every item that fits somewhere in the party (largest first); the rest stays in the chest.
-void takeAllActiveChestItems(GameplayScreenRuntime &view)
+// Takes all gold, then (unless goldOnly) every item that fits somewhere in the party (largest first); the rest stays
+// in the chest.
+void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
 {
     IGameplayWorldRuntime *pWorldRuntime = view.worldRuntime();
     Party *pParty = view.party();
@@ -629,7 +638,7 @@ void takeAllActiveChestItems(GameplayScreenRuntime &view)
         {
             const GameplayChestItemState &candidate = pChestView->items[itemIndex];
 
-            if (isLeftBehind(candidate))
+            if (isLeftBehind(candidate) || (goldOnly && !candidate.isGold))
             {
                 continue;
             }
@@ -2090,6 +2099,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
     bool mapShortcutPressed,
     bool storyShortcutPressed,
     bool notesShortcutPressed,
+    bool progressShortcutPressed,
     bool zoomInPressed,
     bool zoomOutPressed,
     float mouseWheelDelta)
@@ -2104,6 +2114,9 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
         ? &journalMinimapState
         : nullptr;
     JournalShortcutView requestedJournalView = JournalShortcutView::None;
+    // MAW's Open Auras key: the aura panel in the Journal's frame.
+    const bool aurasShortcutPressed = !GameplayUiController::journalSearchActive(journalScreen)
+        && input.action(KeyboardAction::OpenAuras).held && journalHasAuraPanel(view);
 
     if (mapShortcutPressed)
     {
@@ -2116,6 +2129,14 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
     else if (notesShortcutPressed)
     {
         requestedJournalView = JournalShortcutView::Notes;
+    }
+    else if (progressShortcutPressed)
+    {
+        requestedJournalView = JournalShortcutView::Progress;
+    }
+    else if (aurasShortcutPressed)
+    {
+        requestedJournalView = JournalShortcutView::Auras;
     }
 
     if (requestedJournalView != JournalShortcutView::None)
@@ -2146,6 +2167,16 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                         journalScreen.mapDragActive = false;
                         break;
 
+                    case JournalShortcutView::Progress:
+                        journalScreen.view = GameplayUiController::JournalView::Progress;
+                        journalScreen.progress.reset();
+                        journalScreen.mapDragActive = false;
+                        break;
+
+                    case JournalShortcutView::Auras:
+                        openJournalAuraPanel(view);
+                        break;
+
                     case JournalShortcutView::None:
                         break;
                     }
@@ -2169,6 +2200,12 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
 
                     case GameplayUiController::JournalView::Notes:
                         return JournalShortcutView::Notes;
+
+                    case GameplayUiController::JournalView::Progress:
+                        return JournalShortcutView::Progress;
+
+                    case GameplayUiController::JournalView::Auras:
+                        return JournalShortcutView::Auras;
 
                     case GameplayUiController::JournalView::Quests:
                         return JournalShortcutView::None;
@@ -2298,6 +2335,10 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
             {
                 journalScreen.notesSearchActive = false;
             }
+            else if (journalScreen.view == GameplayUiController::JournalView::Auras && journalScreen.auraMoveMenuOpen)
+            {
+                journalScreen.auraMoveMenuOpen = false;
+            }
             else
             {
                 view.closeJournalOverlay();
@@ -2377,13 +2418,44 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
             pJournalMinimapState
         ](float pointerX, float pointerY) -> GameplayJournalPointerTarget
         {
-            static const std::pair<const char *, GameplayJournalPointerTargetType> CommonTargets[] = {
+            static const std::pair<const char *, GameplayJournalPointerTargetType> FourTabs[] = {
                 {"JournalMainViewMap", GameplayJournalPointerTargetType::MainMapView},
                 {"JournalMainViewQuests", GameplayJournalPointerTargetType::MainQuestsView},
                 {"JournalMainViewStory", GameplayJournalPointerTargetType::MainStoryView},
                 {"JournalMainViewNotes", GameplayJournalPointerTargetType::MainNotesView},
                 {"JournalCloseButton", GameplayJournalPointerTargetType::CloseButton},
             };
+            // MAW's journal: five shorter tabs, the fifth Progress.
+            static const std::pair<const char *, GameplayJournalPointerTargetType> FiveTabs[] = {
+                {"JournalTabs5Map", GameplayJournalPointerTargetType::MainMapView},
+                {"JournalTabs5Quests", GameplayJournalPointerTargetType::MainQuestsView},
+                {"JournalTabs5Story", GameplayJournalPointerTargetType::MainStoryView},
+                {"JournalTabs5Notes", GameplayJournalPointerTargetType::MainNotesView},
+                {"JournalTabs5Progress", GameplayJournalPointerTargetType::MainProgressView},
+                {"JournalCloseButton", GameplayJournalPointerTargetType::CloseButton},
+            };
+            const bool progressTab = journalHasProgressTab(view);
+
+            // The aura panel: its own rail and Close in place of the tabs.
+            if (journalScreen.view == GameplayUiController::JournalView::Auras)
+            {
+                const GameplayScreenRuntime::HudLayoutElement *pPage = view.findHudLayoutElement("JournalAuraPage");
+                const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> page = pPage != nullptr
+                    ? view.resolveHudLayoutElement("JournalAuraPage", screenWidth, screenHeight, pPage->width,
+                        pPage->height)
+                    : std::nullopt;
+                const JournalAuraTarget target =
+                    page ? journalAuraTargetAt(view, journalScreen, *page, pointerX, pointerY) : JournalAuraTarget{};
+
+                if (target.kind != JournalAuraTargetKind::None)
+                {
+                    return {GameplayJournalPointerTargetType::AuraPanel, packJournalAuraTarget(target)};
+                }
+
+                return resolveJournalTarget(
+                    "JournalCloseButton", GameplayJournalPointerTargetType::CloseButton, pointerX, pointerY);
+            }
+
             static const std::pair<const char *, GameplayJournalPointerTargetType> MapTargets[] = {
                 {"JournalMapZoomInButton", GameplayJournalPointerTargetType::MapZoomInButton},
                 {"JournalMapZoomOutButton", GameplayJournalPointerTargetType::MapZoomOutButton},
@@ -2402,7 +2474,8 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 {"JournalNotesSearch", GameplayJournalPointerTargetType::NotesSearchField},
             };
 
-            for (const auto &[layoutId, targetType] : CommonTargets)
+            for (const auto &[layoutId, targetType] : progressTab ? std::span<const std::pair<const char *, GameplayJournalPointerTargetType>>(FiveTabs)
+                     : std::span<const std::pair<const char *, GameplayJournalPointerTargetType>>(FourTabs))
             {
                 const GameplayJournalPointerTarget target =
                     resolveJournalTarget(layoutId, targetType, pointerX, pointerY);
@@ -2411,6 +2484,39 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 {
                     return target;
                 }
+            }
+
+            if (journalScreen.view == GameplayUiController::JournalView::Progress)
+            {
+                const GameplayScreenRuntime::HudLayoutElement *pPage = view.findHudLayoutElement("JournalProgressPage");
+                const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> page = pPage != nullptr
+                    ? view.resolveHudLayoutElement("JournalProgressPage", screenWidth, screenHeight, pPage->width,
+                        pPage->height)
+                    : std::nullopt;
+
+                if (!page)
+                {
+                    return {};
+                }
+
+                const JournalProgressTarget target =
+                    journalProgressTargetAt(view, journalScreen, *page, pointerX, pointerY);
+
+                switch (target.kind)
+                {
+                    case JournalProgressTargetKind::Continent:
+                        return {GameplayJournalPointerTargetType::ProgressContinent, uint32_t(target.index)};
+                    case JournalProgressTargetKind::Filter:
+                        return {GameplayJournalPointerTargetType::ProgressFilter, uint32_t(target.index)};
+                    case JournalProgressTargetKind::Map:
+                        return {GameplayJournalPointerTargetType::ProgressMap, uint32_t(target.index)};
+                    case JournalProgressTargetKind::Guide:
+                        return {GameplayJournalPointerTargetType::ProgressGuide, 0};
+                    case JournalProgressTargetKind::None:
+                        break;
+                }
+
+                return {};
             }
 
             if (journalScreen.view == GameplayUiController::JournalView::Map)
@@ -2547,11 +2653,42 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
         journalScreen.hoveredMapNoteId = 0;
     }
 
+    // The Progress tab: the map under the pointer shows its details, and the wheel scrolls the list.
+    if (journalScreen.view == GameplayUiController::JournalView::Progress)
+    {
+        const GameplayJournalPointerTarget hovered =
+            findJournalPointerTarget(journalPointerState.x, journalPointerState.y);
+        const std::vector<const RulesetProgressMap *> maps = journalProgressMaps(journalScreen);
+        journalScreen.progressHoveredMap =
+            hovered.type == GameplayJournalPointerTargetType::ProgressMap && hovered.noteId < maps.size()
+                ? maps[hovered.noteId]->fileName : std::string();
+        const size_t maxScroll = maps.size() > JournalProgressVisibleRows ? maps.size() - JournalProgressVisibleRows : 0;
+
+        if (mouseWheelDelta > 0.0f)
+        {
+            journalScreen.progressScroll = journalScreen.progressScroll > 3 ? journalScreen.progressScroll - 3 : 0;
+        }
+        else if (mouseWheelDelta < 0.0f)
+        {
+            journalScreen.progressScroll = std::min(journalScreen.progressScroll + 3, maxScroll);
+        }
+    }
+
+    // The aura panel: the wheel scrolls its list.
+    if (journalScreen.view == GameplayUiController::JournalView::Auras)
+    {
+        scrollJournalAuras(view, journalScreen, mouseWheelDelta);
+    }
+
     const auto activateJournalTarget =
         [&view, &journalScreen, &adjustPage, pJournalMinimapState](const GameplayJournalPointerTarget &target)
         {
             switch (target.type)
             {
+            case GameplayJournalPointerTargetType::AuraPanel:
+                activateJournalAuraTarget(view, journalScreen, unpackJournalAuraTarget(target.noteId));
+                break;
+
             case GameplayJournalPointerTargetType::MainMapView:
                 journalScreen.view = GameplayUiController::JournalView::Map;
                 break;
@@ -2570,6 +2707,45 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 journalScreen.view = GameplayUiController::JournalView::Notes;
                 journalScreen.mapDragActive = false;
                 break;
+
+            case GameplayJournalPointerTargetType::MainProgressView:
+                // Built afresh each time the tab opens.
+                journalScreen.view = GameplayUiController::JournalView::Progress;
+                journalScreen.progress.reset();
+                journalScreen.progressScroll = 0;
+                journalScreen.mapDragActive = false;
+                break;
+
+            case GameplayJournalPointerTargetType::ProgressContinent:
+                journalScreen.progressContinent = target.noteId;
+                journalScreen.progressSelectedMap.clear();
+                journalScreen.progressScroll = 0;
+                break;
+
+            case GameplayJournalPointerTargetType::ProgressFilter:
+                journalScreen.progressFilter = uint8_t(target.noteId);
+                journalScreen.progressScroll = 0;
+                break;
+
+            case GameplayJournalPointerTargetType::ProgressGuide:
+                if (!view.rulesetGuideUrl().empty())
+                {
+                    SDL_OpenURL(view.rulesetGuideUrl().c_str());
+                }
+
+                break;
+
+            case GameplayJournalPointerTargetType::ProgressMap:
+            {
+                const std::vector<const RulesetProgressMap *> maps = journalProgressMaps(journalScreen);
+
+                if (target.noteId < maps.size())
+                {
+                    journalScreen.progressSelectedMap = maps[target.noteId]->fileName;
+                }
+
+                break;
+            }
 
             case GameplayJournalPointerTargetType::PrevPageButton:
                 adjustPage(-1);
@@ -2817,12 +2993,26 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             SDL_SCANCODE_4,
             SDL_SCANCODE_5,
         };
+        // A shop's party inventory: a held bag key (by default 1-4) opens its bag and selects no member.
+        const bool shiftHeld = pKeyboardState[SDL_SCANCODE_LSHIFT] || pKeyboardState[SDL_SCANCODE_RSHIFT];
+        bool bagKeyHeld = false;
+
+        for (int bag = 0; bag < 4 && !shiftHeld; ++bag)
+        {
+            bagKeyHeld = bagKeyHeld || input.action(KeyboardAction(size_t(KeyboardAction::Bag1) + size_t(bag))).held;
+        }
+
+        bagKeyHeld = bagKeyHeld && GameplayPartyOverlayInputController::bagKeysActive(view);
 
         for (size_t memberIndex = 0; memberIndex < std::size(PartySelectScancodes); ++memberIndex)
         {
             if (pKeyboardState[PartySelectScancodes[memberIndex]])
             {
-                if (!view.interactionState().eventDialogPartySelectLatches[memberIndex])
+                if (bagKeyHeld)
+                {
+                    view.interactionState().eventDialogPartySelectLatches[memberIndex] = true;
+                }
+                else if (!view.interactionState().eventDialogPartySelectLatches[memberIndex])
                 {
                     view.trySelectPartyMember(memberIndex, false);
                     view.interactionState().eventDialogPartySelectLatches[memberIndex] = true;
@@ -3109,9 +3299,25 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             const HouseShopVisualLayout overlayLayout = buildHouseShopVisualLayout(
                 *pDialogueHouseEntry,
                 view.houseShopOverlay().mode == GameplayUiController::HouseShopMode::BuySpellbooks);
+            // The stock reroll button (a ruleset's, MAW) takes a slot index of its own.
+            constexpr size_t RerollSlotIndex = std::numeric_limits<size_t>::max() - 1;
+            const bool canReroll = *stockMode != HouseStockMode::GuildSpellbooks
+                && gameRulesFor(&party).items.shopRerollCost(party, *pDialogueHouseEntry).has_value();
             const auto resolveHoveredSlotIndex =
-                [&view, &stock, slotCount, resolvedFrame, &overlayLayout](float mouseX, float mouseY) -> size_t
+                [&view, &stock, slotCount, resolvedFrame, &overlayLayout, canReroll, screenWidth, screenHeight](
+                    float mouseX, float mouseY) -> size_t
                 {
+                    if (canReroll)
+                    {
+                        const std::optional<GameplayResolvedHudLayoutElement> rerollRect =
+                            view.resolveHudLayoutElement("DialogueShopRerollButton", screenWidth, screenHeight, 0, 0);
+
+                        if (rerollRect && view.isPointerInsideResolvedElement(*rerollRect, mouseX, mouseY))
+                        {
+                            return RerollSlotIndex;
+                        }
+                    }
+
                     for (size_t slotIndex = 0;
                          slotIndex < slotCount && slotIndex < stock.size() && slotIndex < overlayLayout.slots.size();
                          ++slotIndex)
@@ -3200,6 +3406,25 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                     }
 
                     std::string statusText;
+
+                    if (slotIndex == RerollSlotIndex)
+                    {
+                        const bool rerolled = HouseServiceRuntime::tryRerollStock(
+                            *view.party(),
+                            *view.itemTable(),
+                            *view.standardItemEnchantTable(),
+                            *view.specialItemEnchantTable(),
+                            *pDialogueHouseEntry,
+                            view.worldRuntime()->gameMinutes(),
+                            statusText);
+                        view.setStatusBarEvent(statusText);
+                        view.playSpeechReaction(
+                            view.partyReadOnly()->activeMemberIndex(),
+                            rerolled ? SpeechId::ShopItemBought : SpeechId::NotEnoughGold,
+                            true);
+                        return;
+                    }
+
                     HouseServiceRuntime::ShopItemServiceResult serviceResult =
                         HouseServiceRuntime::ShopItemServiceResult::None;
                     const bool stealRequested = input.isScancodeHeld(SDL_SCANCODE_LCTRL)
@@ -3920,56 +4145,32 @@ void GameplayOverlayInputController::handleLootOverlayInput(
         const auto findChestPointerTarget =
             [&view, screenWidth, screenHeight](float mouseX, float mouseY) -> GameplayChestPointerTarget
             {
-                const GameplayScreenRuntime::HudLayoutElement *pCloseLayout =
-                    view.findHudLayoutElement("ChestCloseButton");
+                static constexpr std::array<std::pair<const char *, GameplayChestPointerTargetType>, 3> Buttons = {{
+                    {"ChestTakeAllButton", GameplayChestPointerTargetType::TakeAllButton},
+                    {"ChestTakeGoldButton", GameplayChestPointerTargetType::TakeGoldButton},
+                    {"ChestCloseButton", GameplayChestPointerTargetType::CloseButton},
+                }};
 
-                const GameplayScreenRuntime::HudLayoutElement *pTakeAllLayout =
-                    view.findHudLayoutElement("ChestTakeAllButton");
-
-                if (pTakeAllLayout != nullptr)
+                for (const auto &[pId, type] : Buttons)
                 {
-                    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedTakeAll =
-                        view.resolveHudLayoutElement(
-                            "ChestTakeAllButton",
-                            screenWidth,
-                            screenHeight,
-                            pTakeAllLayout->width,
-                            pTakeAllLayout->height);
+                    const GameplayScreenRuntime::HudLayoutElement *pLayout = view.findHudLayoutElement(pId);
 
-                    if (resolvedTakeAll
-                        && mouseX >= resolvedTakeAll->x
-                        && mouseX < resolvedTakeAll->x + resolvedTakeAll->width
-                        && mouseY >= resolvedTakeAll->y
-                        && mouseY < resolvedTakeAll->y + resolvedTakeAll->height)
+                    if (pLayout == nullptr)
                     {
-                        return {GameplayChestPointerTargetType::TakeAllButton};
+                        continue;
                     }
-                }
 
-                if (pCloseLayout == nullptr)
-                {
-                    return {};
-                }
+                    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolved =
+                        view.resolveHudLayoutElement(pId, screenWidth, screenHeight, pLayout->width, pLayout->height);
 
-                const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedClose =
-                    view.resolveHudLayoutElement(
-                        "ChestCloseButton",
-                        screenWidth,
-                        screenHeight,
-                        pCloseLayout->width,
-                        pCloseLayout->height);
-
-                if (!resolvedClose)
-                {
-                    return {};
-                }
-
-                if (mouseX >= resolvedClose->x
-                    && mouseX < resolvedClose->x + resolvedClose->width
-                    && mouseY >= resolvedClose->y
-                    && mouseY < resolvedClose->y + resolvedClose->height)
-                {
-                    return {GameplayChestPointerTargetType::CloseButton};
+                    if (resolved
+                        && mouseX >= resolved->x
+                        && mouseX < resolved->x + resolved->width
+                        && mouseY >= resolved->y
+                        && mouseY < resolved->y + resolved->height)
+                    {
+                        return {type};
+                    }
                 }
 
                 return {};
@@ -4131,9 +4332,10 @@ void GameplayOverlayInputController::handleLootOverlayInput(
             findChestPointerTarget,
             [&view](const GameplayChestPointerTarget &target)
             {
-                if (target.type == GameplayChestPointerTargetType::TakeAllButton)
+                if (target.type == GameplayChestPointerTargetType::TakeAllButton
+                    || target.type == GameplayChestPointerTargetType::TakeGoldButton)
                 {
-                    takeAllActiveChestItems(view);
+                    takeAllActiveChestItems(view, target.type == GameplayChestPointerTargetType::TakeGoldButton);
                     return;
                 }
 

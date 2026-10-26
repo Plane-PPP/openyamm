@@ -3,6 +3,8 @@
 #include "game/events/EvtEnums.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/ReputationRuntime.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/MonsterRules.h"
 #include "game/party/Party.h"
 #include "game/tables/NpcDialogTable.h"
 
@@ -22,6 +24,8 @@ constexpr uint32_t MMergeBountyRewardTextId = 134;
 constexpr uint32_t MMergeBountyClaimedTextId = 135;
 constexpr int MMergeBountyHuntLocalReputationLimit = -20;
 constexpr int MMergeBountyHuntContinentReputationLimit = -5;
+// The journal map note marking a target the rules placed (MAW's Note.Id 9999, BountyHunt.lua:226).
+constexpr uint32_t BountyMapNoteId = 9999;
 
 uint32_t monthFromGameMinutes(float currentGameMinutes)
 {
@@ -47,6 +51,15 @@ void writeRuntimeBountyHuntEntry(EventRuntimeState &state, const std::string &pr
     state.namedGlobalVars[prefix + ".MonsterId"] = static_cast<int32_t>(entry.monsterId);
     state.namedGlobalVars[prefix + ".Done"] = entry.done ? 1 : 0;
     state.namedGlobalVars[prefix + ".Claimed"] = entry.claimed ? 1 : 0;
+
+    if (entry.bossAffix != 0)
+    {
+        state.namedGlobalVars[prefix + ".BossAffix"] = entry.bossAffix;
+    }
+    else
+    {
+        state.namedGlobalVars.erase(prefix + ".BossAffix");
+    }
 }
 
 BountyHuntEntry readRuntimeBountyHuntEntry(const EventRuntimeState &state, const std::string &prefix)
@@ -56,7 +69,33 @@ BountyHuntEntry readRuntimeBountyHuntEntry(const EventRuntimeState &state, const
     entry.monsterId = static_cast<int16_t>(namedGlobalVarValue(state, prefix + ".MonsterId"));
     entry.done = namedGlobalVarValue(state, prefix + ".Done") != 0;
     entry.claimed = namedGlobalVarValue(state, prefix + ".Claimed") != 0;
+    entry.bossAffix = uint8_t(std::clamp(namedGlobalVarValue(state, prefix + ".BossAffix"), 0, 255));
     return entry;
+}
+
+// The target as the bounty texts name it: a spawned boss by its affix (MAW's Entry.MonName).
+MonsterTable::MonsterStatsEntry bountyNamedStats(
+    const MonsterTable::MonsterStatsEntry &stats,
+    uint8_t bossAffix,
+    const Party *pParty)
+{
+    MonsterTable::MonsterStatsEntry named = stats;
+
+    if (bossAffix != 0)
+    {
+        ActorRulesetFacts facts;
+        facts.bossAffix = bossAffix;
+        named.name = gameRulesFor(pParty).monsters.actorDisplayName(facts, stats.name);
+    }
+
+    return named;
+}
+
+std::string lowercaseMapName(const std::string &mapName)
+{
+    std::string lower = mapName;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    return lower;
 }
 
 uint32_t activeBountyMaximumLevel(const Party *pParty)
@@ -107,7 +146,7 @@ int32_t bountyHuntReputationDeltaForKilledMonster(
 
 uint32_t bountyHuntRewardForMonster(const MonsterTable::MonsterStatsEntry &stats)
 {
-    return static_cast<uint32_t>(std::max(0, stats.level) * 100);
+    return boundGameRules().monsters.bountyReward(stats);
 }
 
 bool bountyHuntMonsterAllowed(
@@ -191,7 +230,9 @@ bool markRuntimeBountyHuntMonsterKilled(IGameplayWorldRuntime &worldRuntime, int
 bool markRuntimeBountyHuntMonsterKilled(
     IGameplayWorldRuntime &worldRuntime,
     int16_t monsterId,
-    const MonsterTable *pMonsterTable)
+    const MonsterTable *pMonsterTable,
+    const ActorRulesetFacts &facts,
+    bool killedByParty)
 {
     EventRuntimeState *pEventRuntimeState = worldRuntime.eventRuntimeState();
 
@@ -200,8 +241,36 @@ bool markRuntimeBountyHuntMonsterKilled(
         return false;
     }
 
+    // The death of this map's spawned target, by any hand, takes its map note down; slain by anyone but a party
+    // member, it calls the bounty off where the rules say so (BountyHunt.lua:241-251).
+    const std::string currentPrefix = bountyHuntVarPrefix(worldRuntime);
+    const BountyHuntEntry current = readRuntimeBountyHuntEntry(*pEventRuntimeState, currentPrefix);
+
+    if (current.monsterId == monsterId && current.bossAffix != 0 && current.bossAffix == facts.bossAffix)
+    {
+        if (Party *pParty = worldRuntime.party())
+        {
+            pParty->removeJournalMapNote(lowercaseMapName(pEventRuntimeState->mapFileName), BountyMapNoteId);
+        }
+
+        if (!killedByParty && gameRulesFor(worldRuntime.party()).monsters.bountyCancelledByOtherKill())
+        {
+            for (const char *pField : {".Month", ".MonsterId", ".Done", ".Claimed", ".BossAffix"})
+            {
+                pEventRuntimeState->namedGlobalVars.erase(currentPrefix + pField);
+            }
+
+            return false;
+        }
+    }
+
+    if (!gameRulesFor(worldRuntime.party()).monsters.bountyKillCounts(facts))
+    {
+        return false;
+    }
+
     const uint32_t currentMonth = monthFromGameMinutes(worldRuntime.gameMinutes());
-    const std::string currentMapPrefix = bountyHuntVarPrefix(worldRuntime);
+    const bool countsElsewhere = gameRulesFor(worldRuntime.party()).monsters.bountyKillCountsElsewhere();
     bool markedAnyEntry = false;
     bool markedCurrentMapEntry = false;
 
@@ -223,7 +292,12 @@ bool markRuntimeBountyHuntMonsterKilled(
             continue;
         }
 
-        prefixes.push_back(name.substr(0, name.size() - std::char_traits<char>::length(pMonsterIdSuffix)));
+        std::string prefix = name.substr(0, name.size() - std::char_traits<char>::length(pMonsterIdSuffix));
+
+        if (countsElsewhere || prefix == currentPrefix)
+        {
+            prefixes.push_back(std::move(prefix));
+        }
     }
 
     for (const std::string &prefix : prefixes)
@@ -234,7 +308,7 @@ bool markRuntimeBountyHuntMonsterKilled(
         {
             writeRuntimeBountyHuntEntry(*pEventRuntimeState, prefix, entry);
             markedAnyEntry = true;
-            markedCurrentMapEntry = markedCurrentMapEntry || prefix == currentMapPrefix;
+            markedCurrentMapEntry = markedCurrentMapEntry || prefix == currentPrefix;
         }
     }
 
@@ -320,15 +394,76 @@ BountyHuntInteractionResult performBountyHuntInteraction(
 
     if (entry.monsterId <= 0 || bountyHuntEntryExpired(entry, currentMonth))
     {
+        const MonsterRules &rules = gameRulesFor(pParty).monsters;
+
+        // Another town's bounty still open this month, which the rules may name instead (MAW's Road to Insanity).
+        std::vector<OpenBounty> openBounties;
+        const std::string bountyPrefix = "MMerge.BountyHunt.";
+        const std::string monthSuffix = ".Month";
+
+        for (const auto &[name, value] : pEventRuntimeState->namedGlobalVars)
+        {
+            if (!name.starts_with(bountyPrefix) || !name.ends_with(monthSuffix) || name == prefix + monthSuffix)
+            {
+                continue;
+            }
+
+            const std::string otherPrefix = name.substr(0, name.size() - monthSuffix.size());
+            const BountyHuntEntry other = readRuntimeBountyHuntEntry(*pEventRuntimeState, otherPrefix);
+
+            if (other.monsterId > 0 && other.month == currentMonth && !other.done)
+            {
+                openBounties.push_back({otherPrefix.substr(bountyPrefix.size()), other.monsterId, other.bossAffix});
+            }
+        }
+
+        std::sort(openBounties.begin(), openBounties.end(),
+            [](const OpenBounty &left, const OpenBounty &right)
+            {
+                return left.mapFileName < right.mapFileName;
+            });
+
+        if (const std::optional<std::pair<OpenBounty, std::string>> elsewhere = rules.bountyElsewhere(openBounties))
+        {
+            if (const MonsterTable::MonsterStatsEntry *pOtherStats =
+                    pMonsterTable->findStatsById(elsewhere->first.monsterId))
+            {
+                MonsterTable::MonsterStatsEntry named =
+                    bountyNamedStats(*pOtherStats, elsewhere->first.bossAffix, pParty);
+                named.name += " in " + elsewhere->second;
+                result.messages.push_back(bountyHuntTargetText(named, pNpcDialogTable));
+                result.succeeded = true;
+                return result;
+            }
+        }
+
+        if (const std::optional<std::string> refusal = rules.bountyRefusal(worldRuntime))
+        {
+            result.messages.push_back(*refusal);
+            return result;
+        }
+
         const uint32_t seed =
             static_cast<uint32_t>(std::hash<std::string>{}(prefix))
             ^ static_cast<uint32_t>(currentMonth * 1103515245u);
-        const std::optional<int16_t> monsterId =
-            chooseBountyHuntMonsterId(
+        const GameplayWorldPoint spawnPoint = worldRuntime.chooseBountyHuntSpawnPoint(seed);
+        const std::optional<BountyTarget> target =
+            rules.spawnBountyTarget(worldRuntime, spawnPoint.x, spawnPoint.y, spawnPoint.z, seed);
+        const bool spawned = target.has_value();
+        std::optional<int16_t> monsterId;
+
+        if (spawned)
+        {
+            monsterId = target->monsterId;
+        }
+        else
+        {
+            monsterId = chooseBountyHuntMonsterId(
                 *pMonsterTable,
                 worldRuntime.mergedBolsterMonsterTable(),
                 activeBountyMaximumLevel(pParty),
                 seed);
+        }
 
         if (!monsterId.has_value())
         {
@@ -339,25 +474,42 @@ BountyHuntInteractionResult performBountyHuntInteraction(
         entry = {};
         entry.month = currentMonth;
         entry.monsterId = *monsterId;
+        entry.bossAffix = spawned ? target->bossAffix : 0;
         writeRuntimeBountyHuntEntry(*pEventRuntimeState, prefix, entry);
 
-        const GameplayWorldPoint spawnPoint = worldRuntime.chooseBountyHuntSpawnPoint(seed);
-        worldRuntime.summonHostileMonsterById(
-            entry.monsterId,
-            1,
-            spawnPoint.x,
-            spawnPoint.y,
-            spawnPoint.z,
-            BountyHuntGroup);
+        if (spawned && !target->mapNote.empty() && pParty != nullptr)
+        {
+            JournalMapNote note;
+            note.id = BountyMapNoteId;
+            note.x = int32_t(std::lround(spawnPoint.x));
+            note.y = int32_t(std::lround(spawnPoint.y));
+            note.mapFileName = lowercaseMapName(pEventRuntimeState->mapFileName);
+            note.text = target->mapNote;
+            pParty->setJournalMapNote(note);
+        }
+
+        if (!spawned)
+        {
+            worldRuntime.summonHostileMonsterById(
+                entry.monsterId,
+                1,
+                spawnPoint.x,
+                spawnPoint.y,
+                spawnPoint.z,
+                BountyHuntGroup);
+        }
     }
 
-    const MonsterTable::MonsterStatsEntry *pStats = pMonsterTable->findStatsById(entry.monsterId);
+    const MonsterTable::MonsterStatsEntry *pTableStats = pMonsterTable->findStatsById(entry.monsterId);
 
-    if (pStats == nullptr)
+    if (pTableStats == nullptr)
     {
         result.messages.push_back("The bounty office is unavailable right now.");
         return result;
     }
+
+    const MonsterTable::MonsterStatsEntry named = bountyNamedStats(*pTableStats, entry.bossAffix, pParty);
+    const MonsterTable::MonsterStatsEntry *pStats = &named;
 
     if (!entry.done)
     {
@@ -440,6 +592,7 @@ void applyBountyHuntClaimResult(
     }
 
     addStoredCurrentLocationReputation(worldRuntime, result.reputationDelta);
+    gameRulesFor(pParty).monsters.bountyClaimed();
 
     if (pParty != nullptr)
     {

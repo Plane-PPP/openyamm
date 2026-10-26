@@ -1,9 +1,11 @@
 #include "game/gameplay/GameplayAlchemyBenchInputController.h"
 
+#include "game/gameplay/GameplayCraftingBenchInputController.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/ui/GameplayAlchemyBenchView.h"
+#include "game/ui/GameplayCraftingBenchView.h"
 #include "game/ui/GameplayUiSkin.h"
 
 #include <SDL3/SDL.h>
@@ -58,6 +60,11 @@ GameplayAlchemyBenchPointerTarget findTarget(
         {
             return {button.type, 0};
         }
+    }
+
+    if (GameplayCraftingBenchView::available(context) && inside("WorkbenchTabCrafting"))
+    {
+        return {TargetType::CraftingTab, 0};
     }
 
     const GameplayUiController::AlchemyBenchState &state = context.characterScreenReadOnly().alchemyBench;
@@ -289,7 +296,10 @@ void activate(
         case TargetType::Ingredient:
             placeIngredient(context, model, target.itemId);
             break;
-        case TargetType::None:
+        case TargetType::CraftingTab:
+            state.craftingTab = true;
+            break;
+        default:
             break;
     }
 }
@@ -493,12 +503,15 @@ void GameplayAlchemyBenchInputController::handleInput(GameplayScreenRuntime &con
                 || (input.isScancodeHeld(scancode) && context.previousKeyboardState()[scancode] == 0);
         };
 
+    const bool crafting = state.craftingTab && GameplayCraftingBenchView::available(context);
+    bool &searchActive = crafting ? state.crafting.searchActive : state.recipeSearchActive;
+
     if (newlyPressed(SDL_SCANCODE_ESCAPE))
     {
         // Escape first leaves the search field, then closes the bench.
-        if (state.recipeSearchActive)
+        if (searchActive)
         {
-            state.recipeSearchActive = false;
+            searchActive = false;
         }
         else
         {
@@ -510,21 +523,56 @@ void GameplayAlchemyBenchInputController::handleInput(GameplayScreenRuntime &con
         return;
     }
 
-    if (state.brewedScrollPending)
-    {
-        scrollBrewedIntoView(context, input);
-    }
-
-    if (state.recipeSearchActive)
-    {
-        editRecipeSearch(state, input, newlyPressed(SDL_SCANCODE_RETURN) || newlyPressed(SDL_SCANCODE_KP_ENTER));
-    }
-    else if (newlyPressed(SDL_SCANCODE_E))
+    if (!searchActive && newlyPressed(SDL_SCANCODE_E))
     {
         // The inventory key closes the whole character screen, as it does without the bench.
         context.closeCharacterScreen();
         interaction.menuToggleLatch = true;
         interaction.closeOverlayLatch = true;
+        return;
+    }
+
+    // Tab switches the Workbench's tabs (CRAFTING_BENCH_DESIGN.md §7). Toggles and steps count key presses, which
+    // come once per press.
+    if (!searchActive && input.scancodePressCount(SDL_SCANCODE_TAB) > 0
+        && GameplayCraftingBenchView::available(context))
+    {
+        state.craftingTab = !crafting;
+        return;
+    }
+
+    if (crafting)
+    {
+        GameplayCraftingBenchInputController::handleInput(context, input);
+        return;
+    }
+
+    if (state.brewedScrollPending)
+    {
+        scrollBrewedIntoView(context, input);
+    }
+
+    const bool enterPressed = newlyPressed(SDL_SCANCODE_RETURN) || newlyPressed(SDL_SCANCODE_KP_ENTER);
+
+    if (state.recipeSearchActive)
+    {
+        editRecipeSearch(state, input, enterPressed);
+    }
+    else if (input.scancodePressCount(SDL_SCANCODE_RETURN) > 0 || input.scancodePressCount(SDL_SCANCODE_KP_ENTER) > 0
+        || input.scancodePressCount(SDL_SCANCODE_DELETE) > 0)
+    {
+        // Enter mixes, Shift+Enter mixes all, Delete clears the slots.
+        const std::optional<GameplayAlchemyBenchModel> model = GameplayAlchemyBenchView::buildModel(context);
+        const bool shiftHeld = input.isScancodeHeld(SDL_SCANCODE_LSHIFT) || input.isScancodeHeld(SDL_SCANCODE_RSHIFT);
+
+        const bool mix = input.scancodePressCount(SDL_SCANCODE_DELETE) == 0;
+
+        if (model)
+        {
+            activate(context, *model,
+                {!mix ? TargetType::ClearButton : shiftHeld ? TargetType::MixAllButton : TargetType::MixButton});
+        }
+
         return;
     }
 

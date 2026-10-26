@@ -395,6 +395,23 @@ const ModelBurn *ModelInstanceSystem::burn(ModelInstanceHandle handle) const
     return pSlot != nullptr && pSlot->burn ? &*pSlot->burn : nullptr;
 }
 
+bool ModelInstanceSystem::setShieldShell(ModelInstanceHandle handle, const ModelShieldShell *pShell)
+{
+    Slot *pSlot = find(handle);
+    if (pSlot == nullptr)
+    {
+        return false;
+    }
+    pSlot->shieldShell = pShell != nullptr ? std::optional<ModelShieldShell>(*pShell) : std::nullopt;
+    return true;
+}
+
+const ModelShieldShell *ModelInstanceSystem::shieldShell(ModelInstanceHandle handle) const
+{
+    const Slot *pSlot = find(handle);
+    return pSlot != nullptr && pSlot->shieldShell ? &*pSlot->shieldShell : nullptr;
+}
+
 bool ModelInstanceSystem::play(ModelInstanceHandle handle, const std::string &clipName, ModelPlaybackMode mode)
 {
     Slot *pSlot = find(handle);

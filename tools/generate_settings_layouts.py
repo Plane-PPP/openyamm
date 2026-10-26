@@ -151,6 +151,8 @@ def setting_rows(prefix, settings, measure):
 def tabs(prefix, sections, current, template):
     result = []
     for index, section in enumerate(sections):
+        # Sections that never show together may share a slot.
+        index = section.get("slot", index)
         tab = copy.deepcopy(template)
         tab["id"] = prefix + "Tab" + capitalized(section["id"])
         tab["offset_x"] = TAB_X

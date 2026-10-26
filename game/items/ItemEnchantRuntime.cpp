@@ -2,6 +2,7 @@
 
 #include "game/gameplay/GameMechanics.h"
 #include "game/party/SkillData.h"
+#include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MonsterTable.h"
 
@@ -276,7 +277,7 @@ void addSkillBonus(Character &member, const std::string &skillName, int amount)
         return;
     }
 
-    member.itemSkillBonuses[skillName] += amount;
+    member.itemSkillBonuses[canonicalSkillName(skillName)] += amount;
 }
 
 int learnedSkillLevel(const Character &member, const std::string &skillName)
@@ -301,7 +302,7 @@ void addHalfLearnedSkillBonus(Character &member, const std::string &skillName)
     }
 }
 
-void applyStandardEnchantBonus(Character &member, StandardItemEnchantKind kind, int amount)
+void addStandardEnchantBonus(Character &member, StandardItemEnchantKind kind, int amount)
 {
     if (amount <= 0)
     {
@@ -411,8 +412,9 @@ void applyStandardEnchantBonus(Character &member, StandardItemEnchantKind kind, 
             break;
     }
 }
+}
 
-void applySpecialEnchantBonus(Character &member, SpecialItemEnchantKind kind)
+void ItemEnchantRuntime::applySpecialEnchantBonus(Character &member, SpecialItemEnchantKind kind)
 {
     switch (kind)
     {
@@ -465,8 +467,11 @@ void applySpecialEnchantBonus(Character &member, SpecialItemEnchantKind kind)
             addConditionImmunity(member, CharacterCondition::Petrified);
             break;
 
-        case SpecialItemEnchantKind::Force:
         case SpecialItemEnchantKind::Carnage:
+            member.equippedItemEffectFlags.insert("ExplosiveArrows");
+            break;
+
+        case SpecialItemEnchantKind::Force:
         case SpecialItemEnchantKind::OgreSlaying:
         case SpecialItemEnchantKind::DragonSlaying:
         case SpecialItemEnchantKind::ElementalSlaying:
@@ -699,6 +704,8 @@ void applySpecialEnchantBonus(Character &member, SpecialItemEnchantKind kind)
     }
 }
 
+namespace
+{
 void addAllPrimaryStats(Character &member, int amount)
 {
     member.magicalBonuses.might += amount;
@@ -1244,6 +1251,11 @@ void applyRareItemBonus(Character &member, uint32_t itemId)
             member.featherFalling = true;
             break;
 
+        // Medusa's Mirror: immune to stone, as in MMMerge (ExtraArtifacts.lua:986) and MAW (audit ITM-A5).
+        case 1341:
+            addConditionImmunity(member, CharacterCondition::Petrified);
+            break;
+
         case 2020:
             member.vampiricHealFraction = std::max(member.vampiricHealFraction, 0.2f);
             break;
@@ -1747,7 +1759,7 @@ int ItemEnchantRuntime::itemValue(
     const StandardItemEnchantTable *pStandardTable,
     const SpecialItemEnchantTable *pSpecialTable)
 {
-    return calculateItemValue(item, itemDefinition, pStandardTable, pSpecialTable, 1);
+    return boundGameRules().items.itemValue(item, itemDefinition, pStandardTable, pSpecialTable, 1);
 }
 
 int ItemEnchantRuntime::itemInspectValue(
@@ -1756,7 +1768,22 @@ int ItemEnchantRuntime::itemInspectValue(
     const StandardItemEnchantTable *pStandardTable,
     const SpecialItemEnchantTable *pSpecialTable)
 {
-    return calculateItemValue(item, itemDefinition, pStandardTable, pSpecialTable, 0);
+    return boundGameRules().items.itemValue(item, itemDefinition, pStandardTable, pSpecialTable, 0);
+}
+
+int ItemEnchantRuntime::standardItemValue(
+    const InventoryItem &item,
+    const ItemDefinition &itemDefinition,
+    const StandardItemEnchantTable *pStandardTable,
+    const SpecialItemEnchantTable *pSpecialTable,
+    int minimumValue)
+{
+    return calculateItemValue(item, itemDefinition, pStandardTable, pSpecialTable, minimumValue);
+}
+
+void ItemEnchantRuntime::applyStandardEnchantBonus(Character &member, StandardItemEnchantKind kind, int amount)
+{
+    addStandardEnchantBonus(member, kind, amount);
 }
 
 std::string ItemEnchantRuntime::buildEnchantDescription(
@@ -1809,11 +1836,18 @@ void ItemEnchantRuntime::applyEquippedEnchantEffects(
 
     applyContentEffect(itemDefinition.contentEffect, member);
 
+    if (itemDefinition.contentEffect.personalShield > 0)
+    {
+        // Emitters' pools grow with Shield Tech (Party::refreshPersonalShieldCapacity); armour's do not.
+        (canonicalSkillName(itemDefinition.skillGroup) == "ShieldTech"
+            ? member.emitterShieldPoints : member.armorShieldPoints) += itemDefinition.contentEffect.personalShield;
+    }
+
     if (runtimeState.standardEnchantId != 0 && pStandardTable != nullptr)
     {
         if (const StandardItemEnchantEntry *pEntry = pStandardTable->get(runtimeState.standardEnchantId))
         {
-            applyStandardEnchantBonus(
+            addStandardEnchantBonus(
                 member,
                 pEntry->kind,
                 std::max(1, static_cast<int>(runtimeState.standardEnchantPower)));
@@ -1827,19 +1861,8 @@ void ItemEnchantRuntime::applyEquippedEnchantEffects(
             applySpecialEnchantBonus(member, pEntry->kind);
             member.weaponEnchantmentDamageBonus += elementalDamageBonus(
                 InventoryItem{
-                    itemDefinition.itemId,
-                    1,
-                    1,
-                    1,
-                    0,
-                    0,
-                    true,
-                    false,
-                    false,
-                    0,
-                    0,
-                    runtimeState.specialEnchantId,
-                    0},
+                    .objectDescriptionId = itemDefinition.itemId,
+                    .specialEnchantId = runtimeState.specialEnchantId},
                 pSpecialTable);
         }
     }
@@ -1848,6 +1871,7 @@ void ItemEnchantRuntime::applyEquippedEnchantEffects(
 void ItemEnchantRuntime::applyContentEffect(const ItemContentEffect &effect, Character &member)
 {
     member.magicalBonuses.might += effect.might;
+    member.energyResistance += effect.energyResistance;
     member.magicalBonuses.intellect += effect.intellect;
     member.magicalBonuses.personality += effect.personality;
     member.magicalBonuses.endurance += effect.endurance;

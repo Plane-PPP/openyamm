@@ -1,5 +1,6 @@
 #include "game/tables/SpellTable.h"
 
+#include <algorithm>
 #include <cctype>
 
 namespace OpenYAMM::Game
@@ -87,6 +88,39 @@ bool isNumericString(const std::string &value)
 
     return true;
 }
+
+int intCell(const std::vector<std::string> &row, size_t column, int fallback)
+{
+    return row.size() > column && !row[column].empty() ? std::stoi(row[column]) : fallback;
+}
+
+int scaledDamage(int value, int percent)
+{
+    return (value * percent + 50) / 100;
+}
+}
+
+SpellMasteryNumbers spellNumbersAtMastery(const SpellEntry &entry, SkillMastery mastery)
+{
+    const size_t index = mastery == SkillMastery::Grandmaster ? 3
+        : mastery == SkillMastery::Master                     ? 2
+        : mastery == SkillMastery::Expert                     ? 1
+                                                              : 0;
+    const std::array<int, 4> manaCosts = {
+        entry.normalManaCost, entry.expertManaCost, entry.masterManaCost, entry.grandmasterManaCost};
+    const std::array<int, 4> recoveryTicks = {
+        entry.normalRecoveryTicks, entry.expertRecoveryTicks, entry.masterRecoveryTicks,
+        entry.grandmasterRecoveryTicks};
+    const int percent = entry.damagePercents[index];
+    const bool fixed = entry.damageDiceMin == entry.damageDiceSides;
+    SpellMasteryNumbers numbers = {};
+    numbers.manaCost = std::max(0, manaCosts[index]);
+    numbers.recoveryTicks = recoveryTicks[index];
+    numbers.damageBase = scaledDamage(entry.damageBase, percent);
+    numbers.damageDiceMax = scaledDamage(std::max(entry.damageDiceMin, entry.damageDiceSides), percent);
+    numbers.damageDiceMin = fixed ? numbers.damageDiceMax : entry.damageDiceMin;
+    numbers.projectileCount = std::max<uint32_t>(1, entry.projectileCounts[index]);
+    return numbers;
 }
 
 bool SpellTable::loadFromRows(const std::vector<std::vector<std::string>> &rows)
@@ -127,6 +161,17 @@ bool SpellTable::loadFromRows(const std::vector<std::vector<std::string>> &rows)
         entry.impactDisplayObjectId = row.size() > 21 && !row[21].empty() ? std::stoi(row[21]) : 0;
         entry.damageBase = row.size() > 22 && !row[22].empty() ? std::stoi(row[22]) : 0;
         entry.damageDiceSides = row.size() > 23 && !row[23].empty() ? std::stoi(row[23]) : 0;
+        entry.requiredMastery = row.size() > 24 ? parseSkillMasteryToken(row[24]) : SkillMastery::None;
+        entry.requiredMastery = entry.requiredMastery == SkillMastery::None ? SkillMastery::Normal
+                                                                            : entry.requiredMastery;
+        entry.damageDiceMin = intCell(row, 25, 1);
+
+        for (size_t index = 0; index < 4; ++index)
+        {
+            entry.projectileCounts[index] = static_cast<uint32_t>(std::max(1, intCell(row, 26 + index, 1)));
+            entry.damagePercents[index] = intCell(row, 30 + index, 100);
+        }
+
         m_entryIndexById[entry.id] = m_entries.size();
         m_entryIndexByNormalizedName[entry.normalizedName] = m_entries.size();
         m_entryIndexByNormalizedName[compactName(entry.name)] = m_entries.size();
