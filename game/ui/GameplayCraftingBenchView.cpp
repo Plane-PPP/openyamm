@@ -2,6 +2,7 @@
 
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/items/AlchemyBenchRuntime.h"
+#include "game/items/ItemRuntime.h"
 #include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MergedBaseTables.h"
@@ -106,8 +107,8 @@ std::string GameplayCraftingBenchView::itemDisplayName(const GameplayScreenRunti
         return {};
     }
 
-    return gameRulesFor(context.partyReadOnly())
-        .items.displayName(item, *pDefinition, context.standardItemEnchantTable(), context.specialItemEnchantTable());
+    return ItemRuntime::displayName(
+        item, *pDefinition, context.standardItemEnchantTable(), context.specialItemEnchantTable());
 }
 
 std::string GameplayCraftingBenchView::operationName(const GameplayScreenRuntime &context, uint32_t materialItemId)
