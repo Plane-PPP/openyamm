@@ -131,6 +131,8 @@ public:
         uint32_t attackDecisionCount = 0;
         uint8_t crowdEscapeAttempts = 0;
         int8_t crowdSideSign = 0;
+        // Runtime only: carried between movement steps, as IndoorMoveState holds it for a single step.
+        uint8_t stuckRecoveryCooldownSteps = 0;
         bool attackImpactTriggered = false;
         bool suppressLowHealthFlee = false;
         // The monster's stats as bolstered for this map, resolved once when the state is built (map load, spawn or
@@ -328,6 +330,7 @@ public:
     GameplayWorldPoint chooseBountyHuntSpawnPoint(uint32_t seed) const override;
     float gameplayCameraYawRadians() const override;
     float gameplayCameraPitchRadians() const override;
+    float gameplayViewAspectRatio() const override;
     bool partyNeedsTurnBasedPhysicsUpdate() const override;
     void syncSpellMovementStatesFromPartyBuffs() override;
     void requestPartyJump(float verticalVelocity = 0.0f, float lift = 1.0f) override;
@@ -428,7 +431,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex) override;
+        uint32_t sourcePartyMemberIndex,
+        bool critical) override;
     std::vector<size_t> collectMapActorIndicesWithinRadius(
         float centerX,
         float centerY,

@@ -165,6 +165,8 @@ public:
     uint64_t indoorMapRevealRevision() const;
     float cameraYawRadians() const;
     float cameraPitchRadians() const;
+    // Width over height of the last drawn view; 4:3 before the first frame.
+    float viewAspectRatio() const;
     bool canActivateGameplayWorldHit(const GameplayWorldHit &hit) const;
     bool activateGameplayWorldHit(const GameplayWorldHit &hit);
     void setWorldPostProcessing(CinematicGrading *pPostProcessing) { m_pPostProcessing = pPostProcessing; }

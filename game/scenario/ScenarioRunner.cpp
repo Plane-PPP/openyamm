@@ -4158,8 +4158,8 @@ bool runFrenzyActor(
 
 // assert charges: {started, hits, misses, frenzies, min_started, min_hits, min_misses, min_frenzies}: the map's charges
 // and frenzies so far (exact or at least).
-// combat_log: {min_entries, dealt_min, taken_min, with_stages_min, loot_min}: the combat log's entries so far (loot:
-// the loot filter's "Filtered: ... -> N gold" lines).
+// combat_log: {min_entries, dealt_min, taken_min, with_stages_min, loot_min, critical_min}: the combat log's entries
+// so far (loot: the loot filter's "Filtered: ... -> N gold" lines; critical: the party's critical hits).
 bool assertCombatLog(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -4182,16 +4182,18 @@ bool assertCombatLog(
     size_t taken = 0;
     size_t loot = 0;
     size_t withStages = 0;
+    size_t critical = 0;
     const std::deque<CombatLogEntry> &entries = context.runtimeDriver->combatLog().entries();
     for (const CombatLogEntry &entry : entries)
     {
         (entry.kind == CombatLogKind::Dealt ? dealt : entry.kind == CombatLogKind::Taken ? taken : loot) += 1;
         withStages += entry.stages.empty() ? 0 : 1;
+        critical += entry.kind == CombatLogKind::Dealt && entry.critical ? 1 : 0;
     }
 
-    const std::array<std::pair<const char *, size_t>, 5> counts = {{
+    const std::array<std::pair<const char *, size_t>, 6> counts = {{
         {"min_entries", entries.size()}, {"dealt_min", dealt}, {"taken_min", taken}, {"with_stages_min", withStages},
-        {"loot_min", loot},
+        {"loot_min", loot}, {"critical_min", critical},
     }};
 
     for (const auto &[key, count] : counts)

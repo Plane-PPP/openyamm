@@ -258,7 +258,8 @@ The full handler and command list is at the top of `assets_dev/engine/behaviors/
   - `startTimer`/`stopTimer`/`hasTimer`
   - `castNext{spell, skill, mastery}`, `setSpell{..., chance}`/`clearSpell`: monster projectile spells, by name or
     id
-  - `setAiType`, `setNoFlee`, `summon(monsterId, count, radius)`
+  - `setAiType`, `setNoFlee`, `summon(monsterId, count, radius)` around the actor, `summonAt(monsterId, x, y, z,
+    count, spread)` around a point (indoors and outdoors)
 
 ### Sandbox and errors
 
@@ -297,8 +298,6 @@ Verified on 2026-10-10:
 
 - **Dome depth intersection:** the dome's ground glow assumes a flat floor at the actor's feet. On slopes the cut
   is flat, and walls the shell passes through get no glow. A true intersection glow needs a scene depth copy.
-- **Indoor summons:** `IndoorWorldRuntime` has no `summonHostileMonsterById`, so `self:summon` (and `actor spawn`)
-  fails indoors; it is logged.
 - **Wards stop projectiles only:** direct, area and melee damage still apply. Line-of-sight spells would need their
   own check.
 - **Health is observed, not intercepted:** `onDamaged` cannot change or cancel damage. That needs a shared damage

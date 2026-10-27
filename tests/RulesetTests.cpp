@@ -543,7 +543,7 @@ TEST_CASE("older saves move the MM6 maps' SetTexture swaps to the face they name
 {
     // Audit STD3-6, plan D10: the MM6 scripts name faces with a negative reference now, stored under the face key;
     // saves before version 115 kept the face number itself, which the renderer now reads as a cog.
-    const uint32_t faceKey = OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(2011);
+    const uint32_t faceKey = OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(2011);
     OpenYAMM::Game::GameSaveData save = minimalSave();
     save.sourceSaveVersion = 94;
     save.indoorSceneStates["6d01.blv"].eventRuntimeState.emplace().textureOverrides[2011] = "lever_down";

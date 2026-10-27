@@ -713,7 +713,7 @@ classes:
 #   school_cut                the share of hits a Death Knight's Blood or Unholy (or a Shaman's Air) takes off
 #   school_damage             a class's flat melee damage from the school
 #   elemental_progress        an Elementalist's progress to the next spell of the school, in percent
-#   dragon_leech              a dragon's bite leech from Regeneration (a sentence; empty for other races)
+#   dragon_leech              a dragon's bite leech from Regeneration (its own paragraph; empty for other races)
 #   armor_items               the worn armour's Armor Class and the skill's bonuses (a paragraph; empty without it)
 skills:
   Staff:
@@ -838,8 +838,8 @@ skills:
       Hit points also grow by 0.5 %, 1 %, 1.5 % or 2 % per point, by mastery.
   Regeneration:
     append: >-
-      Current regeneration: <good>{regen_now:1}</> hit points per second (<good>{regen_next:1}</> with one more point); twice that 20
-      seconds after the last hit taken, four times more again with no enemy near. {dragon_leech}
+      Current regeneration: <good>{regen_now:1}</> hit points per second (<good>{regen_next:1}</> with one more
+      point).{dragon_leech}
     normal: "Regains hit points over time"
     expert: "Half again as much"
     master: "Twice as much"

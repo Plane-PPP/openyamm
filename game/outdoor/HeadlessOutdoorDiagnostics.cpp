@@ -22835,7 +22835,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                         0.0f,
                         0.0f,
                         0.0f,
-                        0))
+                        0,
+                        false))
                 {
                     failure = "direct indoor actor damage failed";
                     return false;
@@ -23031,7 +23032,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                         0.0f,
                         0.0f,
                         0.0f,
-                        0))
+                        0,
+                        false))
                 {
                     failure = "could not apply lethal indoor damage";
                     return false;
@@ -23219,7 +23221,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                         0.0f,
                         0.0f,
                         0.0f,
-                        0)
+                        0,
+                        false)
                     || scenario.mapDeltaData->actors[actorIndex].hp > 0)
                 {
                     failure = "could not kill the revealed actor";

@@ -73,7 +73,7 @@ const std::vector<NestedKeys> AssertBlockKeys = {
         "world", "party", "yaw", "pitch", "actor_pos"}},
     {"mechanism", MechanismKeys},
     {"runtime_event_variable", {"id", "value", "min", "max", "member_index"}},
-    {"combat_log", {"min_entries", "dealt_min", "taken_min", "with_stages_min", "loot_min"}},
+    {"combat_log", {"min_entries", "dealt_min", "taken_min", "with_stages_min", "loot_min", "critical_min"}},
     {"ruleset", {"id", "difficulty", "progression", "challenge_mode", "rolled_items_min", "report_items",
         "crafted_items_min", "potion_effects_min", "potion_effects_max", "member_classes", "dimension_run",
         "dimension_quest", "madness_pending", "madness_deaths", "map_cleared", "map_slain_min"}},

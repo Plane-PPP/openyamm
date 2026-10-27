@@ -333,7 +333,7 @@ end, "Wolf Altar")
 
 RegisterEvent(55, nil, function()
     if IsQBitSet(QBit(1059)) then return end -- 35 D17 Brought back Black Pearl and Ghost will no longer show up.
-    evt.SetFacetBit(5286, 16384, 0)
+    evt.SetFacetBit(-5286, 16384, 0)
     evt.SetTexture(-5286, "paladn01")
 end)
 

@@ -492,9 +492,9 @@ struct IndoorChargeFixture
     }
 
     // After loadHive: one walker of the monster (with pModifiers, or none listed) at (712, 7147), the party of one
-    // member with partyHealth at partyX, partyY.
+    // member with partyHealth at partyX, partyY; walkerAttributes as its EvtActorAttribute bits.
     bool startWith(int16_t walkerMonsterId, const MonsterModifierSet *pModifiers, float partyX, float partyY,
-        int partyHealth = 500)
+        int partyHealth = 500, uint32_t walkerAttributes = 0)
     {
         const MapAssetInfo &loaded = *data.getSelectedMap();
         map = *loaded.indoorMapData;
@@ -522,6 +522,7 @@ struct IndoorChargeFixture
         walker.radius = 40;
         walker.height = 160;
         walker.hostilityType = 0;
+        walker.attributes = walkerAttributes;
         delta->actors.push_back(walker);
         party.setItemTable(&data.getItemTable());
         PartySeed seed = {};
@@ -578,6 +579,56 @@ TEST_CASE("an indoor charge dashes along the floor onto the party and hits it")
     CHECK(events[0].type == GameplayCombatController::CombatEventType::MonsterMeleeImpact);
     CHECK(events[0].sourceId == state.actorId);
     CHECK(events[0].damage >= 1);
+}
+
+TEST_CASE("a monster's melee blow lands on a party that steps back during the swing")
+{
+    // An aggressive walker with only a melee blow (no missiles, no spells), the party 200 south of it.
+    IndoorChargeFixture fixture;
+    REQUIRE(fixture.loadHive());
+    int16_t meleeMonsterId = 0;
+
+    for (const auto &[id, stats] : fixture.monsters.statsEntries())
+    {
+        if (!stats.attack1HasMissile && !stats.attack2HasMissile && !stats.hasSpell1 && !stats.hasSpell2
+            && !stats.canFly && stats.aiType == MonsterTable::MonsterAiType::Aggressive
+            && (meleeMonsterId == 0 || id < meleeMonsterId))
+        {
+            meleeMonsterId = int16_t(id);
+        }
+    }
+
+    REQUIRE(meleeMonsterId != 0);
+    const uint32_t hostile = uint32_t(EvtActorAttribute::Hostile) | uint32_t(EvtActorAttribute::Aggressor)
+        | uint32_t(EvtActorAttribute::Active) | uint32_t(EvtActorAttribute::FullAi);
+    REQUIRE(fixture.startWith(meleeMonsterId, nullptr, 712.0f, 6950.0f, 500, hostile));
+    IndoorWorldRuntime &world = fixture.scene->worldRuntime();
+    const IndoorWorldRuntime::MapActorAiState &state = *world.mapActorAiState(0);
+
+    for (float elapsed = 0.0f; elapsed < 5.0f && state.motionState != ActorAiMotionState::Attacking;
+         elapsed += 1.0f / 64.0f)
+    {
+        fixture.run(1.0f / 64.0f);
+    }
+
+    REQUIRE(state.motionState == ActorAiMotionState::Attacking);
+    REQUIRE(fixture.combat.pendingCombatEvents().empty());
+
+    // Mid-swing the party is 450 away, well beyond the 307 the monster needs to start a blow, still in sight
+    // (the floor between is clear). As in MM8 the blow still lands when the swing ends.
+    fixture.scene->partyRuntime().teleportPartyPosition(712.0f, 6700.0f, 0.0f);
+
+    for (float elapsed = 0.0f; elapsed < 3.0f && state.motionState == ActorAiMotionState::Attacking;
+         elapsed += 1.0f / 64.0f)
+    {
+        fixture.run(1.0f / 64.0f);
+    }
+
+    CHECK(state.motionState != ActorAiMotionState::Attacking);
+    const std::vector<GameplayCombatController::CombatEvent> &events = fixture.combat.pendingCombatEvents();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].type == GameplayCombatController::CombatEventType::MonsterMeleeImpact);
+    CHECK(events[0].sourceId == state.actorId);
 }
 
 TEST_CASE("an indoor charge stops at a wall and stumbles")

@@ -2861,7 +2861,10 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
             return finalizeFallState(result);
         }
 
+        // Nothing moved, so gravity must not keep accelerating the body: an ever larger fall speed would only
+        // raise the substep count of every later step.
         IndoorMoveState stuckState = result;
+        stuckState.verticalVelocity = 0.0f;
 
         if (stuckState.stuckRecoveryCooldownSteps > 0)
         {

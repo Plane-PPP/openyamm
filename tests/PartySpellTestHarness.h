@@ -93,6 +93,7 @@ public:
         float partyY = 0.0f;
         float partyZ = 0.0f;
         uint32_t sourcePartyMemberIndex = 0;
+        bool critical = false;
     };
 
     struct FriendlySummonRequest
@@ -749,7 +750,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex) override
+        uint32_t sourcePartyMemberIndex,
+        bool critical) override
     {
         if (actorIndex >= m_actors.size() || m_actors[actorIndex].isDead || m_actors[actorIndex].isInvisible)
         {
@@ -766,6 +768,7 @@ public:
         request.partyY = partyY;
         request.partyZ = partyZ;
         request.sourcePartyMemberIndex = sourcePartyMemberIndex;
+        request.critical = critical;
         m_appliedSpellRequests.push_back(request);
         return true;
     }

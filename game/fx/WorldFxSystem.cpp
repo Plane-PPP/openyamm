@@ -113,14 +113,87 @@ constexpr float AuraMaxScale = 3.0f;
 // into the lower part of the view.
 constexpr float PartyAuraDistance = 150.0f;
 constexpr float PartyAuraDrop = 75.0f;
-// An impact on the party (within PartyHitReach of its body) plays this far in front of its eyes along the view, a
-// little lower and smaller, so a fireball bursting on the party shows in front of it instead of blinding it; its light
-// stays where it struck.
+// An impact on the party (within PartyHitReach of its body) plays this far in front of its eyes, smaller, so a fireball
+// bursting on the party shows in front of it instead of blinding it; its light stays where it struck. It plays where
+// the hit came from on screen, a little lower, held between the vertical limits and within PartyHitEdgeX of the side
+// edges (screen fractions from the centre). A hit from beside or behind flares at that side's edge, partly off screen,
+// lower and smaller the further round it came (fully so PartyHitEdgeBlend past the view), showing which way to turn.
+// Both worlds draw with a 60 degree vertical field of view.
 constexpr float PartyHitReach = 224.0f;
 constexpr float PartyHitBodyDrop = 80.0f;
 constexpr float PartyHitDistance = 160.0f;
-constexpr float PartyHitDrop = 40.0f;
+constexpr float PartyHitTanHalfVerticalFov = 0.57735f;
+constexpr float PartyHitDropY = 0.3f;
+constexpr float PartyHitMinY = -0.6f;
+constexpr float PartyHitMaxY = 0.3f;
+constexpr float PartyHitEdgeX = 0.9f;
+constexpr float PartyHitEdgeY = -0.45f;
+constexpr float PartyHitEdgeBlend = 0.5f;
 constexpr float PartyHitScale = 0.6f;
+constexpr float PartyHitEdgeScale = 0.45f;
+
+// Where an impact on the party plays (see PartyHitReach) and at what scale. fromBody runs from the party's body to the
+// struck point, the hit's direction when the impact does not know the projectile's flight.
+std::array<float, 3> partyHitShownPosition(
+    const IGameplayWorldRuntime &world,
+    const GameplayProjectileImpactPresentationState &impact,
+    const std::array<float, 3> &fromBody,
+    float &scale)
+{
+    std::array<float, 3> toSource = {-impact.flightDirectionX, -impact.flightDirectionY, -impact.flightDirectionZ};
+    if (toSource[0] == 0.0f && toSource[1] == 0.0f && toSource[2] == 0.0f)
+    {
+        toSource = fromBody;
+    }
+
+    // The camera's axes: forward along the view, right and up across the screen.
+    const float yaw = world.gameplayCameraYawRadians();
+    const float pitch = world.gameplayCameraPitchRadians();
+    const std::array<float, 3> forward = {
+        std::cos(yaw) * std::cos(pitch), std::sin(yaw) * std::cos(pitch), std::sin(pitch)};
+    const std::array<float, 3> right = {std::sin(yaw), -std::cos(yaw), 0.0f};
+    const std::array<float, 3> up = {
+        -std::cos(yaw) * std::sin(pitch), -std::sin(yaw) * std::sin(pitch), std::cos(pitch)};
+    const auto dot = [](const std::array<float, 3> &a, const std::array<float, 3> &b)
+    {
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    };
+    const float sourceForward = dot(toSource, forward);
+    const float sourceRight = dot(toSource, right);
+    const float sourceUp = dot(toSource, up);
+
+    // Screen position (fractions of the half-width and half-height from the centre) of where the hit came from.
+    const float tanHalfHorizontalFov = PartyHitTanHalfVerticalFov * std::max(world.gameplayViewAspectRatio(), 0.1f);
+    float screenX = 0.0f;
+    float screenY = -PartyHitDropY;
+    float edge = 0.0f;
+    const float sourceAcross = std::sqrt(sourceForward * sourceForward + sourceRight * sourceRight);
+    if (sourceAcross > 0.001f)
+    {
+        const float azimuth = std::atan2(sourceRight, sourceForward);
+        const float halfHorizontalFov = std::atan(tanHalfHorizontalFov);
+        const float side = sourceRight < 0.0f ? -1.0f : 1.0f;
+        screenX = std::abs(azimuth) < halfHorizontalFov
+            ? std::clamp(std::tan(azimuth) / tanHalfHorizontalFov, -PartyHitEdgeX, PartyHitEdgeX)
+            : side * PartyHitEdgeX;
+        edge = std::clamp((std::abs(azimuth) - halfHorizontalFov) / PartyHitEdgeBlend, 0.0f, 1.0f);
+        const float frontY = std::clamp(
+            sourceUp / sourceAcross / PartyHitTanHalfVerticalFov - PartyHitDropY, PartyHitMinY, PartyHitMaxY);
+        screenY = frontY + (PartyHitEdgeY - frontY) * edge;
+    }
+    scale = PartyHitScale + (PartyHitEdgeScale - PartyHitScale) * edge;
+
+    std::array<float, 3> shown = {};
+    for (size_t axis = 0; axis < 3; ++axis)
+    {
+        shown[axis] = forward[axis] + right[axis] * screenX * tanHalfHorizontalFov
+            + up[axis] * screenY * PartyHitTanHalfVerticalFov;
+    }
+    const float length = std::sqrt(dot(shown, shown));
+    return {world.partyX() + shown[0] / length * PartyHitDistance,
+        world.partyY() + shown[1] / length * PartyHitDistance,
+        world.partyEyeZ() + shown[2] / length * PartyHitDistance};
+}
 
 // value modulo a positive period, in [0, period): std::fmod compiles to a slow x87 loop, and every actor model runs
 // several of these each frame.
@@ -4269,10 +4342,7 @@ void WorldFxSystem::syncProjectileImpacts(GameSession &session)
             const float dz = impact.z - (pWorld->partyEyeZ() - PartyHitBodyDrop);
             if (dx * dx + dy * dy + dz * dz <= PartyHitReach * PartyHitReach)
             {
-                const float yaw = pWorld->gameplayCameraYawRadians();
-                shownPosition = {pWorld->partyX() + std::cos(yaw) * PartyHitDistance,
-                    pWorld->partyY() + std::sin(yaw) * PartyHitDistance, pWorld->partyEyeZ() - PartyHitDrop};
-                shownScale = PartyHitScale;
+                shownPosition = partyHitShownPosition(*pWorld, impact, {dx, dy, dz}, shownScale);
             }
         }
 

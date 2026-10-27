@@ -602,6 +602,7 @@ void GameplayHudOverlayRenderer::renderInventoryNestedOverlay(
         inspectableItem.sourceMemberIndex = view.partyReadOnly()->activeMemberIndex();
         inspectableItem.sourceGridX = item.gridX;
         inspectableItem.sourceGridY = item.gridY;
+        inspectableItem.sourceBag = pCharacter->rulesetState.currentBag;
         inspectableItem.textureName = pItemDefinition->iconName;
         inspectableItem.textureUsesItemIconTransparency = true;
         inspectableItem.x = itemRect.x;

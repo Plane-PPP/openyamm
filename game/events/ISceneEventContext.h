@@ -36,6 +36,7 @@ public:
     virtual float currentGameMinutes() const = 0;
     virtual const MapDeltaData *mapDeltaData() const = 0;
     virtual MapDeltaData *mapDeltaData() = 0;
+    // Every face of a cog number, or one indoor face by EventRuntime::indoorFaceReferenceKey; false when none matches.
     virtual bool setFacetBit(uint32_t cogNumber, uint32_t bit, bool isOn) = 0;
     virtual std::vector<uint32_t> resolveIndoorLightReferenceIds(int32_t rawReferenceId) const
     {

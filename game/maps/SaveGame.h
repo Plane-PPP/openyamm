@@ -82,7 +82,7 @@ std::unordered_map<std::string, uint32_t> collectRequiredContentPackages(
     const HouseTable &houseTable,
     const std::unordered_map<std::string, uint32_t> &loadedPackageSchemas);
 // Saves before version 115 keep the MM6 maps' SetTexture swaps under the face number; MMerge's MM6 scripts now name
-// faces with a negative reference, stored under EventRuntime::indoorFaceTextureOverrideKey (audit STD3-6, plan D10).
+// faces with a negative reference, stored under EventRuntime::indoorFaceReferenceKey (audit STD3-6, plan D10).
 // `isMm6IndoorMap` tells which saved maps are MM6's.
 void migrateLegacyMm6FaceTextureKeys(
     GameSaveData &data,

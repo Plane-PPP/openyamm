@@ -285,9 +285,9 @@ public:
     // How fast a party member's missile turns toward the actor it was aimed at, in radians per second; 0 (Standard)
     // flies straight.
     virtual float partyMissileHomingTurnRate() const;
-    // The lock cone, in radians, within which a monster's missile of this spell (0: an attack) at the party re-aims at
-    // it; 0 (Standard) flies straight.
-    virtual float monsterMissileHomingConeRadians(uint32_t spellId) const;
+    // How fast, in radians a second, the party may move across the flight of a monster's missile of this spell
+    // (0: an attack) and still have it re-aim at the party; 0 (Standard) flies straight.
+    virtual float monsterMissileHomingLockRate(uint32_t spellId) const;
     // What a monster's Pain Reflection sends back to the member whose `damage` it took. Standard: all of it; MAW: the
     // hit mitigated as an ordinary hit of its kind, then ^0.85 (Damage.lua:1593-1598).
     virtual int reflectedDamage(const Party &party, size_t memberIndex, int damage, CombatDamageType type) const;
@@ -310,8 +310,9 @@ public:
     // roll it as the spell instead (MAW: rollSpellDamage at the caster's stored skill and mastery, SPL-5, SPL-6).
     // Standard: none, the world's own roll.
     virtual std::optional<int> worldSpellDamage(const CharacterSpellCast &cast) const;
-    // A damage spell's roll: the table's base plus its dice per skill point at the cast mastery.
-    virtual int rollSpellDamage(const CharacterSpellCast &cast) const;
+    // A damage spell's roll: the table's base plus its dice per skill point at the cast mastery. pCritical, when given,
+    // learns whether the roll was a critical hit (Standard: never).
+    virtual int rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical = nullptr) const;
     // A spell whose damage is a share of its target's hit points (Mass Distortion): the damage on this target, or
     // nothing for the roll above. Standard: 25 % of the target's current hit points plus 2 % per skill point.
     virtual std::optional<int> spellDamageOnTarget(const CharacterSpellCast &cast, const SpellTargetState &target) const;

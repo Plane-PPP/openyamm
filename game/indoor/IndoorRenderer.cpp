@@ -1818,7 +1818,7 @@ std::string resolveFaceTextureName(
     // evt.SetTexture swaps one face named by its index (MMerge's MM6 maps), or every face of a cog number, as MM7's
     // and MM8's SetTexture (the face extra's sCogNumber); cog 0 names no face.
     const uint32_t keys[2] = {
-        faceIndex < 0x80000000u ? EventRuntime::indoorFaceTextureOverrideKey(static_cast<uint32_t>(faceIndex)) : 0,
+        faceIndex < 0x80000000u ? EventRuntime::indoorFaceReferenceKey(static_cast<uint32_t>(faceIndex)) : 0,
         face.cogNumber};
 
     for (uint32_t key : keys)
@@ -6402,6 +6402,13 @@ float IndoorRenderer::cameraYawRadians() const
 float IndoorRenderer::cameraPitchRadians() const
 {
     return m_cameraPitchRadians;
+}
+
+float IndoorRenderer::viewAspectRatio() const
+{
+    return m_lastRenderWidth > 0 && m_lastRenderHeight > 0
+        ? static_cast<float>(m_lastRenderWidth) / static_cast<float>(m_lastRenderHeight)
+        : 4.0f / 3.0f;
 }
 
 float IndoorRenderer::viewYawRadians() const

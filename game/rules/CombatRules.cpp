@@ -154,8 +154,13 @@ void CombatRules::resolveCharacterAttack(CharacterAttackResult &, const Characte
 {
 }
 
-int CombatRules::rollSpellDamage(const CharacterSpellCast &cast) const
+int CombatRules::rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical) const
 {
+    if (pCritical != nullptr)
+    {
+        *pCritical = false;
+    }
+
     const SpellMasteryNumbers numbers = spellNumbersAtMastery(*cast.pSpell, cast.mastery);
 
     if (cast.skillLevel == 0)
@@ -251,7 +256,7 @@ float CombatRules::partyMissileHomingTurnRate() const
     return 0.0f;
 }
 
-float CombatRules::monsterMissileHomingConeRadians(uint32_t) const
+float CombatRules::monsterMissileHomingLockRate(uint32_t) const
 {
     return 0.0f;
 }

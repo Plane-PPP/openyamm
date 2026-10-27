@@ -102,6 +102,38 @@ TEST_CASE("goblinwatch wall recovery cannot jump through the closed entrance cor
     CHECK_GE(resolved.x, -320.0f);
 }
 
+TEST_CASE("an airborne corpse wedged where it cannot move does not keep gaining fall speed")
+{
+    using namespace OpenYAMM::Tests;
+    REQUIRE_MESSAGE(regressionMapLoaderLoaded(), regressionMapLoaderFailure());
+    GameDataLoader data = regressionMapLoader().gameDataLoader;
+    REQUIRE(data.loadMapByFileNameForHeadlessGameplay(regressionMapLoader().assetFileSystem, "6d20.blv"));
+    const MapAssetInfo &loaded = *data.getSelectedMap();
+    IndoorMovementController controller(*loaded.indoorMapData, &loaded.indoorMapDeltaData, &loaded.eventRuntimeState);
+
+    // A corpse from a playthrough save: it never moved, while its fall speed grew to -72000 and every step ran the
+    // maximum substep count with a recovery search in each.
+    const IndoorBodyDimensions body = {51.0f, 152.0f};
+    IndoorMoveState state = {};
+    state.x = 3259.48f;
+    state.y = 671.319f;
+    state.footZ = -205.011f;
+    state.eyeHeight = body.height;
+    state.verticalVelocity = -2000.0f;
+    state.sectorId = 13;
+    state.eyeSectorId = 13;
+    state.grounded = false;
+
+    for (int step = 0; step < 256; ++step)
+    {
+        state = controller.resolveMove(state, body, 0.0f, 0.0f, false, 1.0f / 128.0f, nullptr, std::nullopt, true,
+            nullptr, false, false, 420.0f, 1.0f, false, true, false, false, true);
+    }
+
+    CHECK_EQ(state.footZ, doctest::Approx(-205.011f).epsilon(0.01));
+    CHECK_GT(state.verticalVelocity, -32.0f);
+}
+
 TEST_CASE("sloped indoor tile edge slack keeps support within the tile height range")
 {
     IndoorMapData map;

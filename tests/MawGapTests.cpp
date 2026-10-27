@@ -1420,14 +1420,15 @@ TEST_CASE("MAW Grandmaster spear stacks and fire arrows (A1.8, A1.9)")
     CHECK_FALSE(masterShot.fireArrow);
 }
 
-TEST_CASE("MAW monster missiles home on the party only inside their lock cone (L3.5)")
+TEST_CASE("MAW monster missiles home on the party only while it moves slowly across their flight (L3.5)")
 {
     GameplayProjectileService::ProjectileState projectile;
     projectile.velocityX = 1000.0f;
     GameplayProjectileService::ProjectileHoming homing;
     homing.turnRadiansPerSecond = 1000.0f;
     homing.speed = 1000.0f;
-    homing.lockConeRadians = 0.5f * 3.14159265f / 180.0f;
+    // 60 degrees a second: 1 degree in a 1/60 s step, 0.5 degrees in a 1/120 s one.
+    homing.lockRadiansPerSecond = 60.0f * 3.14159265f / 180.0f;
     projectile.homing = homing;
 
     // The party just off the line of flight: the missile turns onto it.
@@ -1448,22 +1449,37 @@ TEST_CASE("MAW monster missiles home on the party only inside their lock cone (L
     GameplayProjectileService::steerHomingProjectile(projectile, &target, 0.016f);
     CHECK(projectile.velocityY > velocityY);
 
+    // The lock is a rate, the same at any frame rate: a party 0.75 degrees off its flight is held over a 1/60 s step,
+    // but not over a 1/120 s one (it moved faster across the flight than 60 degrees a second).
+    const auto steeredWithin = [&](float stepSeconds)
+    {
+        GameplayProjectileService::ProjectileState straight;
+        straight.velocityX = 1000.0f;
+        straight.homing = homing;
+        const float offRadians = 0.75f * 3.14159265f / 180.0f;
+        GameplayWorldPoint offTarget = {1000.0f * std::cos(offRadians), 1000.0f * std::sin(offRadians), 0.0f};
+        GameplayProjectileService::steerHomingProjectile(straight, &offTarget, stepSeconds);
+        return straight.velocityY > 0.0f;
+    };
+    CHECK(steeredWithin(1.0f / 60.0f));
+    CHECK_FALSE(steeredWithin(1.0f / 120.0f));
+
     // The fanned and falling spells never home: Meteor Shower, Sparks, Starburst, Poison Spray, Ice Blast, Shrapmetal.
     RulesetOptions options;
     MawRules rules(options, MawMapLevels{}, installedItemData());
     const CombatRules &combat = rules.gameRules().combat;
-    CHECK(combat.monsterMissileHomingConeRadians(spellIdValue(SpellId::FireBolt)) > 0.0f);
-    CHECK(combat.monsterMissileHomingConeRadians(0) > 0.0f);
+    CHECK(combat.monsterMissileHomingLockRate(spellIdValue(SpellId::FireBolt)) > 0.0f);
+    CHECK(combat.monsterMissileHomingLockRate(0) > 0.0f);
 
     for (SpellId spell : {SpellId::MeteorShower, SpellId::Sparks, SpellId::Starburst, SpellId::PoisonSpray,
              SpellId::IceBlast, SpellId::Shrapmetal})
     {
-        CHECK(combat.monsterMissileHomingConeRadians(spellIdValue(spell)) == doctest::Approx(0.0f));
+        CHECK(combat.monsterMissileHomingLockRate(spellIdValue(spell)) == doctest::Approx(0.0f));
     }
 
     options.preferences.homingProjectiles = false;
     rules.setOptions(options);
-    CHECK(combat.monsterMissileHomingConeRadians(0) == doctest::Approx(0.0f));
+    CHECK(combat.monsterMissileHomingLockRate(0) == doctest::Approx(0.0f));
 }
 
 TEST_CASE("MAW blasters shoot with the melee rows and put the bow away (A1.11)")
@@ -2947,6 +2963,17 @@ TEST_CASE("A dragon's Regeneration popup shows its bite leech (L5.4)")
     const std::string text = skills.skillTooltip(party, member, "Regeneration", {}).description;
     CHECK(text.find("Melee life leech vs equal level") != std::string::npos);
     CHECK(text.find("{dragon_leech}") == std::string::npos);
+
+    // Before the dragon learns it (character creation): the leech still shows, and one more point means learning it.
+    member.skills.erase("Regeneration");
+    const std::string unlearned = skills.skillTooltip(party, member, "Regeneration", {}).description;
+    CHECK(unlearned.find("Melee life leech vs equal level") != std::string::npos);
+    // "(\f02016<value>\f00000 with one more point": the value between the colour codes is not 0.
+    const size_t next = unlearned.find("\f00000 with one more point");
+    REQUIRE(next != std::string::npos);
+    const size_t value = unlearned.rfind("(\f02016", next);
+    REQUIRE(value != std::string::npos);
+    CHECK(std::stod(unlearned.substr(value + 7, next - value - 7)) > 0);
 }
 
 TEST_CASE("The armour skills' popups show the worn armour's numbers (L5.4)")

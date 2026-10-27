@@ -682,6 +682,42 @@ bool MenuScreenBase::drawText(
     float scale,
     bool drawShadow)
 {
+    // Colour codes split the line into runs, each drawn in its own colour; the caller's alpha still applies.
+    if (text.find('\f') != std::string::npos)
+    {
+        std::optional<uint32_t> runColor;
+        std::string run;
+        float penX = pixelX;
+        bool drawn = true;
+        const auto drawRun = [&]()
+        {
+            const uint32_t color =
+                runColor ? (*runColor & 0x00ffffffu) | (colorAbgr & 0xff000000u) : colorAbgr;
+            drawn = drawText(fontName, run, penX, pixelY, color, scale, drawShadow) && drawn;
+            penX += measureTextWidth(fontName, run, scale);
+            run.clear();
+        };
+
+        for (size_t index = 0; index < text.size() && text[index] != '\r' && text[index] != '\n'; ++index)
+        {
+            std::optional<uint32_t> codeColor;
+
+            if (GameplayHudCommon::readTextColorCode(text, index, codeColor))
+            {
+                drawRun();
+                runColor = codeColor;
+                index += GameplayHudCommon::TextColorCodeLength - 1;
+            }
+            else
+            {
+                run.push_back(text[index]);
+            }
+        }
+
+        drawRun();
+        return drawn;
+    }
+
     const FontHandle *pFont = ensureTextFont(fontName, scale);
 
     if (pFont == nullptr || !bgfx::isValid(pFont->mainTextureHandle))
@@ -871,12 +907,22 @@ float MenuScreenBase::measureTextWidth(const std::string &fontName, const std::s
 
     float widthPixels = 0.0f;
     uint8_t previous = 0;
+    std::optional<uint32_t> ignoredColor;
 
-    for (unsigned char character : text)
+    for (size_t index = 0; index < text.size(); ++index)
     {
+        const unsigned char character = static_cast<unsigned char>(text[index]);
+
         if (character == '\r' || character == '\n')
         {
             break;
+        }
+
+        // Colour codes take no room.
+        if (GameplayHudCommon::readTextColorCode(text, index, ignoredColor))
+        {
+            index += GameplayHudCommon::TextColorCodeLength - 1;
+            continue;
         }
 
         if (character < pFont->firstChar || character > pFont->lastChar)

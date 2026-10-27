@@ -292,41 +292,6 @@ std::optional<GameplayHudFontData> buildColumnSeparatedHudFont(
     return font;
 }
 
-constexpr size_t TextColorCodeLength = 6;
-
-// Might and Magic's inline text colour: "\f" and five digits of an R5G6B5 colour; "\f00000" returns to the line's
-// own colour. True when a code starts at `index`; `colorAbgr` is then its colour, or nothing for the line's own.
-bool readTextColorCode(const std::string &text, size_t index, std::optional<uint32_t> &colorAbgr)
-{
-    if (index + TextColorCodeLength > text.size() || text[index] != '\f')
-    {
-        return false;
-    }
-
-    uint32_t value = 0;
-
-    for (size_t digit = index + 1; digit < index + TextColorCodeLength; ++digit)
-    {
-        if (!std::isdigit(static_cast<unsigned char>(text[digit])))
-        {
-            return false;
-        }
-
-        value = value * 10 + uint32_t(text[digit] - '0');
-    }
-
-    if (value == 0)
-    {
-        colorAbgr.reset();
-        return true;
-    }
-
-    const uint32_t red = ((value >> 11) & 31u) * 255u / 31u;
-    const uint32_t green = ((value >> 5) & 63u) * 255u / 63u;
-    const uint32_t blue = (value & 31u) * 255u / 31u;
-    colorAbgr = 0xff000000u | (blue << 16) | (green << 8) | red;
-    return true;
-}
 } // namespace
 
 GameplayUiViewportRect GameplayHudCommon::computeUiViewportRect(int screenWidth, int screenHeight)
@@ -1745,6 +1710,38 @@ GameplayHudFontLayer GameplayHudCommon::hudFontMainLayer(const GameplayHudFontDa
         : GameplayHudFontLayer(font.tintTextureHandle, colorAbgr | 0xff000000u);
 }
 
+bool GameplayHudCommon::readTextColorCode(const std::string &text, size_t index, std::optional<uint32_t> &colorAbgr)
+{
+    if (index + TextColorCodeLength > text.size() || text[index] != '\f')
+    {
+        return false;
+    }
+
+    uint32_t value = 0;
+
+    for (size_t digit = index + 1; digit < index + TextColorCodeLength; ++digit)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(text[digit])))
+        {
+            return false;
+        }
+
+        value = value * 10 + uint32_t(text[digit] - '0');
+    }
+
+    if (value == 0)
+    {
+        colorAbgr.reset();
+        return true;
+    }
+
+    const uint32_t red = ((value >> 11) & 31u) * 255u / 31u;
+    const uint32_t green = ((value >> 5) & 63u) * 255u / 63u;
+    const uint32_t blue = (value & 31u) * 255u / 31u;
+    colorAbgr = 0xff000000u | (blue << 16) | (green << 8) | red;
+    return true;
+}
+
 float GameplayHudCommon::measureHudTextWidth(const GameplayHudFontData &font, const std::string &text)
 {
     float widthPixels = 0.0f;
@@ -1881,7 +1878,12 @@ std::vector<std::string> GameplayHudCommon::wrapHudTextToWidth(
         lines.push_back(currentLine);
     }
 
-    // A colour still open at the end of a line goes on with the next.
+    carryTextColorsAcrossLines(lines);
+    return lines;
+}
+
+void GameplayHudCommon::carryTextColorsAcrossLines(std::vector<std::string> &lines)
+{
     std::optional<uint32_t> openColor;
     std::string openCode;
 
@@ -1901,8 +1903,6 @@ std::vector<std::string> GameplayHudCommon::wrapHudTextToWidth(
             }
         }
     }
-
-    return lines;
 }
 
 void GameplayHudCommon::renderHudFontLayer(

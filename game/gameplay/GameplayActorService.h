@@ -88,6 +88,10 @@ public:
         return meleeReachesVertically(m_meleeVerticalReach, attackerFootZ, attackerHeight, targetFootZ, targetHeight);
     }
     static constexpr float MinimumMeleeVerticalReach = 48.0f;
+    // How far a monster's melee blow on the party reaches when its attack lands, from the middle of its body to the
+    // party's: MM8 pushes the blow with reach 0x1400 and lands it within reach + 32 (MM8-Rel.exe 0x402238, 0x4374bf).
+    // A party that steps back during the swing is still hit; only walls (line of sight) stop the blow.
+    static constexpr float MonsterMeleeImpactReach = 5120.0f + 32.0f;
     bool isBound() const;
     bool actorLooksUndead(int16_t monsterId) const;
     int16_t relationMonsterId(int16_t monsterId, uint32_t allyMonsterType) const;

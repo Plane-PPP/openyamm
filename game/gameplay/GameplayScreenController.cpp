@@ -440,14 +440,7 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
         return;
     }
 
-    uint64_t interactionKey = uint64_t(overlay.objectDescriptionId);
-    interactionKey ^= uint64_t(overlay.sourceMemberIndex + 1) << 16;
-    interactionKey ^= uint64_t(overlay.sourceGridX) << 24;
-    interactionKey ^= uint64_t(overlay.sourceGridY) << 32;
-    interactionKey ^= uint64_t(overlay.sourceEquipmentSlot) << 40;
-    interactionKey ^= uint64_t(overlay.sourceWorldItemIndex) << 44;
-    interactionKey ^= uint64_t(overlay.sourceLootItemIndex) << 48;
-    interactionKey ^= uint64_t(overlay.sourceType) << 56;
+    const uint64_t interactionKey = itemInspectInteractionKey(overlay);
 
     if (context.interactionState().itemInspectInteractionLatch
         && context.interactionState().itemInspectInteractionKey == interactionKey)
@@ -530,7 +523,8 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
                     return;
                 }
 
-                const InventoryItem *pItem = pSourceMember->inventoryItemAt(overlay.sourceGridX, overlay.sourceGridY);
+                const InventoryItem *pItem = InventoryBags::itemInBagAt(
+                    *pSourceMember, overlay.sourceBag, overlay.sourceGridX, overlay.sourceGridY);
 
                 if (pItem != nullptr)
                 {
@@ -656,6 +650,22 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
             playSingleReaction(SpeechId::RepairFail);
         }
     }
+}
+
+uint64_t GameplayScreenController::itemInspectInteractionKey(
+    const GameplayUiController::ItemInspectOverlayState &overlay)
+{
+    uint64_t interactionKey = uint64_t(overlay.objectDescriptionId);
+    interactionKey ^= uint64_t(overlay.sourceMemberIndex + 1) << 16;
+    interactionKey ^= uint64_t(overlay.sourceGridX) << 24;
+    interactionKey ^= uint64_t(overlay.sourceGridY) << 32;
+    interactionKey ^= uint64_t(overlay.sourceEquipmentSlot) << 40;
+    interactionKey ^= uint64_t(overlay.sourceWorldItemIndex) << 44;
+    interactionKey ^= uint64_t(overlay.sourceLootItemIndex) << 48;
+    interactionKey ^= uint64_t(overlay.sourceType) << 56;
+    // The same cell of another bag in MAW's bag overview is another item.
+    interactionKey ^= uint64_t(overlay.sourceBag) << 60;
+    return interactionKey;
 }
 
 void GameplayScreenController::updateRestOverlayProgress(

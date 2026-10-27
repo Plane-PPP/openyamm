@@ -193,6 +193,8 @@ public:
     void shutdown();
     float cameraYawRadians() const;
     float cameraPitchRadians() const;
+    // Width over height of the last drawn view; 4:3 before the first frame.
+    float viewAspectRatio() const;
     void setCameraAngles(float yawRadians, float pitchRadians);
     // Places the party on the map's named start decoration ("north start", ...); false when the map has none.
     bool movePartyToStartPoint(std::string_view startPointName);

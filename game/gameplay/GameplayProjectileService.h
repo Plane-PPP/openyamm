@@ -55,10 +55,10 @@ public:
         float elapsedSeconds = 0.0f;
         // The target is gone (dead or removed): it flies straight on.
         bool lost = false;
-        // Homes only while its flight points within this many radians of the target, seen from above, tested again
-        // each frame: outside the cone it flies straight on until its line crosses the target again (0: no cone).
-        // MAW's monster missiles (FSPS-2-10).
-        float lockConeRadians = 0.0f;
+        // Homes only while the target's direction, seen from above, turns away from its flight slower than this
+        // many radians a second, tested again each step: a faster sidestep leaves it flying straight on until its
+        // line crosses the target again (0: no lock). MAW's monster missiles (FSPS-2-10), frame-rate independent.
+        float lockRadiansPerSecond = 0.0f;
     };
 
     struct ProjectileState
@@ -114,6 +114,9 @@ public:
         bool weakerOfPhysicalAndFire = false;
         // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); saved.
         float explosionRadius = 0.0f;
+        // A party missile or spell whose damage was a critical hit, for the status line and combat log where it
+        // lands; not saved.
+        bool critical = false;
         // An event's missile (evt.FireMissile): it passes the party, whose damage the event deals itself, and bursts
         // at its target when its flight time ends unless it strikes something first; saved.
         bool eventMissile = false;
@@ -141,6 +144,10 @@ public:
         int sourceSpellId = 0;
         // Presentation only (per-monster impact visuals); not saved, so a loaded impact shows the recipe's own.
         int16_t sourceMonsterId = 0;
+        // Presentation only, not saved: the unit direction the projectile flew when it struck, zero when unknown.
+        float flightDirectionX = 0.0f;
+        float flightDirectionY = 0.0f;
+        float flightDirectionZ = 0.0f;
         std::string objectName;
         std::string objectSpriteName;
         std::string sourceObjectName;
@@ -197,6 +204,8 @@ public:
         bool weakerOfPhysicalAndFire = false;
         // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); not saved.
         float explosionRadius = 0.0f;
+        // Its damage was a critical hit (ProjectileState::critical).
+        bool critical = false;
         // An event's missile (ProjectileState::eventMissile), reaching its target in flightSeconds (0: at the
         // object's speed).
         bool eventMissile = false;

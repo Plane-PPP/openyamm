@@ -1337,6 +1337,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                         .impactSoundIdOverride = static_cast<uint32_t>(SoundId::DragonBreathImpact),
                         .turnBasedPendingAction =
                             config.pRuntime != nullptr && config.pRuntime->turnBasedCombatRuntime().active(),
+                        .targetActorIndex = result.targetActorIndex,
+                        .critical = attack.criticalDamage,
                     });
             }
         }
@@ -1418,6 +1420,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                 .targetActorIndex =
                     attack.projectileSpreadArcRadians > 0.0f ? std::nullopt : result.targetActorIndex,
                 .homing = attack.homing,
+                .critical = attack.criticalDamage,
             };
             if (attack.projectileSpreadArcRadians > 0.0f)
             {
@@ -1440,6 +1443,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                         .z = rangedTarget.z,
                     });
                     projectileRequest.damage = damageDistribution(rng);
+                    projectileRequest.critical = false;
                     attacked = config.pWorldRuntime->spawnPartyAttackProjectile(projectileRequest) || attacked;
                 }
             }

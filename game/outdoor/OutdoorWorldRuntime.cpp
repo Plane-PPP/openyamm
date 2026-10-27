@@ -7105,17 +7105,17 @@ void OutdoorWorldRuntime::attachTrueAim(
     const MonsterModifierSet *pModifiers =
         m_pMonsterTable != nullptr ? m_pMonsterTable->findModifiers(actor.monsterId) : nullptr;
 
-    // Without true aim, the rules may let missiles at the party keep their aim inside a narrow cone (MAW).
+    // Without true aim, the rules may let missiles at the party keep their aim while it moves slowly (MAW).
     if (pModifiers == nullptr || !pModifiers->trueAim)
     {
-        const float cone = gameRulesFor(m_pParty).combat.monsterMissileHomingConeRadians(spellId);
+        const float lockRate = gameRulesFor(m_pParty).combat.monsterMissileHomingLockRate(spellId);
 
-        if (cone > 0.0f && targetKind == ActorAiTargetKind::Party)
+        if (lockRate > 0.0f && targetKind == ActorAiTargetKind::Party)
         {
             GameplayProjectileService::ProjectileHoming homing = {};
             homing.targetKind = TargetKind::Party;
             homing.turnRadiansPerSecond = 1000.0f;
-            homing.lockConeRadians = cone;
+            homing.lockRadiansPerSecond = lockRate;
             projectileService().attachHoming(firstProjectileId, actor.actorId, homing);
         }
 
@@ -10765,10 +10765,8 @@ bool OutdoorWorldRuntime::outdoorActorCanApplyPartyMeleeImpact(const MapActorSta
     const float deltaX = partyMoveState.x - actor.preciseX;
     const float deltaY = partyMoveState.y - actor.preciseY;
     const float deltaZ = partyTargetZ - actorTargetZ;
-    const float edgeDistance =
-        std::max(0.0f, length3d(deltaX, deltaY, deltaZ) - static_cast<float>(actor.radius));
 
-    if (edgeDistance > ActorMeleeRange
+    if (length3d(deltaX, deltaY, deltaZ) > GameplayActorService::MonsterMeleeImpactReach
         || (m_pGameplayActorService != nullptr && !m_pGameplayActorService->meleeReachesVertically(
             actor.preciseZ, float(actor.height), partyMoveState.footZ, m_partyCollisionHeight)))
     {
@@ -12797,6 +12795,7 @@ bool OutdoorWorldRuntime::spawnSpellProjectile(
     spawnRequest.skillLevel = request.skillLevel;
     spawnRequest.skillMastery = request.skillMastery;
     spawnRequest.damage = request.damage;
+    spawnRequest.critical = request.critical;
     spawnRequest.attackBonus = request.attackBonus;
     spawnRequest.useActorHitChance = request.useActorHitChance;
     spawnRequest.damageType = request.damageType;
@@ -14746,7 +14745,8 @@ void OutdoorWorldRuntime::applyProjectileFrameResult(
                     impact.applyPartyProjectileDamage ? appliedDamage : impact.damage,
                     projectile.spellId,
                     impact.hit,
-                    killed);
+                    killed,
+                    projectile.critical);
             }
         }
         else if (impact.applyNonPartyProjectileDamage)
@@ -14849,7 +14849,8 @@ void OutdoorWorldRuntime::applyProjectileFrameResult(
                         appliedDamage,
                         projectile.spellId,
                         true,
-                        killed);
+                        killed,
+                        projectile.critical);
                 }
             }
             else
@@ -17994,6 +17995,7 @@ bool OutdoorWorldRuntime::spawnPartyAttackProjectile(const GameplayPartyAttackPr
     worldRequest.shieldModifiers = request.shieldModifiers;
     worldRequest.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
     worldRequest.explosionRadius = request.explosionRadius;
+    worldRequest.critical = request.critical;
     worldRequest.sourceX = request.source.x;
     worldRequest.sourceY = request.source.y;
     worldRequest.sourceZ = request.source.z;
@@ -18176,7 +18178,8 @@ bool OutdoorWorldRuntime::applyDirectSpellImpactToMapActor(
     float partyY,
     float partyZ,
     uint32_t sourcePartyMemberIndex,
-    const GameplayActorService::DirectSpellImpactResult &impact)
+    const GameplayActorService::DirectSpellImpactResult &impact,
+    bool critical)
 {
     if (actorIndex >= m_mapActors.size()
         || impact.disposition != GameplayActorService::DirectSpellImpactDisposition::ApplyDamage)
@@ -18252,7 +18255,8 @@ bool OutdoorWorldRuntime::applyDirectSpellImpactToMapActor(
             appliedDamage,
             static_cast<int>(spellId),
             true,
-            beforeHp > 0 && actor.currentHp <= 0);
+            beforeHp > 0 && actor.currentHp <= 0,
+            critical);
     }
 
     return applied;
@@ -18267,7 +18271,8 @@ bool OutdoorWorldRuntime::applyPartySpellToMapActor(
     float partyX,
     float partyY,
     float partyZ,
-    uint32_t sourcePartyMemberIndex)
+    uint32_t sourcePartyMemberIndex,
+    bool critical)
 {
     if (actorIndex >= m_mapActors.size() || m_pSpellTable == nullptr)
     {
@@ -18392,7 +18397,8 @@ bool OutdoorWorldRuntime::applyPartySpellToMapActor(
                 partyY,
                 partyZ,
                 sourcePartyMemberIndex,
-                directImpact);
+                directImpact,
+                critical);
         }
 
         const bool baselineHostileToParty = actor.hostileToParty;
@@ -18653,7 +18659,8 @@ bool OutdoorWorldRuntime::applyPartySpellToActor(
     float partyX,
     float partyY,
     float partyZ,
-    uint32_t sourcePartyMemberIndex)
+    uint32_t sourcePartyMemberIndex,
+    bool critical)
 {
     return applyPartySpellToMapActor(
         actorIndex,
@@ -18664,7 +18671,8 @@ bool OutdoorWorldRuntime::applyPartySpellToActor(
         partyX,
         partyY,
         partyZ,
-        sourcePartyMemberIndex);
+        sourcePartyMemberIndex,
+        critical);
 }
 
 ActorRulesetFacts *OutdoorWorldRuntime::mutableActorRulesetFacts(size_t actorIndex)
@@ -20770,6 +20778,12 @@ float OutdoorWorldRuntime::gameplayCameraPitchRadians() const
     return m_pInteractionView != nullptr ? m_pInteractionView->cameraPitchRadians() : 0.0f;
 }
 
+float OutdoorWorldRuntime::gameplayViewAspectRatio() const
+{
+    return m_pInteractionView != nullptr ? m_pInteractionView->viewAspectRatio()
+        : IGameplayWorldRuntime::gameplayViewAspectRatio();
+}
+
 bool OutdoorWorldRuntime::partyIsAirborneForRest() const
 {
     return m_pPartyRuntime != nullptr
@@ -21366,6 +21380,7 @@ bool OutdoorWorldRuntime::castPartySpellProjectile(const GameplayPartySpellProje
     worldRequest.effectSoundIdOverride = request.effectSoundIdOverride;
     worldRequest.impactSoundIdOverride = request.impactSoundIdOverride;
     worldRequest.turnBasedPendingAction = request.turnBasedPendingAction;
+    worldRequest.critical = request.critical;
     const uint32_t firstProjectileId = projectileService().nextProjectileId();
     const bool cast = castPartySpell(worldRequest);
 
@@ -21407,6 +21422,7 @@ bool OutdoorWorldRuntime::spawnPartyProjectile(const PartyProjectileRequest &req
     }
 
     spawnRequest.damage = request.damage;
+    spawnRequest.critical = request.critical;
     spawnRequest.attackBonus = request.attackBonus;
     spawnRequest.useActorHitChance = request.useActorHitChance;
     spawnRequest.damageType = request.damageType;

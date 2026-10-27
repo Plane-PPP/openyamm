@@ -547,6 +547,7 @@ bool GameplayHudOverlaySupport::tryPopulateItemInspectOverlayFromRenderedHudItem
         overlay.sourceMemberIndex = it->sourceMemberIndex;
         overlay.sourceGridX = it->sourceGridX;
         overlay.sourceGridY = it->sourceGridY;
+        overlay.sourceBag = it->sourceBag;
         overlay.sourceEquipmentSlot = it->equipmentSlot;
         overlay.sourceLootItemIndex = it->sourceLootItemIndex;
         overlay.hasValueOverride = it->hasValueOverride;

@@ -511,7 +511,7 @@ struct EventRuntimeState
     std::unordered_map<uint32_t, RuntimeDestructibleState> destructibles;
     std::unordered_map<uint32_t, OutdoorModelMechanismDefinition> outdoorModelMechanisms;
     // evt.SetTexture swaps: keyed by a face cog number (MM7/MM8: every face of the cog), or by
-    // EventRuntime::indoorFaceTextureOverrideKey(face index) (a negative reference, MMerge's MM6 maps: that one face).
+    // EventRuntime::indoorFaceReferenceKey(face index) (a negative reference, MMerge's MM6 maps: that one face).
     std::unordered_map<uint32_t, std::string> textureOverrides;
     std::unordered_map<uint32_t, std::string> outdoorModelFacetTextureOverrides;
     std::unordered_map<uint32_t, SpriteOverride> spriteOverrides;
@@ -664,7 +664,8 @@ public:
 
     static uint32_t outdoorModelFacetTextureOverrideKey(uint32_t modelIndex, uint32_t faceIndex);
     // The textureOverrides key of one indoor face named by its index (cog numbers are 16-bit, so never collide).
-    static uint32_t indoorFaceTextureOverrideKey(uint32_t faceIndex);
+    // One indoor face named by a negative event reference (MMerge's MM6 maps), apart from the cog numbers.
+    static uint32_t indoorFaceReferenceKey(uint32_t faceIndex);
     static uint32_t monsterRelationOverrideKey(uint32_t leftMonsterId, uint32_t rightMonsterId);
     static uint64_t transportRouteOverrideKey(uint32_t houseId, uint32_t routeIndex);
 

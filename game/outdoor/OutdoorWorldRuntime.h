@@ -841,7 +841,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex = 0) override;
+        uint32_t sourcePartyMemberIndex = 0,
+        bool critical = false) override;
     bool applyPartySpellToMapActor(
         size_t actorIndex,
         uint32_t spellId,
@@ -851,7 +852,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex = 0);
+        uint32_t sourcePartyMemberIndex = 0,
+        bool critical = false);
     bool applyDirectSpellImpactToMapActor(
         size_t actorIndex,
         uint32_t spellId,
@@ -859,7 +861,8 @@ public:
         float partyY,
         float partyZ,
         uint32_t sourcePartyMemberIndex,
-        const GameplayActorService::DirectSpellImpactResult &impact);
+        const GameplayActorService::DirectSpellImpactResult &impact,
+        bool critical = false);
     bool healMapActor(size_t actorIndex, int amount) override;
     ActorRulesetFacts *mutableActorRulesetFacts(size_t actorIndex) override;
     bool resurrectMapActor(size_t actorIndex, int health, bool friendlyToParty);
@@ -1010,6 +1013,7 @@ public:
     float partyEngagementRange() const override;
     float gameplayCameraYawRadians() const override;
     float gameplayCameraPitchRadians() const override;
+    float gameplayViewAspectRatio() const override;
     bool partyIsAirborneForRest() const override;
     bool partyIsFlyingForEventChecks() const override;
     bool partyIsActivelyFlyingForHud() const override;
@@ -1233,6 +1237,8 @@ public:
         uint32_t effectSoundIdOverride = 0;
         uint32_t impactSoundIdOverride = 0;
         bool turnBasedPendingAction = false;
+        // A party spell whose damage was a critical hit (ProjectileState::critical).
+        bool critical = false;
     };
 
     struct PartyProjectileRequest
@@ -1256,6 +1262,8 @@ public:
         float targetY = 0.0f;
         float targetZ = 0.0f;
         bool turnBasedPendingAction = false;
+        // Its damage was a critical hit (ProjectileState::critical).
+        bool critical = false;
     };
 
     struct MonsterVisualState

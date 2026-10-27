@@ -8702,18 +8702,22 @@ int luaStopDoor(lua_State *pLuaState)
     return 0;
 }
 
-// evt.SetTexture(reference, name): a positive reference is a cog number and swaps every face of that cog, as MM7's and
-// MM8's SetTexture; a negative one names one face by its index (MMerge's MM6 maps: "the facet itself").
-int luaSetTexture(lua_State *pLuaState)
+// A face reference of evt.SetTexture and evt.SetFacetBit: positive, a cog number (every face of that cog, as MM7's
+// and MM8's events); negative, one indoor face by its index (MMerge's MM6 maps: "the facet itself").
+uint32_t eventFaceReferenceKey(lua_Integer rawReference)
 {
-    EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
-    const lua_Integer rawReference = luaL_checkinteger(pLuaState, 1);
     const bool namesFace = rawReference < 0
         || (rawReference > std::numeric_limits<int32_t>::max()
             && rawReference <= static_cast<lua_Integer>(std::numeric_limits<uint32_t>::max()));
-    const uint32_t key = namesFace
-        ? EventRuntime::indoorFaceTextureOverrideKey(eventReferenceId(rawReference))
-        : eventReferenceId(rawReference);
+    return namesFace ? EventRuntime::indoorFaceReferenceKey(eventReferenceId(rawReference))
+                     : eventReferenceId(rawReference);
+}
+
+// evt.SetTexture(reference, name), the reference as eventFaceReferenceKey.
+int luaSetTexture(lua_State *pLuaState)
+{
+    EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
+    const uint32_t key = eventFaceReferenceKey(luaL_checkinteger(pLuaState, 1));
 
     if (lua_gettop(pLuaState) >= 2 && lua_type(pLuaState, 2) == LUA_TSTRING)
     {
@@ -8829,7 +8833,7 @@ int luaSetFacetBit(lua_State *pLuaState)
 {
     LuaExecutionContext *pExecutionContext = executionContextFromLua(pLuaState);
     EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
-    const uint32_t cogNumber = eventReferenceId(luaL_checkinteger(pLuaState, 1));
+    const uint32_t cogNumber = eventFaceReferenceKey(luaL_checkinteger(pLuaState, 1));
     const uint32_t bit = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 2));
     const bool isOn = luaEventBoolean(pLuaState, 3);
 
@@ -9752,7 +9756,7 @@ uint32_t EventRuntime::outdoorModelFacetTextureOverrideKey(uint32_t modelIndex, 
     return (modelIndex << 16) | (faceIndex & 0xFFFFu);
 }
 
-uint32_t EventRuntime::indoorFaceTextureOverrideKey(uint32_t faceIndex)
+uint32_t EventRuntime::indoorFaceReferenceKey(uint32_t faceIndex)
 {
     return 0x80000000u | faceIndex;
 }

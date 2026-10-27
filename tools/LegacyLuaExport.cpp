@@ -830,8 +830,8 @@ std::string formatLegacyReferenceId(uint32_t value)
     return std::to_string(signedValue < 0 ? -signedValue : signedValue);
 }
 
-// A SetTexture reference keeps its sign: positive, a cog number (every face of that cog); negative, one face by its
-// index (MMerge's MM6 maps, "the facet itself").
+// A SetTexture or SetFacetBit reference keeps its sign: positive, a cog number (every face of that cog); negative, one
+// face by its index (MMerge's MM6 maps, "the facet itself").
 std::string formatLegacySignedReferenceId(uint32_t value)
 {
     if (value <= static_cast<uint32_t>(std::numeric_limits<int32_t>::max()))
@@ -2319,6 +2319,20 @@ LegacyLuaInstruction decodeInstruction(
     if (decoded.operation == LegacyLuaOperation::CheckSkill && !decoded.arguments.empty())
     {
         decoded.arguments[0] = mapLegacySkillId(decoded.arguments[0], version);
+    }
+
+    // MM6's SetFacetBit indoors names one face by its index, a negative reference; MM7's and MM8's, and MM6's outdoors,
+    // a cog number, written without the sign MMerge's converted outdoor events store.
+    if (decoded.operation == LegacyLuaOperation::SetFacetBit && !decoded.arguments.empty())
+    {
+        const bool indoorMm6 = version == LegacyEventVersion::Mm6 && lookups.sourceMapFile
+            && toLowerCopy(std::filesystem::path(*lookups.sourceMapFile).extension().string()) == ".blv";
+        const bool negative = decoded.arguments[0] > static_cast<uint32_t>(std::numeric_limits<int32_t>::max());
+
+        if (indoorMm6 != negative)
+        {
+            decoded.arguments[0] = 0u - decoded.arguments[0];
+        }
     }
 
     return decoded;
@@ -3970,7 +3984,7 @@ bool emitReadableActionInstruction(
             {
                 emitIndentedLineWithComment(
                     stream,
-                    "evt.SetFacetBit(" + formatLegacyReferenceId(instruction.arguments[0]) + ", "
+                    "evt.SetFacetBit(" + formatLegacySignedReferenceId(instruction.arguments[0]) + ", "
                     + formatFacetBit(instruction.arguments[1]) + ", "
                     + std::to_string(instruction.arguments[2]) + ")",
                     std::nullopt,
@@ -8840,7 +8854,7 @@ void emitNormalInstruction(
             {
                 emitIndentedLineWithComment(
                     stream,
-                    "evt.SetFacetBit(" + formatLegacyReferenceId(instruction.arguments[0]) + ", "
+                    "evt.SetFacetBit(" + formatLegacySignedReferenceId(instruction.arguments[0]) + ", "
                     + formatFacetBit(instruction.arguments[1]) + ", "
                     + std::to_string(instruction.arguments[2]) + ")",
                     std::nullopt,

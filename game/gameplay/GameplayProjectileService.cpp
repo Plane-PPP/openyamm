@@ -555,6 +555,7 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.shieldModifiers = request.shieldModifiers;
         projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
         projectile.explosionRadius = request.explosionRadius;
+        projectile.critical = request.critical;
         projectile.useActorHitChance = request.useActorHitChance;
         projectile.turnBasedPendingAction = request.turnBasedPendingAction;
         projectile.lifetimeTicks = request.definition.lifetimeTicks;
@@ -628,6 +629,7 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     projectile.shieldModifiers = request.shieldModifiers;
     projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
     projectile.explosionRadius = request.explosionRadius;
+    projectile.critical = request.critical;
     projectile.useActorHitChance = request.useActorHitChance;
     projectile.turnBasedPendingAction = request.turnBasedPendingAction;
     projectile.sectorId = request.sectorId;
@@ -1093,6 +1095,7 @@ std::optional<GameplayProjectileService::ProjectileSpawnRequest> GameplayProject
     request.shieldModifiers = projectile.shieldModifiers;
     request.weakerOfPhysicalAndFire = projectile.weakerOfPhysicalAndFire;
     request.explosionRadius = projectile.explosionRadius;
+    request.critical = projectile.critical;
     request.sourceX = struck.preciseX;
     request.sourceY = struck.preciseY;
     request.sourceZ = fromZ;
@@ -1151,6 +1154,7 @@ GameplayProjectileService::buildDeathBlossomFalloutSpawnRequests(
         request.damage = projectile.damage;
         request.attackBonus = projectile.attackBonus;
         request.damageType = projectile.damageType;
+        request.critical = projectile.critical;
         request.sourceX = x;
         request.sourceY = y;
         request.sourceZ = z + DeathBlossomFalloutSourceHeightOffset;
@@ -1296,6 +1300,14 @@ GameplayProjectileService::spawnProjectileImpactVisual(
     impactState.sourceObjectFlags = projectile.objectFlags;
     impactState.sourceSpellId = projectile.spellId;
     impactState.sourceMonsterId = projectile.sourceMonsterId;
+    const float speed = std::sqrt(projectile.velocityX * projectile.velocityX
+        + projectile.velocityY * projectile.velocityY + projectile.velocityZ * projectile.velocityZ);
+    if (speed > 0.0f)
+    {
+        impactState.flightDirectionX = projectile.velocityX / speed;
+        impactState.flightDirectionY = projectile.velocityY / speed;
+        impactState.flightDirectionZ = projectile.velocityZ / speed;
+    }
     impactState.objectName = definition.objectName;
     impactState.objectSpriteName = definition.objectSpriteName;
     impactState.sourceObjectName = projectile.objectName;
@@ -1964,14 +1976,14 @@ bool GameplayProjectileService::steerHomingProjectile(
         return false;
     }
 
-    if (homing.lockConeRadians > 0.0f)
+    if (homing.lockRadiansPerSecond > 0.0f)
     {
         const float headingRadians = std::atan2(projectile.velocityY, projectile.velocityX);
         const float targetRadians = std::atan2(pTarget->y - projectile.y, pTarget->x - projectile.x);
         float offRadians = std::fabs(targetRadians - headingRadians);
         offRadians = std::min(offRadians, 2.0f * 3.14159265f - offRadians);
 
-        if (offRadians >= homing.lockConeRadians)
+        if (offRadians >= homing.lockRadiansPerSecond * deltaSeconds)
         {
             return false;
         }
@@ -2606,6 +2618,9 @@ void GameplayProjectileService::collectProjectilePresentationState(
         state.sourceObjectFlags = impact.sourceObjectFlags;
         state.sourceSpellId = impact.sourceSpellId;
         state.sourceMonsterId = impact.sourceMonsterId;
+        state.flightDirectionX = impact.flightDirectionX;
+        state.flightDirectionY = impact.flightDirectionY;
+        state.flightDirectionZ = impact.flightDirectionZ;
         state.objectName = impact.objectName;
         state.objectSpriteName = impact.objectSpriteName;
         state.sourceObjectName = impact.sourceObjectName;

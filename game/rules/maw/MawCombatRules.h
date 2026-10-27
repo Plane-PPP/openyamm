@@ -37,10 +37,10 @@ public:
     bool characterMissileHits(const CharacterMissileOnMonster &missile) const override;
     // With the homing preference on, party missiles re-aim at their target as they fly.
     float partyMissileHomingTurnRate() const override;
-    // With the homing preference on, a monster missile keeps re-aiming at the party while it points within 0.5° of it
-    // (COMBAT.md §2.10).
+    // With the homing preference on, a monster missile keeps re-aiming at the party while the party moves across its
+    // flight slower than 300° a second (COMBAT.md §2.10, DEVIATIONS.md #181).
     // None for Meteor Shower, Sparks, Starburst, Poison Spray, Ice Blast and Shrapmetal (S:639-743).
-    float monsterMissileHomingConeRadians(uint32_t spellId) const override;
+    float monsterMissileHomingLockRate(uint32_t spellId) const override;
     // Traps and hazards hit as hard as a monster of the party's banked level (Damage.lua stage 4), less with
     // Perception and legendaries 18 and 22; outdoor falls and drowning keep their own numbers. Dimension affix 2
     // doubles any of them now and then.
@@ -50,7 +50,7 @@ public:
         int damage,
         CombatDamageType type,
         bool indoor) const override;
-    int rollSpellDamage(const CharacterSpellCast &cast) const override;
+    int rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical = nullptr) const override;
     // Mass Distortion: 15 % + 0.5 % per point of the target's hit points, less on harder difficulties and bosses, more
     // on monsters above level 250 (SP:1714-1718, 1819-1850).
     std::optional<int> spellDamageOnTarget(const CharacterSpellCast &cast, const SpellTargetState &target) const override;
@@ -154,7 +154,7 @@ private:
         CombatDamageType type,
         int partyCount) const;
     // A Death Knight's or Assassin's damage spell: a share of a weapon blow.
-    int classSpellDamage(const CharacterSpellCast &cast, const MawClassSpell &spell) const;
+    int classSpellDamage(const CharacterSpellCast &cast, const MawClassSpell &spell, bool &critical) const;
     void applyLeech(Party &party, const PartyHitOnMonster &hit) const;
     void applyClassHitEffects(Party &party, const PartyHitOnMonster &hit) const;
     void applyAssassinHit(Party &party, const PartyHitOnMonster &hit, bool arrow) const;

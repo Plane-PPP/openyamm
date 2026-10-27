@@ -1285,6 +1285,13 @@ std::optional<size_t> firstActingMemberIndex(const std::vector<Character> &membe
     return std::nullopt;
 }
 
+// Only a revival (Raise Dead, Resurrection) brings the dead back: a heal leaves them as they are (OE Character::Heal).
+bool isDeadOrEradicated(const Character &member)
+{
+    return member.conditions.test(static_cast<size_t>(CharacterCondition::Dead))
+        || member.conditions.test(static_cast<size_t>(CharacterCondition::Eradicated));
+}
+
 void updateMemberIncapacitatedCondition(Character &member, bool preservationActive, float gameMinutes)
 {
     if (member.health > 0)
@@ -7231,7 +7238,7 @@ bool Party::healMember(size_t memberIndex, int amount)
 {
     Character *pMember = member(memberIndex);
 
-    if (pMember == nullptr || amount <= 0)
+    if (pMember == nullptr || amount <= 0 || isDeadOrEradicated(*pMember))
     {
         return false;
     }
@@ -7252,7 +7259,7 @@ void Party::adjustMemberHealth(size_t memberIndex, int amount)
 {
     Character *pMember = member(memberIndex);
 
-    if (pMember == nullptr || amount == 0)
+    if (pMember == nullptr || amount == 0 || (amount > 0 && isDeadOrEradicated(*pMember)))
     {
         return;
     }

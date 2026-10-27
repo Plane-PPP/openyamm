@@ -418,6 +418,8 @@ struct GameplayPartySpellProjectileRequest
     bool turnBasedPendingAction = false;
     // The actor the spell was aimed at, for rules whose missiles home (MAW).
     std::optional<size_t> targetActorIndex;
+    // Its damage was a critical hit (the status line and combat log say so where it lands).
+    bool critical = false;
 };
 
 enum class GameplayProjectileVisualMode
@@ -490,6 +492,10 @@ struct GameplayProjectileImpactPresentationState
     uint16_t sourceObjectFlags = 0;
     int sourceSpellId = 0;
     int16_t sourceMonsterId = 0;
+    // The unit direction the projectile flew when it struck; zero when unknown.
+    float flightDirectionX = 0.0f;
+    float flightDirectionY = 0.0f;
+    float flightDirectionZ = 0.0f;
     std::string objectName;
     std::string objectSpriteName;
     std::string sourceObjectName;
@@ -602,6 +608,8 @@ struct GameplayPartyAttackProjectileRequest
     std::optional<size_t> targetActorIndex;
     // Its shots home (CharacterAttackResult::homing).
     bool homing = false;
+    // Its damage was a critical hit (CharacterAttackResult::criticalDamage).
+    bool critical = false;
 };
 
 struct GameplayPartyAttackFallbackQuery
@@ -703,6 +711,11 @@ public:
     virtual float gameplayCameraPitchRadians() const
     {
         return 0.0f;
+    }
+    // Width over height of the view the party sees through; the narrowest supported view until one is drawn.
+    virtual float gameplayViewAspectRatio() const
+    {
+        return 4.0f / 3.0f;
     }
     virtual bool partyIsAirborneForRest() const
     {
@@ -934,7 +947,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex) = 0;
+        uint32_t sourcePartyMemberIndex,
+        bool critical) = 0;
     virtual std::vector<size_t> collectMapActorIndicesWithinRadius(
         float centerX,
         float centerY,

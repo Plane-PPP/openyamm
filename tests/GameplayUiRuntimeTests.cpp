@@ -4,8 +4,16 @@
 #include "game/data/GameDataLoader.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayOverlayInputController.h"
+#include "game/gameplay/GameplayScreenController.h"
+#include "game/items/InventoryBags.h"
+#include "game/items/ItemRuntime.h"
+#include "game/party/Party.h"
+#include "game/rules/GameRules.h"
+#include "game/rules/maw/MawRules.h"
 #include "game/ui/GameplayHudCommon.h"
 #include "game/ui/GameplayUiRuntime.h"
+
+#include "tests/RegressionGameData.h"
 
 #include <doctest/doctest.h>
 
@@ -147,4 +155,75 @@ TEST_CASE("HUD text colour codes take no room, carry across wrapped lines and ti
         font, GameplayHudFontLayer(font.shadowTextureHandle), "a\f02016b", 0, 0, 1, collect);
     REQUIRE_EQ(quads.size(), 2u);
     CHECK_EQ(quads[1].first, 2);
+}
+
+TEST_CASE("MAW bag overview: identify and repair act on the inspected item's bag, not the open one")
+{
+    using namespace OpenYAMM::Game;
+    REQUIRE_MESSAGE(OpenYAMM::Tests::regressionGameDataLoaded(), OpenYAMM::Tests::regressionGameDataFailure().c_str());
+    const ItemTable &itemTable = OpenYAMM::Tests::regressionGameData().itemTable;
+    const ItemDefinition *pDefinition = nullptr;
+
+    for (const ItemDefinition &definition : itemTable.entries())
+    {
+        if (definition.itemId != 0 && ItemRuntime::requiresIdentification(definition))
+        {
+            pDefinition = &definition;
+            break;
+        }
+    }
+
+    REQUIRE(pDefinition != nullptr);
+
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    Character member = {};
+    member.name = "Member";
+    member.skills["IdentifyItem"] = {"IdentifyItem", 60, SkillMastery::Grandmaster};
+    member.skills["RepairItem"] = {"RepairItem", 60, SkillMastery::Grandmaster};
+    PartySeed seed = {};
+    seed.members.assign(2, member);
+    Party party = {};
+    party.seed(seed);
+    party.setRules(&rules.gameRules());
+    party.setItemTable(&itemTable);
+    const int bagCount = rules.gameRules().items.bagCount(party);
+    REQUIRE(bagCount > 2);
+
+    // The same cell holds an unidentified, broken item in the open bag 0 and in bag 2.
+    InventoryItem item = {};
+    item.objectDescriptionId = pDefinition->itemId;
+    item.width = std::max<uint8_t>(1, pDefinition->inventoryWidth);
+    item.height = std::max<uint8_t>(1, pDefinition->inventoryHeight);
+    item.identified = false;
+    item.broken = true;
+    Character &holder = *party.member(0);
+    REQUIRE(holder.addInventoryItemAt(item, 0, 0));
+    REQUIRE(InventoryBags::openBag(holder, 2, bagCount));
+    REQUIRE(holder.addInventoryItemAt(item, 0, 0));
+    REQUIRE(InventoryBags::openBag(holder, 0, bagCount));
+
+    std::string statusText;
+    CHECK(InventoryBags::withBagOpen(party, 0, 2, bagCount,
+        [&]() { return party.tryIdentifyMemberInventoryItem(0, 0, 0, 1, statusText); }));
+    CHECK(InventoryBags::withBagOpen(party, 0, 2, bagCount,
+        [&]() { return party.tryRepairMemberInventoryItem(0, 0, 0, 1, statusText); }));
+
+    CHECK_EQ(holder.rulesetState.currentBag, 0);
+    const InventoryItem *pOtherBagItem = InventoryBags::itemInBagAt(holder, 2, 0, 0);
+    REQUIRE(pOtherBagItem != nullptr);
+    CHECK(pOtherBagItem->identified);
+    CHECK_FALSE(pOtherBagItem->broken);
+    const InventoryItem *pOpenBagItem = holder.inventoryItemAt(0, 0);
+    REQUIRE(pOpenBagItem != nullptr);
+    CHECK_FALSE(pOpenBagItem->identified);
+    CHECK(pOpenBagItem->broken);
+
+    // Held right button moving onto the same cell of another bag tries that item too.
+    GameplayUiController::ItemInspectOverlayState openBagOverlay = {};
+    openBagOverlay.objectDescriptionId = pDefinition->itemId;
+    openBagOverlay.sourceType = GameplayUiController::ItemInspectSourceType::Inventory;
+    GameplayUiController::ItemInspectOverlayState otherBagOverlay = openBagOverlay;
+    otherBagOverlay.sourceBag = 2;
+    CHECK_NE(GameplayScreenController::itemInspectInteractionKey(openBagOverlay),
+        GameplayScreenController::itemInspectInteractionKey(otherBagOverlay));
 }

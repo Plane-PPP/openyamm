@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 136;
+constexpr uint32_t SaveVersion = 137;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -196,6 +196,8 @@ constexpr uint32_t SaveVersionProjectileHoming = 135;
 constexpr uint32_t SaveVersionActorDormant = 135;
 constexpr uint32_t SaveVersionActorPatrol = 136;
 constexpr uint32_t SaveVersionWorkshopMods = 136;
+// A homing missile's lock is a rate in radians a second; before, a cone tested every 1/60 s step.
+constexpr uint32_t SaveVersionHomingLockRate = 137;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -4080,7 +4082,7 @@ void writeValue(BinaryWriter &writer, const GameplayProjectileService::Projectil
         writeValue(writer, homing.speed);
         writeValue(writer, homing.elapsedSeconds);
         writeValue(writer, homing.lost);
-        writeValue(writer, homing.lockConeRadians);
+        writeValue(writer, homing.lockRadiansPerSecond);
     }
 }
 
@@ -4114,11 +4116,18 @@ bool readProjectileHoming(BinaryReader &reader, GameplayProjectileService::Proje
         || !readValue(reader, homing.speed)
         || !readValue(reader, homing.elapsedSeconds)
         || !readValue(reader, homing.lost)
-        || !readValue(reader, homing.lockConeRadians))
+        || !readValue(reader, homing.lockRadiansPerSecond))
     {
         return false;
     }
     homing.targetActorIndex = static_cast<size_t>(targetActorIndex);
+
+    // An older save holds the lock cone of one 1/60 s projectile step: the same lock as a rate.
+    if (reader.version() < SaveVersionHomingLockRate)
+    {
+        homing.lockRadiansPerSecond *= 60.0f;
+    }
+
     value.homing = homing;
     return true;
 }
@@ -5082,7 +5091,7 @@ void migrateLegacyMm6FaceTextureKeys(
 
         for (auto &[key, textureName] : state->textureOverrides)
         {
-            overrides[EventRuntime::indoorFaceTextureOverrideKey(key)] = std::move(textureName);
+            overrides[EventRuntime::indoorFaceReferenceKey(key)] = std::move(textureName);
         }
 
         state->textureOverrides = std::move(overrides);

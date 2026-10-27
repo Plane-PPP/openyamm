@@ -861,6 +861,8 @@ struct GameplayRenderedInspectableHudItem
     size_t sourceMemberIndex = 0;
     uint8_t sourceGridX = 0;
     uint8_t sourceGridY = 0;
+    // The bag the inventory item lies in (MAW's bag overview shows every bag, not only the open one).
+    uint8_t sourceBag = 0;
     EquipmentSlot equipmentSlot = EquipmentSlot::MainHand;
     size_t sourceLootItemIndex = 0;
     std::string textureName;

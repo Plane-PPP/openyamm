@@ -591,7 +591,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex) override
+        uint32_t sourcePartyMemberIndex,
+        bool critical) override
     {
         (void)actorIndex;
         (void)spellId;
@@ -602,6 +603,7 @@ public:
         (void)partyY;
         (void)partyZ;
         (void)sourcePartyMemberIndex;
+        (void)critical;
         return false;
     }
 
@@ -7352,7 +7354,7 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
         OpenYAMM::Game::EventRuntime eventRuntime = {};
         REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 61, runtimeState, &party));
         CHECK(party.hasQuestBit(1300));
-        CHECK_EQ(runtimeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(2927)], "trekscon");
+        CHECK_EQ(runtimeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(2927)], "trekscon");
         REQUIRE_FALSE(runtimeState.messages.empty());
         CHECK(
             runtimeState.messages.back().find("Blaster weapons provide an effective, accurate ranged attack")
@@ -7543,7 +7545,7 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
         CHECK_EQ(party.member(1)->personality, 17);
         CHECK_EQ(party.member(2)->personality, 13);
         CHECK(party.hasQuestBit(1047));
-        CHECK_EQ(runtimeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(949)], "d6flora");
+        CHECK_EQ(runtimeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(949)], "d6flora");
 
         OpenYAMM::Game::PartySeed mapVarPartySeed = {};
         mapVarPartySeed.members.push_back(makeScriptedRegressionMember());
@@ -7660,23 +7662,26 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
             4));
         for (uint32_t faceIndex : {4298u, 4299u, 4300u, 4301u, 4302u})
         {
-            CHECK_EQ(cubeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
-            CHECK((cubeState.facetSetMasks[faceIndex] & fluidMask) != 0);
+            CHECK_EQ(cubeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(faceIndex)], "lavatyl");
+            CHECK((cubeState.facetSetMasks[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(faceIndex)]
+                & fluidMask) != 0);
         }
 
         REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 45, cubeState, &party));
         CHECK_EQ(cubeState.mapVars[4], 0u);
         for (uint32_t faceIndex : {4298u, 4299u, 4300u, 4301u, 4302u})
         {
-            CHECK_EQ(cubeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "orwtrtyl");
+            CHECK_EQ(cubeState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(faceIndex)], "orwtrtyl");
         }
 
         OpenYAMM::Game::EventRuntimeState clearedWayState = {};
         clearedWayState.mapVars[3] = 1;
         REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 33, clearedWayState, &party));
         CHECK_EQ(clearedWayState.mapVars[3], 2u);
-        CHECK((clearedWayState.facetSetMasks[4522] & untouchableMask) != 0);
-        CHECK((clearedWayState.facetSetMasks[4575] & untouchableMask) != 0);
+        CHECK((clearedWayState.facetSetMasks[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(4522)]
+            & untouchableMask) != 0);
+        CHECK((clearedWayState.facetSetMasks[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(4575)]
+            & untouchableMask) != 0);
 
         OpenYAMM::Game::EventRuntimeState onLoadState = {};
         onLoadState.mapVars[2] = 1;
@@ -7685,18 +7690,20 @@ TEST_CASE("mm6 remaining mmmerge delta overlays port map event fixes")
         REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 58, onLoadState, &party));
         for (uint32_t faceIndex : {4219u, 4220u, 4221u, 4222u, 4223u})
         {
-            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
+            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(faceIndex)], "lavatyl");
         }
         for (uint32_t faceIndex : {4265u, 4266u, 4267u, 4268u, 4269u})
         {
-            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
+            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(faceIndex)], "lavatyl");
         }
         for (uint32_t faceIndex : {4298u, 4299u, 4300u, 4301u, 4302u})
         {
-            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(faceIndex)], "lavatyl");
+            CHECK_EQ(onLoadState.textureOverrides[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(faceIndex)], "lavatyl");
         }
-        CHECK((onLoadState.facetSetMasks[4522] & untouchableMask) != 0);
-        CHECK((onLoadState.facetSetMasks[4575] & untouchableMask) != 0);
+        CHECK((onLoadState.facetSetMasks[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(4522)]
+            & untouchableMask) != 0);
+        CHECK((onLoadState.facetSetMasks[OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(4575)]
+            & untouchableMask) != 0);
     }
 
     {

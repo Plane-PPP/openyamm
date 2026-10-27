@@ -475,7 +475,8 @@ void applySpellSplash(
             sourceX,
             sourceY,
             footZ,
-            uint32_t(request.casterMemberIndex));
+            uint32_t(request.casterMemberIndex),
+            false);
     }
 }
 
@@ -1382,11 +1383,12 @@ PartySpellCastResult PartySpellSystem::castSpell(
         cast.partyCount = int(std::max<size_t>(1, party.members().size()));
         return cast;
     };
+    // `critical` learns whether the roll was a critical hit.
     const auto rollSpellDamage =
-        [&party, &castAtLevel](const SpellEntry &spellEntry, SkillMastery mastery, uint32_t level)
+        [&party, &castAtLevel](const SpellEntry &spellEntry, SkillMastery mastery, uint32_t level, bool &critical)
     {
         const CharacterSpellCast cast = castAtLevel(spellEntry, mastery, level);
-        int damage = party.rules().combat.rollSpellDamage(cast);
+        int damage = party.rules().combat.rollSpellDamage(cast, &critical);
         // Hesper's item effects: per-cent spell damage (item_effects spell_damage_pct).
         const int percent = cast.pCaster != nullptr ? cast.pCaster->spellDamagePercent : 0;
         damage = percent != 0 ? std::max(0, damage + damage * percent / 100) : damage;
@@ -1947,7 +1949,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     sourceX,
                     sourceY,
                     footZ,
-                    static_cast<uint32_t>(request.casterMemberIndex));
+                    static_cast<uint32_t>(request.casterMemberIndex),
+                    false);
             }
         }
         else if (spellId == SpellId::Preservation)
@@ -2577,7 +2580,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
         worldRequest.spellId = request.spellId;
         worldRequest.skillLevel = skillLevel;
         worldRequest.skillMastery = skillMastery;
-        worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+        worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, worldRequest.critical);
         worldRequest.damageType = party.rules().combat.partySpellDamageType(
             request.spellId, GameMechanics::spellCombatDamageType(request.spellId, &spellTable));
         worldRequest.turnBasedPendingAction = request.turnBasedPendingAction;
@@ -2615,7 +2618,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             worldRequest.spellId = request.spellId;
             worldRequest.skillLevel = skillLevel;
             worldRequest.skillMastery = skillMastery;
-            worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+            worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, worldRequest.critical);
             worldRequest.damageType = party.rules().combat.partySpellDamageType(
                 request.spellId, GameMechanics::spellCombatDamageType(request.spellId, &spellTable));
             worldRequest.turnBasedPendingAction = request.turnBasedPendingAction;
@@ -2663,7 +2666,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
             const bool hasTarget = worldRuntime.actorInspectState(*request.targetActorIndex, 0, targetBefore);
             const bool hasDrainTarget =
                 spellId == SpellId::Lifedrain && hasTarget && party.rules().combat.lifedrainHealsCasterThird();
-            int damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+            bool critical = false;
+            int damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, critical);
 
             // A share of the target's hit points replaces the roll under rules that have one (MAW's Mass Distortion).
             if (hasTarget)
@@ -2689,7 +2693,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 sourceX,
                 sourceY,
                 footZ,
-                static_cast<uint32_t>(request.casterMemberIndex));
+                static_cast<uint32_t>(request.casterMemberIndex),
+                critical);
 
             if (castSucceeded && hasDrainTarget)
             {
@@ -2736,7 +2741,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         sourceX,
                         sourceY,
                         footZ,
-                        static_cast<uint32_t>(request.casterMemberIndex));
+                        static_cast<uint32_t>(request.casterMemberIndex),
+                        false);
                 }
             }
 
@@ -2955,7 +2961,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     }
                 }
 
-                const int spellDamage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+                bool critical = false;
+                const int spellDamage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, critical);
                 const bool applied = worldRuntime.applyPartySpellToActor(
                     actorIndex,
                     request.spellId,
@@ -2965,7 +2972,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     sourceX,
                     sourceY,
                     footZ,
-                    static_cast<uint32_t>(request.casterMemberIndex));
+                    static_cast<uint32_t>(request.casterMemberIndex),
+                    critical);
                 castSucceeded = applied || castSucceeded;
 
                 if (spellId == SpellId::SoulDrinker && applied)

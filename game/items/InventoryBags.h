@@ -95,6 +95,9 @@ std::optional<size_t> placeInTaggedBag(
     const InventoryItem &item,
     BagTag tag,
     int bagCount);
+// Runs the open bag's own operation on `bag`: it is opened for the call and the bag that was open is opened again.
+// False, without the call, when `bag` is beyond `bagCount`.
+bool withBagOpen(Party &party, size_t memberIndex, uint8_t bag, int bagCount, const std::function<bool()> &operation);
 // Takes the item covering the cell out of `bag` of the member; the open bag stays open.
 bool takeFromBag(
     Party &party,

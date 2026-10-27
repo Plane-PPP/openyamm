@@ -482,6 +482,7 @@ add_executable(openyamm_runtime_tests
     IndoorActorDetectionRuntimeTests.cpp
     IndoorActorFlyingRuntimeTests.cpp
     IndoorMovingFloorRuntimeTests.cpp
+    IndoorFacetBitRuntimeTests.cpp
     IndoorActorFactionRuntimeTests.cpp
     IndoorDecorationInteractionTests.cpp
     OutdoorLightingProbeRuntimeTests.cpp

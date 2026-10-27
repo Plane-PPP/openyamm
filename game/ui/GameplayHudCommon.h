@@ -307,6 +307,13 @@ public:
         std::vector<GameplayHudTextureColorTextureData> &colorTextures);
     // The font's main layer drawn in colorAbgr; white keeps the atlas's own colours.
     static GameplayHudFontLayer hudFontMainLayer(const GameplayHudFontData &font, uint32_t colorAbgr);
+    static constexpr size_t TextColorCodeLength = 6;
+    // Might and Magic's inline text colour: "\f" and five digits of an R5G6B5 colour; "\f00000" returns to the
+    // line's own colour. True when a code starts at `index`; `colorAbgr` is then its colour, or nothing for the line's
+    // own.
+    static bool readTextColorCode(const std::string &text, size_t index, std::optional<uint32_t> &colorAbgr);
+    // Reopens a colour still open at the end of a wrapped line at the start of the next.
+    static void carryTextColorsAcrossLines(std::vector<std::string> &lines);
     static float measureHudTextWidth(const GameplayHudFontData &font, const std::string &text);
     static std::string clampHudTextToWidth(const GameplayHudFontData &font, const std::string &text, float maxWidth);
     static std::vector<std::string> wrapHudTextToWidth(

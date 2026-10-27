@@ -116,11 +116,12 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex) override
+        uint32_t sourcePartyMemberIndex,
+        bool critical) override
     {
         if (!PartySpellTestWorldRuntime::applyPartySpellToActor(
                 actorIndex, spellId, skillLevel, skillMastery, damage,
-                partyX, partyY, partyZ, sourcePartyMemberIndex))
+                partyX, partyY, partyZ, sourcePartyMemberIndex, critical))
         {
             return false;
         }

@@ -454,11 +454,14 @@ SkillTooltipText MawSkillRules::skillTooltip(
     std::unordered_map<std::string, double> values;
     values["level"] = level;
 
-    // Regeneration and Meditation now and with one more point, before the out-of-combat multipliers.
+    // Regeneration and Meditation now and with one more point, before the out-of-combat multipliers. An unlearned
+    // skill's next point is learning it at Normal.
+    const SkillMastery nextMastery = std::max(mastery, SkillMastery::Normal);
     const double fullHealth = Party::effectiveMaximumHealth(character);
-    const auto regeneration = [&](double skill)
+    const auto regeneration = [&](double skill, SkillMastery skillMastery)
     {
-        return mawRegenerationHealthPerSecond(mastery, model.health(std::pow(skill, 1.4)), fullHealth, fullHealth);
+        return mawRegenerationHealthPerSecond(skillMastery, model.health(std::pow(skill, 1.4)), fullHealth,
+            fullHealth);
     };
     // Meditation fills the pool the auras leave, and Legendary 20 adds 1 % for each 1 % they reserve, as the
     // regeneration does (TXT-2-6).
@@ -476,16 +479,16 @@ SkillTooltipText MawSkillRules::skillTooltip(
     const double legendaryMeditation = fullSpellPoints > 0 && mawWearsLegendaryAffix(character, 20)
         ? 1 + std::clamp(double(reserved) / fullSpellPoints, 0.0, 1.0)
         : 1.0;
-    const auto meditation = [&](double skill)
+    const auto meditation = [&](double skill, SkillMastery skillMastery)
     {
-        return mawMeditationSpellPerSecond(mastery, model.mana(std::pow(skill, 1.4) / 2),
+        return mawMeditationSpellPerSecond(skillMastery, model.mana(std::pow(skill, 1.4) / 2),
                    mawMeditationPool(fullSpellPoints, reserved))
             * legendaryMeditation;
     };
-    values["regen_now"] = regeneration(level);
-    values["regen_next"] = regeneration(level + 1);
-    values["med_now"] = meditation(level);
-    values["med_next"] = meditation(level + 1);
+    values["regen_now"] = regeneration(level, mastery);
+    values["regen_next"] = regeneration(level + 1, nextMastery);
+    values["med_now"] = meditation(level, mastery);
+    values["med_next"] = meditation(level + 1, nextMastery);
 
     // Ascension's percents, each from the ascension its own use reads: a Shaman heals and pays by seven schools, an
     // Elementalist by the four elements at Grandmaster, Death Knights and Assassins have none (TXT-2-5).
@@ -578,14 +581,14 @@ SkillTooltipText MawSkillRules::skillTooltip(
     }
 
     // A dragon's Regeneration also leeches its bites: against a monster of its own level, and with one more point
-    // (SkillTooltip.lua:148-154).
+    // (SkillTooltip.lua:148-154). Shown before the skill is learned too, so a new dragon sees what it would get.
     std::string dragonLeech;
 
-    if (canonicalSkill == "Regeneration" && level > 0 && mawIsDragon(character))
+    if (canonicalSkill == "Regeneration" && mawIsDragon(character))
     {
         const double perPoint = 5.0 / std::max(1.0, model.skill(std::max(1u, character.level)));
         std::ostringstream line;
-        line << "Melee life leech vs equal level: <bad>" << mawRound(level * perPoint * 10) / 10 << " %</> (<bad>"
+        line << "\n\nMelee life leech vs equal level: <bad>" << mawRound(level * perPoint * 10) / 10 << " %</> (<bad>"
              << mawRound((level + 1) * perPoint * 10) / 10 << " %</> with one more point), lower against stronger "
              << "monsters.";
         dragonLeech = line.str();

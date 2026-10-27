@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <utility>
 
 namespace OpenYAMM::Game
@@ -132,6 +133,16 @@ bool applyLootOperation(
     }
 
     return false;
+}
+
+// An inspected inventory item's operation, with the item's bag open: MAW's bag overview shows every bag.
+bool withInspectedBagOpen(
+    Party &party,
+    const GameplayUiController::ItemInspectOverlayState &overlay,
+    const std::function<bool()> &operation)
+{
+    return InventoryBags::withBagOpen(
+        party, overlay.sourceMemberIndex, overlay.sourceBag, gameRulesFor(&party).items.bagCount(party), operation);
 }
 
 Party *activeParty(GameSession &session)
@@ -1597,11 +1608,12 @@ bool GameplayItemService::identifyInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        return pParty->identifyMemberInventoryItem(
-            overlay.sourceMemberIndex,
-            overlay.sourceGridX,
-            overlay.sourceGridY,
-            statusText);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                return pParty->identifyMemberInventoryItem(
+                    overlay.sourceMemberIndex, overlay.sourceGridX, overlay.sourceGridY, statusText);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment)
@@ -1697,12 +1709,12 @@ bool GameplayItemService::tryIdentifyInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        return pParty->tryIdentifyMemberInventoryItem(
-            overlay.sourceMemberIndex,
-            overlay.sourceGridX,
-            overlay.sourceGridY,
-            inspectorMemberIndex,
-            statusText);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                return pParty->tryIdentifyMemberInventoryItem(overlay.sourceMemberIndex, overlay.sourceGridX,
+                    overlay.sourceGridY, inspectorMemberIndex, statusText);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment)
@@ -1802,9 +1814,13 @@ bool GameplayItemService::tryOpenInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        InventoryItem *pItem =
-            pParty->memberInventoryItemMutable(overlay.sourceMemberIndex, overlay.sourceGridX, overlay.sourceGridY);
-        return pItem != nullptr && itemRules.openSealedItem(*pItem, *pInspector);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                InventoryItem *pItem = pParty->memberInventoryItemMutable(
+                    overlay.sourceMemberIndex, overlay.sourceGridX, overlay.sourceGridY);
+                return pItem != nullptr && itemRules.openSealedItem(*pItem, *pInspector);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Chest && pWorldRuntime != nullptr)
@@ -1863,12 +1879,12 @@ bool GameplayItemService::tryRepairInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        return pParty->tryRepairMemberInventoryItem(
-            overlay.sourceMemberIndex,
-            overlay.sourceGridX,
-            overlay.sourceGridY,
-            inspectorMemberIndex,
-            statusText);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                return pParty->tryRepairMemberInventoryItem(overlay.sourceMemberIndex, overlay.sourceGridX,
+                    overlay.sourceGridY, inspectorMemberIndex, statusText);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment)
