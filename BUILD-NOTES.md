@@ -1,3 +1,12 @@
+## 2026-10-27 — local validation, no Windows package
+
+Implemented / Automatically tested locally; not packaged: Alchemy equipment bonuses, Levitate environmental protection and Mind Resistance duration.
+The restored Linux unit build passed under safe-heavy-run, jobs=4: 260.385 s, peak 4.09 GiB, no swap,
+pressure or limit events. 81 selected cases / 32,164 assertions passed. Toolchain is now persistent under
+`/home/plane/.local/share/openyamm-toolchain`; no system packages installed and no build data removed.
+[Investigation and validation](docs/research/2026-10-27-gameplay-fixes.md).
+The last released Windows ZIP and packaging baseline are unchanged. These fixes are not yet manually tested.
+
 # OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged
 
 New official1.14 appeared during1.13 validation; exact1.14 now supersedes that unpublished

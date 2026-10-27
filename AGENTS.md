@@ -39,13 +39,15 @@ These rules apply to all AI-generated contributions in this repository.
   [Releases](packaging/RELEASE.md) and [Incremental updates](packaging/UPDATER_PLAN.md).
 - Start searches in relevant source directories; include `reference/`, `mm9/`, generated assets, and build trees only
   when needed.
-- Development compile command: `cmake --build build --target openyamm -j25`.
+- Resource safety: follow `/home/plane/AGENTS.md` and the shared safe-heavy-run README.
+- Development compile command: `safe-heavy-run run -- cmake --build build --target openyamm`.
+  The runner selects and enforces the approved parallelism; never invoke heavy tools directly.
 - Do not run Vulkan builds or rebuilds (including `build-vulkan/`) unless the user explicitly requests them for
   the current task. Previous Vulkan build authorization does not carry forward to later tasks.
-- Prefer doctest/unit coverage for pure logic. Build with `cmake --build build --target openyamm_unit_tests -j25`,
-  then run focused tests with `./build/tests/openyamm_unit_tests --test-case='*pattern*'`.
+- Prefer doctest/unit coverage for pure logic. Build with `safe-heavy-run run -- cmake --build build --target openyamm_unit_tests`,
+  then run focused tests with `safe-heavy-run run -- ./build/tests/openyamm_unit_tests --test-case='*pattern*'`.
 - Use focused headless coverage for runtime/map behavior when unit tests are not enough:
-  `./build/game/openyamm --headless-run-scenario <scenario.yml>`. Examples live in `tests/scenarios/`.
+  `safe-heavy-run run -- ./build/game/openyamm --headless-run-scenario <scenario.yml>`. Examples live in `tests/scenarios/`.
 - If a task explicitly names planning documents, follow those documents for that task only; do not treat stale plans as
   active global instructions.
 - When the user references an image by filename or bare id, such as `901.png` or `901`, first resolve it as

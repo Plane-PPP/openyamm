@@ -1,10 +1,14 @@
-## Next patch — shared gameplay fixes
+# Next patch — shared gameplay fixes
 
 - Alchemy equipment bonuses: Implemented / Automatically tested on Linux; Windows/manual testing pending.
 - Mind Resistance duration: Implemented / Automatically tested on Linux; Windows/manual testing pending.
 - Levitate indoor/outdoor environmental protection: Implemented / Automatically tested on Linux.
   Windows packaging/manual testing pending; existing pressure-plate filtering preserved.
-[Investigation](research/2026-10-27-gameplay-fixes.md). Released ZIP and packaging baseline remain unchanged.
+81 selected Linux cases / 32,164 assertions passed. Protected jobs=4 build completed in 260.385 s,
+peak 4.09 GiB, no swap/pressure/limit events. No jobs=6 experiment.
+[Investigation](research/2026-10-27-gameplay-fixes.md) /
+[resource measurements](research/safe-heavy-run-2026-10-27.md).
+Next: authorized Windows patch packaging, then manual retests. Released ZIP/baseline remain unchanged.
 
 # OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged
 
