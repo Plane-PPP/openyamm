@@ -15,6 +15,7 @@
 #include "game/rules/GameRules.h"
 #include "game/StringUtils.h"
 #include "game/tables/ItemTable.h"
+#include "game/tables/MonsterProjectileTable.h"
 #include "game/tables/MonsterTable.h"
 
 #include <algorithm>
@@ -453,7 +454,7 @@ CharacterAttackMode choosePartyAttackMode(
 // Energy Blades Grandmaster: the hit may cut a raised shield to a share of what is left before it lands
 // (MonsterShieldTable::overloadRules). Only rolls against a raised shield, so other targets keep their dice.
 void tryOverloadActorShield(const GameplayActionController::PartyAttackConfig &config, size_t actorIndex,
-    std::mt19937 &rng)
+    std::mt19937 &rng, std::optional<float> chance = std::nullopt)
 {
     GameplayActorShields *pShields = config.pWorldRuntime->actorShields();
 
@@ -464,7 +465,7 @@ void tryOverloadActorShield(const GameplayActionController::PartyAttackConfig &c
 
     const ShieldOverloadRules &rules = pShields->table()->overloadRules();
 
-    if (std::uniform_real_distribution<float>(0.0f, 1.0f)(rng) < rules.chance)
+    if (std::uniform_real_distribution<float>(0.0f, 1.0f)(rng) < chance.value_or(rules.chance))
     {
         pShields->cutRaisedShield(actorIndex, rules.remainingFraction);
     }
@@ -646,6 +647,28 @@ std::optional<GameplayActionController::PartyAttackActorFacts> chooseFallbackRan
     return bestActor;
 }
 
+// The world missile an attacker's equipped gun fires (monster_projectiles.yml party), the main hand's first.
+std::optional<PartyGunMissile> resolvePartyGunMissile(
+    const GameplayActionController::PartyAttackConfig &config,
+    const Character &attacker,
+    const CharacterAttackResult &attack)
+{
+    if (attack.mode != CharacterAttackMode::Blaster || config.pMonsterProjectileTable == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    for (const uint32_t itemId : {attacker.equipment.mainHand, attacker.equipment.bow})
+    {
+        if (const std::optional<PartyGunMissile> gun = config.pMonsterProjectileTable->findPartyGun(itemId))
+        {
+            return gun;
+        }
+    }
+
+    return std::nullopt;
+}
+
 void playPartyAttackSound(
     const GameplayActionController::PartyAttackConfig &config,
     const Character &attacker,
@@ -666,6 +689,19 @@ void playPartyAttackSound(
     if (attack.attackSoundHook == "bow_shot")
     {
         soundId = SoundId::ShootBow;
+    }
+    else if (const std::optional<PartyGunMissile> gun = resolvePartyGunMissile(config, attacker, attack);
+             gun && gun->shotSoundId != 0)
+    {
+        if (GameAudioSystem *pAudioSystem = config.pRuntime->audioSystem())
+        {
+            pAudioSystem->playSound(
+                gun->shotSoundId,
+                GameAudioSystem::PlaybackGroup::World,
+                GameAudioSystem::WorldPosition{config.rangedSource.x, config.rangedSource.y, config.rangedSource.z});
+        }
+
+        return;
     }
     else if (attack.attackSoundHook == "blaster_shot")
     {
@@ -746,6 +782,12 @@ int resolveMeleeAppliedDamage(
     additionalDamage.dark += attack.rulesElementalDamage.dark;
     elementalDamage = additionalDamage.fire + additionalDamage.air + additionalDamage.water + additionalDamage.body
         + additionalDamage.light + additionalDamage.dark;
+
+    // A world enchantment's bonus against its monsters (Hesper's Kreegan-bane).
+    if (attacker.meleeWeaponEnchant.bonusAgainst(target.monsterId))
+    {
+        appliedDamage += appliedDamage * attacker.meleeWeaponEnchant.bonusDamagePercent / 100;
+    }
 
     MonsterDamageHit hit = {};
     hit.amount = appliedDamage * multiplier;
@@ -1148,12 +1190,19 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                 tryOverloadActorShield(config, target->actorIndex, rng);
             }
 
+            // A world enchantment's overload (Hesper's Overloading): its own chance, the rules' cut.
+            if (attack.shieldOverloadChance > 0.0f && !hitWithoutDamage)
+            {
+                tryOverloadActorShield(config, target->actorIndex, rng, attack.shieldOverloadChance);
+            }
+
             attacked = !hitWithoutDamage
                 && config.pWorldRuntime->applyPartyAttackMeleeDamage(
                     target->actorIndex,
                     appliedDamage,
                     toRuntimeWorldPoint(config.partyPosition),
-                    attack.shieldTier);
+                    attack.shieldTier,
+                    attack.shieldModifiers);
 
             if (attacked)
             {
@@ -1338,21 +1387,25 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     : config.throwingDaggerProjectileObjectId;
             }
 
+            const std::optional<PartyGunMissile> partyGun = resolvePartyGunMissile(config, *pAttacker, attack);
             GameplayPartyAttackProjectileRequest projectileRequest = {
                 .sourcePartyMemberIndex = actingMemberIndex,
-                .objectId =
-                    attack.mode == CharacterAttackMode::Blaster
+                .objectId = partyGun ? uint32_t(partyGun->pMissile->objectId)
+                    : attack.mode == CharacterAttackMode::Blaster
                         ? config.blasterProjectileObjectId
                         : projectileObjectId,
-                .impactObjectId = attack.mode == CharacterAttackMode::Blaster ? config.blasterProjectileObjectId + 1
-                    : attack.explosiveArrow                                  ? FireballExplosionObjectId
-                                                                             : 0,
+                .impactObjectId = partyGun ? uint32_t(partyGun->pMissile->impactObjectId)
+                    : attack.mode == CharacterAttackMode::Blaster ? config.blasterProjectileObjectId + 1
+                    : attack.explosiveArrow                       ? FireballExplosionObjectId
+                                                                  : 0,
+                .impactSoundId = partyGun ? partyGun->pMissile->impactSoundId : 0,
                 .damage = attack.damage,
                 .attackBonus = attack.attackBonus,
                 // A Carnage arrow never misses (it explodes).
                 .useActorHitChance = !attack.explosiveArrow,
                 .damageType = attack.damageType,
                 .shieldTier = attack.shieldTier,
+                .shieldModifiers = attack.shieldModifiers,
                 .weakerOfPhysicalAndFire = attack.fireArrow,
                 .explosionRadius = attack.explosiveArrow
                     ? GameplayProjectileService::spellImpactDamageRadius(uint32_t(SpellId::Fireball))
@@ -1364,6 +1417,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                 // A fanned volley spreads on purpose; only a single shot homes.
                 .targetActorIndex =
                     attack.projectileSpreadArcRadians > 0.0f ? std::nullopt : result.targetActorIndex,
+                .homing = attack.homing,
             };
             if (attack.projectileSpreadArcRadians > 0.0f)
             {

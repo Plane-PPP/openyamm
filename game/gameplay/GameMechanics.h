@@ -132,6 +132,13 @@ struct CharacterAttackProfile
     // Energy Blades Grandmaster with an energy blade: melee hits may overload a raised shield
     // (MonsterShieldTable::overloadRules).
     bool meleeShieldOverload = false;
+    // A world enchantment's chance per melee hit to overload the target's shield (Hesper's Overloading), 0-1.
+    float meleeShieldOverloadChance = 0.0f;
+    // What Energy Blades and Energy Guns masteries and the weapon's ShieldDamage<percent> flag add to its shield hits.
+    ShieldHitModifiers meleeShieldModifiers;
+    ShieldHitModifiers rangedShieldModifiers;
+    // Energy Guns Grandmaster with an energy gun (not a scatter gun): its shots home onto their target.
+    bool rangedHoming = false;
 };
 
 struct CharacterAttackResult
@@ -155,8 +162,13 @@ struct CharacterAttackResult
     int spellId = 0;
     CombatDamageType damageType = CombatDamageType::Physical;
     ShieldAttackTier shieldTier = ShieldAttackTier::Physical;
-    // A melee hit that may overload a raised shield (CharacterAttackProfile::meleeShieldOverload).
+    // A melee hit that may overload a raised shield (CharacterAttackProfile::meleeShieldOverload), or does so at this
+    // chance (meleeShieldOverloadChance).
     bool shieldOverload = false;
+    float shieldOverloadChance = 0.0f;
+    ShieldHitModifiers shieldModifiers;
+    // Its projectiles home (CharacterAttackProfile::rangedHoming).
+    bool homing = false;
     bool criticalDamage = false;
     // Elemental damage the rules add to the blow, each part resisted by its own element (MAW's Shaman Fire).
     ElementalDamageBonuses rulesElementalDamage;
@@ -284,6 +296,14 @@ public:
         CharacterAttackTuning attackTuning = {},
         const ExperienceRules &experienceRules = standardExperienceRules());
     static CharacterAttackProfile buildCharacterAttackProfile(
+        const Character &character,
+        const ItemTable *pItemTable,
+        const SpellTable *pSpellTable,
+        CharacterAttackTuning attackTuning = {});
+    // What the caster's Lattice Resonator adds to its spells' hits on raised shields.
+    static ShieldHitModifiers spellShieldModifiers(const Character &character);
+    // The profile without the per-cent damage of Hesper's item effects (buildCharacterAttackProfile adds it).
+    static CharacterAttackProfile buildBaseCharacterAttackProfile(
         const Character &character,
         const ItemTable *pItemTable,
         const SpellTable *pSpellTable,

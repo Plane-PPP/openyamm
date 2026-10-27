@@ -368,6 +368,12 @@ public:
     const std::optional<ScriptedEventProgram> *globalEventProgram() const override;
     EventRuntimeState *eventRuntimeState() override;
     const EventRuntimeState *eventRuntimeState() const override;
+    bool fireEventMissile(const EventMissileRequest &request) override;
+    bool turnMapActors(std::optional<size_t> actorIndex, uint32_t group, float seconds) override;
+    bool wakeMapActors(std::optional<size_t> actorIndex, uint32_t group) override;
+    bool hasLineOfSight(float fromX, float fromY, float fromZ, float toX, float toY, float toZ) const override;
+    bool summonEventGold(uint32_t amount, int32_t x, int32_t y, int32_t z, int32_t speed) override;
+    bool mapActorPosition(size_t actorIndex, float &x, float &y, float &z) const override;
     bool castEventSpell(
         uint32_t spellId,
         uint32_t skillLevel,
@@ -472,6 +478,8 @@ public:
         const GameplayWorldPoint &target) override;
     bool debugFireActorProjectileAtParty(size_t actorIndex, GameplayActorAttackAbility ability, int damage) override;
     bool blinkActor(size_t actorIndex) override;
+    bool suspendActorShield(size_t actorIndex, float seconds) override;
+    bool restoreActorShield(size_t actorIndex) override;
     bool swapActorPlaces(size_t actorIndex, std::optional<size_t> otherActorIndex) override;
     bool pushActor(size_t actorIndex, float directionX, float directionY, float distance) override;
     size_t revealActorsAround(size_t actorIndex, float radius) override;
@@ -485,6 +493,7 @@ public:
         return m_pGameplayProjectileService;
     }
     bool chargeActor(size_t actorIndex) override;
+    bool frenzyActor(size_t actorIndex) override;
     std::optional<GameplayChargeCounts> chargeCounts() const override;
     // Moves a living actor to (x, y) for a blink or a charge's step when the spot is free: a floor in a sector within
     // maxHeightChange of its own (walkable for walkers) with headroom, no wall within its radius, no other actor or
@@ -530,12 +539,14 @@ public:
         int damage,
         CombatDamageType damageType,
         const GameplayWorldPoint &source,
-        ShieldAttackTier shieldTier);
+        ShieldAttackTier shieldTier,
+        const ShieldHitModifiers &shieldModifiers = {});
     bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
         const GameplayWorldPoint &source,
-        ShieldAttackTier shieldTier) override;
+        ShieldAttackTier shieldTier,
+        const ShieldHitModifiers &shieldModifiers = {}) override;
     void applyPartyAttackMeleeEffects(
         size_t actorIndex,
         const CharacterAttackResult &attack,
@@ -647,6 +658,9 @@ public:
     bool healMapActor(size_t actorIndex, int amount) override;
     ActorRulesetFacts *mutableActorRulesetFacts(size_t actorIndex) override;
 
+    bool castIndoorMeteorShower(
+        const GameplayProjectileService::ProjectileSpawnRequest &baseRequest,
+        const ActorProjectileRequest &projectileRequest);
     bool hasIndoorCombatLineOfSight(
         const GameplayWorldPoint &from,
         int16_t fromSectorId,
@@ -663,10 +677,13 @@ private:
     std::string mapWorldId() const;
     const ActorRulesetFacts &actorRulesetFacts(size_t actorIndex) const;
     // Homing for the missiles a party member just fired at an actor, when the rules make them home (MAW).
+    // The ruleset's homing (MAW), or a weapon's (weaponHoming: an Energy Guns Grandmaster's shot, 360 degrees a second
+    // for 1.5 s).
     void attachPartyMissileHoming(
         uint32_t firstProjectileId,
         uint32_t sourcePartyMemberIndex,
-        std::optional<size_t> targetActorIndex);
+        std::optional<size_t> targetActorIndex,
+        bool weaponHoming = false);
     // The ruleset's map-wide choices when the map's monsters are first placed (MAW bosses).
     void placeRulesetMapMonsters();
     void refreshRulesetMonster(size_t actorIndex);
@@ -836,6 +853,9 @@ private:
         float deltaSeconds,
         const std::vector<IndoorVertex> &vertices,
         IndoorFaceGeometryCache &geometryCache);
+    // Each patrolling actor's place in its round (MapDeltaActor::patrolPoints); advanced as the AI facts are read, not
+    // saved (a load starts the round at its first waypoint).
+    mutable std::unordered_map<size_t, size_t> m_actorPatrolIndices;
     std::optional<ActorAiFacts> collectIndoorActorAiFacts(
         size_t actorIndex,
         bool active,
@@ -912,7 +932,7 @@ private:
     void refreshConditionalMonsterRelations();
     // A hit through the actor's shield (GameplayActorShields::applyHit), the ripple at the source's side of the body.
     GameplayActorShieldHit applyActorShieldHit(size_t actorIndex, int damage, ShieldAttackTier shieldTier,
-        const GameplayWorldPoint &source);
+        const GameplayWorldPoint &source, const ShieldHitModifiers &shieldModifiers = {});
     // Monster modifiers (MonsterModifiers): blinks per actor step, a true_aim monster's shots, never_staggers.
     void updateActorModifiers(float deltaSeconds);
     bool blinkMapActor(const GameplayActorModifiers::BlinkRequest &request);
@@ -927,6 +947,9 @@ private:
     // One step of a homing projectile toward its target's current position; true when it is to expire.
     bool steerIndoorHomingProjectile(GameplayProjectileService::ProjectileState &projectile, float deltaSeconds);
     bool monsterNeverStaggers(int16_t monsterId) const;
+    // The original game drops a monster's Meteor Shower indoors: only a monster with the indoor_meteor_shower
+    // modifier keeps it castable here, so the others pick another attack.
+    void applyIndoorMeteorShowerRule(ActorAiFrameFacts &facts) const;
     void aggroNearbyMapActorFaction(size_t actorIndex);
     void initializeMm9Barrels();
     void applyMm9BarrelVisual(const MapMm9BarrelSource &source, const MapDeltaMm9BarrelState &state);

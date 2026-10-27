@@ -128,7 +128,8 @@ public:
 
     // Weapon, armour and magic shops reroll for (floor(P / 15) + S)^2 x 250 gold, P being the levels banked on the
     // three continents less half the shop's own (at most 54), S = min(floor(own / 18) + 2, 5) (refreshItems).
-    // Skill x mastery plus Glamour; Grandmaster or a total of 45 trades at cost; 7 more, no reputation term
+    // Skill x mastery plus Glamour's mastery x power; Grandmaster Merchant or Glamour, or a total of 45, trades at
+    // cost; 7 more, no reputation term
     // (GetMerchantTotalSkill, zzMAW-Skills.lua).
     std::optional<int> merchantValue(const Character &member) const override;
     std::optional<int> shopRerollCost(const Party &party, const HouseEntry &house) const override;

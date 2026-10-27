@@ -53,6 +53,17 @@ struct MapDeltaActor
     bool proceduralDeathLoot = true;
     uint16_t initialYawUnits = 0;
     bool immobile = false;
+    // A placed actor that keeps its stored height (scene keeps_height: a Brood Sac on its cradle socket) instead of
+    // standing on the floor under it; indoors only, outdoor placements keep theirs already.
+    bool keepsHeight = false;
+    // A leash for this placement (scene leash_radius): it fights at most this far from where it was placed and walks
+    // back there with no target, whatever its monster's tactics say (0: none).
+    uint16_t leashRadius = 0;
+    // Resting (scene dormant): it stands, neither moving nor fighting, until it is hurt or an event wakes it
+    // (evt.WakeActor, evt.WakeGroup). Indoors this is its live state; outdoors MapActorState::dormant is.
+    bool dormant = false;
+    // Waypoints it walks in turn, round and round, while it has nothing to fight (scene patrol: [[x, y, z], ...]).
+    std::vector<std::array<int32_t, 3>> patrolPoints;
     uint32_t attributes = 0;
     int32_t hp = 0;
     uint8_t hostilityType = 0;

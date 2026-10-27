@@ -741,6 +741,7 @@ void copyInventoryItemToEquipmentRuntime(const InventoryItem &item, EquippedItem
     runtimeState.maxCharges = item.maxCharges;
     runtimeState.temporaryBonusRemainingSeconds = item.temporaryBonusRemainingSeconds;
     runtimeState.rulesetFields = item.rulesetFields;
+    runtimeState.workshopModId = item.workshopModId;
 }
 
 bool tryEquipGeneratedItem(

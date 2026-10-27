@@ -891,3 +891,53 @@ effects:
     - {time: 0.3, rgb: [255, 245, 215], transparency: 25}
     - {time: 1, rgb: [240, 220, 170], transparency: 255}
     motion_keys: []
+- id: openyamm:fx/energy_beam
+  display_name: Energy beam
+  # A beam (scripted: evt.Beam / evt.BeamToParty): a steady energy line from the effect to its beam target, until it is
+  # stopped or its time runs out.
+  duration_seconds: 600
+  compatibility_profile: predictable
+  components:
+  - id: 1
+    type: ribbon
+    start_seconds: 0
+    end_seconds: 600
+    sprite_resource: openyamm:effect-sprite/trail_noise
+    blend: additive
+    beam: true
+    lifetime_seconds: 1
+    width: 14
+    sample_distance: 32
+    texture_length: 160
+    scroll_speed: 3
+    fill: 0.6
+    core: 0.8
+    width_keys:
+    - {time: 0, value: 1}
+    color_keys:
+    - {time: 0, rgb: [255, 120, 200], transparency: 40}
+- id: openyamm:fx/arc_beam
+  display_name: Arc beam
+  # A beam of crackling lightning (scripted: evt.Beam): an arc from the effect to its beam target.
+  duration_seconds: 600
+  compatibility_profile: predictable
+  components:
+  - id: 1
+    type: ribbon
+    start_seconds: 0
+    end_seconds: 600
+    sprite_resource: openyamm:effect-sprite/trail_electric
+    blend: additive
+    beam: true
+    lifetime_seconds: 1
+    width: 24
+    sample_distance: 24
+    texture_length: 90
+    scroll_speed: 6
+    fill: 0
+    jitter: 9
+    jitter_rate: 24
+    width_keys:
+    - {time: 0, value: 1}
+    color_keys:
+    - {time: 0, rgb: [200, 225, 255], transparency: 20}

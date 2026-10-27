@@ -117,6 +117,37 @@ TEST_CASE("path map walking rejects segments through void")
     CHECK_FALSE(map.traceWalkSegment({10.0f, 50.0f, 0.0f}, {150.0f, 50.0f, 0.0f}, object));
 }
 
+TEST_CASE("path map walking climbs a stair whose treads are shorter than the body's radius")
+{
+    // Four 32 risers on 48 treads, rising toward +x from x 0 (D8's Fab Line A stair), then a landing at 128.
+    std::vector<OpenYAMM::Game::PathFacet> facets = {makeFloor(-400.0f, 0.0f, -300.0f, 300.0f, 0.0f)};
+    for (int step = 0; step < 4; ++step)
+    {
+        const float x = float(step) * 48.0f;
+        const float top = float(step + 1) * 32.0f;
+        facets.push_back(makeWall(x, -300.0f, 300.0f, top - 32.0f, top));
+        facets.push_back(makeFloor(x, step == 3 ? 600.0f : x + 48.0f, -300.0f, 300.0f, top));
+    }
+    PathMap map;
+    map.setFacets(facets);
+    PathObject object = {};
+    object.radius = 55.0f;
+    object.height = 208.0f;
+    object.stepHeight = 40.0f;
+    object.dropHeight = 512.0f;
+    // Without the indoor riser rule the side probes stop at the next riser.
+    CHECK_FALSE(map.traceWalkSegment({-300.0f, 0.0f, 0.0f}, {450.0f, 0.0f, 128.0f}, object));
+    object.riserHeight = 80.0f;
+    CHECK(map.traceWalkSegment({-300.0f, 0.0f, 0.0f}, {450.0f, 0.0f, 128.0f}, object));
+    CHECK(map.traceWalkSegment({450.0f, 0.0f, 128.0f}, {-300.0f, 0.0f, 0.0f}, object));
+
+    // A ledge of 96 in one step still stops it.
+    PathMap ledge;
+    ledge.setFacets({makeFloor(-400.0f, 0.0f, -300.0f, 300.0f, 0.0f), makeWall(0.0f, -300.0f, 300.0f, 0.0f, 96.0f),
+        makeFloor(0.0f, 600.0f, -300.0f, 300.0f, 96.0f)});
+    CHECK_FALSE(ledge.traceWalkSegment({-300.0f, 0.0f, 0.0f}, {450.0f, 0.0f, 96.0f}, object));
+}
+
 TEST_CASE("path map walking checks full height beneath ceilings")
 {
     PathFacet ceiling = makeFloor(50.0f, 200.0f, -100.0f, 100.0f, 120.0f);

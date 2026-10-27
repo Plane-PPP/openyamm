@@ -141,19 +141,22 @@ void WeatherPresentation::update(const WeatherRules &rules, const WeatherSample 
     m_gust = follow(m_gust, m_gustTarget, dt, GustFollowSeconds);
     m_gustAngle = follow(m_gustAngle, m_gustAngleTarget, dt, GustFollowSeconds);
 
-    // Storms build and fade with the shown rain, not the instant game-time target.
+    // Storms build and fade with the shown rain, not the instant game-time target. Dry lightning strikes without rain
+    // at a storm's slowest rate, mostly far off.
     m_storm = target.storm && m_rainLevel >= rules.stormThreshold * 0.9f;
+    const bool dryLightning = !m_storm && target.dryLightning && m_rainLevel <= 0.0f;
 
-    if (m_storm)
+    if (m_storm || dryLightning)
     {
-        const float strength = std::clamp(
-            (m_rainLevel - rules.stormThreshold) / std::max(1.0f - rules.stormThreshold, 0.05f), 0.0f, 1.0f);
+        const float strength = m_storm ? std::clamp(
+            (m_rainLevel - rules.stormThreshold) / std::max(1.0f - rules.stormThreshold, 0.05f), 0.0f, 1.0f) : 0.0f;
         m_strikeCountdown -= dt;
 
         if (m_strikeCountdown <= 0.0f)
         {
             const float roll = nextRandom();
-            const LightningDistance distance = roll < 0.15f + 0.15f * strength ? LightningDistance::Near
+            const LightningDistance distance = roll < (dryLightning ? 0.05f : 0.15f + 0.15f * strength)
+                ? LightningDistance::Near
                 : roll < 0.5f + 0.1f * strength ? LightningDistance::Middle : LightningDistance::Far;
             startStrike(distance);
             const float meanInterval = rules.strikeIntervalSeconds[1]

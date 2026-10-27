@@ -36,7 +36,6 @@ constexpr float FarRainNearFade = 1200.0f;
 constexpr float FarRainWidth = 1.8f;
 // The camera's own motion slants rain streaks and smears snow, but only partly, as the eye tracks them.
 constexpr float RainCameraMotionShare = 0.6f;
-constexpr std::array<float, 3> RainColor = {0.7f, 0.76f, 0.84f};
 // Splash crowns: the colour the engine's snow had before flakes became data (WeatherFlakeLook's default).
 constexpr std::array<float, 3> SplashColor = {1.2f, 1.22f, 1.26f};
 
@@ -416,7 +415,7 @@ void WeatherRenderer::render(uint16_t viewId, const WeatherDrawFrame &frame)
             rainVelocity[2] - m_cameraVelocity[2] * RainCameraMotionShare,
             RainStreakSeconds};
         setUniforms({frame.camera[0], frame.camera[1], frame.camera[2] + RainBoxLift}, RainBox, RainNearFade,
-            {m_rain.offset[0], m_rain.offset[1], m_rain.offset[2], RainWidth}, relativeVelocity, RainColor,
+            {m_rain.offset[0], m_rain.offset[1], m_rain.offset[2], RainWidth}, relativeVelocity, frame.rainColor,
             0.3f + 0.3f * level, {0.0f, 0.0f, 0.0f, frame.pixelWorldSize});
         submitDrops(viewId, m_rainProgram, static_cast<uint32_t>(static_cast<float>(budget.rain) * level),
             blendState);
@@ -425,7 +424,7 @@ void WeatherRenderer::render(uint16_t viewId, const WeatherDrawFrame &frame)
         {
             setUniforms({frame.camera[0], frame.camera[1], frame.camera[2] + FarRainBoxLift}, FarRainBox,
                 FarRainNearFade, {m_farRain.offset[0], m_farRain.offset[1], m_farRain.offset[2], FarRainWidth},
-                relativeVelocity, RainColor, 0.3f + 0.3f * level, {0.0f, 0.0f, 0.0f, frame.pixelWorldSize});
+                relativeVelocity, frame.rainColor, 0.3f + 0.3f * level, {0.0f, 0.0f, 0.0f, frame.pixelWorldSize});
             submitDrops(viewId, m_rainProgram, static_cast<uint32_t>(static_cast<float>(budget.farRain) * level),
                 blendState);
         }
@@ -473,7 +472,7 @@ void WeatherRenderer::render(uint16_t viewId, const WeatherDrawFrame &frame)
             const float columns = std::round(TwoPi * radius / CurtainStreakSpacing);
             setUniforms(frame.camera, {CurtainBottom, CurtainTop, 0.0f}, 0.0f,
                 {0.0f, m_curtainPhase + 0.37f * static_cast<float>(ring), columns, CurtainRepeats},
-                {rainVelocity[0] / RainFallSpeed, rainVelocity[1] / RainFallSpeed, 0.0f, 0.0f}, RainColor,
+                {rainVelocity[0] / RainFallSpeed, rainVelocity[1] / RainFallSpeed, 0.0f, 0.0f}, frame.rainColor,
                 curtainAlpha,
                 {0.0f, 0.0f, radius, frame.pixelWorldSize});
             bgfx::setVertexBuffer(0, m_curtainVertices);

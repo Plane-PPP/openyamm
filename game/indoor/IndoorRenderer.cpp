@@ -6675,6 +6675,7 @@ void IndoorRenderer::shutdown()
         m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
         m_bakedStaticLightRevision = std::numeric_limits<uint64_t>::max();
         m_bakedStaticLightEnabledStates.clear();
+        m_bakedSectorAmbientLevels.clear();
         m_elapsedTime = 0.0f;
         m_framesPerSecond = 0.0f;
         m_wireframeVertexCount = 0;
@@ -7525,6 +7526,20 @@ void IndoorRenderer::updateDecorationModels(const std::vector<uint8_t> &visibleS
         return sprite;
     });
     m_decorationModels.animate(float(SDL_GetTicks()) * 0.001f);
+    if (eventRuntimeState && !eventRuntimeState->decorationAims.empty())
+    {
+        m_decorationModels.poseAimed(billboards, [&eventRuntimeState](uint32_t key, float &yawRadians, float &back)
+        {
+            const auto aim = eventRuntimeState->decorationAims.find(key);
+            if (aim == eventRuntimeState->decorationAims.end())
+            {
+                return false;
+            }
+            yawRadians = aim->second.currentRadians;
+            back = aim->second.back();
+            return true;
+        });
+    }
     const GameplayWorldHit *pContextActionHit = selectedContextActionWorldHit(pContextActionState);
     std::vector<Engine::ModelStaticGroup> &groups = m_decorationModels.groups();
     for (size_t group = 0; group < groups.size(); ++group)
@@ -10574,6 +10589,7 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
                 ? bakedStaticLightEnabledStates(*m_pIndoorMapData, runtimeEventRuntimeState(),
                     m_indoorDecorationBillboardSet ? &*m_indoorDecorationBillboardSet : nullptr)
                 : std::vector<uint8_t>();
+        m_bakedSectorAmbientLevels = bakedSectorAmbientLevels();
         return true;
     }
 
@@ -10876,7 +10892,19 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
     m_bakedStaticLightEnabledStates =
         bakedStaticLightEnabledStates(*m_pIndoorMapData, runtimeEventRuntimeState(),
             m_indoorDecorationBillboardSet ? &*m_indoorDecorationBillboardSet : nullptr);
+    m_bakedSectorAmbientLevels = bakedSectorAmbientLevels();
     return true;
+}
+
+std::vector<int16_t> IndoorRenderer::bakedSectorAmbientLevels() const
+{
+    std::vector<int16_t> levels(m_pIndoorMapData ? m_pIndoorMapData->sectors.size() : 0);
+    for (size_t sectorId = 0; sectorId < levels.size(); ++sectorId)
+    {
+        levels[sectorId] =
+            int16_t(IndoorLightingRuntime::sectorAmbientLevel(*m_pIndoorMapData, runtimeEventRuntimeState(), sectorId));
+    }
+    return levels;
 }
 
 void IndoorRenderer::rebuildBakedStaticLightReach()
@@ -10931,6 +10959,15 @@ bool IndoorRenderer::refreshBakedStaticLighting(
         bakedStaticLightEnabledStates(*m_pIndoorMapData, pEventRuntimeState,
             m_indoorDecorationBillboardSet ? &*m_indoorDecorationBillboardSet : nullptr);
     std::vector<BakedStaticLightSource> changedLightSources;
+    // Rooms whose ambient an event changed (evt.SetSectorAmbient) re-bake every vertex.
+    std::vector<int16_t> sectorAmbientLevels = bakedSectorAmbientLevels();
+    const bool ambientChanged = sectorAmbientLevels != m_bakedSectorAmbientLevels;
+    const auto batchAmbientChanged = [&](const TexturedBatch &batch)
+    {
+        return ambientChanged && batch.sectorId >= 0 && size_t(batch.sectorId) < sectorAmbientLevels.size()
+            && (size_t(batch.sectorId) >= m_bakedSectorAmbientLevels.size()
+                || sectorAmbientLevels[size_t(batch.sectorId)] != m_bakedSectorAmbientLevels[size_t(batch.sectorId)]);
+    };
 
     if (enabledStates.size() != m_bakedStaticLightEnabledStates.size())
     {
@@ -10965,7 +11002,7 @@ bool IndoorRenderer::refreshBakedStaticLighting(
         }
     }
 
-    if (!refreshAllVertices && changedLightSources.empty())
+    if (!refreshAllVertices && changedLightSources.empty() && !ambientChanged)
     {
         m_bakedStaticLightEnabledStates = std::move(enabledStates);
         m_bakedStaticLightRevision = currentBakedStaticLightRevision();
@@ -10990,11 +11027,11 @@ bool IndoorRenderer::refreshBakedStaticLighting(
     };
     for (TexturedBatch &batch : m_texturedBatches)
     {
-        const float ambient = batch.sectorId >= 0 && size_t(batch.sectorId) < m_pIndoorMapData->sectors.size()
-            ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(
-                int(m_pIndoorMapData->sectors[size_t(batch.sectorId)].minAmbientLightLevel))
+        const float ambient = batch.sectorId >= 0 && size_t(batch.sectorId) < sectorAmbientLevels.size()
+            ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(sectorAmbientLevels[size_t(batch.sectorId)])
             : IndoorLightingRuntime::ambientFromMinAmbientLightLevel(0);
-        if (!refreshAllVertices && batch.hasBounds)
+        const bool refreshBatchVertices = refreshAllVertices || batchAmbientChanged(batch);
+        if (!refreshBatchVertices && batch.hasBounds)
         {
             bool batchAffectedByChangedLight = false;
 
@@ -11048,7 +11085,7 @@ bool IndoorRenderer::refreshBakedStaticLighting(
 
         for (TexturedVertex &vertex : batch.vertices)
         {
-            if (!refreshAllVertices)
+            if (!refreshBatchVertices)
             {
                 const bx::Vec3 position = {vertex.x, vertex.y, vertex.z};
                 bool affectedByChangedLight = false;
@@ -11103,6 +11140,7 @@ bool IndoorRenderer::refreshBakedStaticLighting(
     }
 
     m_bakedStaticLightEnabledStates = std::move(enabledStates);
+    m_bakedSectorAmbientLevels = std::move(sectorAmbientLevels);
     m_bakedStaticLightRevision = currentBakedStaticLightRevision();
     return true;
 }
@@ -11386,6 +11424,7 @@ void IndoorRenderer::destroyDerivedGeometryResources()
     m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
     m_bakedStaticLightRevision = std::numeric_limits<uint64_t>::max();
     m_bakedStaticLightEnabledStates.clear();
+    m_bakedSectorAmbientLevels.clear();
 }
 
 void IndoorRenderer::destroyIndoorTextureHandles()
@@ -11922,8 +11961,8 @@ IndoorRenderer::TexturedFaceMesh IndoorRenderer::buildFaceTexturedMesh(
     const int16_t faceBackSector =
         face.roomBehindNumber < indoorMapData.sectors.size() ? int16_t(face.roomBehindNumber) : int16_t(-1);
     const float faceAmbient = faceSector >= 0
-        ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(
-            int(indoorMapData.sectors[size_t(faceSector)].minAmbientLightLevel))
+        ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(IndoorLightingRuntime::sectorAmbientLevel(
+            indoorMapData, eventRuntimeState ? &*eventRuntimeState : nullptr, size_t(faceSector)))
         : IndoorLightingRuntime::ambientFromMinAmbientLightLevel(0);
     const auto sourcesForFace = [&](const std::vector<BakedStaticLightSource> &sources,
         const bx::Vec3 &minBounds, const bx::Vec3 &maxBounds)

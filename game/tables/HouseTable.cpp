@@ -767,14 +767,30 @@ bool HouseTable::loadFromRows(const std::vector<std::vector<std::string>> &rows)
                     token.end()
                 );
 
-                if (!token.empty())
+                if (token == "none")
+                {
+                    entry.teachesNothing = true;
+                }
+                else if (!token.empty())
                 {
                     entry.offeredSkills.push_back(token);
                 }
             }
         }
 
-        if (entry.offeredSkills.empty())
+        if (row.size() > 25 && !row[25].empty())
+        {
+            const size_t colon = row[25].find(':');
+            entry.priceQBit = colon != std::string::npos ? uint32_t(std::strtoul(row[25].c_str(), nullptr, 10)) : 0;
+            entry.priceAfterQBit = colon != std::string::npos ? std::strtof(row[25].c_str() + colon + 1, nullptr) : 0.0f;
+
+            if (entry.priceQBit == 0 || !(entry.priceAfterQBit > 0.0f))
+            {
+                return false;
+            }
+        }
+
+        if (entry.offeredSkills.empty() && !entry.teachesNothing)
         {
             entry.offeredSkills = deriveOfferedSkillsForHouseType(entry.type);
         }
@@ -842,8 +858,11 @@ bool HouseTable::appendVendorRows(
             ? DialogueScenePolicy::LiveGameplay
             : DialogueScenePolicy::HouseVideo;
         entry.vendorStockProfile = profile;
-        entry.openHour = 0;
-        entry.closeHour = 0;
+        // Optional open_hour and close_hour columns after the 31 standard ones (a world's shopkeepers' hours); equal
+        // or absent: always open.
+        entry.openHour = row.size() > 32 && !row[31].empty() ? parseSigned(row[31]) : 0;
+        entry.closeHour = row.size() > 32 && !row[32].empty() ? parseSigned(row[32]) : 0;
+        entry.resaleCapPercent = row.size() > 33 && !row[33].empty() ? std::clamp(parseSigned(row[33]), 1, 100) : 100;
         m_entries.emplace(vendorId, std::move(entry));
     }
 
@@ -931,6 +950,7 @@ bool HouseTable::appendVendorRows(
             .standardEnchantId = static_cast<uint16_t>(parseUnsigned(row[7])),
             .standardEnchantPower = static_cast<uint16_t>(parseUnsigned(row[8])),
             .specialEnchantId = static_cast<uint16_t>(parseUnsigned(row[9])),
+            .minObjectives = static_cast<uint16_t>(row.size() > 11 ? parseUnsigned(row[11]) : 0),
         };
     }
 
@@ -1306,7 +1326,8 @@ bool HouseTable::applyHouseRules(
             return false;
         }
 
-        if ((entry.type == "Weapon Shop" || entry.type == "Armor Shop") && entry.offeredSkills.empty())
+        if ((entry.type == "Weapon Shop" || entry.type == "Armor Shop") && entry.offeredSkills.empty()
+            && !entry.teachesNothing)
         {
             entry.offeredSkills = deriveOfferedSkillsFromShopStock(entry);
         }
@@ -1501,7 +1522,22 @@ const HouseEntry *HouseTable::get(uint32_t houseId) const
         return nullptr;
     }
 
-    return &entryIt->second;
+    const HouseEntry &entry = entryIt->second;
+
+    if (entry.priceQBit == 0 || !m_questBitQuery || !m_questBitQuery(entry.priceQBit))
+    {
+        return &entry;
+    }
+
+    HouseEntry &switched = m_priceSwitchedEntries[houseId];
+    switched = entry;
+    switched.priceMultiplier = entry.priceAfterQBit;
+    return &switched;
+}
+
+void HouseTable::setQuestBitQuery(std::function<bool(uint32_t)> query) const
+{
+    m_questBitQuery = std::move(query);
 }
 
 const HouseEntry *HouseTable::resolvePackageSourceVendorId(

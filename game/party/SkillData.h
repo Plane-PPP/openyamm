@@ -41,6 +41,8 @@ constexpr uint32_t FirstTechnologySkillId = 40;
 // MAW's skills (Cover, Mana Shield, Enlightenment, Retaliation) follow the technology skills. Only a ruleset's class
 // table gives them caps, so Standard characters never learn them.
 constexpr uint32_t FirstRulesetSkillId = 44;
+// The fifth technology skill, Cybernetics (implant sockets), came after MAW's skills had their ids.
+constexpr uint32_t CyberneticsSkillId = 48;
 
 struct CharacterSkill
 {

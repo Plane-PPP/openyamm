@@ -2,6 +2,7 @@
 
 #include "game/audio/SoundIds.h"
 #include "game/gameplay/NpcFollowerTypes.h"
+#include "game/items/ItemEnchantTables.h"
 #include "game/outdoor/OutdoorMovementDriver.h"
 #include "game/party/CharacterRulesetState.h"
 #include "game/party/CharacterState.h"
@@ -24,6 +25,7 @@
 
 namespace OpenYAMM::Game
 {
+enum class CombatDamageType;
 class ItemTable;
 struct GameRules;
 struct MonsterKillReward;
@@ -100,6 +102,9 @@ struct Character
     uint32_t skillPoints = 0;
     // Raises technology skills only (Engrams add them); skill points cannot raise technology skills.
     uint32_t techPoints = 0;
+    // Implant item ids in the four sockets (0: empty). Cybernetics opens them: Novice one, Grandmaster all four
+    // (implantSocketCount). Hesper's implants; saved.
+    std::array<uint32_t, 4> implants = {};
     uint32_t might = 0;
     uint32_t intellect = 0;
     uint32_t personality = 0;
@@ -143,6 +148,9 @@ struct Character
     std::unordered_set<uint32_t> playerBits;
     uint32_t npcs2 = 0;
     int merchantBonus = 0;
+    // The member's own Glamour (spell or potion), also counted in merchantBonus; MAW weighs its power by its mastery.
+    int glamourPower = 0;
+    SkillMastery glamourMastery = SkillMastery::None;
     int weaponEnchantmentDamageBonus = 0;
     float vampiricHealFraction = 0.0f;
     bool physicalAttackDisabled = false;
@@ -182,12 +190,31 @@ struct Character
     float temporaryShieldSecondsRemaining = 0.0f;
     // Energy resistance from equipped items (item_effects energy_resistance); runtime, rebuilt with the equipment.
     int energyResistance = 0;
+    // A world's own weapon enchantments (WorldEnchantEffect) of the melee and the ranged weapon worn; runtime, rebuilt
+    // with the equipment.
+    WorldEnchantEffect meleeWeaponEnchant;
+    WorldEnchantEffect rangedWeaponEnchant;
+    // The rest of Hesper's item effects (ItemContentEffect), summed over equipment and implants; runtime, rebuilt with
+    // the equipment.
+    float shieldRegenDelaySeconds = 0.0f;
+    int humPoints = 0;
+    int rangedDamagePercent = 0;
+    int meleeDamagePercent = 0;
+    int spellDamagePercent = 0;
+    int energyDamageTakenPercent = 0;
+    int gunRecoveryReductionTicks = 0;
+    int meleeRecoveryReductionTicks = 0;
     int attackRecoveryReductionTicks = 0;
     float recoveryProgressMultiplier = 1.0f;
     std::unordered_map<std::string, int> itemSkillBonuses;
     std::unordered_map<std::string, int> hiredNpcSkillBonuses;
     std::unordered_set<std::string> equippedItemEffectFlags;
     std::array<std::optional<LloydBeacon>, 5> lloydsBeacons = {};
+
+    // Implant sockets Cybernetics opens: one per mastery (Novice 1, Grandmaster 4), none without the skill.
+    size_t implantSocketCount() const;
+    // The Augment row shows: the character has Cybernetics or an implant (never in MM6-MM8).
+    bool showsImplantSockets() const;
 
     bool addInventoryItem(const InventoryItem &item);
     bool addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uint8_t gridY);
@@ -491,6 +518,18 @@ public:
     void requestDamageImpactSoundForMember(size_t memberIndex);
     void requestSpeech(size_t memberIndex, SpeechId speechId);
     bool hasQuestBit(uint32_t questBitId) const;
+    // The Hum where the party is (world.yml hum, set on each map load): its nodes' QBits and shares, and the map's own
+    // share if it has one (0: a null field). spellDamagePercentFor: the caster's share of a damage spell's damage
+    // (the Hum, raised by its Hum points to at most 100); castingBlockedFor: a null field without a Null Damper II.
+    void setSpellField(std::vector<uint32_t> humQBits, std::vector<int> humPercents, std::optional<int> mapPercent);
+    // A burning floor where the party is (world.yml floorBurn, set on each map load): its damage type and whether the
+    // members' resistances cut it. MM: Fire, unresisted. A FireImmune item spares its wearer a Fire floor either way.
+    void setFloorBurn(CombatDamageType type, bool resisted);
+    // The world's major objectives (world.yml objectives, set on each map load) and how many of their QBits are set.
+    void setObjectiveQBits(std::vector<uint32_t> qbits);
+    size_t objectivesDone() const;
+    int spellDamagePercentFor(const Character &caster) const;
+    bool castingBlockedFor(const Character &caster) const;
     void setQuestBit(uint32_t questBitId, bool value);
     bool hasAutonote(uint32_t autonoteId) const;
     void setAutonote(uint32_t autonoteId, bool value);
@@ -525,6 +564,8 @@ public:
         size_t firstMemberIndex,
         const InventoryItem &item,
         size_t *pRecipientMemberIndex = nullptr);
+    // Whether tryGrantInventoryItem would find room for the item; changes nothing.
+    bool canGrantInventoryItem(const InventoryItem &item) const;
     void grantItem(uint32_t objectDescriptionId, uint32_t quantity = 1);
     bool removeItem(uint32_t objectDescriptionId, uint32_t quantity = 1);
     static int effectiveMaximumHealth(const Character &member);
@@ -609,9 +650,19 @@ public:
         bool autoStoreDisplacedItem,
         std::optional<InventoryItem> &heldReplacement);
     std::optional<InventoryItem> equippedItem(size_t memberIndex, EquipmentSlot slot) const;
+    // Implant sockets (Character::implants, the Augment panel): fits an implant item (equip stat Implant) into one of
+    // the member's open sockets, handing back the implant it replaces in heldReplacement; false for a closed socket
+    // or an item that is not an implant. takeImplant empties a socket into item.
+    bool fitImplant(size_t memberIndex, size_t socket, const InventoryItem &item,
+        std::optional<InventoryItem> &heldReplacement);
+    bool takeImplant(size_t memberIndex, size_t socket, InventoryItem &item);
     const InventoryItem *memberInventoryItem(size_t memberIndex, uint8_t gridX, uint8_t gridY) const;
     InventoryItem *memberInventoryItemMutable(size_t memberIndex, uint8_t gridX, uint8_t gridY);
     uint32_t equippedItemId(size_t memberIndex, EquipmentSlot slot) const;
+    // The Workshop: the first item the member wears that the mod fits (main hand, bow, off hand, armour, helm, cloak,
+    // then the rest), 0 for none. fitWorkshopMod fits it there (replacing a mod already fitted) and returns that item.
+    uint32_t workshopModTarget(size_t memberIndex, uint16_t modId) const;
+    uint32_t fitWorkshopMod(size_t memberIndex, uint16_t modId);
     const EquippedItemRuntimeState *equippedItemRuntime(size_t memberIndex, EquipmentSlot slot) const;
     EquippedItemRuntimeState *equippedItemRuntimeMutable(size_t memberIndex, EquipmentSlot slot);
     bool consumeEquippedWandCharge(size_t memberIndex);
@@ -839,6 +890,13 @@ private:
     std::vector<HiredNpcFollower> m_hiredNpcFollowers;
     PartyBuffState m_cartographerWizardEye = {};
     uint32_t m_heldItemIdForQueries = 0;
+    std::vector<uint32_t> m_humQBits;
+    std::vector<int> m_humPercents;
+    std::optional<int> m_mapHumPercent;
+    // Unset: Fire.
+    std::optional<CombatDamageType> m_floorBurnType;
+    bool m_floorBurnResisted = false;
+    std::vector<uint32_t> m_objectiveQBits;
     std::vector<PendingAudioRequest> m_pendingAudioRequests;
 };
 }

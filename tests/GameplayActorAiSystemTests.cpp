@@ -17,6 +17,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using OpenYAMM::Game::ActorAiAnimationState;
@@ -2802,4 +2803,29 @@ TEST_CASE("actor tactics keep a friendly scanning turret tracking a target it se
     actor.tactics.scan = {};
     const OpenYAMM::Game::ActorAiUpdate native = updateOne(actor);
     CHECK((!native.movementIntent.updateYaw || native.movementIntent.yawRadians == doctest::Approx(0.0f)));
+}
+
+TEST_CASE("relation overrides replace the faction relation, and a turned actor fights its own faction")
+{
+    OpenYAMM::Game::GameplayActorService service;
+    OpenYAMM::Game::GameplayActorTargetPolicyState kreegan = {};
+    kreegan.monsterId = 10010;
+    kreegan.hostileToParty = true;
+    OpenYAMM::Game::GameplayActorTargetPolicyState turret = kreegan;
+    turret.monsterId = 10102;
+
+    CHECK_FALSE(service.resolveActorTargetPolicy(kreegan, turret).canTarget);
+
+    std::unordered_map<uint32_t, int32_t> overrides;
+    overrides[OpenYAMM::Game::GameplayActorService::relationOverrideKey(10010, 10102)] = 3;
+    const OpenYAMM::Game::GameplayActorTargetPolicyResult overridden =
+        service.resolveActorTargetPolicy(kreegan, turret, &overrides);
+    CHECK(overridden.canTarget);
+    CHECK_EQ(overridden.relationToTarget, 3);
+    CHECK(overridden.engagementRange > 0.0f);
+
+    // A turned turret (evt.TurnActor: enslaved for good) targets the Kreegan.
+    turret.controlMode = OpenYAMM::Game::GameplayActorControlMode::Enslaved;
+    turret.hostileToParty = false;
+    CHECK(service.resolveActorTargetPolicy(turret, kreegan).canTarget);
 }

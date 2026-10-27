@@ -492,7 +492,7 @@ elements:
     - id: SettingsInterfaceGroup4
       anchor: top_left
       offset_x: 0.0
-      offset_y: 512.9865
+      offset_y: 520.2366
       width: 525.3333
       height: 18.1333
       z_index: 10
@@ -937,7 +937,7 @@ elements:
     - id: SettingsInterfacePotionButtonsLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 469.7945
+      offset_y: 465.5278
       width: 435.7333
       height: 14.0752
       z_index: 10
@@ -954,9 +954,9 @@ elements:
     - id: SettingsInterfacePotionButtonsDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 486.003
+      offset_y: 481.7363
       width: 435.7333
-      height: 11.5168
+      height: 23.0336
       z_index: 10
       visible: true
       interactive: false
@@ -971,7 +971,7 @@ elements:
     - id: SettingsInterfacePotionButtonsControl
       anchor: top_left
       offset_x: 453.3333
-      offset_y: 467.5782
+      offset_y: 469.0699
       width: 70.4
       height: 32.158
       z_index: 10
@@ -983,7 +983,7 @@ elements:
     - id: SettingsInterfaceRarityGlowLabel
       anchor: top_left
       offset_x: 1.6
-      offset_y: 538.5865
+      offset_y: 545.8366
       width: 395.2
       height: 14.0752
       z_index: 10
@@ -1000,7 +1000,7 @@ elements:
     - id: SettingsInterfaceRarityGlowDescription
       anchor: top_left
       offset_x: 1.6
-      offset_y: 554.795
+      offset_y: 562.0451
       width: 395.2
       height: 11.5168
       z_index: 10
@@ -1017,7 +1017,7 @@ elements:
     - id: SettingsInterfaceRarityGlowControl
       anchor: top_left
       offset_x: 412.8
-      offset_y: 540.7158
+      offset_y: 547.9659
       width: 110.9333
       height: 23.4667
       z_index: 10

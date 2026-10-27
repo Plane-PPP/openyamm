@@ -16,9 +16,9 @@ class Party;
 struct Character;
 
 // Several bags per character (MAW's multibag, zzMaw-MultiBag.lua; ItemRules::bagCount): the inventory is the open
-// bag, the others wait in the character's ruleset state, each on a grid of its own. Event and quest item checks see
-// every bag (Party::inventoryItemCount, removeItem, removeItemFromMember), since the inventory shows all of them; the
-// Sort button and the Workbench see only the open bag, as in MAW.
+// bag, the others wait in the character's ruleset state, each on a grid of its own. Event and quest item checks and the
+// Workbench see every bag (Party::inventoryItemCount, removeItem, removeItemFromMember; CraftingRuntime,
+// AlchemyBenchRuntime), since the inventory shows all of them; the Sort button sees only the open bag, as in MAW.
 namespace InventoryBags
 {
 // Opens `bag` (0-based) of the character: the open bag's items are stored and the chosen bag's become the
@@ -54,6 +54,7 @@ size_t storedItemCount(const Character &character);
 const std::vector<InventoryItem> &itemsInBag(const Character &character, uint8_t bag);
 // The item of `bag` covering the cell, or none.
 const InventoryItem *itemInBagAt(const Character &character, uint8_t bag, uint8_t gridX, uint8_t gridY);
+InventoryItem *itemInBagAt(Character &character, uint8_t bag, uint8_t gridX, uint8_t gridY);
 // Places `item` in `bag` of the member at the cell as the open bag's grid does (Party::tryPlaceItemInMemberInventoryCell:
 // the one item in the way comes out as replacedItem). The open bag stays open. False, with nothing changed, when it does
 // not fit there or `bag` is beyond `bagCount`.

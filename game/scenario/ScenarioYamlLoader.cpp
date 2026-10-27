@@ -62,7 +62,7 @@ const std::vector<NestedKeys> AssertBlockKeys = {
     {"item_set_bonus", {"member_index", "set_id", "active"}},
     {"actor_count", {"name", "monster_id", "boss", "shrunk", "hurt", "hostile", "min", "max"}},
     {"buff", {"spell_id", "present", "member_index"}},
-    {"charges", {"started", "hits", "misses", "min_started", "min_hits", "min_misses"}},
+    {"charges", {"started", "hits", "misses", "frenzies", "min_started", "min_hits", "min_misses", "min_frenzies"}},
     {"journal_map_note", {"map", "id", "text", "present"}},
     {"quick_item_ring", {"open", "member_index"}},
     {"dimension_door", {"pending", "without_quest"}},
@@ -171,6 +171,7 @@ const std::vector<StepKeys> &stepKeyTable()
         {ScenarioStepKind::BlinkActor, {"actor_index"}},
         {ScenarioStepKind::ExecuteEvent, {"id"}},
         {ScenarioStepKind::ChargeActor, {"actor_index"}},
+        {ScenarioStepKind::FrenzyActor, {"actor_index"}},
         {ScenarioStepKind::SetupShortcut,
             {"kind", "id", "value", "item_id", "source_id", "name", "member_index", "slot", "strongest", "condition",
                 "health"}},
@@ -585,6 +586,12 @@ bool ScenarioYamlLoader::parseStepKind(const std::string &value, ScenarioStepKin
     if (value == "charge_actor")
     {
         kind = ScenarioStepKind::ChargeActor;
+        return true;
+    }
+
+    if (value == "frenzy_actor")
+    {
+        kind = ScenarioStepKind::FrenzyActor;
         return true;
     }
 

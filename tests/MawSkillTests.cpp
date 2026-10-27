@@ -414,6 +414,27 @@ TEST_CASE("MAW's Merchant: skill x mastery, Grandmaster or 45 trades at cost, no
     CHECK(PriceCalculator::rulesMerchantMember(party) == nullptr);
 }
 
+TEST_CASE("MAW's Glamour adds its mastery times its power to Merchant; a Grandmaster Glamour trades at cost")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    PartySeed seed;
+    seed.members = {characterWith("Knight", {})};
+    Party party;
+    party.seed(seed);
+    party.setRules(&rules.gameRules());
+    const ItemRules &items = rules.gameRules().items;
+
+    // A Novice Dark Elf of skill 45 casts power 25: 7 + 25, not the 45 that trades at cost.
+    party.applyCharacterBuff(0, CharacterBuffId::Glamour, 600.0f, 25, 100, 45, SkillMastery::Normal, 0);
+    CHECK_EQ(items.merchantValue(*party.member(0)).value_or(-1), 32);
+    party.applyCharacterBuff(0, CharacterBuffId::Glamour, 600.0f, 10, 100, 15, SkillMastery::Expert, 0);
+    CHECK_EQ(items.merchantValue(*party.member(0)).value_or(-1), 27);
+    party.applyCharacterBuff(0, CharacterBuffId::Glamour, 600.0f, 3, 100, 1, SkillMastery::Grandmaster, 0);
+    CHECK_EQ(items.merchantValue(*party.member(0)).value_or(-1), 100);
+    party.clearCharacterBuff(0, CharacterBuffId::Glamour);
+    CHECK_EQ(items.merchantValue(*party.member(0)).value_or(-1), 7);
+}
+
 TEST_CASE("MAW skill popups fill every number for every class line and keep the table's lines where asked")
 {
     REQUIRE_MESSAGE(

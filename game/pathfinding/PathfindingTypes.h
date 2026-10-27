@@ -83,6 +83,9 @@ struct PathObject
     float stepLength = 24.0f;
     float stepHeight = 40.0f;
     float dropHeight = 40.0f;
+    // A face the walking body's low side probes touch whose top is at most this far above its floor is a stair it
+    // climbs, not a wall (a stair whose treads are shorter than the radius); 0: none. Indoors only.
+    float riserHeight = 0.0f;
 };
 
 enum class PathWalkRejectReason

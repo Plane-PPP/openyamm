@@ -112,12 +112,15 @@ private:
         std::vector<size_t> &candidates,
         TraceCandidateCache *pCache = nullptr) const;
     std::span<const size_t> candidateFloorFacetsForPoint(float x, float y) const;
+    // A face the walking body's low probes may touch because it will climb it (PathObject::riserHeight).
+    bool isSteppableRiser(const FacetGeometry &geometry, float fromFloorZ, float riserHeight) const;
     PathTraceResult traceLineInternal(
         const PathPoint &from,
         const PathPoint &to,
         float radius,
         bool checkBody,
-        TraceCandidateCache *pCache) const;
+        TraceCandidateCache *pCache,
+        float riserHeight = 0.0f) const;
     bool traceWalkSegmentInternal(
         const PathPoint &from,
         const PathPoint &to,

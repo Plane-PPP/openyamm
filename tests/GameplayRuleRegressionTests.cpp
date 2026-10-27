@@ -671,6 +671,45 @@ TEST_CASE("outdoor water damage tick reports drowning status text")
     CHECK_EQ(partyRuntime.movementStatusText(), "You are drowning!");
 }
 
+TEST_CASE("outdoor Levitate keeps the party off lava and water damage")
+{
+    // The original MM8 skips both damages while any member levitates; Levitate here also gives Water Walk, so
+    // the buff alone is applied to show it protects by itself.
+    SyntheticOutdoorWaterBoundaryScenario lava = createSyntheticOutdoorWaterBoundaryScenario();
+    const size_t lavaTileIndex = static_cast<size_t>(63 * OpenYAMM::Game::OutdoorMapData::TerrainWidth + 62);
+    lava.mapData.attributeMap[lavaTileIndex] = 0x01;
+
+    for (const bool burning : {true, false})
+    {
+        const SyntheticOutdoorWaterBoundaryScenario scenario =
+            burning ? lava : createSyntheticOutdoorWaterBoundaryScenario();
+        OpenYAMM::Game::OutdoorMovementDriver movementDriver(
+            scenario.mapData,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt);
+        OpenYAMM::Game::ItemTable itemTable = {};
+        OpenYAMM::Game::OutdoorPartyRuntime partyRuntime(std::move(movementDriver), itemTable);
+        partyRuntime.initialize(scenario.waterX, scenario.waterY, 0.0f, true);
+        partyRuntime.party().applyPartyBuff(
+            OpenYAMM::Game::PartyBuffId::Levitate, 36000.0f, 0, 112, 1, OpenYAMM::Game::SkillMastery::Expert, 0);
+        partyRuntime.syncSpellMovementStatesFromPartyBuffs();
+
+        partyRuntime.update(OpenYAMM::Game::OutdoorMovementInput{}, 2.0f);
+
+        CHECK_EQ(partyRuntime.party().burningDamageTicks(), 0u);
+        CHECK_EQ(partyRuntime.party().waterDamageTicks(), 0u);
+
+        partyRuntime.party().clearPartyBuff(OpenYAMM::Game::PartyBuffId::Levitate);
+        partyRuntime.syncSpellMovementStatesFromPartyBuffs();
+        partyRuntime.update(OpenYAMM::Game::OutdoorMovementInput{}, 1.0f);
+
+        CHECK_EQ(partyRuntime.party().burningDamageTicks(), burning ? 1u : 0u);
+        CHECK_EQ(partyRuntime.party().waterDamageTicks(), burning ? 0u : 1u);
+    }
+}
+
 TEST_CASE("outdoor running recovery penalty applies only while the party runs")
 {
     const SyntheticOutdoorWaterBoundaryScenario boundary = createSyntheticOutdoorWaterBoundaryScenario();
@@ -2650,6 +2689,14 @@ TEST_CASE("liquids scoped to a world override the shared ones there alone and sh
     OpenYAMM::Game::LiquidTable bad;
     CHECK_FALSE(bad.loadFromYaml("liquids:\n  - {id: x, kind: water, color: [1, 2, 3], applies_to: [terrain], "
         "depth: puddle, match: {texture_names: [x]}}\n", error));
+    // A shallow liquid may slow the party wading through it; a deep one may not.
+    OpenYAMM::Game::LiquidTable wading;
+    REQUIRE_MESSAGE(wading.loadFromYaml("liquids:\n  - {id: x, kind: water, color: [1, 2, 3], applies_to: [face], "
+        "depth: shallow, wade_speed: 0.6, match: {texture_names: [x]}}\n", error), error);
+    CHECK(wading.findMatch("x", 0, false)->wadeSpeed == doctest::Approx(0.6f));
+    CHECK(pBrine->wadeSpeed == 1.0f);
+    CHECK_FALSE(bad.loadFromYaml("liquids:\n  - {id: x, kind: water, color: [1, 2, 3], applies_to: [face], "
+        "wade_speed: 0.6, match: {texture_names: [x]}}\n", error));
 }
 
 TEST_CASE("outdoor terrain descriptors use mm6 and mm7 merged tile tables")
@@ -6074,6 +6121,58 @@ TEST_CASE("indoor movement does not pass through near-vertical in-between wall f
     CHECK_EQ(state.supportFaceIndex, 0u);
 }
 
+TEST_CASE("indoor party wades through a shallow liquid floor at its wade speed")
+{
+    const auto distanceWalked = [](std::vector<float> wadeSpeeds)
+    {
+        OpenYAMM::Game::IndoorMapData mapData = {};
+        mapData.vertices = {{-2048, -512, 0}, {2048, -512, 0}, {2048, 512, 0}, {-2048, 512, 0}};
+        OpenYAMM::Game::IndoorFace floor = {};
+        floor.vertexIndices = {0, 1, 2, 3};
+        floor.facetType = 3;
+        floor.roomNumber = 1;
+        floor.textureName = "htwater";
+        mapData.faces = {floor};
+        OpenYAMM::Game::IndoorSector dummySector = {};
+        OpenYAMM::Game::IndoorSector sector = {};
+        sector.floorCount = 1;
+        sector.faceCount = 1;
+        sector.nonBspFaceCount = 1;
+        sector.minX = -2048;
+        sector.maxX = 2048;
+        sector.minY = -512;
+        sector.maxY = 512;
+        sector.minZ = 0;
+        sector.maxZ = 256;
+        sector.floorFaceIds = {0};
+        sector.faceIds = {0};
+        sector.nonBspFaceIds = {0};
+        mapData.sectors = {dummySector, sector};
+
+        std::optional<OpenYAMM::Game::MapDeltaData> mapDeltaData = OpenYAMM::Game::MapDeltaData{};
+        std::optional<OpenYAMM::Game::EventRuntimeState> eventRuntimeState = OpenYAMM::Game::EventRuntimeState{};
+        OpenYAMM::Game::IndoorMovementController movementController(mapData, &mapDeltaData, &eventRuntimeState);
+        OpenYAMM::Game::ItemTable itemTable = {};
+        OpenYAMM::Game::IndoorPartyRuntime partyRuntime(std::move(movementController), itemTable);
+        partyRuntime.initializeEyePosition(-1500.0f, 0.0f, 160.0f, true);
+        partyRuntime.setFaceWadeSpeeds(std::move(wadeSpeeds));
+        REQUIRE(partyRuntime.movementState().grounded);
+        const float startX = partyRuntime.partyX();
+
+        for (int frame = 0; frame < 30; ++frame)
+        {
+            partyRuntime.update(400.0f, 0.0f, false, false, 1.0f / 30.0f);
+        }
+
+        return partyRuntime.partyX() - startX;
+    };
+
+    const float dry = distanceWalked({});
+    const float wading = distanceWalked({0.6f});
+    REQUIRE(dry > 100.0f);
+    CHECK(wading == doctest::Approx(dry * 0.6f).epsilon(0.05));
+}
+
 TEST_CASE("indoor lava support applies recurring burning damage")
 {
     OpenYAMM::Game::IndoorMapData mapData = {};
@@ -6124,6 +6223,15 @@ TEST_CASE("indoor lava support applies recurring burning damage")
     CHECK_LT(partyRuntime.party().totalHealth(), initialHealth);
     CHECK_EQ(partyRuntime.party().lastStatus(), "burning damage");
     CHECK_EQ(partyRuntime.movementStatusText(), "You are burning!");
+
+    // Levitate keeps the party off the lava, as in MM8.
+    partyRuntime.party().applyPartyBuff(
+        OpenYAMM::Game::PartyBuffId::Levitate, 36000.0f, 0, 112, 1, OpenYAMM::Game::SkillMastery::Expert, 0);
+    const int levitatingHealth = partyRuntime.party().totalHealth();
+    partyRuntime.update(0.0f, 0.0f, false, false, 2.0f);
+
+    CHECK_EQ(partyRuntime.party().burningDamageTicks(), 1u);
+    CHECK_GE(partyRuntime.party().totalHealth(), levitatingHealth);
 }
 
 TEST_CASE("indoor party runtime applies fall damage after airborne landing")

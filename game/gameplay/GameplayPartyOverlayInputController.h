@@ -39,6 +39,9 @@ public:
     static bool partyBagButtonsShown(const GameplayScreenRuntime &context);
     // Whether the bag keys act now: several bags, and a chest, a shop's or chest's inventory or the inventory page.
     static bool bagKeysActive(const GameplayScreenRuntime &context);
+    // Whether the bag keys act only with Shift held, so that the numbers alone select a member: MAW's way and the
+    // default of the bag_number_keys setting, in a party of more than one (zzMaw-MultiBag.lua:3-25).
+    static bool bagKeysNeedShift(const GameplayScreenRuntime &context);
     // Tags or untags the open bag of the member the inventory page shows (the zoomed bag, or in the overview the bag
     // opened last) as a crafting or alchemy bag (zzzMaw_CraftingBag.lua:30-47), with a status line. False, with
     // nothing changed, off the inventory page or with a single bag.

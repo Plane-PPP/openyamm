@@ -29,6 +29,8 @@ struct LiquidDefinition
     // Shallow liquids are waded through: their terrain cells are never deep water for gameplay (no drowning, the
     // party and monsters walk in them, dropped items stay), whatever the tile table's water flag says.
     bool shallow = false;
+    // A shallow liquid's share of the party's speed while it wades (wade_speed); 1: no slowdown.
+    float wadeSpeed = 1.0f;
     // False: its surfaces never take a planar reflection, only the sky response (an opaque, matte liquid).
     bool reflects = true;
 };

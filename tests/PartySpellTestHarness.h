@@ -939,12 +939,13 @@ public:
     }
 
     bool applyPartyAttackMeleeDamage(size_t actorIndex, int damage, const Game::GameplayWorldPoint &source,
-        Game::ShieldAttackTier shieldTier) override
+        Game::ShieldAttackTier shieldTier, const Game::ShieldHitModifiers &shieldModifiers = {}) override
     {
         (void)actorIndex;
         (void)damage;
         (void)source;
         (void)shieldTier;
+        (void)shieldModifiers;
         return false;
     }
 

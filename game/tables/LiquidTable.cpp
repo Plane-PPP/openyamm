@@ -180,6 +180,14 @@ bool LiquidTable::loadFromYaml(const std::string &yamlText, std::string &errorMe
             liquid.shallow = depth == "shallow";
         }
 
+        liquid.wadeSpeed = liquidNode["wade_speed"].as<float>(1.0f);
+
+        if (!(liquid.wadeSpeed > 0.0f && liquid.wadeSpeed <= 1.0f) || (liquid.wadeSpeed < 1.0f && !liquid.shallow))
+        {
+            errorMessage = context + ": wade_speed must lie in (0, 1] and needs depth: shallow";
+            return false;
+        }
+
         const YAML::Node matchNode = liquidNode["match"];
         std::vector<std::string> attributes;
         if (!matchNode || !matchNode.IsMap()

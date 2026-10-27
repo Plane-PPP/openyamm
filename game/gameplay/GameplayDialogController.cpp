@@ -134,6 +134,8 @@ const char *eventDialogActionKindName(EventDialogActionKind kind)
             return "mm9_rude_transport_route";
         case EventDialogActionKind::Mm9RudeTransportBack:
             return "mm9_rude_transport_back";
+        case EventDialogActionKind::EventChoice:
+            return "event_choice";
     }
 
     return "unknown";
@@ -2678,6 +2680,40 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
     if (action.kind == EventDialogActionKind::MapTransitionCancel)
     {
         cancelMapTransition(context);
+        result.shouldCloseActiveDialog = true;
+        return result;
+    }
+
+    // An event's choice box: the event continues at the chosen answer's step; a new message or prompt shows in the
+    // dialog, otherwise it closes.
+    if (action.kind == EventDialogActionKind::EventChoice)
+    {
+        if (context.pWorldRuntime == nullptr || !context.eventRuntimeState.pendingInputPrompt
+            || context.eventRuntimeState.pendingInputPrompt->kind != EventRuntimeState::PendingInputPrompt::Kind::Choice)
+        {
+            result.shouldCloseActiveDialog = true;
+            return result;
+        }
+
+        const EventRuntimeState::PendingInputPrompt prompt = *context.eventRuntimeState.pendingInputPrompt;
+        context.eventRuntimeState.pendingInputPrompt.reset();
+        const uint8_t step = action.id < prompt.answerContinueSteps.size() && prompt.answerContinueSteps[action.id] != 0
+            ? prompt.answerContinueSteps[action.id] : prompt.continueStep;
+        context.eventRuntimeState.messages.clear();
+        size_t previousMessageCount = 0;
+        const bool executed = context.pWorldRuntime->executeMapEvent(prompt.eventId, previousMessageCount, step);
+
+        if (executed
+            && (context.eventRuntimeState.pendingInputPrompt || !context.eventRuntimeState.messages.empty()))
+        {
+            setPendingDialogueContext(context.eventRuntimeState, DialogueContextKind::MapEvent,
+                context.activeEventDialog.sourceId, 0);
+            result.previousMessageCount = 0;
+            result.shouldOpenPendingEventDialog = true;
+            return result;
+        }
+
+        context.eventRuntimeState.pendingDialogueContext.reset();
         result.shouldCloseActiveDialog = true;
         return result;
     }

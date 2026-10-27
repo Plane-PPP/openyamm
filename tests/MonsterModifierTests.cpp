@@ -2,6 +2,7 @@
 
 #include "game/gameplay/ActorBehaviorCatalog.h"
 #include "game/gameplay/GameplayActorModifiers.h"
+#include "game/gameplay/GameplayActorService.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/tables/MonsterModifiers.h"
 
@@ -47,7 +48,8 @@ TEST_CASE("monster modifiers load names, parameters with defaults and id ranges"
         "  10050-10052: [never_staggers]\n"
         "  10102: [{kites_party: {min_distance: 1024, max_distance: 3072}}]\n"
         "  10040: [{blink: {on_shield_break: true, cooldown_seconds: 8}}]\n"
-        "  10066: [true_aim]\n", error), error);
+        "  10066: [true_aim]\n"
+        "  10120: [indoor_meteor_shower]\n", error), error);
 
     const MonsterModifierSet *pTurret = table.find(10065);
     REQUIRE(pTurret != nullptr);
@@ -64,6 +66,9 @@ TEST_CASE("monster modifiers load names, parameters with defaults and id ranges"
     CHECK(pBastion->trueAim->turnRadiansPerSecond == doctest::Approx(Pi));
     CHECK(pBastion->trueAim->maxSeconds == doctest::Approx(4.0f));
     CHECK_FALSE(pBastion->neverStaggers);
+    CHECK_FALSE(pBastion->indoorMeteorShower);
+    REQUIRE(table.find(10120) != nullptr);
+    CHECK(table.find(10120)->indoorMeteorShower);
 
     for (int16_t id : {int16_t(10050), int16_t(10051), int16_t(10052)})
     {
@@ -122,11 +127,16 @@ TEST_CASE("the catalogue lists every modifier with its parameters and defaults")
     CHECK(std::string(pTrueAim->parameters[0].pName) == "turn_degrees_per_second");
     CHECK(pTrueAim->parameters[0].defaultNumber == doctest::Approx(180.0f));
     CHECK(findMonsterModifierInfo("never_staggers") != nullptr);
+    CHECK(findMonsterModifierInfo("indoor_meteor_shower") != nullptr);
     CHECK(findMonsterModifierInfo("kites_party") != nullptr);
     CHECK(findMonsterModifierInfo("blink") != nullptr);
     CHECK(findMonsterModifierInfo("charge") != nullptr);
+    CHECK(findMonsterModifierInfo("frenzy") != nullptr);
     CHECK(findMonsterModifierInfo("energy_immune") == nullptr);
-    CHECK(monsterModifierCatalogue().size() == 5);
+    CHECK(findMonsterModifierInfo("stagger") != nullptr);
+    CHECK(findMonsterModifierInfo("telegraphed_attack") != nullptr);
+    CHECK(findMonsterModifierInfo("sounds") != nullptr);
+    CHECK(monsterModifierCatalogue().size() == 10);
 }
 
 TEST_CASE("homing steering turns at most the turn rate, keeps the speed and settles on the target")
@@ -400,6 +410,8 @@ struct ChargeTestWorld
     float actorY = 0.0f;
     float partyX = 1000.0f;
     float wallX = 0.0f;
+    // A post's leash around x = 0 (0: none).
+    float leashRadius = 0.0f;
     bool sight = true;
     std::vector<GameplayActorModifiers::ChargeEventKind> events;
 
@@ -435,6 +447,7 @@ struct ChargeTestWorld
         actorFacts.position = {actorX, actorY, 0.0f};
         actorFacts.partyPosition = {partyX, 0.0f, 0.0f};
         actorFacts.partyEdgeDistance = std::max(0.0f, std::abs(partyX - actorX) - 40.0f - 37.0f);
+        actorFacts.leashRadius = leashRadius;
         return actorFacts;
     }
 };
@@ -597,6 +610,293 @@ TEST_CASE("charge stops at a wall, at its longest dash and outside its band")
     }
 }
 
+TEST_CASE("a posted charger's dash stops at its leash, and it never charges a party beyond it")
+{
+    const MonsterModifierTable table = chargeTable("windup_seconds: 0.2, max_distance: 1500, stumble_seconds: 1");
+    {
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        ChargeTestWorld test;
+        test.leashRadius = 600.0f;
+        test.partyX = 500.0f;
+        // The party steps away during the wind-up: the dash runs on and stops at the leash like at a wall.
+        stepCharge(modifiers, test, 1.0f / 30.0f);
+        CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Windup);
+        test.partyX = 2000.0f;
+        stepCharge(modifiers, test, 1.5f);
+        CHECK(modifiers.chargeCount() == 1);
+        CHECK(modifiers.chargeHitCount() == 0);
+        CHECK(modifiers.chargeMissCount() == 1);
+        CHECK(test.actorX <= 600.0f + 0.01f);
+        CHECK(test.actorX > 560.0f);
+    }
+    {
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        ChargeTestWorld test;
+        test.leashRadius = 600.0f;
+        test.partyX = 900.0f;
+        stepCharge(modifiers, test, 1.0f);
+        CHECK(modifiers.chargeCount() == 0);
+    }
+}
+
+TEST_CASE("a charge with strike_seconds plays its strike clip from the impact after a hit")
+{
+    const MonsterModifierTable table =
+        chargeTable("windup_seconds: 0.2, speed: 1500, strike_seconds: 0.6, strike_impact_seconds: 0.25");
+    CHECK(table.find(10082)->charge->strikeSeconds == doctest::Approx(0.6f));
+    CHECK(table.find(10082)->charge->strikeImpactSeconds == doctest::Approx(0.25f));
+    GameplayActorModifiers modifiers;
+    modifiers.bind(&table);
+    ChargeTestWorld test;
+    test.partyX = 900.0f;
+    float clipSeconds = 0.0f;
+
+    for (int frame = 0; frame < 60 && modifiers.chargeHitCount() == 0; ++frame)
+    {
+        stepCharge(modifiers, test, 1.0f / 30.0f);
+        CHECK((modifiers.chargeHitCount() > 0) == modifiers.chargeStrikeClip(0, 7, clipSeconds));
+    }
+
+    REQUIRE(modifiers.chargeHitCount() == 1);
+    REQUIRE(modifiers.chargeStrikeClip(0, 7, clipSeconds));
+    CHECK(clipSeconds == doctest::Approx(0.25f));
+    CHECK_FALSE(modifiers.chargeStrikeClip(0, 8, clipSeconds));
+    stepCharge(modifiers, test, 0.3f);
+    REQUIRE(modifiers.chargeStrikeClip(0, 7, clipSeconds));
+    CHECK(clipSeconds == doctest::Approx(0.55f).epsilon(0.02));
+    CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Recover);
+    stepCharge(modifiers, test, 0.35f);
+    CHECK_FALSE(modifiers.chargeStrikeClip(0, 7, clipSeconds));
+    CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Ready);
+}
+
+namespace
+{
+// One actor with a frenzy (and optionally a charge) at x = 0, the party at x = 900 in sight.
+struct FrenzyTestActor
+{
+    float healthShare = 1.0f;
+    bool canAct = true;
+    bool alive = true;
+    bool engagesParty = true;
+    uint32_t roars = 0;
+
+    GameplayActorModifiers::ChargeActorFacts facts() const
+    {
+        GameplayActorModifiers::ChargeActorFacts actorFacts = {};
+        actorFacts.monsterId = 10082;
+        actorFacts.actorId = 7;
+        actorFacts.canAct = canAct;
+        actorFacts.alive = alive;
+        actorFacts.healthShare = healthShare;
+        actorFacts.engagesParty = engagesParty;
+        actorFacts.hostileToParty = true;
+        actorFacts.partyPosition = {900.0f, 0.0f, 0.0f};
+        actorFacts.partyEdgeDistance = 900.0f - 77.0f;
+        return actorFacts;
+    }
+
+    GameplayActorModifiers::ChargeWorld world()
+    {
+        GameplayActorModifiers::ChargeWorld chargeWorld = {};
+        chargeWorld.hasLineOfSightToParty = [](size_t) { return true; };
+        chargeWorld.step = [](size_t, float, float, float, float)
+        {
+            return GameplayActorModifiers::ChargeStepResult::Moved;
+        };
+        chargeWorld.frenzyRoared = [this](size_t, const FrenzyModifier &) { ++roars; };
+        return chargeWorld;
+    }
+};
+
+MonsterModifierTable frenzyTable(const std::string &modifiers)
+{
+    MonsterModifierTable table;
+    std::string error;
+    REQUIRE_MESSAGE(loadModifiers(table, "  10082: [" + modifiers + "]\n", error), error);
+    return table;
+}
+
+void stepFrenzy(GameplayActorModifiers &modifiers, FrenzyTestActor &actor, float seconds)
+{
+    const GameplayActorModifiers::ChargeWorld world = actor.world();
+    for (float elapsed = 0.0f; elapsed < seconds - 0.0001f; elapsed += 1.0f / 30.0f)
+    {
+        const auto facts = [&](size_t) { return actor.facts(); };
+        modifiers.updateFrenzies(1.0f / 30.0f, 1, facts, world);
+        modifiers.updateCharges(1.0f / 30.0f, 1, facts, world);
+    }
+}
+
+ActorAiFacts frenzyAiFacts(const GameplayActorModifiers &modifiers)
+{
+    ActorAiFrameFacts frame = {};
+    ActorAiFacts actorFacts = {};
+    actorFacts.actorIndex = 0;
+    actorFacts.actorId = 7;
+    actorFacts.movement.effectiveMoveSpeed = 200.0f;
+    frame.activeActors.push_back(actorFacts);
+    modifiers.applyFrenzies(frame);
+    return frame.activeActors[0];
+}
+}
+
+TEST_CASE("frenzy modifier loads its parameters, defaults and errors")
+{
+    const MonsterModifierTable table = frenzyTable("{frenzy: {health_below: 0.5}}");
+    REQUIRE(table.find(10082)->frenzy);
+    const FrenzyModifier &frenzy = *table.find(10082)->frenzy;
+    CHECK(table.hasFrenzy());
+    CHECK_FALSE(table.hasCharge());
+    CHECK(frenzy.healthBelow == doctest::Approx(0.5f));
+    CHECK(frenzy.everySeconds == 0.0f);
+    CHECK_FALSE(frenzy.onShieldBreak);
+    CHECK(frenzy.windupSeconds == doctest::Approx(0.8f));
+    CHECK(frenzy.seconds == doctest::Approx(6.0f));
+    CHECK(frenzy.speedMultiplier == doctest::Approx(1.4f));
+    CHECK(frenzy.attackRateMultiplier == doctest::Approx(1.5f));
+    CHECK(frenzy.spentSeconds == 0.0f);
+    CHECK(frenzy.cooldownSeconds == doctest::Approx(20.0f));
+    CHECK(frenzy.glowMultiplier == doctest::Approx(2.0f));
+    CHECK(frenzy.sound == "monster_frenzy");
+    CHECK(frenzy.fallbackSound == "roar 1");
+
+    CHECK(modifierError("  10082: [{frenzy: {seconds: 4}}]\n").find("frenzy needs a trigger") != std::string::npos);
+    CHECK(modifierError("  10082: [{frenzy: {health_below: 0.99}}]\n").find("health_below must be a number")
+        != std::string::npos);
+    CHECK(modifierError("  10082: [{frenzy: {every_seconds: 5, speed_multiplier: 4}}]\n")
+        .find("speed_multiplier must be a number") != std::string::npos);
+}
+
+TEST_CASE("frenzy roars below its health share once, then speeds the actor up and holds it spent")
+{
+    const MonsterModifierTable table = frenzyTable("{frenzy: {health_below: 0.5, windup_seconds: 0.5, seconds: 2, "
+        "speed_multiplier: 1.5, attack_rate_multiplier: 2, spent_seconds: 1, glow_multiplier: 3, "
+        "cooldown_seconds: 0}}");
+    GameplayActorModifiers modifiers;
+    modifiers.bind(&table);
+    FrenzyTestActor actor;
+
+    stepFrenzy(modifiers, actor, 1.0f);
+    CHECK(modifiers.frenzyCount() == 0);
+    CHECK(frenzyAiFacts(modifiers).movement.effectiveMoveSpeed == doctest::Approx(200.0f));
+
+    // Below half health: the roar holds it and plays the frenzy clip.
+    actor.healthShare = 0.4f;
+    stepFrenzy(modifiers, actor, 1.0f / 30.0f);
+    CHECK(modifiers.frenzyCount() == 1);
+    CHECK(actor.roars == 1);
+    CHECK(modifiers.frenzyPhase(0) == GameplayActorModifiers::FrenzyPhase::Roar);
+    CHECK(frenzyAiFacts(modifiers).behavior.holdActive);
+    const char *pRole = nullptr;
+    float clipSeconds = -1.0f;
+    REQUIRE(modifiers.scriptedClip(0, 7, pRole, clipSeconds));
+    CHECK(std::string(pRole) == "frenzy");
+    CHECK(clipSeconds == doctest::Approx(1.0f / 30.0f).epsilon(0.05));
+    CHECK(modifiers.emissionMultiplier(0, 7) == doctest::Approx(1.0f));
+
+    // The frenzy: faster moves and recovery, the glow.
+    stepFrenzy(modifiers, actor, 0.6f);
+    CHECK(modifiers.frenzyPhase(0) == GameplayActorModifiers::FrenzyPhase::Active);
+    const ActorAiFacts frenzied = frenzyAiFacts(modifiers);
+    CHECK_FALSE(frenzied.behavior.holdActive);
+    CHECK(frenzied.movement.effectiveMoveSpeed == doctest::Approx(300.0f));
+    CHECK(frenzied.behavior.attackRateMultiplier == doctest::Approx(2.0f));
+    CHECK(modifiers.emissionMultiplier(0, 7) == doctest::Approx(3.0f));
+    CHECK(modifiers.emissionMultiplier(0, 8) == doctest::Approx(1.0f));
+    CHECK_FALSE(modifiers.scriptedClip(0, 7, pRole, clipSeconds));
+
+    // Spent, then ready; the health trigger fired once, so no second frenzy.
+    stepFrenzy(modifiers, actor, 2.0f);
+    CHECK(modifiers.frenzyPhase(0) == GameplayActorModifiers::FrenzyPhase::Spent);
+    CHECK(frenzyAiFacts(modifiers).behavior.holdActive);
+    REQUIRE(modifiers.scriptedClip(0, 7, pRole, clipSeconds));
+    CHECK(std::string(pRole) == "spent");
+    stepFrenzy(modifiers, actor, 5.0f);
+    CHECK(modifiers.frenzyPhase(0) == GameplayActorModifiers::FrenzyPhase::Ready);
+    CHECK(modifiers.frenzyCount() == 1);
+}
+
+TEST_CASE("frenzy repeats every_seconds below its health share, and a stun in the roar cancels it")
+{
+    const MonsterModifierTable table = frenzyTable("{frenzy: {health_below: 0.5, every_seconds: 5, "
+        "windup_seconds: 1, seconds: 1, cooldown_seconds: 3}}");
+    {
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        FrenzyTestActor actor;
+        // Above the share the period does not run.
+        stepFrenzy(modifiers, actor, 6.0f);
+        CHECK(modifiers.frenzyCount() == 0);
+        actor.healthShare = 0.3f;
+        stepFrenzy(modifiers, actor, 0.1f);
+        CHECK(modifiers.frenzyCount() == 1);
+        // Roar 1 s, frenzy 1 s, cooldown 3 s; the period runs from the roar: the next one 5 s after it.
+        stepFrenzy(modifiers, actor, 4.7f);
+        CHECK(modifiers.frenzyCount() == 1);
+        stepFrenzy(modifiers, actor, 0.4f);
+        CHECK(modifiers.frenzyCount() == 2);
+    }
+    {
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        FrenzyTestActor actor;
+        actor.healthShare = 0.3f;
+        stepFrenzy(modifiers, actor, 0.1f);
+        REQUIRE(modifiers.frenzyPhase(0) == GameplayActorModifiers::FrenzyPhase::Roar);
+        actor.canAct = false;
+        stepFrenzy(modifiers, actor, 1.0f / 30.0f);
+        CHECK(modifiers.frenzyPhase(0) == GameplayActorModifiers::FrenzyPhase::Ready);
+        actor.canAct = true;
+        stepFrenzy(modifiers, actor, 2.0f);
+        CHECK(modifiers.frenzyCount() == 1);
+    }
+}
+
+TEST_CASE("frenzy on a shield break, and frenzies and charges never overlap")
+{
+    {
+        const MonsterModifierTable table = frenzyTable("{frenzy: {on_shield_break: true}}");
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        FrenzyTestActor actor;
+        stepFrenzy(modifiers, actor, 1.0f);
+        CHECK(modifiers.frenzyCount() == 0);
+        modifiers.observeHit(0, 10082, 7, {900.0f, 0.0f, 0.0f}, true, false);
+        stepFrenzy(modifiers, actor, 1.0f / 30.0f);
+        CHECK(modifiers.frenzyCount() == 0);
+        modifiers.observeHit(0, 10082, 7, {900.0f, 0.0f, 0.0f}, false, true);
+        stepFrenzy(modifiers, actor, 1.0f / 30.0f);
+        CHECK(modifiers.frenzyCount() == 1);
+    }
+    {
+        const MonsterModifierTable table = frenzyTable(
+            "{charge: {windup_seconds: 0.5}}, {frenzy: {every_seconds: 1, windup_seconds: 1, spent_seconds: 1}}");
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        FrenzyTestActor actor;
+        // The party in the charge band: the charge starts first and the frenzy waits for it.
+        stepFrenzy(modifiers, actor, 1.0f / 30.0f);
+        CHECK(modifiers.chargePhase(0) == GameplayActorModifiers::ChargePhase::Windup);
+        REQUIRE(modifiers.startFrenzy(0, 10082, 7, actor.world()) == false);
+        CHECK(modifiers.frenzyCount() == 0);
+    }
+    {
+        const MonsterModifierTable table = frenzyTable(
+            "{charge: {windup_seconds: 0.5}}, {frenzy: {every_seconds: 1, windup_seconds: 1, spent_seconds: 1}}");
+        GameplayActorModifiers modifiers;
+        modifiers.bind(&table);
+        FrenzyTestActor actor;
+        // In the roar no charge starts.
+        REQUIRE(modifiers.startFrenzy(0, 10082, 7, actor.world()));
+        stepFrenzy(modifiers, actor, 0.5f);
+        CHECK(modifiers.chargeCount() == 0);
+        CHECK_FALSE(modifiers.startCharge(0, 10082, 7, {0.0f, 0.0f, 0.0f}, {900.0f, 0.0f, 0.0f}, actor.world()));
+    }
+}
+
 TEST_CASE("charge hit damage and knock-back")
 {
     MonsterTable::MonsterStatsEntry brute = {};
@@ -632,4 +932,52 @@ TEST_CASE("charge hit damage and knock-back")
     CHECK(impulse[2] > 0.0f);
     // Up and down under gravity: 2 * vz / g seconds at the horizontal speed covers the distance.
     CHECK(impulse[1] * 2.0f * impulse[2] / 1280.0f == doctest::Approx(256.0f));
+}
+
+TEST_CASE("melee vertical reach: a ledge above half the lower body's height stops a blow, a step never does")
+{
+    // No reach set (MM6-MM8): height never matters.
+    CHECK(GameplayActorService::meleeReachesVertically(0.0f, 0.0f, 179.0f, 500.0f, 192.0f));
+    // Half of a 179-high Drudge: it cannot strike a party 96 above it, can strike one 80 above it.
+    CHECK_FALSE(GameplayActorService::meleeReachesVertically(0.5f, 0.0f, 179.0f, 96.0f, 192.0f));
+    CHECK(GameplayActorService::meleeReachesVertically(0.5f, 0.0f, 179.0f, 80.0f, 192.0f));
+    // A tall monster reaches higher.
+    CHECK(GameplayActorService::meleeReachesVertically(0.5f, 0.0f, 400.0f, 180.0f, 192.0f));
+    // Down onto a party below: half the party's 192.
+    CHECK(GameplayActorService::meleeReachesVertically(0.5f, 96.0f, 179.0f, 0.0f, 192.0f));
+    CHECK_FALSE(GameplayActorService::meleeReachesVertically(0.5f, 128.0f, 179.0f, 0.0f, 192.0f));
+    // A small body still reaches across a step.
+    CHECK(GameplayActorService::meleeReachesVertically(0.5f, 0.0f, 40.0f, 48.0f, 192.0f));
+    CHECK_FALSE(GameplayActorService::meleeReachesVertically(0.5f, 0.0f, 40.0f, 49.0f, 192.0f));
+}
+
+TEST_CASE("stagger rules: only heavy damage within the window flinches, then not again within the cooldown")
+{
+    MonsterModifierTable table;
+    std::string error;
+    REQUIRE_MESSAGE(loadModifiers(table,
+        "  10010: [{stagger: {threshold_percent: 8, cooldown_seconds: 2}}]\n", error), error);
+    REQUIRE(table.find(10010) != nullptr);
+    REQUIRE(table.find(10010)->stagger);
+    CHECK(table.find(10010)->stagger->windowSeconds == doctest::Approx(2.0f));
+
+    GameplayActorModifiers modifiers;
+    modifiers.bind(&table);
+    // A trooper of 1 000 health: 8 % is 80 within 2 s.
+    modifiers.recordDamage(0, 10010, 7, 50);
+    CHECK_FALSE(modifiers.allowsStagger(0, 10010, 7, 1000));
+    modifiers.tickStagger(1.0f);
+    modifiers.recordDamage(0, 10010, 7, 40);
+    CHECK(modifiers.allowsStagger(0, 10010, 7, 1000));
+    // The cooldown: a heavy hit at once does nothing.
+    modifiers.recordDamage(0, 10010, 7, 500);
+    CHECK_FALSE(modifiers.allowsStagger(0, 10010, 7, 1000));
+    // Old chip damage leaves the window.
+    modifiers.tickStagger(2.5f);
+    modifiers.recordDamage(0, 10010, 7, 50);
+    CHECK_FALSE(modifiers.allowsStagger(0, 10010, 7, 1000));
+    // A monster without the rules always may.
+    CHECK(modifiers.allowsStagger(1, 10011, 8, 1000));
+
+    CHECK(modifierError("  10010: [never_staggers, stagger]\n").find("contradict") != std::string::npos);
 }

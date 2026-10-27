@@ -640,7 +640,8 @@ void OutdoorMovementDriver::update(
     if (!input.turnBasedPhysicsStep
         && m_state.supportOnWater
         && !m_partyMovementState.waterWalk
-        && !m_partyMovementState.flying)
+        && !m_partyMovementState.flying
+        && !m_levitateActive)
     {
         m_waterDamageTimerSeconds += deltaSeconds;
 
@@ -656,7 +657,10 @@ void OutdoorMovementDriver::update(
         m_waterDamageTimerSeconds = 0.0f;
     }
 
-    if (!input.turnBasedPhysicsStep && m_state.supportOnBurning && !m_partyMovementState.flying)
+    if (!input.turnBasedPhysicsStep
+        && m_state.supportOnBurning
+        && !m_partyMovementState.flying
+        && !m_levitateActive)
     {
         m_burningDamageTimerSeconds += deltaSeconds;
 
@@ -889,6 +893,11 @@ void OutdoorMovementDriver::setFeatherFallActive(bool active)
         m_state.fallStartZ = m_state.footZ;
         m_state.fallDistance = 0.0f;
     }
+}
+
+void OutdoorMovementDriver::setLevitateActive(bool active)
+{
+    m_levitateActive = active;
 }
 
 void OutdoorMovementDriver::setSpeedMultiplier(float multiplier)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/content/ContentManifest.h"
+
 #include "game/events/EventRuntime.h"
 #include "game/app/GameSettings.h"
 #include "game/gameplay/GameplayFxService.h"
@@ -124,6 +126,26 @@ public:
     const GameplayUiRuntime &gameplayUiRuntime() const;
     GameplayActorService &gameplayActorService();
     const GameplayActorService &gameplayActorService() const;
+    // The active world's taverns seat generated mercenaries (world.yml tavernHirelings).
+    void setTavernHirelings(bool enabled)
+    {
+        m_tavernHirelings = enabled;
+    }
+    // The active world's Hum (world.yml hum), handed to the party for each map it enters.
+    void setWorldHum(const WorldHumDefinition &hum)
+    {
+        m_worldHum = hum;
+    }
+
+    void setWorldFloorBurn(const WorldFloorBurnDefinition &floorBurn)
+    {
+        m_worldFloorBurn = floorBurn;
+    }
+
+    void setWorldObjectiveQBits(const std::vector<uint32_t> &qbits)
+    {
+        m_worldObjectiveQBits = qbits;
+    }
     GameplayCombatController &gameplayCombatController();
     const GameplayCombatController &gameplayCombatController() const;
     GameplayItemService &gameplayItemService();
@@ -306,6 +328,10 @@ private:
     GameplayUiController m_gameplayUiController;
     GameplayUiRuntime m_gameplayUiRuntime;
     GameplayActorService m_gameplayActorService;
+    bool m_tavernHirelings = true;
+    WorldHumDefinition m_worldHum;
+    WorldFloorBurnDefinition m_worldFloorBurn;
+    std::vector<uint32_t> m_worldObjectiveQBits;
     GameplayCombatController m_gameplayCombatController;
     GameplayItemService m_gameplayItemService;
     GameplayProjectileService m_gameplayProjectileService;

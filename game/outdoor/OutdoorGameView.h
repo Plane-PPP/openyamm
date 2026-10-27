@@ -820,6 +820,8 @@ private:
     uint32_t m_spawnMarkerVertexCount;
     std::vector<TexturedBModelBatch> m_texturedBModelBatches;
     std::vector<BModelTextureAnimationHandle> m_bmodelTextureAnimations;
+    // Textures an event swapped in (evt.SetTexture) that could not be loaded; not tried again.
+    std::unordered_set<std::string> m_missingSwapTextureNames;
     std::vector<BModelTextureArray> m_bmodelTextureArrays;
     std::vector<ResolvedBModelDrawGroup> m_resolvedBModelDrawGroups;
     uint64_t m_resolvedBModelDrawGroupRevision = std::numeric_limits<uint64_t>::max();

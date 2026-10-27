@@ -73,6 +73,35 @@ std::vector<MonsterModifierInfo> buildCatalogue()
             "Hits never interrupt it: no hit reaction (the flinch and its knock-back). Stuns and paralysis from "
             "spells, skills and the EMP grenade still apply.",
             {}},
+        {"indoor_meteor_shower",
+            "It casts its Meteor Shower indoors too, each meteor from as high as the room's ceiling allows. Without "
+            "it a monster never picks Meteor Shower indoors (the original game drops the cast there).",
+            {}},
+        {"stagger",
+            "Without a shield it flinches only from heavy damage: the damage of the last window_seconds must reach "
+            "threshold_percent of its maximum health, and after a flinch it ignores hits for cooldown_seconds.",
+            {
+                number("threshold_percent", 0.0f, 0.0f, 100.0f,
+                    "share of its maximum health the window's damage must reach (0: every hit)"),
+                number("cooldown_seconds", 0.5f, 0.0f, 60.0f, "no hit reaction for this long after a flinch"),
+                number("window_seconds", 2.0f, 0.1f, 30.0f, "how far back its damage counts"),
+            }},
+        {"telegraphed_attack",
+            "A long, readable wind-up: its melee and/or ranged attack lands this many seconds into the attack, while "
+            "its model plays the telegraphed_melee or telegraphed_ranged script clip (actors.yml script_clips).",
+            {
+                number("melee_seconds", 0.0f, 0.0f, 10.0f, "seconds from the start of a melee attack to its hit (0: as is)"),
+                number("ranged_seconds", 0.0f, 0.0f, 10.0f, "seconds from the start of a ranged attack to its release"),
+            }},
+        {"sounds",
+            "Its own sounds: a loop at it while it moves (or always: a hover, a servo) and a one-shot when it first "
+            "notices the party, each by name.",
+            {
+                text("loop", "", "looping sound while it moves (empty: none)"),
+                boolean("loop_always", false, "the loop plays while it stands too"),
+                number("loop_volume", 0.7f, 0.0f, 1.0f, "the loop's volume"),
+                text("aware", "", "one-shot when it first notices the party (empty: none)"),
+            }},
         {"kites_party",
             "Keeps its ranged band: the tactics ranged_band [min_distance, max_distance] (backs off inside, closes in "
             "beyond, circles between shots). A monster whose behaviors.yml tactics set ranged_band may not have it.",
@@ -110,12 +139,37 @@ std::vector<MonsterModifierInfo> buildCatalogue()
                 number("knockback", 256.0f, 0.0f, 2048.0f, "how far the hit throws the party back"),
                 number("cooldown_seconds", 8.0f, 0.0f, 600.0f, "time from the end of one charge to the next"),
                 number("stumble_seconds", 1.2f, 0.0f, 10.0f, "how long it stumbles after a miss"),
+                number("strike_seconds", 0.0f, 0.0f, 5.0f,
+                    "after a hit, how long its model's charge_strike script clip plays (0: none)"),
+                number("strike_impact_seconds", 0.0f, 0.0f, 5.0f,
+                    "where the charge_strike clip's blow lands; the clip starts there at the contact"),
                 text("effect", "openyamm:fx/ember_impact", "effect id of the wind-up flash"),
                 text("windup_sound", "monster_charge_windup", "placeholder sound of the wind-up"),
                 text("windup_fallback_sound", "roar 1", "sound played while the wind-up placeholder has no file"),
                 text("hit_sound", "monster_charge_hit", "placeholder sound of the hit"),
                 text("hit_fallback_sound", "swing with blunt weapon01",
                     "sound played while the hit placeholder has no file"),
+            }},
+        {"frenzy",
+            "A haste power-up: below a share of health (once), periodically while it fights or when its shield "
+            "breaks, it roars (holds, a flash and a sound), then moves and attacks faster with its glow flared, "
+            "then holds spent.",
+            {
+                number("health_below", 0.0f, 0.0f, 0.95f,
+                    "starts once when its health falls below this share (0: off)"),
+                number("every_seconds", 0.0f, 0.0f, 600.0f,
+                    "periodically while it fights (0: never); with health_below only below it"),
+                boolean("on_shield_break", false, "when its energy shield breaks"),
+                number("windup_seconds", 0.8f, 0.0f, 5.0f, "the roar; a stun, paralysis or death in it cancels it"),
+                number("seconds", 6.0f, 0.5f, 60.0f, "how long it lasts"),
+                number("speed_multiplier", 1.4f, 1.0f, 3.0f, "its walking and running speed"),
+                number("attack_rate_multiplier", 1.5f, 1.0f, 3.0f, "its attack recovery is divided by this"),
+                number("spent_seconds", 0.0f, 0.0f, 10.0f, "afterwards it holds this long (the punish window)"),
+                number("cooldown_seconds", 20.0f, 0.0f, 600.0f, "time from the end of one frenzy to the next"),
+                number("glow_multiplier", 2.0f, 1.0f, 5.0f, "its model's emission while it lasts"),
+                text("effect", "openyamm:fx/ember_impact", "effect id of the roar's flash"),
+                text("sound", "monster_frenzy", "placeholder sound of the roar"),
+                text("fallback_sound", "roar 1", "sound played while the placeholder has no file"),
             }},
     };
 }
@@ -321,6 +375,10 @@ bool applyModifier(const ParsedModifier &parsed, const std::string &line, Monste
     {
         set.neverStaggers = true;
     }
+    else if (name == "indoor_meteor_shower")
+    {
+        set.indoorMeteorShower = true;
+    }
     else if (name == "kites_party")
     {
         KitesPartyModifier kites;
@@ -372,6 +430,8 @@ bool applyModifier(const ParsedModifier &parsed, const std::string &line, Monste
         charge.knockback = parsed.numberOf("knockback");
         charge.cooldownSeconds = parsed.numberOf("cooldown_seconds");
         charge.stumbleSeconds = parsed.numberOf("stumble_seconds");
+        charge.strikeSeconds = parsed.numberOf("strike_seconds");
+        charge.strikeImpactSeconds = parsed.numberOf("strike_impact_seconds");
         charge.effect = parsed.textOf("effect");
         charge.windupSound = parsed.textOf("windup_sound");
         charge.windupFallbackSound = parsed.textOf("windup_fallback_sound");
@@ -389,6 +449,68 @@ bool applyModifier(const ParsedModifier &parsed, const std::string &line, Monste
             return false;
         }
         set.charge = charge;
+    }
+    else if (name == "frenzy")
+    {
+        FrenzyModifier frenzy;
+        frenzy.healthBelow = parsed.numberOf("health_below");
+        frenzy.everySeconds = parsed.numberOf("every_seconds");
+        frenzy.onShieldBreak = parsed.flagOf("on_shield_break");
+        frenzy.windupSeconds = parsed.numberOf("windup_seconds");
+        frenzy.seconds = parsed.numberOf("seconds");
+        frenzy.speedMultiplier = parsed.numberOf("speed_multiplier");
+        frenzy.attackRateMultiplier = parsed.numberOf("attack_rate_multiplier");
+        frenzy.spentSeconds = parsed.numberOf("spent_seconds");
+        frenzy.cooldownSeconds = parsed.numberOf("cooldown_seconds");
+        frenzy.glowMultiplier = parsed.numberOf("glow_multiplier");
+        frenzy.effect = parsed.textOf("effect");
+        frenzy.sound = parsed.textOf("sound");
+        frenzy.fallbackSound = parsed.textOf("fallback_sound");
+        if (frenzy.healthBelow <= 0.0f && frenzy.everySeconds <= 0.0f && !frenzy.onShieldBreak)
+        {
+            error = line + ": frenzy needs a trigger (health_below, every_seconds or on_shield_break)";
+            return false;
+        }
+        set.frenzy = frenzy;
+    }
+    else if (name == "telegraphed_attack")
+    {
+        TelegraphedAttackModifier telegraph;
+        telegraph.meleeSeconds = parsed.numberOf("melee_seconds");
+        telegraph.rangedSeconds = parsed.numberOf("ranged_seconds");
+        if (telegraph.meleeSeconds <= 0.0f && telegraph.rangedSeconds <= 0.0f)
+        {
+            error = line + ": telegraphed_attack needs melee_seconds or ranged_seconds above 0";
+            return false;
+        }
+        set.telegraphedAttack = telegraph;
+    }
+    else if (name == "sounds")
+    {
+        ActorSoundsModifier sounds;
+        sounds.loop = parsed.textOf("loop");
+        sounds.loopAlways = parsed.flagOf("loop_always");
+        sounds.loopVolume = parsed.numberOf("loop_volume");
+        sounds.aware = parsed.textOf("aware");
+        if (sounds.loop.empty() && sounds.aware.empty())
+        {
+            error = line + ": sounds needs a loop or an aware sound";
+            return false;
+        }
+        set.sounds = sounds;
+    }
+    else if (name == "stagger")
+    {
+        StaggerModifier stagger;
+        stagger.thresholdPercent = parsed.numberOf("threshold_percent");
+        stagger.cooldownSeconds = parsed.numberOf("cooldown_seconds");
+        stagger.windowSeconds = parsed.numberOf("window_seconds");
+        if (set.neverStaggers)
+        {
+            error = line + ": stagger and never_staggers contradict each other";
+            return false;
+        }
+        set.stagger = stagger;
     }
     set.names.push_back(name);
     return true;
@@ -572,6 +694,9 @@ void MonsterModifierTable::set(const MonsterModifierSet &modifiers)
     m_sets[modifiers.monsterId] = modifiers;
     m_hasBlink = m_hasBlink || modifiers.blink.has_value();
     m_hasCharge = m_hasCharge || modifiers.charge.has_value();
+    m_hasFrenzy = m_hasFrenzy || modifiers.frenzy.has_value();
+    m_hasStagger = m_hasStagger || modifiers.stagger.has_value();
+    m_hasSounds = m_hasSounds || modifiers.sounds.has_value();
     m_minimumMonsterId = std::min(m_minimumMonsterId, modifiers.monsterId);
     m_maximumMonsterId = std::max(m_maximumMonsterId, modifiers.monsterId);
 }

@@ -127,6 +127,13 @@ public:
     // Shield domes of active actor behaviour wards (ActorBehaviorRuntime::wardDisplays): they grow in when raised,
     // swell and fade when they lapse, and ripple where projectiles hit them.
     void syncShieldDomes(const IGameplayWorldRuntime &world, float deltaSeconds);
+    // Scripted beams (EventRuntimeState::beamRequests, beamStops): starts and ends them, keeps a party beam on the
+    // party and ends each after its seconds.
+    void syncBeams(IGameplayWorldRuntime &world, float deltaSeconds);
+    size_t activeBeamCount() const
+    {
+        return m_beams.size();
+    }
     const std::vector<ShieldDomeDraw> &shieldDomes() const { return m_shieldDomes; }
     float shieldDomeTimeSeconds() const { return m_shieldDomeTimeSeconds; }
     // Animation LOD: actors far from the party sample their clips at 15 Hz (beyond ~14 m) and 8 Hz (beyond ~28 m).
@@ -589,6 +596,18 @@ private:
     std::unordered_map<std::string, ShieldDomeState> m_shieldDomeStates;
     std::vector<ShieldDomeDraw> m_shieldDomes;
     float m_shieldDomeTimeSeconds = 0.0f;
+    struct ActiveBeam
+    {
+        std::string name;
+        std::string effectId;
+        EffectHandle handle;
+        std::array<float, 3> to = {};
+        bool toParty = false;
+        // Without a time it lasts until stopped.
+        bool timed = false;
+        float remainingSeconds = 0.0f;
+    };
+    std::vector<ActiveBeam> m_beams;
     struct CorpseSatchel
     {
         uint32_t actorId = 0;

@@ -545,6 +545,8 @@ private:
 
     // Recomputes m_bakedStaticLightReach for the map's lights and decoration billboards.
     void rebuildBakedStaticLightReach();
+    // Every sector's ambient level now: an event's override, else the map's.
+    std::vector<int16_t> bakedSectorAmbientLevels() const;
     bool refreshBakedStaticLighting(
         bool refreshAllVertices,
         size_t &refreshedVertexCount,
@@ -775,6 +777,8 @@ private:
     uint64_t m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
     uint64_t m_bakedStaticLightRevision = std::numeric_limits<uint64_t>::max();
     std::vector<uint8_t> m_bakedStaticLightEnabledStates;
+    // Every sector's ambient level the vertices were baked with (evt.SetSectorAmbient changes it).
+    std::vector<int16_t> m_bakedSectorAmbientLevels;
     // Per baked source (BakedStaticLightSource::sourceId): the sectors it reaches through portals, at its larger toggle
     // radius. Faces bake only the lights that reach their sectors.
     std::vector<IndoorLightReachList> m_bakedStaticLightReach;

@@ -947,6 +947,14 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "controls", "bag_number_keys"))
+    {
+        if (validBagNumberKeysValue(*value))
+        {
+            settings.bagNumberKeys = *value;
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "controls", "flip_on_exit"))
     {
         bool parsed = settings.flipOnExit;
@@ -2265,6 +2273,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("walksound", boolValue(settings.walksound));
     serializer.add("show_hits", boolValue(settings.showHits));
     serializer.add("always_run", boolValue(settings.alwaysRun));
+    serializer.add("bag_number_keys", settings.bagNumberKeys);
     serializer.add("flip_on_exit", boolValue(settings.flipOnExit));
     serializer.add("mouse_sensitivity", std::clamp(settings.mouseSensitivity, 0, 100));
     serializer.add("invert_mouse_y", boolValue(settings.invertMouseY));

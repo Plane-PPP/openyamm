@@ -749,6 +749,22 @@ float IndoorLightingRuntime::ambientFromMinAmbientLightLevel(int minAmbientLight
     return std::clamp(ambient, IndoorAmbientMin, IndoorAmbientMax);
 }
 
+int IndoorLightingRuntime::sectorAmbientLevel(const IndoorMapData &mapData, const EventRuntimeState *pState,
+    size_t sectorId)
+{
+    if (pState != nullptr && !pState->sectorAmbientLevels.empty())
+    {
+        const auto iterator = pState->sectorAmbientLevels.find(uint16_t(sectorId));
+
+        if (iterator != pState->sectorAmbientLevels.end())
+        {
+            return iterator->second;
+        }
+    }
+
+    return sectorId < mapData.sectors.size() ? int(mapData.sectors[sectorId].minAmbientLightLevel) : 0;
+}
+
 float IndoorLightingRuntime::sectorAmbient(const IndoorLightingFrame &frame, int16_t sectorId)
 {
     return sectorId >= 0 && size_t(sectorId) < frame.sectorAmbient.size() ? frame.sectorAmbient[size_t(sectorId)]
@@ -1315,7 +1331,7 @@ IndoorLightingFrame IndoorLightingRuntime::buildFrame(const IndoorLightingFrameI
             }
 
             const int sectorAmbientLightLevel =
-                static_cast<int>(input.pMapData->sectors[sectorId].minAmbientLightLevel);
+                sectorAmbientLevel(*input.pMapData, input.pEventRuntimeState, sectorId);
             maxAmbientLightLevel = std::max(maxAmbientLightLevel, sectorAmbientLightLevel);
         }
 
@@ -1324,7 +1340,8 @@ IndoorLightingFrame IndoorLightingRuntime::buildFrame(const IndoorLightingFrameI
         for (size_t sectorId = 0; sectorId < input.pMapData->sectors.size(); ++sectorId)
         {
             frame.sectorAmbient[sectorId] =
-                ambientFromMinAmbientLightLevel(int(input.pMapData->sectors[sectorId].minAmbientLightLevel));
+                ambientFromMinAmbientLightLevel(
+                    sectorAmbientLevel(*input.pMapData, input.pEventRuntimeState, sectorId));
         }
     }
 

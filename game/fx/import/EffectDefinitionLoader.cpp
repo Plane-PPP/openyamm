@@ -368,6 +368,7 @@ bool parseRibbon(const YAML::Node &node, EffectRibbonDefinition &ribbon, std::st
         !readOptional(node, "core", ribbon.core, error) ||
         !readOptional(node, "jitter", ribbon.jitter, error) ||
         !readOptional(node, "jitter_rate", ribbon.jitterRate, error) ||
+        !readOptional(node, "beam", ribbon.beam, error) ||
         !parseScaleKeys(node["width_keys"], ribbon.widthKeys, error) ||
         !parseColorKeys(node["color_keys"], ribbon.colorKeys, error))
     {

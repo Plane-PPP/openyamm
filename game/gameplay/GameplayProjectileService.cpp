@@ -552,6 +552,7 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.attackBonus = request.attackBonus;
         projectile.damageType = request.damageType;
         projectile.shieldTier = request.shieldTier;
+        projectile.shieldModifiers = request.shieldModifiers;
         projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
         projectile.explosionRadius = request.explosionRadius;
         projectile.useActorHitChance = request.useActorHitChance;
@@ -600,18 +601,35 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     projectile.x = request.sourceX + directionX * spawnForwardOffset;
     projectile.y = request.sourceY + directionY * spawnForwardOffset;
     projectile.z = request.sourceZ + directionZ * spawnForwardOffset;
-    projectile.velocityX = directionX * request.definition.speed;
-    projectile.velocityY = directionY * request.definition.speed;
-    projectile.velocityZ = directionZ * request.definition.speed;
+    float speed = request.definition.speed;
+    projectile.lifetimeTicks = request.definition.lifetimeTicks;
+
+    if (request.eventMissile)
+    {
+        // Whole ticks of flight, the speed fitted to them, so the flight ends on the target.
+        const float flightDistance = distance - spawnForwardOffset;
+        const float flightSeconds =
+            request.flightSeconds > 0.0f ? request.flightSeconds : flightDistance / std::max(speed, 1.0f);
+        projectile.lifetimeTicks = std::max<uint32_t>(1, uint32_t(std::ceil(flightSeconds * ProjectileTicksPerSecond)));
+        speed = flightDistance * ProjectileTicksPerSecond / float(projectile.lifetimeTicks);
+        projectile.eventMissile = true;
+        projectile.targetX = request.targetX;
+        projectile.targetY = request.targetY;
+        projectile.targetZ = request.targetZ;
+    }
+
+    projectile.velocityX = directionX * speed;
+    projectile.velocityY = directionY * speed;
+    projectile.velocityZ = directionZ * speed;
     projectile.damage = request.damage;
     projectile.attackBonus = request.attackBonus;
     projectile.damageType = request.damageType;
     projectile.shieldTier = request.shieldTier;
+    projectile.shieldModifiers = request.shieldModifiers;
     projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
     projectile.explosionRadius = request.explosionRadius;
     projectile.useActorHitChance = request.useActorHitChance;
     projectile.turnBasedPendingAction = request.turnBasedPendingAction;
-    projectile.lifetimeTicks = request.definition.lifetimeTicks;
     projectile.sectorId = request.sectorId;
 
     m_projectiles.push_back(std::move(projectile));
@@ -621,7 +639,7 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     result.directionX = directionX;
     result.directionY = directionY;
     result.directionZ = directionZ;
-    result.speed = request.definition.speed;
+    result.speed = speed;
     traceProjectileSpawnResult("spawned", result.projectile, directionX, directionY, directionZ, result.speed);
     return result;
 }
@@ -1072,6 +1090,7 @@ std::optional<GameplayProjectileService::ProjectileSpawnRequest> GameplayProject
     request.attackBonus = projectile.attackBonus;
     request.damageType = projectile.damageType;
     request.shieldTier = projectile.shieldTier;
+    request.shieldModifiers = projectile.shieldModifiers;
     request.weakerOfPhysicalAndFire = projectile.weakerOfPhysicalAndFire;
     request.explosionRadius = projectile.explosionRadius;
     request.sourceX = struck.preciseX;
@@ -1482,7 +1501,9 @@ int GameplayProjectileService::resolveProjectilePartyImpactDamage(
 
     if (input.eventSource)
     {
-        return resolveEventProjectileDamage(input.spellId, input.skillLevel);
+        // An event's missile carries its own damage; an event's spell rolls the spell's.
+        return input.spellId == 0 ? std::max(0, input.projectileDamage)
+                                  : resolveEventProjectileDamage(input.spellId, input.skillLevel);
     }
 
     if (input.sourceKind == ProjectileState::SourceKind::Actor && input.projectileDamage > 0)
@@ -1588,7 +1609,7 @@ GameplayProjectileService::buildProjectileAreaImpact(
         ? std::max(1, projectile.damage)
         : input.nonPartyProjectileDamage;
 
-    if (input.canHitParty)
+    if (input.canHitParty && !projectile.eventMissile)
     {
         const float partyCenterZ = input.partyZ + input.partyCollisionHeight * 0.5f;
         impact.hitParty = pointWithinExpandedCylinder(
@@ -1687,6 +1708,13 @@ GameplayProjectileService::buildProjectileDirectActorImpact(
         if (impact.hit && impact.damage > 0)
         {
             impact.damage *= input.damageMultiplier;
+
+            // A world enchantment's bonus against its monsters (Hesper's Kreegan-bane) on the shot's gun or bow.
+            if (input.pShooter != nullptr && projectile.spellId == 0
+                && input.pShooter->rangedWeaponEnchant.bonusAgainst(input.targetMonsterId))
+            {
+                impact.damage += impact.damage * input.pShooter->rangedWeaponEnchant.bonusDamagePercent / 100;
+            }
 
             if (input.halfIncomingMissileDamage
                 && rules.monsterShieldHalvesPartyMissile(uint32_t(std::max(0, projectile.spellId))))
@@ -1973,16 +2001,23 @@ GameplayProjectileService::ProjectileFrameResult GameplayProjectileService::upda
         {
             result.deathBlossomFalloutPoint = impactPoint;
         }
-        else if (spellIdFromValue(static_cast<uint32_t>(projectile.spellId)) == SpellId::RockBlast)
+        else if (projectile.eventMissile
+            || spellIdFromValue(static_cast<uint32_t>(projectile.spellId)) == SpellId::RockBlast)
         {
-            const float impactRadius = spellImpactDamageRadius(static_cast<uint32_t>(projectile.spellId));
+            // An event missile bursts on its target, Rock Blast where it lies.
+            const GameplayWorldPoint burstPoint = projectile.eventMissile
+                ? GameplayWorldPoint{projectile.targetX, projectile.targetY, projectile.targetZ}
+                : impactPoint;
+            const float impactRadius = projectile.eventMissile
+                ? projectile.explosionRadius
+                : spellImpactDamageRadius(static_cast<uint32_t>(projectile.spellId));
 
             if (impactRadius > 0.0f)
             {
                 ProjectileAreaImpactInput areaInput = {};
-                areaInput.impactX = impactPoint.x;
-                areaInput.impactY = impactPoint.y;
-                areaInput.impactZ = impactPoint.z;
+                areaInput.impactX = burstPoint.x;
+                areaInput.impactY = burstPoint.y;
+                areaInput.impactZ = burstPoint.z;
                 areaInput.impactRadius = impactRadius;
                 areaInput.partyX = facts.partyPosition.x;
                 areaInput.partyY = facts.partyPosition.y;
@@ -1993,7 +2028,7 @@ GameplayProjectileService::ProjectileFrameResult GameplayProjectileService::upda
                 areaInput.nonPartyProjectileDamage = facts.nonPartyProjectileDamage;
                 areaInput.actors = facts.areaActors;
                 result.areaImpact = ProjectileFrameAreaImpactResult{
-                    impactPoint,
+                    burstPoint,
                     impactRadius,
                     false,
                     buildProjectileAreaImpact(projectile, areaInput)};
@@ -2001,7 +2036,7 @@ GameplayProjectileService::ProjectileFrameResult GameplayProjectileService::upda
 
             result.fxRequest = ProjectileFrameFxRequest{
                 ProjectileFrameFxKind::ProjectileImpact,
-                impactPoint,
+                burstPoint,
                 false};
         }
 
@@ -2124,6 +2159,7 @@ GameplayProjectileService::ProjectileFrameResult GameplayProjectileService::upda
         input.targetFacts = facts.collision.targetFacts;
         input.partyCount = facts.collision.partyCount;
         input.pShooter = facts.collision.pShooter;
+        input.targetMonsterId = facts.collision.targetMonsterId;
         result.directActorImpact = buildProjectileDirectActorImpact(projectile, input);
     }
 
@@ -2242,7 +2278,7 @@ std::optional<GameplayProjectileService::ProjectileWardBlock> GameplayProjectile
 
 bool GameplayProjectileService::canProjectileCollideWithParty(const ProjectileState &projectile) const
 {
-    return projectile.sourceKind != ProjectileState::SourceKind::Party;
+    return projectile.sourceKind != ProjectileState::SourceKind::Party && !projectile.eventMissile;
 }
 
 bool GameplayProjectileService::isProjectileSourceFriendlyToActor(
@@ -2589,6 +2625,20 @@ void GameplayProjectileService::collectProjectilePresentationState(
 std::vector<GameplayProjectileEndPresentationState> GameplayProjectileService::takeEndedProjectiles()
 {
     return std::exchange(m_endedProjectiles, {});
+}
+
+ShieldHitModifiers GameplayProjectileService::partyShieldModifiers(const ProjectileState &projectile,
+    const Party *pParty)
+{
+    if (projectile.spellId > 0 && projectile.sourceKind == ProjectileState::SourceKind::Party && pParty != nullptr)
+    {
+        if (const Character *pCaster = pParty->member(projectile.sourcePartyMemberIndex))
+        {
+            return GameMechanics::spellShieldModifiers(*pCaster);
+        }
+    }
+
+    return projectile.shieldModifiers;
 }
 
 ShieldAttackTier GameplayProjectileService::projectileShieldTier(const ProjectileState &projectile)

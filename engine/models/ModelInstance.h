@@ -119,6 +119,9 @@ public:
     // Fraction of a flash colour mixed over the instance's skinned draws (a creature hit), 0 = none.
     bool setHitFlash(ModelInstanceHandle handle, float amount);
     float hitFlash(ModelInstanceHandle handle) const;
+    // Multiplier of the emission of the instance's skinned draws (a creature's frenzy glow), 1 = as authored.
+    bool setEmissionMultiplier(ModelInstanceHandle handle, float multiplier);
+    float emissionMultiplier(ModelInstanceHandle handle) const;
     // Null stops the burn: the surface is whole again.
     bool setBurn(ModelInstanceHandle handle, const ModelBurn *pBurn);
     const ModelBurn *burn(ModelInstanceHandle handle) const;
@@ -196,6 +199,7 @@ private:
         bool visible = true;
         uint32_t outlineColorAbgr = 0;
         float hitFlash = 0.0f;
+        float emissionMultiplier = 1.0f;
         std::optional<ModelBurn> burn;
         std::optional<ModelShieldShell> shieldShell;
         uint32_t materialVariant = 0;

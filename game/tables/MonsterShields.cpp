@@ -70,9 +70,15 @@ bool parseGrade(const std::string &name, const YAML::Node &node, ShieldGradeDefi
     }
     grade.intensity = node["intensity"].as<float>(1.0f);
     grade.regenSeconds = node["regen_seconds"].as<float>(2.0f);
-    if (!finiteIn(grade.intensity, 0.0f, 8.0f) || !finiteIn(grade.regenSeconds, 0.05f, 600.0f))
+    if (node["rest_intensity"])
     {
-        error = "grade '" + name + "': intensity must lie in 0-8 and regen_seconds in 0.05-600";
+        grade.restIntensity = node["rest_intensity"].as<float>();
+    }
+    if (!finiteIn(grade.intensity, 0.0f, 8.0f) || !finiteIn(grade.regenSeconds, 0.05f, 600.0f)
+        || (grade.restIntensity && !finiteIn(*grade.restIntensity, 0.0f, grade.intensity)))
+    {
+        error = "grade '" + name + "': intensity must lie in 0-8, rest_intensity in 0-intensity and regen_seconds "
+            "in 0.05-600";
         return false;
     }
     grade.hitSound = node["hit_sound"].as<std::string>("");
@@ -324,7 +330,7 @@ void MonsterShieldTable::addProfile(const MonsterShieldProfile &profile)
 }
 
 ShieldHitResolution resolveMonsterShieldHit(const MonsterShieldTable &table, const MonsterShieldProfile &profile,
-    float currentShield, int damage, ShieldAttackTier tier)
+    float currentShield, int damage, ShieldAttackTier tier, const ShieldHitModifiers &modifiers)
 {
     ShieldHitResolution result;
     const ShieldGradeDefinition *pGrade = table.grade(profile);
@@ -334,18 +340,31 @@ ShieldHitResolution resolveMonsterShieldHit(const MonsterShieldTable &table, con
     }
     if (pGrade != nullptr && profile.pool > 0 && currentShield > 0.0f)
     {
-        // Nothing passes a raised shield; what it takes beyond its remaining pool is lost.
-        const float taken = float(damage) * pGrade->rates[size_t(tier)];
+        // Nothing passes a raised shield; what it takes beyond its remaining pool is lost, except that a cleaving hit
+        // carries half of the damage the broken shield did not need through to the body.
+        const float share = std::clamp(modifiers.energyShare, 0.0f, 1.0f);
+        const float rate = ((1.0f - share) * pGrade->rates[size_t(tier)]
+            + share * pGrade->rates[size_t(ShieldAttackTier::KreeganEnergy)])
+            * std::max(0.0f, modifiers.shieldDamageMultiplier);
+        const float taken = float(damage) * rate;
         result.absorbed = true;
         result.shieldDamage = std::min(taken, currentShield);
         result.broke = taken >= currentShield;
+        if (result.broke && modifiers.cleave && rate > 0.0f && !profile.energyImmune)
+        {
+            const float leftover = float(damage) - currentShield / rate;
+            result.bodyDamage = int(std::lround(std::max(0.0f, leftover) * 0.5f));
+            result.cleaved = result.bodyDamage > 0;
+            result.absorbed = !result.cleaved;
+        }
         return result;
     }
     if (profile.energyImmune && shieldAttackTierIsEnergy(tier))
     {
         return result;
     }
-    const float multiplier = shieldAttackTierIsEnergy(tier) ? table.exposedEnergyMultiplier() : 1.0f;
+    const float multiplier =
+        shieldAttackTierIsEnergy(tier) ? table.exposedEnergyMultiplier() * modifiers.exposedMultiplier : 1.0f;
     result.bodyDamage = int(std::lround(float(damage) * multiplier));
     return result;
 }

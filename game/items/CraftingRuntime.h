@@ -12,7 +12,7 @@ namespace OpenYAMM::Game
 {
 class ItemTable;
 
-// Where a party item is: in a member's pack, or worn.
+// Where a party item is: in one of a member's bags (InventoryBags), or worn.
 struct CraftItemRef
 {
     size_t memberIndex = 0;
@@ -20,6 +20,7 @@ struct CraftItemRef
     uint8_t gridX = 0;
     uint8_t gridY = 0;
     EquipmentSlot slot = EquipmentSlot::MainHand;
+    uint8_t bag = 0;
 
     bool operator==(const CraftItemRef &) const = default;
 };
@@ -84,7 +85,7 @@ struct CraftingTables
 };
 
 // The Workbench's crafting over the party's items (devdocs/maw/CRAFTING_BENCH_DESIGN.md §6): materials are counted
-// across every pack, targets may be worn, and every step is the rules' CraftingRules::craft on copies.
+// across every member's bags, targets may be worn, and every step is the rules' CraftingRules::craft on copies.
 class CraftingRuntime
 {
 public:
@@ -105,7 +106,7 @@ public:
         const CraftingRules &rules,
         const CraftingTables &tables);
     // Plans again and commits: materials used up, the target written back, a changed material or the Mirror's copy
-    // returned to the party. False when nothing was possible. An item without room in any pack is returned in
+    // returned to the party. False when nothing was possible. An item without room in any bag is returned in
     // `overflow` for the cursor.
     static bool apply(
         Party &party,

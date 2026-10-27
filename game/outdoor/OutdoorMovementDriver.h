@@ -142,6 +142,8 @@ public:
     void setRunning(bool active);
     void setWaterWalkActive(bool active);
     void setFeatherFallActive(bool active);
+    // Levitate keeps the party off water and lava damage.
+    void setLevitateActive(bool active);
     void setSpeedMultiplier(float multiplier);
     void setBodyDimensions(float radius, float height, float maxStepHeight = 128.0f);
     void setCollisionTraceEnabled(bool enabled, std::string mapName);
@@ -178,6 +180,7 @@ private:
     float m_dashVelocityY = 0.0f;
     float m_dashSeconds = 0.0f;
     bool m_flyingAvailable = false;
+    bool m_levitateActive = false;
     float m_movementAccumulatorSeconds = 0.0f;
     float m_startedFallingEventSeconds = 0.0f;
     float m_landedEventSeconds = 0.0f;

@@ -613,6 +613,11 @@ const InventoryItem *itemInBagAt(const Character &character, uint8_t bag, uint8_
     return nullptr;
 }
 
+InventoryItem *itemInBagAt(Character &character, uint8_t bag, uint8_t gridX, uint8_t gridY)
+{
+    return const_cast<InventoryItem *>(itemInBagAt(std::as_const(character), bag, gridX, gridY));
+}
+
 namespace
 {
 // Runs the open bag's own operation on `bag`: it is opened for the call and the bag that was open is opened again.

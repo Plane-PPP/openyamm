@@ -225,8 +225,11 @@ void IndoorPartyRuntime::update(
         m_pendingImpulseVelocityZ = 0.0f;
     }
 
-    // The settings' speed and a ruleset's slow (MAW's dimension affix 25).
-    const float speedMultiplier = m_movementSpeedMultiplier * m_party.rulesMovementMultiplier();
+    // The settings' speed, a ruleset's slow (MAW's dimension affix 25) and wading through a shallow liquid floor.
+    const size_t supportFace = m_movementState.supportFaceIndex;
+    const float wadeSpeed = m_movementState.grounded && supportFace < m_faceWadeSpeeds.size()
+        ? m_faceWadeSpeeds[supportFace] : 1.0f;
+    const float speedMultiplier = m_movementSpeedMultiplier * m_party.rulesMovementMultiplier() * wadeSpeed;
 
     while (m_movementAccumulatorSeconds >= IndoorMovementStepSeconds)
     {
@@ -394,7 +397,10 @@ void IndoorPartyRuntime::update(
         m_movementState.fallDistance = landingFallDistance;
     }
 
-    if (m_movementState.grounded && m_movementController.supportFaceIsBurning(m_movementState.supportFaceIndex))
+    // Levitate keeps the party just off the lava, as MM8 does in every world.
+    if (m_movementState.grounded
+        && !m_party.hasPartyBuff(PartyBuffId::Levitate)
+        && m_movementController.supportFaceIsBurning(m_movementState.supportFaceIndex))
     {
         m_burningDamageTimerSeconds += deltaSeconds;
 
@@ -521,6 +527,11 @@ void IndoorPartyRuntime::restoreSnapshot(const Snapshot &snapshot)
 void IndoorPartyRuntime::setMovementSpeedMultiplier(float multiplier)
 {
     m_movementSpeedMultiplier = multiplier;
+}
+
+void IndoorPartyRuntime::setFaceWadeSpeeds(std::vector<float> speeds)
+{
+    m_faceWadeSpeeds = std::move(speeds);
 }
 
 void IndoorPartyRuntime::setAlwaysRunEnabled(bool enabled)

@@ -427,6 +427,8 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
     if (headlessCommand)
     {
         setEnvironmentVariable("OPENYAMM_DISABLE_LOADING_OVERLAY", "1");
+        // Monster path plans land in simulated time (ActorPathRuntime::setWorkerCount).
+        setEnvironmentVariable("OPENYAMM_SYNCHRONOUS_PATH_PLANS", "1");
     }
 
     if (arguments.size() >= 2 && arguments[0] == "--headless-validate-scenario")
@@ -533,6 +535,13 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
     {
         OpenYAMM::Game::HeadlessGameplayDiagnostics diagnostics(config);
         return diagnostics.runRegressionSuite(argv[0], arguments[1]);
+    }
+
+    if ((arguments.size() == 1 || (arguments.size() == 2 && arguments[1] == "--all-worlds"))
+        && arguments[0] == "--headless-validate-actor-models")
+    {
+        OpenYAMM::Game::HeadlessGameplayDiagnostics diagnostics(config);
+        return diagnostics.runValidateActorModels(argv[0], arguments.size() == 2);
     }
 
     if (arguments.size() == 2 && arguments[0] == "--headless-profile-map-load-full")

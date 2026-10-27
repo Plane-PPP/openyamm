@@ -1011,6 +1011,7 @@ void executePartyAttack(
             .pItemTable = runtime.itemTable(),
             .pSpellTable = runtime.spellTable(),
             .pMonsterTable = runtime.monsterTable(),
+            .pMonsterProjectileTable = runtime.monsterProjectileTable(),
             .pSpecialItemEnchantTable = runtime.specialItemEnchantTable(),
             .directTargetActorIndex = directActorIndex,
             .directTargetHitPoint = directTargetHitPoint,

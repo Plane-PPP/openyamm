@@ -371,6 +371,10 @@ void addStandardEnchantBonus(Character &member, StandardItemEnchantKind kind, in
             member.magicalBonuses.resistances.mind += amount;
             break;
 
+        case StandardItemEnchantKind::EnergyResistance:
+            member.energyResistance += amount;
+            break;
+
         case StandardItemEnchantKind::BodyResistance:
             member.magicalBonuses.resistances.body += amount;
             break;
@@ -1579,7 +1583,8 @@ bool ItemEnchantRuntime::isSpecialRarityAllowed(char rarityLevel, int treasureLe
 std::optional<uint16_t> ItemEnchantRuntime::chooseStandardEnchantId(
     const ItemDefinition &itemDefinition,
     const StandardItemEnchantTable &table,
-    std::mt19937 &rng)
+    std::mt19937 &rng,
+    const std::string &worldId)
 {
     const size_t slotIndex = standardSlotIndex(categoryForItem(itemDefinition));
 
@@ -1596,7 +1601,8 @@ std::optional<uint16_t> ItemEnchantRuntime::chooseStandardEnchantId(
         const StandardItemEnchantEntry &entry = table.entries()[index];
         const int weight = entry.slotValues[slotIndex];
 
-        if (entry.kind == StandardItemEnchantKind::None || weight <= 0)
+        if (entry.kind == StandardItemEnchantKind::None || weight <= 0
+            || (!entry.worlds.empty() && std::find(entry.worlds.begin(), entry.worlds.end(), worldId) == entry.worlds.end()))
         {
             continue;
         }
@@ -1618,7 +1624,8 @@ std::optional<uint16_t> ItemEnchantRuntime::chooseSpecialEnchantId(
     const ItemDefinition &itemDefinition,
     const SpecialItemEnchantTable &table,
     int treasureLevel,
-    std::mt19937 &rng)
+    std::mt19937 &rng,
+    const std::string &worldId)
 {
     const size_t slotIndex = specialSlotIndex(categoryForItem(itemDefinition));
 
@@ -1637,7 +1644,9 @@ std::optional<uint16_t> ItemEnchantRuntime::chooseSpecialEnchantId(
 
         if (entry.kind == SpecialItemEnchantKind::None
             || weight <= 0
-            || !isSpecialRarityAllowed(entry.rarityLevel, treasureLevel))
+            || !isSpecialRarityAllowed(entry.rarityLevel, treasureLevel)
+            || (!entry.worlds.empty() && std::find(entry.worlds.begin(), entry.worlds.end(), worldId) == entry.worlds.end())
+            || (!entry.requiredContentFlag.empty() && !itemDefinition.hasContentFlag(entry.requiredContentFlag)))
         {
             continue;
         }
@@ -1836,6 +1845,9 @@ void ItemEnchantRuntime::applyEquippedEnchantEffects(
 
     applyContentEffect(itemDefinition.contentEffect, member);
 
+    // Its content flags (FireImmune, SealedBreathing, ...), as an implant's arrive through its socket.
+    member.equippedItemEffectFlags.insert(itemDefinition.contentFlags.begin(), itemDefinition.contentFlags.end());
+
     if (itemDefinition.contentEffect.personalShield > 0)
     {
         // Emitters' pools grow with Shield Tech (Party::refreshPersonalShieldCapacity); armour's do not.
@@ -1859,6 +1871,35 @@ void ItemEnchantRuntime::applyEquippedEnchantEffects(
         if (const SpecialItemEnchantEntry *pEntry = pSpecialTable->get(runtimeState.specialEnchantId))
         {
             applySpecialEnchantBonus(member, pEntry->kind);
+
+            // A world's own enchantment: its worn effects, and on a weapon what its attacks add (a gun's or bow's
+            // to the ranged attack, any other weapon's to the melee one).
+            if (pEntry->kind == SpecialItemEnchantKind::World)
+            {
+                const WorldEnchantEffect &effect = pEntry->worldEffect;
+                member.armorShieldPoints += effect.personalShield;
+                member.energyDamageTakenPercent += effect.energyDamageTakenPercent;
+                const ItemEnchantCategory category = categoryForItem(itemDefinition);
+
+                if (isWeaponCategory(category))
+                {
+                    WorldEnchantEffect &weapon = category == ItemEnchantCategory::Missile
+                            || canonicalSkillName(itemDefinition.skillGroup) == "Blaster"
+                        ? member.rangedWeaponEnchant : member.meleeWeaponEnchant;
+                    weapon.shieldDamagePercent += effect.shieldDamagePercent;
+                    weapon.exposedDamagePercent += effect.exposedDamagePercent;
+                    weapon.overloadChancePercent += effect.overloadChancePercent;
+                    weapon.energyDamageMinimum += effect.energyDamageMinimum;
+                    weapon.energyDamageMaximum += effect.energyDamageMaximum;
+
+                    if (effect.bonusDamagePercent > weapon.bonusDamagePercent)
+                    {
+                        weapon.bonusDamagePercent = effect.bonusDamagePercent;
+                        weapon.bonusMonsterIds = effect.bonusMonsterIds;
+                    }
+                }
+            }
+
             member.weaponEnchantmentDamageBonus += elementalDamageBonus(
                 InventoryItem{
                     .objectDescriptionId = itemDefinition.itemId,
@@ -1872,6 +1913,14 @@ void ItemEnchantRuntime::applyContentEffect(const ItemContentEffect &effect, Cha
 {
     member.magicalBonuses.might += effect.might;
     member.energyResistance += effect.energyResistance;
+    member.shieldRegenDelaySeconds += effect.shieldRegenDelaySeconds;
+    member.humPoints += effect.humPoints;
+    member.rangedDamagePercent += effect.rangedDamagePercent;
+    member.meleeDamagePercent += effect.meleeDamagePercent;
+    member.spellDamagePercent += effect.spellDamagePercent;
+    member.energyDamageTakenPercent += effect.energyDamageTakenPercent;
+    member.gunRecoveryReductionTicks += effect.gunRecoveryReductionTicks;
+    member.meleeRecoveryReductionTicks += effect.meleeRecoveryReductionTicks;
     member.magicalBonuses.intellect += effect.intellect;
     member.magicalBonuses.personality += effect.personality;
     member.magicalBonuses.endurance += effect.endurance;

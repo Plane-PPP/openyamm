@@ -991,6 +991,11 @@ const MonsterTable *GameplayScreenRuntime::monsterTable() const
     return &m_session.data().monsterTable();
 }
 
+const MonsterProjectileTable *GameplayScreenRuntime::monsterProjectileTable() const
+{
+    return &m_session.data().monsterProjectileTable();
+}
+
 GameplayUiController::CharacterScreenState &GameplayScreenRuntime::characterScreen() const
 {
     return m_session.gameplayScreenState().characterScreen();

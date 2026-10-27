@@ -491,6 +491,16 @@ settings:
   name: Always run
   type: toggle
   desc: Run by default instead of walking.
+- id: bag_number_keys
+  section: controls
+  group: Inventory
+  name: Number keys
+  type: select
+  options:
+  - [member, Pick member]
+  - [bag, Open bag]
+  desc: 'Number keys on the inventory page and in shops and chests; Shift with a number does the other. A party of one opens bags.'
+  game_ruleset: maw
 - id: ruleset_name
   section: game
   group: Ruleset
@@ -724,22 +734,22 @@ bindings:
   ruleset: maw
   context: inventory
 - id: bag_1
-  name: Open bag 1 (Shift + number selects a member)
+  name: Open bag 1 (with Shift as Controls' Number keys say)
   group: MAW
   ruleset: maw
   context: inventory
 - id: bag_2
-  name: Open bag 2 (Shift + number selects a member)
+  name: Open bag 2 (with Shift as Controls' Number keys say)
   group: MAW
   ruleset: maw
   context: inventory
 - id: bag_3
-  name: Open bag 3 (Shift + number selects a member)
+  name: Open bag 3 (with Shift as Controls' Number keys say)
   group: MAW
   ruleset: maw
   context: inventory
 - id: bag_4
-  name: Open bag 4 (Shift + number selects a member)
+  name: Open bag 4 (with Shift as Controls' Number keys say)
   group: MAW
   ruleset: maw
   context: inventory

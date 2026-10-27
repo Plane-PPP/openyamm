@@ -264,6 +264,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return settings.alwaysRun ? "true" : "false";
     }
+    if (id == "bag_number_keys")
+    {
+        return settings.bagNumberKeys;
+    }
     if (id == "flip_on_exit")
     {
         return settings.flipOnExit ? "true" : "false";
@@ -798,6 +802,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
             return false;
         }
         settings.alwaysRun = value == "true";
+        return true;
+    }
+    if (id == "bag_number_keys")
+    {
+        if (!validBagNumberKeysValue(value))
+        {
+            return false;
+        }
+        settings.bagNumberKeys = value;
         return true;
     }
     if (id == "flip_on_exit")

@@ -173,6 +173,13 @@ void GameplayActorShields::update(
         {
             continue;
         }
+        if (entry.suspendedSeconds != 0.0f)
+        {
+            entry.suspendedSeconds = entry.suspendedSeconds > 0.0f
+                ? std::max(0.0f, entry.suspendedSeconds - deltaSeconds) : entry.suspendedSeconds;
+            entry.current = 0.0f;
+            continue;
+        }
         const MonsterShieldProfile &profile = *entry.pProfile;
         const float before = entry.current;
         const float multiplier = actorIndex < m_regenMultipliers.size() ? m_regenMultipliers[actorIndex] : 1.0f;
@@ -277,7 +284,8 @@ GameplayActorShieldHit GameplayActorShields::applyHit(
     int16_t monsterId,
     int damage,
     ShieldAttackTier tier,
-    const std::array<float, 3> *pImpactPoint)
+    const std::array<float, 3> *pImpactPoint,
+    const ShieldHitModifiers &modifiers)
 {
     GameplayActorShieldHit result;
     result.bodyDamage = damage;
@@ -292,7 +300,8 @@ GameplayActorShieldHit GameplayActorShields::applyHit(
     }
     Entry &entry = *pEntry;
     const MonsterShieldProfile &profile = *entry.pProfile;
-    const ShieldHitResolution resolution = resolveMonsterShieldHit(*m_pTable, profile, entry.current, damage, tier);
+    const ShieldHitResolution resolution =
+        resolveMonsterShieldHit(*m_pTable, profile, entry.current, damage, tier, modifiers);
     result.bodyDamage = resolution.bodyDamage;
     result.absorbed = resolution.absorbed;
     result.broke = resolution.broke;
@@ -300,7 +309,7 @@ GameplayActorShieldHit GameplayActorShields::applyHit(
     {
         entry.secondsSinceDamage = 0.0f;
     }
-    if (!resolution.absorbed)
+    if (!resolution.absorbed && !resolution.cleaved)
     {
         return result;
     }
@@ -317,6 +326,32 @@ GameplayActorShieldHit GameplayActorShields::applyHit(
         queueSound(pGrade->hitSound, impact);
     }
     return result;
+}
+
+bool GameplayActorShields::suspend(size_t actorIndex, int16_t monsterId, float seconds)
+{
+    Entry *pEntry = active() ? ensure(actorIndex, monsterId) : nullptr;
+    if (pEntry == nullptr || pEntry->pProfile == nullptr || pEntry->pProfile->pool <= 0)
+    {
+        return false;
+    }
+    if (pEntry->current > 0.0f)
+    {
+        breakShield(*pEntry, pEntry->center);
+    }
+    pEntry->suspendedSeconds = seconds > 0.0f ? seconds : -1.0f;
+    return true;
+}
+
+bool GameplayActorShields::restore(size_t actorIndex)
+{
+    if (actorIndex >= m_entries.size() || !m_entries[actorIndex].used)
+    {
+        return false;
+    }
+    m_entries[actorIndex].suspendedSeconds = 0.0f;
+    m_entries[actorIndex].secondsSinceDamage = 3600.0f;
+    return true;
 }
 
 bool GameplayActorShields::cutRaisedShield(
@@ -376,6 +411,7 @@ void GameplayActorShields::view(size_t actorIndex, GameplayActorShieldView &view
     {
         view.color = pGrade->color;
         view.intensity = pGrade->intensity;
+        view.restIntensity = pGrade->restIntensity.value_or(-1.0f);
     }
     view.secondsSinceBreak = entry.secondsSinceBreak;
     view.secondsSinceRaise = entry.secondsSinceRaise;

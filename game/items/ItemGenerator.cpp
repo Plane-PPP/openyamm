@@ -4,6 +4,7 @@
 #include "game/items/ItemEnchantTables.h"
 #include "game/items/ItemRuntime.h"
 #include "game/rules/GameRules.h"
+#include "game/StringUtils.h"
 #include "game/tables/ItemTable.h"
 
 #include <algorithm>
@@ -81,6 +82,47 @@ std::optional<uint32_t> chooseRandomRareItem(
 
     const size_t index = std::uniform_int_distribution<size_t>(0, candidateIds.size() - 1)(rng);
     return candidateIds[index];
+}
+
+// The world's loot class for the treasure level, weighted as loot.yml gives it; rare items roll on their own.
+std::optional<uint32_t> chooseWorldLootItem(
+    const ItemTable &itemTable,
+    const WorldLootTable &loot,
+    int treasureLevel,
+    std::mt19937 &rng,
+    const std::function<bool(const ItemDefinition &)> &filter)
+{
+    const std::vector<WorldLootTable::Entry> *pEntries = loot.entriesForTreasureLevel(treasureLevel);
+
+    if (pEntries == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    std::vector<uint32_t> itemIds;
+    std::vector<int> weights;
+
+    for (const WorldLootTable::Entry &entry : *pEntries)
+    {
+        const ItemDefinition *pItem = itemTable.get(entry.itemId);
+
+        if (pItem == nullptr || pItem->hasContentFlag("NoRandom") || ItemRuntime::isRareItem(*pItem)
+            || (filter && !filter(*pItem)))
+        {
+            continue;
+        }
+
+        itemIds.push_back(entry.itemId);
+        weights.push_back(entry.weight);
+    }
+
+    if (itemIds.empty())
+    {
+        return std::nullopt;
+    }
+
+    std::discrete_distribution<size_t> distribution(weights.begin(), weights.end());
+    return itemIds[distribution(rng)];
 }
 
 int parsePositiveInteger(const std::string &value)
@@ -163,12 +205,15 @@ std::optional<InventoryItem> ItemGenerator::generateRandomInventoryItem(
     std::mt19937 &rng,
     const std::function<bool(const ItemDefinition &)> &callerFilter)
 {
-    // A boss's drop (rulesets that flag it, MAW) is always equipment that takes enchantments.
+    // A boss's drop (rulesets that flag it, MAW) is always equipment that takes enchantments. A world with loot of
+    // its own (loot.yml) rolls only the items it lists.
+    const WorldLootTable *pWorldLoot = itemTable.worldLoot(request.worldId);
     const std::function<bool(const ItemDefinition &)> filter =
-        [&request, &callerFilter](const ItemDefinition &entry)
+        [&request, &callerFilter, pWorldLoot](const ItemDefinition &entry)
         {
             return entry.availableInWorld(request.worldId) && (!callerFilter || callerFilter(entry))
-                && (!request.boss || ItemEnchantRuntime::isEnchantable(entry));
+                && (!request.boss || ItemEnchantRuntime::isEnchantable(entry))
+                && (pWorldLoot == nullptr || pWorldLoot->listedItemIds.contains(entry.itemId));
         };
 
     if (request.rareItemsOnly && !gameRulesFor(pParty).items.levelSevenGivesRareItem())
@@ -224,7 +269,9 @@ std::optional<InventoryItem> ItemGenerator::generateRandomInventoryItem(
         }
     }
 
-    const std::optional<uint32_t> itemId = chooseRandomBaseItem(itemTable, request.treasureLevel, rng, filter);
+    const std::optional<uint32_t> itemId = pWorldLoot != nullptr
+        ? chooseWorldLootItem(itemTable, *pWorldLoot, request.treasureLevel, rng, filter)
+        : chooseRandomBaseItem(itemTable, request.treasureLevel, rng, filter);
 
     if (!itemId)
     {
@@ -252,13 +299,55 @@ std::optional<InventoryItem> ItemGenerator::generateRandomInventoryItem(
         return item;
     }
 
-    gameRulesFor(pParty).items.rollEnchantments(
-        item,
-        *pItemDefinition,
-        ItemRollTables{itemTable, standardItemEnchantTable, specialItemEnchantTable},
-        request,
-        pParty,
-        rng);
+    // A world with a curated enchantment pool (loot.yml enchantments) re-rolls an enchantment outside it a few times,
+    // then drops what is still outside.
+    const auto standardAllowed = [&](const InventoryItem &rolled)
+    {
+        const StandardItemEnchantEntry *pEntry = rolled.standardEnchantId != 0
+            ? standardItemEnchantTable.get(rolled.standardEnchantId) : nullptr;
+        return pEntry == nullptr || pWorldLoot->standardEnchantments.contains(toLowerCopy(pEntry->suffix));
+    };
+    const auto specialAllowed = [&](const InventoryItem &rolled)
+    {
+        const SpecialItemEnchantEntry *pEntry = rolled.specialEnchantId != 0
+            ? specialItemEnchantTable.get(rolled.specialEnchantId) : nullptr;
+        const auto names = pWorldLoot->specialEnchantmentsByClass.find(
+            pWorldLoot->classForTreasureLevel(request.treasureLevel));
+        return pEntry == nullptr
+            || (names != pWorldLoot->specialEnchantmentsByClass.end()
+                && names->second.contains(toLowerCopy(pEntry->suffix)));
+    };
+    constexpr int CuratedEnchantmentRolls = 8;
+    const InventoryItem plain = item;
+
+    for (int roll = 0; roll < CuratedEnchantmentRolls; ++roll)
+    {
+        item = plain;
+        gameRulesFor(pParty).items.rollEnchantments(
+            item,
+            *pItemDefinition,
+            ItemRollTables{itemTable, standardItemEnchantTable, specialItemEnchantTable},
+            request,
+            pParty,
+            rng);
+
+        if (pWorldLoot == nullptr || !pWorldLoot->curatesEnchantments || (standardAllowed(item) && specialAllowed(item)))
+        {
+            return item;
+        }
+    }
+
+    if (!standardAllowed(item))
+    {
+        item.standardEnchantId = 0;
+        item.standardEnchantPower = 0;
+    }
+
+    if (!specialAllowed(item))
+    {
+        item.specialEnchantId = 0;
+    }
+
     return item;
 }
 

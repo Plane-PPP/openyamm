@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,24 @@ namespace OpenYAMM::Game
 {
 struct MapDeltaData;
 struct GameplayMonsterSpawnRequest;
+
+// evt.FireMissile: a world missile (a monster_projectiles.yml token) from one point to another, over flightSeconds
+// (0: at its object's speed). It passes the party, whose damage the event deals itself, and bursts at the target, or on
+// whatever it strikes first, with damage of damageType to every actor within radius.
+struct EventMissileRequest
+{
+    std::string missile;
+    float fromX = 0.0f;
+    float fromY = 0.0f;
+    float fromZ = 0.0f;
+    float toX = 0.0f;
+    float toY = 0.0f;
+    float toZ = 0.0f;
+    int damage = 0;
+    std::string damageType;
+    float radius = 0.0f;
+    float flightSeconds = 0.0f;
+};
 
 class ISceneEventContext
 {
@@ -42,6 +61,12 @@ public:
         (void)moveTimeMs;
         (void)closed;
         (void)moveParty;
+        return false;
+    }
+
+    virtual bool fireEventMissile(const EventMissileRequest &request)
+    {
+        (void)request;
         return false;
     }
 
@@ -85,6 +110,17 @@ public:
         bool randomRotate
     ) = 0;
 
+    // evt.SummonGold: a gold heap of the amount on the ground (the small heap up to 200, else the large one).
+    virtual bool summonEventGold(uint32_t amount, int32_t x, int32_t y, int32_t z, int32_t speed)
+    {
+        (void)amount;
+        (void)x;
+        (void)y;
+        (void)z;
+        (void)speed;
+        return false;
+    }
+
     virtual bool summonEventObject(
         uint32_t objectId,
         int32_t x,
@@ -110,6 +146,46 @@ public:
     }
 
     virtual bool setMapActorPosition(size_t actorIndex, float x, float y, float z)
+    {
+        (void)actorIndex;
+        (void)x;
+        (void)y;
+        (void)z;
+        return false;
+    }
+
+    // evt.TurnActor / evt.TurnGroup: the actor (or every living actor of the group) fights for the party, against
+    // its own faction too, for the seconds (0: for good), as an enslaved monster does. False for none turned.
+    virtual bool turnMapActors(std::optional<size_t> actorIndex, uint32_t group, float seconds)
+    {
+        (void)actorIndex;
+        (void)group;
+        (void)seconds;
+        return false;
+    }
+
+    // evt.WakeActor / evt.WakeGroup: a resting (dormant) actor, or every one of the group, wakes. False for none woken.
+    virtual bool wakeMapActors(std::optional<size_t> actorIndex, uint32_t group)
+    {
+        (void)actorIndex;
+        (void)group;
+        return false;
+    }
+
+    // evt.LineOfSight and evt.ActorSeesParty: nothing of the map's geometry between the two points.
+    virtual bool hasLineOfSight(float fromX, float fromY, float fromZ, float toX, float toY, float toZ) const
+    {
+        (void)fromX;
+        (void)fromY;
+        (void)fromZ;
+        (void)toX;
+        (void)toY;
+        (void)toZ;
+        return false;
+    }
+
+    // Where a map actor stands (its feet); false for no such actor.
+    virtual bool mapActorPosition(size_t actorIndex, float &x, float &y, float &z) const
     {
         (void)actorIndex;
         (void)x;

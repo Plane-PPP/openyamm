@@ -340,9 +340,37 @@ bool WeatherRules::loadFromYaml(const std::string &yamlText, std::string &errorM
                 WeatherMapChances chances;
                 float value = 0.0f;
 
-                if (!parser.checkKeys(entry.second, {"rain", "snow", "ash"}, where))
+                if (!parser.checkKeys(entry.second, {"rain", "snow", "ash", "ash_look", "dry_lightning", "rain_color"},
+                        where))
                 {
                     return false;
+                }
+
+                if (entry.second["ash_look"])
+                {
+                    chances.ashLook = entry.second["ash_look"].as<std::string>();
+                }
+
+                if (entry.second["dry_lightning"])
+                {
+                    if (!parser.readFloat(entry.second["dry_lightning"], value, 0.0f, 100.0f, where + ".dry_lightning"))
+                    {
+                        return false;
+                    }
+
+                    chances.dryLightningPercent = value;
+                }
+
+                if (entry.second["rain_color"])
+                {
+                    std::array<float, 3> color = DefaultRainColor;
+
+                    if (!parser.readOptionalFloats(entry.second, "rain_color", color, 0.0f, 4.0f, where))
+                    {
+                        return false;
+                    }
+
+                    chances.rainColor = color;
                 }
 
                 if (entry.second["rain"])
@@ -436,11 +464,30 @@ bool WeatherRules::loadFromYaml(const std::string &yamlText, std::string &errorM
 
         if (const YAML::Node flakes = root["flakes"]; flakes)
         {
-            if (!parser.checkKeys(flakes, {"snow", "ash"}, "flakes")
-                || !parser.readFlakes(flakes, "snow", rules.snowFlakes)
+            if (!flakes.IsMap() || !parser.readFlakes(flakes, "snow", rules.snowFlakes)
                 || !parser.readFlakes(flakes, "ash", rules.ashFlakes))
             {
-                return false;
+                return flakes.IsMap() ? false : parser.fail("flakes must be a map");
+            }
+
+            // Any other key is a named look (ember) built on the ash look.
+            for (const auto &entry : flakes)
+            {
+                const std::string name = entry.first.as<std::string>();
+
+                if (name == "snow" || name == "ash")
+                {
+                    continue;
+                }
+
+                WeatherFlakeLook look = rules.ashFlakes;
+
+                if (!parser.readFlakes(flakes, name.c_str(), look))
+                {
+                    return false;
+                }
+
+                rules.namedFlakes[toLowerCopy(name)] = look;
             }
         }
 
@@ -510,6 +557,14 @@ bool WeatherRules::loadFromYaml(const std::string &yamlText, std::string &errorM
         return parser.fail(std::string("weather: ") + exception.what());
     }
 
+    for (const auto &[mapName, chances] : rules.maps)
+    {
+        if (chances.ashLook && *chances.ashLook != "ash" && !rules.namedFlakes.contains(toLowerCopy(*chances.ashLook)))
+        {
+            return parser.fail("maps." + mapName + ".ash_look names no flakes entry: " + *chances.ashLook);
+        }
+    }
+
     *this = std::move(rules);
     return true;
 }
@@ -545,6 +600,16 @@ WeatherMapSettings resolveWeatherMapSettings(const WeatherRules &rules, uint32_t
         settings.snowChancePercent = it->second.snowPercent.value_or(settings.snowChancePercent);
         settings.ashChancePercent = it->second.ashPercent.value_or(0.0f);
         settings.ashEnabled = settings.ashChancePercent > 0.0f;
+        settings.dryLightningPercent = it->second.dryLightningPercent.value_or(0.0f);
+        settings.rainColor = it->second.rainColor.value_or(DefaultRainColor);
+
+        if (it->second.ashLook)
+        {
+            if (const auto look = rules.namedFlakes.find(toLowerCopy(*it->second.ashLook)); look != rules.namedFlakes.end())
+            {
+                settings.ashLook = look->second;
+            }
+        }
     }
 
     return settings;
@@ -582,6 +647,8 @@ WeatherDayPlan planWeatherDay(const WeatherRules &rules, const WeatherMapSetting
     const float phaseRoll = random.unit();
     // Drawn after every older roll, so maps without ash roll exactly the weather they always did.
     const float ashRoll = random.unit() * 100.0f;
+    const float dryLightningRoll = random.unit() * 100.0f;
+    plan.dryLightning = dryLightningRoll < settings.dryLightningPercent;
     const size_t monthIndex = static_cast<size_t>(weatherMonthForDay(dayIndex) - 1);
     const float snowChance = settings.snowEnabled
         ? settings.snowChancePercent * rules.snowMonthMultipliers[monthIndex] : 0.0f;
@@ -707,6 +774,7 @@ WeatherSample sampleRolledWeather(const WeatherRules &rules, const WeatherMapSet
         sample.precipitation = PrecipitationKind::None;
     }
 
+    sample.dryLightning = currentDay.dryLightning && sample.precipitation != PrecipitationKind::Rain;
     return sample;
 }
 
@@ -826,14 +894,15 @@ WeatherFogDistances weatherLadderFog(float position, int stateCount)
     return fog;
 }
 
-const WeatherFlakeLook *weatherFlakeLook(const WeatherRules &rules, PrecipitationKind kind)
+const WeatherFlakeLook *weatherFlakeLook(
+    const WeatherRules &rules, PrecipitationKind kind, const WeatherMapSettings *pSettings)
 {
     switch (kind)
     {
         case PrecipitationKind::Snow:
             return &rules.snowFlakes;
         case PrecipitationKind::Ash:
-            return &rules.ashFlakes;
+            return pSettings != nullptr && pSettings->ashLook ? &*pSettings->ashLook : &rules.ashFlakes;
         case PrecipitationKind::None:
         case PrecipitationKind::Rain:
         default:
@@ -841,10 +910,11 @@ const WeatherFlakeLook *weatherFlakeLook(const WeatherRules &rules, Precipitatio
     }
 }
 
-WeatherFogDistances weatherPrecipitationHaze(const WeatherRules &rules, const WeatherSample &sample)
+WeatherFogDistances weatherPrecipitationHaze(
+    const WeatherRules &rules, const WeatherSample &sample, const WeatherMapSettings *pSettings)
 {
     WeatherFogDistances fog;
-    const WeatherFlakeLook *pLook = weatherFlakeLook(rules, sample.precipitation);
+    const WeatherFlakeLook *pLook = weatherFlakeLook(rules, sample.precipitation, pSettings);
 
     if (pLook == nullptr || pLook->haze[1] <= 0.0f || sample.intensity <= 0.0f)
     {

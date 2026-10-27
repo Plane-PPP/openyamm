@@ -36,6 +36,8 @@ namespace
 {
 // Seconds the shatter of a broken energy shield shows (fs_model_shield's break animation).
 constexpr float ShieldShellBreakSeconds = 0.75f;
+// Seconds a hit or the raise lifts a resting shell to its full strength, fading back to the rest strength.
+constexpr float ShieldShellFlareSeconds = 0.6f;
 
 // The energy shield shell over an actor's model (GameplayActorShieldView), none while its shield is down and done
 // shattering. Hits keep their world points: footZ and the body height place the rise sweep.
@@ -50,8 +52,20 @@ std::optional<Engine::ModelShieldShell> actorShieldShell(const GameplayActorShie
     Engine::ModelShieldShell shell;
     shell.color = shield.color;
     shell.fraction = shield.fraction;
-    // Steadier and brighter the fuller the pool; full brightness while it shatters.
-    shell.strength = shield.intensity * (shield.raised ? 0.55f + 0.45f * shield.fraction : 1.0f);
+    // At rest a raised shell shows its rest strength; a hit or the raise flares it to the full strength. Steadier
+    // and brighter the fuller the pool; full brightness while it shatters.
+    float flare = shield.secondsSinceRaise >= 0.0f && shield.secondsSinceRaise < ShieldShellFlareSeconds
+        ? 1.0f - shield.secondsSinceRaise / ShieldShellFlareSeconds : 0.0f;
+    for (const std::array<float, 4> &hit : shield.hits)
+    {
+        if (hit[3] >= 0.0f && hit[3] < ShieldShellFlareSeconds)
+        {
+            flare = std::max(flare, 1.0f - hit[3] / ShieldShellFlareSeconds);
+        }
+    }
+    const float rest = shield.restIntensity >= 0.0f ? shield.restIntensity : shield.intensity;
+    const float raisedStrength = rest + (shield.intensity - rest) * flare;
+    shell.strength = shield.raised ? raisedStrength * (0.55f + 0.45f * shield.fraction) : shield.intensity;
     shell.breakSeconds = shattering && !shield.raised ? shield.secondsSinceBreak : -1.0f;
     shell.raiseSeconds = shield.raised ? shield.secondsSinceRaise : -1.0f;
     shell.seconds = seconds;
@@ -422,6 +436,7 @@ void WorldFxSystem::reset()
     m_particleSystem.reset();
     m_waterRipples = {};
     m_namedEffects.clear();
+    m_beams.clear();
     processNamedEffectAudio();
     for (const auto &[key, instanceId] : m_namedSoundInstances)
     {
@@ -1307,6 +1322,7 @@ void WorldFxSystem::syncActorModels(const IGameplayWorldRuntime &world, float wo
         instance->second.syncPass = syncPass;
         m_models.setOutlineColor(instance->second.handle, 0);
         m_models.setHitFlash(instance->second.handle, state.hitFlash);
+        m_models.setEmissionMultiplier(instance->second.handle, state.emissionMultiplier);
         const std::optional<Engine::ModelShieldShell> shieldShell = actorShieldShell(state.shield, state.preciseZ,
             float(state.bodyHeight > 0 ? state.bodyHeight : state.height), m_shieldDomeTimeSeconds, true);
         m_models.setShieldShell(instance->second.handle, shieldShell ? &*shieldShell : nullptr);
@@ -1884,6 +1900,77 @@ bool WorldFxSystem::configureCorpseSatchels(const Engine::AssetFileSystem &asset
         m_satchelAssets[tier] = loaded.asset;
     }
     return true;
+}
+
+void WorldFxSystem::syncBeams(IGameplayWorldRuntime &world, float deltaSeconds)
+{
+    EventRuntimeState *pState = world.eventRuntimeState();
+    const auto stopBeam = [this](const std::string &name)
+    {
+        for (auto beam = m_beams.begin(); beam != m_beams.end();)
+        {
+            if (beam->name == name)
+            {
+                m_namedEffects.stop(beam->handle, EffectStopMode::Drain);
+                beam = m_beams.erase(beam);
+            }
+            else
+            {
+                ++beam;
+            }
+        }
+    };
+    if (pState != nullptr)
+    {
+        for (const std::string &name : pState->beamStops)
+        {
+            stopBeam(name);
+        }
+        pState->beamStops.clear();
+        for (const EventRuntimeState::BeamRequest &request : pState->beamRequests)
+        {
+            // The same beam asked again moves (a turning gun's lock); another effect under its name replaces it.
+            const auto drawing = std::find_if(m_beams.begin(), m_beams.end(), [&request](const ActiveBeam &beam)
+            {
+                return beam.name == request.name && beam.effectId == request.effectId;
+            });
+            if (drawing != m_beams.end() && m_namedEffects.contains(drawing->handle))
+            {
+                m_namedEffects.setTransform(drawing->handle, request.from, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
+                drawing->to = request.to;
+                drawing->toParty = request.toParty;
+                drawing->timed = request.seconds > 0.0f;
+                drawing->remainingSeconds = request.seconds;
+                continue;
+            }
+            stopBeam(request.name);
+            EffectSpawnParams params;
+            params.position = request.from;
+            const EffectHandle handle = m_namedEffects.spawn(request.effectId, params);
+            if (!m_namedEffects.contains(handle))
+            {
+                std::cerr << "Scripted beam effect spawn failed: " << request.effectId << '\n';
+                continue;
+            }
+            m_beams.push_back({request.name, request.effectId, handle, request.to, request.toParty,
+                request.seconds > 0.0f, request.seconds});
+        }
+        pState->beamRequests.clear();
+    }
+    // The party's chest, where its shots come from.
+    const std::array<float, 3> party = {world.partyX(), world.partyY(), world.partyFootZ() + 96.0f};
+    for (auto beam = m_beams.begin(); beam != m_beams.end();)
+    {
+        beam->remainingSeconds -= deltaSeconds;
+        if (!m_namedEffects.contains(beam->handle) || (beam->timed && beam->remainingSeconds <= 0.0f))
+        {
+            m_namedEffects.stop(beam->handle, EffectStopMode::Drain);
+            beam = m_beams.erase(beam);
+            continue;
+        }
+        m_namedEffects.setBeamTarget(beam->handle, beam->toParty ? party : beam->to);
+        ++beam;
+    }
 }
 
 void WorldFxSystem::syncShieldDomes(const IGameplayWorldRuntime &world, float deltaSeconds)

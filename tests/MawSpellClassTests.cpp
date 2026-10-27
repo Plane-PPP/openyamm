@@ -261,6 +261,60 @@ TEST_CASE("quick-cast heals go to the endangered, else where they heal the most,
     CHECK_EQ(target(mawParty, 68), std::optional<size_t>(1));
 }
 
+TEST_CASE("quick-cast heals, cures and revivals pick their member; MAW's healing cures fall back to the condition")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+
+    // The heals, cures and revivals on one member pick it; a buff on one member (Bless at Normal) asks.
+    for (SpellId spell : {SpellId::Heal, SpellId::CureDisease, SpellId::RemoveCurse, SpellId::RemoveFear,
+             SpellId::CureParalysis, SpellId::CureInsanity, SpellId::CureWeakness, SpellId::CurePoison,
+             SpellId::RaiseDead, SpellId::Resurrection})
+    {
+        CHECK(PartySpellSystem::hasQuickCastCharacterTarget(spellIdValue(spell)));
+        const std::optional<PartySpellDescriptor> descriptor = PartySpellSystem::describeSpell(spellIdValue(spell));
+        REQUIRE(descriptor.has_value());
+        CHECK(descriptor->targetKind == PartySpellCastTargetKind::Character);
+    }
+
+    CHECK_FALSE(PartySpellSystem::hasQuickCastCharacterTarget(spellIdValue(SpellId::Bless)));
+    CHECK_FALSE(PartySpellSystem::hasQuickCastCharacterTarget(spellIdValue(SpellId::Preservation)));
+
+    PartySeed seed;
+    seed.members = {member("Healer", "Cleric", 10), member("Ariel", "Knight", 10), member("Brom", "Knight", 10)};
+    Party party;
+    party.seed(seed);
+    party.member(0)->skills["BodyMagic"] = {"BodyMagic", 20, SkillMastery::Grandmaster};
+    party.member(0)->skills["SpiritMagic"] = {"SpiritMagic", 20, SkillMastery::Grandmaster};
+    // Brom is cursed and diseased at full health; Ariel is whole.
+    party.member(2)->conditions.set(size_t(CharacterCondition::Cursed));
+    party.member(2)->conditions.set(size_t(CharacterCondition::DiseaseWeak));
+    const auto target = [&gameData](const Party &party, SpellId spell)
+    {
+        return PartySpellSystem::quickCastCharacterTarget(party, 0, spellIdValue(spell), &gameData.spellTable);
+    };
+
+    // Standard's Remove Curse and Cure Disease do not heal: they go to the condition.
+    CHECK_EQ(target(party, SpellId::RemoveCurse), std::optional<size_t>(2));
+    CHECK_EQ(target(party, SpellId::CureDisease), std::optional<size_t>(2));
+
+    // MAW's Greater Heal and Remove Curse heal: nobody wounded, they still cure Brom.
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    party.setRules(&rules.gameRules());
+    REQUIRE(PartySpellSystem::healAmount(party, *party.member(0), gameData.spellTable,
+        spellIdValue(SpellId::CureDisease)).has_value());
+    REQUIRE(PartySpellSystem::healAmount(party, *party.member(0), gameData.spellTable,
+        spellIdValue(SpellId::RemoveCurse)).has_value());
+    CHECK_EQ(target(party, SpellId::CureDisease), std::optional<size_t>(2));
+    CHECK_EQ(target(party, SpellId::RemoveCurse), std::optional<size_t>(2));
+    // A wounded member takes the heal first, as A7.2 rules.
+    party.member(1)->health = 1;
+    CHECK_EQ(target(party, SpellId::CureDisease), std::optional<size_t>(1));
+    // Heal cures nothing: with nobody wounded it has no target.
+    party.member(1)->health = Party::effectiveMaximumHealth(*party.member(1));
+    CHECK_FALSE(target(party, SpellId::Heal));
+}
+
 TEST_CASE("MAW auras need no target to quick-cast (A7.4)")
 {
     MawRules rules(RulesetOptions{}, MawMapLevels{});

@@ -2993,11 +2993,13 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             SDL_SCANCODE_4,
             SDL_SCANCODE_5,
         };
-        // A shop's party inventory: a held bag key (by default 1-4) opens its bag and selects no member.
+        // A shop's party inventory: a held bag key (by default 1-4, with Shift as bag_number_keys says) opens its bag
+        // and selects no member.
         const bool shiftHeld = pKeyboardState[SDL_SCANCODE_LSHIFT] || pKeyboardState[SDL_SCANCODE_RSHIFT];
+        const bool bagKeysEnabled = shiftHeld == GameplayPartyOverlayInputController::bagKeysNeedShift(view);
         bool bagKeyHeld = false;
 
-        for (int bag = 0; bag < 4 && !shiftHeld; ++bag)
+        for (int bag = 0; bag < 4 && bagKeysEnabled; ++bag)
         {
             bagKeyHeld = bagKeyHeld || input.action(KeyboardAction(size_t(KeyboardAction::Bag1) + size_t(bag))).held;
         }

@@ -30,6 +30,8 @@ public:
         const ItemDefinition &itemDefinition,
         const StandardItemEnchantTable *pStandardEnchantTable = nullptr,
         const SpecialItemEnchantTable *pSpecialEnchantTable = nullptr);
+    // What a vendor pays, at most resaleCapPercent of the value whatever the Merchant skill (a world's vendors may cap
+    // it: HouseEntry::resaleCapPercent).
     static int itemSellingPrice(
         const Character *pCharacter,
         const InventoryItem &item,
@@ -37,7 +39,8 @@ public:
         float priceMultiplier,
         const StandardItemEnchantTable *pStandardEnchantTable = nullptr,
         const SpecialItemEnchantTable *pSpecialEnchantTable = nullptr,
-        int effectiveReputation = 0);
+        int effectiveReputation = 0,
+        int resaleCapPercent = 100);
     static int itemIdentificationPrice(
         const Character *pCharacter,
         const InventoryItem &item,

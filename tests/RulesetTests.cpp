@@ -501,8 +501,8 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
         bytes,
         static_cast<size_t>(markerIt - bytes.begin()) - sizeof(uint64_t),
         sizeof(uint64_t) + marker.size() + 10);
-    // The held item ends with the bonus timer, the hardened flag and then the ruleset-fields byte.
-    eraseBytes(bytes, findValue(bytes, heldItemMarker) + sizeof(float) + 1, 1);
+    // The held item ends with the bonus timer, the hardened flag, the ruleset-fields byte and the Workshop mod (136).
+    eraseBytes(bytes, findValue(bytes, heldItemMarker) + sizeof(float) + 1, 1 + sizeof(uint16_t));
     const uint32_t previousVersion = 95;
     std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
     writeBytes(path, bytes);

@@ -12,12 +12,14 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace OpenYAMM::Game
 {
 class ActorBehaviorCatalog;
 class IGameplayWorldRuntime;
+class Party;
 class SpellTable;
 
 struct ActorBehaviorSpell
@@ -93,6 +95,17 @@ struct ActorBehaviorInstanceState
     std::optional<ActorBehaviorSpell> nextCast;
     std::optional<GameplayActorAiType> aiTypeOverride;
     bool suppressFlee = false;
+    // self:setSpeed: movement and attack rate times this (1: unchanged); self:setInvulnerable: no damage reaches the
+    // actor (its shield included). Saved (save version 135).
+    float speedMultiplier = 1.0f;
+    bool invulnerable = false;
+    // Per-actor tactics a script set: a leash (self:setLeash, a post at most this far from home), a ranged band
+    // (self:setRangedBand) and a point it goes to and holds with no target (self:moveTo). Saved (version 135).
+    std::optional<float> leashRadius;
+    std::optional<std::array<float, 2>> rangedBand;
+    std::optional<GameplayWorldPoint> moveTarget;
+    // self:setArmoredFront: hits from within the arc (radians either side of its facing) deal the share.
+    std::optional<std::array<float, 2>> armoredFront;
 };
 
 // Presentation view of an active ward: where to draw its dome and the projectile hits that ripple it.
@@ -128,11 +141,14 @@ struct ActorBehaviorActorFacts
     GameplayWorldPoint position;
     float height = 0.0f;
     ActorAiAnimationState animationState = ActorAiAnimationState::Standing;
+    float yawRadians = 0.0f;
 };
 
 struct ActorBehaviorFrameFacts
 {
     float deltaSeconds = 0.0f;
+    // For self:qbit (null in tests without a party).
+    const Party *pParty = nullptr;
     GameplayWorldPoint partyPosition;
     uint32_t actorCount = 0;
     // Scripted actors, plus actors appended since the last frame (candidates for a monster's default behaviour).
@@ -152,6 +168,25 @@ struct ActorBehaviorEffectRequest
     float scale = 1.0f;
 };
 
+// A command a script gives its own actor that the world carries out: blink away (self:blink), suspend or restore its
+// energy shield (self:suspendShield, self:restoreShield), or leave the map with an effect (self:leave).
+struct ActorBehaviorActorCommand
+{
+    enum class Kind
+    {
+        Blink,
+        SuspendShield,
+        RestoreShield,
+        Leave,
+    };
+
+    Kind kind = Kind::Blink;
+    size_t actorIndex = 0;
+    // SuspendShield: seconds without regeneration (negative: until restoreShield). Leave: the effect at the actor.
+    float seconds = -1.0f;
+    std::string effectId;
+};
+
 struct ActorBehaviorSummonRequest
 {
     int16_t monsterId = 0;
@@ -165,6 +200,9 @@ struct ActorBehaviorFrameResult
     std::vector<ActorBehaviorEffectRequest> effects;
     std::vector<std::string> statusMessages;
     std::vector<ActorBehaviorSummonRequest> summons;
+    std::vector<ActorBehaviorActorCommand> actorCommands;
+    // Map events scripts ran (self:runEvent).
+    std::vector<uint16_t> mapEvents;
 };
 
 // Per-map Lua behaviours layered on the shared monster AI. Scripts react to events (start, damage, health thresholds,
@@ -200,6 +238,15 @@ public:
     // True for a monster whose tactics turn it at a traverse rate (a turret): the world runtimes skip their instant
     // reaction turns (hit, alert) for it, and its AI turns it to the attacker at that rate instead.
     bool turnsAtTraverseRate(int16_t monsterId) const;
+    // self:setSpeed and self:setInvulnerable of a scripted actor (1 and false without a script).
+    float speedMultiplier(size_t actorIndex, uint32_t actorId) const;
+    bool invulnerable(size_t actorIndex) const;
+    // The share of a hit from source an armoured front lets through (self:setArmoredFront; 1 without one).
+    float incomingDamageMultiplier(size_t actorIndex, const GameplayWorldPoint &actorPosition, float actorYawRadians,
+        const GameplayWorldPoint &source) const;
+    // The post leash of a monster whose tactics hold a post (0 without one); it applies only to actors the map placed
+    // `immobile`.
+    float postLeashRadius(int16_t monsterId) const;
 
     const std::vector<GameplayProjectileService::ProjectileWardFacts> &projectileWards() const;
     const std::vector<ActorBehaviorWardDisplay> &wardDisplays() const;

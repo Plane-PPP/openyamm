@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1179,4 +1180,74 @@ TEST_CASE("a Carnage arrow explodes like a fireball where it strikes")
 
     // A plain arrow strikes only what it hits.
     CHECK_FALSE(strike(0.0f).areaImpact.has_value());
+}
+
+TEST_CASE("an event missile flies to its target in its flight time, passes the party and bursts there on actors")
+{
+    GameplayProjectileService service;
+    GameplayProjectileService::ProjectileSpawnRequest request = {};
+    request.sourceKind = GameplayProjectileService::ProjectileState::SourceKind::Event;
+    request.definition.speed = 6000.0f;
+    request.definition.lifetimeTicks = 64;
+    request.damage = 1500;
+    request.explosionRadius = 600.0f;
+    request.eventMissile = true;
+    request.flightSeconds = 0.15f;
+    request.targetX = 9000.0f;
+    request.targetZ = 100.0f;
+    request.sourceZ = 100.0f;
+
+    const GameplayProjectileService::ProjectileSpawnResult spawned = service.spawnProjectile(request);
+    REQUIRE(spawned.kind == GameplayProjectileService::ProjectileSpawnResult::Kind::SpawnedProjectile);
+    GameplayProjectileService::ProjectileState projectile = spawned.projectile;
+    // Whole ticks (0.15 s is 19.2 of 128): the speed fitted so the last tick ends on the target.
+    CHECK_EQ(projectile.lifetimeTicks, 20u);
+    CHECK_EQ(projectile.velocityX * 20.0f / 128.0f, doctest::Approx(9000.0f));
+    CHECK_FALSE(service.canProjectileCollideWithParty(projectile));
+
+    GameplayProjectileService::ProjectileFrameFacts facts = {};
+    facts.deltaSeconds = 1.0f / 64.0f;
+    facts.canHitParty = true;
+    facts.nonPartyProjectileDamage = 1500;
+    facts.partyPosition = {9000.0f, 0.0f, 40.0f};
+    facts.partyCollisionRadius = 64.0f;
+    facts.partyCollisionHeight = 128.0f;
+    GameplayProjectileService::ProjectileAreaImpactActorFacts near = {};
+    near.actorIndex = 0;
+    near.actorId = 7;
+    near.x = 9400.0f;
+    near.z = 0.0f;
+    near.radius = 60;
+    near.height = 200;
+    GameplayProjectileService::ProjectileAreaImpactActorFacts far = near;
+    far.actorIndex = 1;
+    far.actorId = 8;
+    far.x = 10000.0f;
+    facts.areaActors = {near, far};
+
+    std::optional<GameplayProjectileService::ProjectileFrameResult> burst;
+    for (int frame = 0; frame < 20 && !burst; ++frame)
+    {
+        GameplayProjectileService::ProjectileFrameResult result = service.updateProjectileFrame(projectile, facts);
+        if (result.expireProjectile)
+        {
+            burst = std::move(result);
+        }
+        else if (result.applyMotionEnd)
+        {
+            projectile.x = result.motion.endX;
+            projectile.y = result.motion.endY;
+            projectile.z = result.motion.endZ;
+        }
+    }
+
+    REQUIRE(burst.has_value());
+    REQUIRE(burst->areaImpact.has_value());
+    CHECK_EQ(burst->areaImpact->point.x, doctest::Approx(9000.0f));
+    CHECK_EQ(burst->areaImpact->radius, doctest::Approx(600.0f));
+    CHECK_FALSE(burst->areaImpact->impact.hitParty);
+    REQUIRE_EQ(burst->areaImpact->impact.actorHits.size(), 1u);
+    CHECK_EQ(burst->areaImpact->impact.actorHits[0].actorIndex, 0u);
+    REQUIRE(burst->fxRequest.has_value());
+    CHECK_EQ(burst->fxRequest->point.x, doctest::Approx(9000.0f));
 }

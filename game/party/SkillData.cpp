@@ -116,7 +116,7 @@ const std::array<std::string, 65> CanonicalClassNames = {
 // Skill ids are positions in this list. The 40 classic skills keep their MMerge ids (teacher topics name skills by
 // id); the technology skills are appended from FirstTechnologySkillId and never renumber the classic ones, and the
 // ruleset skills follow from FirstRulesetSkillId.
-const std::array<std::string, 48> CanonicalSkillNames = {
+const std::array<std::string, 49> CanonicalSkillNames = {
     "Staff",
     "Sword",
     "Dagger",
@@ -165,6 +165,7 @@ const std::array<std::string, 48> CanonicalSkillNames = {
     "ManaShield",
     "Enlightenment",
     "Retaliation",
+    "Cybernetics",
 };
 
 const std::vector<std::string> WeaponSheetSkillNames = {
@@ -188,7 +189,7 @@ const std::vector<std::string> MiscSheetSkillNames = {
 };
 
 const std::vector<std::string> TechnologySheetSkillNames = {
-    "EnergyGuns", "EnergyBlades", "ShieldTech", "Hacking",
+    "EnergyGuns", "EnergyBlades", "ShieldTech", "Hacking", "Cybernetics",
 };
 
 const std::unordered_map<std::string, std::string> ClassAliases = {
@@ -450,13 +451,14 @@ std::optional<uint32_t> skillIdForSkillName(const std::string &skillName)
 bool isTechnologySkill(const std::string &skillName)
 {
     const std::optional<uint32_t> skillId = skillIdForSkillName(skillName);
-    return skillId && *skillId >= FirstTechnologySkillId && *skillId < FirstRulesetSkillId;
+    return skillId
+        && ((*skillId >= FirstTechnologySkillId && *skillId < FirstRulesetSkillId) || *skillId == CyberneticsSkillId);
 }
 
 bool isRulesetSkill(const std::string &skillName)
 {
     const std::optional<uint32_t> skillId = skillIdForSkillName(skillName);
-    return skillId && *skillId >= FirstRulesetSkillId;
+    return skillId && *skillId >= FirstRulesetSkillId && *skillId < CyberneticsSkillId;
 }
 
 const std::vector<std::string> &skillSheetGroupSkillNames(SkillSheetGroup group)

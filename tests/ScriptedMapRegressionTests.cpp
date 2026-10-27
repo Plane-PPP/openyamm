@@ -724,12 +724,14 @@ public:
         size_t actorIndex,
         int damage,
         const OpenYAMM::Game::GameplayWorldPoint &source,
-        OpenYAMM::Game::ShieldAttackTier shieldTier) override
+        OpenYAMM::Game::ShieldAttackTier shieldTier,
+        const OpenYAMM::Game::ShieldHitModifiers &shieldModifiers = {}) override
     {
         (void)actorIndex;
         (void)damage;
         (void)source;
         (void)shieldTier;
+        (void)shieldModifiers;
         return false;
     }
 

@@ -6347,6 +6347,13 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
             itemSpecialDetail += (itemSpecialDetail.empty() ? std::string {} : "\n") + setDescription;
         }
 
+        // A Workshop mod fitted to it.
+        if (const WorkshopModDefinition *pMod = resolvedItemState.workshopModId != 0
+                ? context.itemTable()->workshopMod(resolvedItemState.workshopModId) : nullptr)
+        {
+            itemSpecialDetail += (itemSpecialDetail.empty() ? std::string {} : "\n") + "Mod: " + pMod->name;
+        }
+
         rulesetLines = itemRules.inspectLines(
             resolvedItemState,
             *pItemDefinition,
@@ -9911,6 +9918,50 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                     context.submitHudTexturedQuad(*slotBorder, slot->x - slot->scale, slot->y - slot->scale,
                         slot->width + 2 * slot->scale, slot->height + 2 * slot->scale);
                     context.submitHudTexturedQuad(*slotFill, slot->x, slot->y, slot->width, slot->height);
+                }
+            }
+            // The Augment row: Cybernetics opens the sockets left to right; the implants' icons fit their sockets.
+            if (pCharacter != nullptr && pCharacter->showsImplantSockets() && slotBorder && slotFill)
+            {
+                const std::optional<GameplayHudTextureHandle> closedFill =
+                    context.gameplayUiRuntime().ensureSolidHudTextureLoaded("__obsidian_implant_closed__", 0xff0a0d0bu);
+                for (size_t socket = 0; socket < pCharacter->implants.size(); ++socket)
+                {
+                    const std::string socketId = "CharacterDollImplant" + std::to_string(socket + 1) + "Slot";
+                    const std::optional<GameplayResolvedHudLayoutElement> slot =
+                        context.resolveHudLayoutElement(socketId, width, height, 0, 0);
+                    if (!slot)
+                    {
+                        continue;
+                    }
+                    const bool open = socket < pCharacter->implantSocketCount();
+                    context.submitHudTexturedQuad(*slotBorder, slot->x - slot->scale, slot->y - slot->scale,
+                        slot->width + 2 * slot->scale, slot->height + 2 * slot->scale);
+                    context.submitHudTexturedQuad(open || !closedFill ? *slotFill : *closedFill,
+                        slot->x, slot->y, slot->width, slot->height);
+                    const ItemDefinition *pImplant = pCharacter->implants[socket] != 0 && context.itemTable() != nullptr
+                        ? context.itemTable()->get(pCharacter->implants[socket]) : nullptr;
+                    const std::optional<GameplayHudTextureHandle> icon = pImplant != nullptr
+                        ? context.gameplayUiRuntime().ensureItemIconTextureLoaded(pImplant->iconName) : std::nullopt;
+                    if (icon && icon->width > 0 && icon->height > 0)
+                    {
+                        const float fit = std::min(slot->width / float(icon->width), slot->height / float(icon->height));
+                        const float iconWidth = float(icon->width) * fit;
+                        const float iconHeight = float(icon->height) * fit;
+                        const float iconX = slot->x + (slot->width - iconWidth) * 0.5f;
+                        const float iconY = slot->y + (slot->height - iconHeight) * 0.5f;
+                        context.submitHudTexturedQuad(*icon, iconX, iconY, iconWidth, iconHeight);
+                        // Right-click inspects it like any item.
+                        GameplayRenderedInspectableHudItem inspectable = {};
+                        inspectable.objectDescriptionId = pImplant->itemId;
+                        inspectable.textureName = icon->textureName;
+                        inspectable.textureUsesItemIconTransparency = true;
+                        inspectable.x = iconX;
+                        inspectable.y = iconY;
+                        inspectable.width = iconWidth;
+                        inspectable.height = iconHeight;
+                        context.addRenderedInspectableHudItem(inspectable);
+                    }
                 }
             }
             continue;

@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 133;
+constexpr uint32_t SaveVersion = 136;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -187,6 +187,15 @@ constexpr uint32_t SaveVersionGuildSchoolShelves = 131;
 constexpr uint32_t SaveVersionOutdoorProvokedActors = 132;
 // ...and may shoot back from the distance of the hit (OutdoorWorldRuntime provokedAttackReach).
 constexpr uint32_t SaveVersionOutdoorProvokedAttackReach = 133;
+// A character's implant sockets (Character::implants, Hesper).
+constexpr uint32_t SaveVersionCharacterImplants = 134;
+constexpr uint32_t SaveVersionStoppedTimers = 135;
+constexpr uint32_t SaveVersionActorKeepsHeight = 135;
+constexpr uint32_t SaveVersionBehaviorSpeed = 135;
+constexpr uint32_t SaveVersionProjectileHoming = 135;
+constexpr uint32_t SaveVersionActorDormant = 135;
+constexpr uint32_t SaveVersionActorPatrol = 136;
+constexpr uint32_t SaveVersionWorkshopMods = 136;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -1049,6 +1058,7 @@ void writeValue(BinaryWriter &writer, const InventoryItem &value)
     writeValue(writer, value.temporaryBonusRemainingSeconds);
     writeValue(writer, value.hardened);
     writeValue(writer, value.rulesetFields);
+    writeValue(writer, value.workshopModId);
 }
 
 bool readValue(BinaryReader &reader, InventoryItem &value)
@@ -1071,7 +1081,8 @@ bool readValue(BinaryReader &reader, InventoryItem &value)
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.maxCharges))
         && readValue(reader, value.temporaryBonusRemainingSeconds)
         && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened))
-        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields));
+        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields))
+        && (reader.version() < SaveVersionWorkshopMods || readValue(reader, value.workshopModId));
 }
 
 void writeValue(BinaryWriter &writer, const LloydBeacon &value)
@@ -1239,6 +1250,7 @@ void writeValue(BinaryWriter &writer, const EquippedItemRuntimeState &value)
     writeValue(writer, value.temporaryBonusRemainingSeconds);
     writeValue(writer, value.hardened);
     writeValue(writer, value.rulesetFields);
+    writeValue(writer, value.workshopModId);
 }
 
 bool readValue(BinaryReader &reader, EquippedItemRuntimeState &value)
@@ -1255,7 +1267,8 @@ bool readValue(BinaryReader &reader, EquippedItemRuntimeState &value)
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.maxCharges))
         && readValue(reader, value.temporaryBonusRemainingSeconds)
         && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened))
-        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields));
+        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields))
+        && (reader.version() < SaveVersionWorkshopMods || readValue(reader, value.workshopModId));
 }
 
 void writeValue(BinaryWriter &writer, const CharacterEquipmentRuntimeState &value)
@@ -1376,6 +1389,7 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.extraQuickSpellNames);
     writeValue(writer, value.quickItemSlots);
     writeValue(writer, value.spellbookSchool);
+    writeValue(writer, value.implants);
 }
 
 // Saves before SaveVersionWideExperience hold a character's experience in 32 bits.
@@ -1465,7 +1479,8 @@ bool readValue(BinaryReader &reader, Character &value)
         && (reader.version() < SaveVersionCharacterRulesetState || readValue(reader, value.rulesetState))
         && (reader.version() < SaveVersionExtraQuickSpells || readValue(reader, value.extraQuickSpellNames))
         && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots))
-        && (reader.version() < SaveVersionSpellbookSchool || readValue(reader, value.spellbookSchool));
+        && (reader.version() < SaveVersionSpellbookSchool || readValue(reader, value.spellbookSchool))
+        && (reader.version() < SaveVersionCharacterImplants || readValue(reader, value.implants));
 }
 
 void writeValue(BinaryWriter &writer, const PartyBuffState &value)
@@ -2173,6 +2188,42 @@ void writeValue(BinaryWriter &writer, const ActorBehaviorInstanceState &value)
     writeValue(writer, value.nextCast);
     writeValue(writer, value.aiTypeOverride);
     writeValue(writer, value.suppressFlee);
+    writeValue(writer, value.speedMultiplier);
+    writeValue(writer, value.invulnerable);
+    writeValue(writer, value.leashRadius);
+    writeValue(writer, value.rangedBand.has_value());
+    writeValue(writer, value.rangedBand.value_or(std::array<float, 2>{})[0]);
+    writeValue(writer, value.rangedBand.value_or(std::array<float, 2>{})[1]);
+    writeValue(writer, value.moveTarget.has_value());
+    writeValue(writer, value.moveTarget.value_or(GameplayWorldPoint{}).x);
+    writeValue(writer, value.moveTarget.value_or(GameplayWorldPoint{}).y);
+    writeValue(writer, value.moveTarget.value_or(GameplayWorldPoint{}).z);
+    writeValue(writer, value.armoredFront.has_value());
+    writeValue(writer, value.armoredFront.value_or(std::array<float, 2>{})[0]);
+    writeValue(writer, value.armoredFront.value_or(std::array<float, 2>{})[1]);
+}
+
+// Per-actor tactics and the armoured front a script set (save version 135).
+bool readBehaviorTactics(BinaryReader &reader, ActorBehaviorInstanceState &value)
+{
+    bool hasBand = false;
+    bool hasTarget = false;
+    bool hasFront = false;
+    std::array<float, 2> band = {};
+    GameplayWorldPoint target = {};
+    std::array<float, 2> front = {};
+    if (!readValue(reader, value.leashRadius)
+        || !readValue(reader, hasBand) || !readValue(reader, band[0]) || !readValue(reader, band[1])
+        || !readValue(reader, hasTarget) || !readValue(reader, target.x) || !readValue(reader, target.y)
+        || !readValue(reader, target.z)
+        || !readValue(reader, hasFront) || !readValue(reader, front[0]) || !readValue(reader, front[1]))
+    {
+        return false;
+    }
+    value.rangedBand = hasBand ? std::optional<std::array<float, 2>>(band) : std::nullopt;
+    value.moveTarget = hasTarget ? std::optional<GameplayWorldPoint>(target) : std::nullopt;
+    value.armoredFront = hasFront ? std::optional<std::array<float, 2>>(front) : std::nullopt;
+    return true;
 }
 
 bool readValue(BinaryReader &reader, ActorBehaviorInstanceState &value)
@@ -2195,7 +2246,10 @@ bool readValue(BinaryReader &reader, ActorBehaviorInstanceState &value)
         && readValue(reader, value.spellOverride)
         && readValue(reader, value.nextCast)
         && readValue(reader, value.aiTypeOverride)
-        && readValue(reader, value.suppressFlee);
+        && readValue(reader, value.suppressFlee)
+        && (reader.version() < SaveVersionBehaviorSpeed
+            || (readValue(reader, value.speedMultiplier) && readValue(reader, value.invulnerable)
+                && readBehaviorTactics(reader, value)));
     value.actorIndex = static_cast<size_t>(actorIndex);
     return loaded;
 }
@@ -3013,6 +3067,10 @@ void writeValue(BinaryWriter &writer, const MapDeltaActor &value)
     writeValue(writer, value.rulesetFacts);
     writeValue(writer, value.spawnedAfterFill);
     writeValue(writer, value.summonerMemberIndex);
+    writeValue(writer, value.keepsHeight);
+    writeValue(writer, value.leashRadius);
+    writeValue(writer, value.dormant);
+    writeValue(writer, value.patrolPoints);
 }
 
 bool readHitPoints(BinaryReader &reader, int32_t &value)
@@ -3103,7 +3161,11 @@ bool readValue(BinaryReader &reader, MapDeltaActor &value)
 
     return (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.rulesetFacts))
         && (reader.version() < SaveVersionActorSpawnedAfterFill || readValue(reader, value.spawnedAfterFill))
-        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex));
+        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex))
+        && (reader.version() < SaveVersionActorKeepsHeight
+            || (readValue(reader, value.keepsHeight) && readValue(reader, value.leashRadius)
+                && readValue(reader, value.dormant)))
+        && (reader.version() < SaveVersionActorPatrol || readValue(reader, value.patrolPoints));
 }
 
 void writeValue(BinaryWriter &writer, const MapDeltaSpriteObject &value)
@@ -3342,6 +3404,7 @@ void writeValue(BinaryWriter &writer, const ScriptedEventTimerState &value)
     writeValue(writer, value.initialCalendarFirePending);
     writeValue(writer, value.migratedFromLegacySave);
     writeValue(writer, value.migratedRemainingGameMinutes);
+    writeValue(writer, value.stopped);
 }
 
 bool readValue(BinaryReader &reader, ScriptedEventTimerState &value)
@@ -3352,7 +3415,8 @@ bool readValue(BinaryReader &reader, ScriptedEventTimerState &value)
         && readValue(reader, value.hasFired)
         && readValue(reader, value.initialCalendarFirePending)
         && readValue(reader, value.migratedFromLegacySave)
-        && readValue(reader, value.migratedRemainingGameMinutes);
+        && readValue(reader, value.migratedRemainingGameMinutes)
+        && (reader.version() < SaveVersionStoppedTimers || readValue(reader, value.stopped));
 }
 
 struct LegacyOutdoorTimerState
@@ -3629,6 +3693,7 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.summonerMemberIndex);
     writeValue(writer, value.provokedByParty);
     writeValue(writer, value.provokedAttackReach);
+    writeValue(writer, value.dormant);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
@@ -3786,7 +3851,8 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.rulesetFacts))
         && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex))
         && (reader.version() < SaveVersionOutdoorProvokedActors || readValue(reader, value.provokedByParty))
-        && (reader.version() < SaveVersionOutdoorProvokedAttackReach || readValue(reader, value.provokedAttackReach));
+        && (reader.version() < SaveVersionOutdoorProvokedAttackReach || readValue(reader, value.provokedAttackReach))
+        && (reader.version() < SaveVersionActorDormant || readValue(reader, value.dormant));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)
@@ -3995,6 +4061,66 @@ void writeValue(BinaryWriter &writer, const GameplayProjectileService::Projectil
     writeValue(writer, value.sectorId);
     writeValue(writer, value.isSettled);
     writeValue(writer, value.isExpired);
+    writeValue(writer, value.shieldTier);
+    writeValue(writer, value.explosionRadius);
+    writeValue(writer, value.eventMissile);
+    writeValue(writer, value.targetX);
+    writeValue(writer, value.targetY);
+    writeValue(writer, value.targetZ);
+    writeValue(writer, value.homing.has_value());
+    if (value.homing)
+    {
+        const GameplayProjectileService::ProjectileHoming &homing = *value.homing;
+        writeValue(writer, homing.targetKind);
+        writeValue(writer, static_cast<uint64_t>(homing.targetActorIndex));
+        writeValue(writer, homing.targetActorId);
+        writeValue(writer, homing.turnRadiansPerSecond);
+        writeValue(writer, homing.maxSeconds);
+        writeValue(writer, homing.expireAfter);
+        writeValue(writer, homing.speed);
+        writeValue(writer, homing.elapsedSeconds);
+        writeValue(writer, homing.lost);
+        writeValue(writer, homing.lockConeRadians);
+    }
+}
+
+// A homing missile keeps its target across a save (save version 135), with its shield tier, its explosion radius
+// and an event missile's burst point.
+bool readProjectileHoming(BinaryReader &reader, GameplayProjectileService::ProjectileState &value)
+{
+    bool hasHoming = false;
+    if (!readValue(reader, value.shieldTier)
+        || !readValue(reader, value.explosionRadius)
+        || !readValue(reader, value.eventMissile)
+        || !readValue(reader, value.targetX)
+        || !readValue(reader, value.targetY)
+        || !readValue(reader, value.targetZ)
+        || !readValue(reader, hasHoming))
+    {
+        return false;
+    }
+    if (!hasHoming)
+    {
+        return true;
+    }
+    GameplayProjectileService::ProjectileHoming homing = {};
+    uint64_t targetActorIndex = 0;
+    if (!readValue(reader, homing.targetKind)
+        || !readValue(reader, targetActorIndex)
+        || !readValue(reader, homing.targetActorId)
+        || !readValue(reader, homing.turnRadiansPerSecond)
+        || !readValue(reader, homing.maxSeconds)
+        || !readValue(reader, homing.expireAfter)
+        || !readValue(reader, homing.speed)
+        || !readValue(reader, homing.elapsedSeconds)
+        || !readValue(reader, homing.lost)
+        || !readValue(reader, homing.lockConeRadians))
+    {
+        return false;
+    }
+    homing.targetActorIndex = static_cast<size_t>(targetActorIndex);
+    value.homing = homing;
+    return true;
 }
 
 bool readValue(BinaryReader &reader, GameplayProjectileService::ProjectileState &value)
@@ -4039,7 +4165,8 @@ bool readValue(BinaryReader &reader, GameplayProjectileService::ProjectileState 
         && readValue(reader, value.lifetimeTicks)
         && (reader.version() < SaveVersionFullProjectileState || readValue(reader, value.sectorId))
         && (reader.version() < SaveVersionFullProjectileState || readValue(reader, value.isSettled))
-        && readValue(reader, value.isExpired);
+        && readValue(reader, value.isExpired)
+        && (reader.version() < SaveVersionProjectileHoming || readProjectileHoming(reader, value));
 }
 
 void writeValue(BinaryWriter &writer, const GameplayProjectileService::ProjectileImpactState &value)

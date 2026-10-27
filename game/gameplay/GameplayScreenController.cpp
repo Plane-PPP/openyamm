@@ -891,11 +891,13 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
 
         const bool shiftHeld =
             input.isScancodeHeld(SDL_SCANCODE_LSHIFT) || input.isScancodeHeld(SDL_SCANCODE_RSHIFT);
-        // The bag keys (by default 1-4) act on the inventory pages; there Shift and a number still select a member.
-        // A held bag key that acts there keeps its number from selecting a member on any frame of the press.
+        // The bag keys (by default 1-4) act on the inventory pages, with Shift or without it as the bag_number_keys
+        // setting says; the numbers otherwise select a member. A held bag key that acts there keeps its number from
+        // selecting a member on any frame of the press.
+        const bool bagKeysEnabled = shiftHeld == GameplayPartyOverlayInputController::bagKeysNeedShift(context);
         bool bagKeyTaken = false;
 
-        for (int bag = 0; bag < 4 && !shiftHeld; ++bag)
+        for (int bag = 0; bag < 4 && bagKeysEnabled; ++bag)
         {
             const GameplayButtonInputState &bagKey =
                 input.action(KeyboardAction(size_t(KeyboardAction::Bag1) + size_t(bag)));

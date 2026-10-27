@@ -41,6 +41,7 @@ class GameplaySpellService;
 class AwardTable;
 class ItemTable;
 class MergedComplexItemPictureTable;
+class MonsterProjectileTable;
 class MonsterTable;
 class MergedPotionSettingTable;
 class PotionMixingTable;
@@ -131,6 +132,7 @@ public:
     const ChestTable *chestTable() const;
     const NpcDialogTable *npcDialogTable() const;
     const MonsterTable *monsterTable() const;
+    const MonsterProjectileTable *monsterProjectileTable() const;
 
     GameplayUiController::CharacterScreenState &characterScreen() const;
     GameplayUiController::HeldInventoryItemState &heldInventoryItem() const;

@@ -32,6 +32,21 @@ TEST_CASE("creature shadow quality and LOD settings validate and persist")
     std::filesystem::remove(path);
 }
 
+TEST_CASE("MAW number keys select a member by default and the bag choice persists")
+{
+    GameSettings settings = GameSettings::createDefault();
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "openyamm-bag-number-keys.ini";
+    std::string error;
+    CHECK(menuSettingValue(settings, "bag_number_keys") == "member");
+    CHECK_FALSE(setMenuSettingValue(settings, "bag_number_keys", "shift"));
+    REQUIRE(setMenuSettingValue(settings, "bag_number_keys", "bag"));
+    REQUIRE(saveGameSettings(path, settings, error));
+    const std::optional<GameSettings> loaded = loadGameSettings(path, error);
+    REQUIRE_MESSAGE(loaded, error);
+    CHECK_EQ(loaded->bagNumberKeys, "bag");
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("menu settings validate input and preserve unrelated game configuration")
 {
     GameSettings settings = GameSettings::createDefault();

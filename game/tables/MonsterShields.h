@@ -38,6 +38,9 @@ struct ShieldGradeDefinition
     // Linear RGB of the shell drawn over the model, and its strength.
     std::array<float, 3> color = {1.0f, 0.4f, 0.8f};
     float intensity = 1.0f;
+    // Its strength while raised and untouched (rest_intensity): a faint rim; the full intensity shows on a hit, the
+    // raise and the break. Unset: the intensity throughout.
+    std::optional<float> restIntensity;
     // Regeneration from empty to full once it starts, unless the monster sets its own.
     float regenSeconds = 2.0f;
     // Names in `sounds` played when a raised shield is hit, when it breaks and when it comes back up.
@@ -112,6 +115,20 @@ struct PartyShieldRules
     float shieldBurstFraction = 0.5f;
 };
 
+// What a party weapon's tech skill adds to its hit against a shielded monster (Energy Guns and Energy Blades
+// masteries, the weapon's ShieldDamage<percent> flag): the raised shield takes shieldDamageMultiplier times its rate;
+// an exposed body takes exposedMultiplier times the world's exposed multiplier; cleave lets half the damage left after
+// a shield breaks reach the body. The defaults change nothing.
+struct ShieldHitModifiers
+{
+    float shieldDamageMultiplier = 1.0f;
+    float exposedMultiplier = 1.0f;
+    bool cleave = false;
+    // This share of the hit strikes a raised shield as Kreegan energy, the rest as its own tier (the Arc Coupler on
+    // ordinary weapons, the Lattice Resonator on spells).
+    float energyShare = 0.0f;
+};
+
 // Outcome of one hit on a monster with a shield profile.
 struct ShieldHitResolution
 {
@@ -122,6 +139,8 @@ struct ShieldHitResolution
     // A raised shield took the hit: the body takes nothing and does not react.
     bool absorbed = false;
     bool broke = false;
+    // The hit broke the shield and cleaved through (ShieldHitModifiers::cleave): bodyDamage is set, the body reacts.
+    bool cleaved = false;
 };
 
 // Energy shields of monsters, from the worlds' shields.yml (schema openyamm.shields.v1). Only monsters listed there
@@ -200,7 +219,7 @@ private:
 // takes damage x its grade's rate for the tier and the body nothing; otherwise the body takes the damage, energy
 // tiers x the exposed multiplier (nothing on an energy-immune body).
 ShieldHitResolution resolveMonsterShieldHit(const MonsterShieldTable &table, const MonsterShieldProfile &profile,
-    float currentShield, int damage, ShieldAttackTier tier);
+    float currentShield, int damage, ShieldAttackTier tier, const ShieldHitModifiers &modifiers = {});
 // The shield after deltaSeconds, given the seconds since the last damage before the step (regeneration starts once
 // they pass the profile's delay); rateMultiplier speeds it up (a shield link).
 float regenerateMonsterShield(const MonsterShieldProfile &profile, float currentShield, float secondsSinceDamage,

@@ -658,3 +658,62 @@ TEST_CASE("EffectSystem sprite systems can roll and spin their particles")
         CHECK(after.roll - before[index].roll == doctest::Approx(before[index].rollSpeed * 0.5f).epsilon(0.02));
     }
 }
+
+TEST_CASE("EffectSystem beam ribbons run straight from the effect to its beam target and vanish when it stops")
+{
+    using namespace OpenYAMM::Game;
+    std::shared_ptr<EffectDefinition> definition = std::make_shared<EffectDefinition>();
+    definition->id = "test:beam";
+    definition->durationSeconds = 30.0f;
+    EffectRibbonDefinition ribbon;
+    ribbon.componentId = 1;
+    ribbon.endSeconds = 30.0f;
+    ribbon.spriteResource = "test:sprite/noise";
+    ribbon.lifetimeSeconds = 1.0f;
+    ribbon.sampleDistance = 25.0f;
+    ribbon.width = 10.0f;
+    ribbon.jitter = 6.0f;
+    ribbon.jitterRate = 20.0f;
+    ribbon.beam = true;
+    // Width keys run along a beam: full at its start, tapering to nothing at its target.
+    ribbon.widthKeys = {{.time = 0.0f, .value = 1.0f}, {.time = 0.5f, .value = 1.0f}, {.time = 1.0f, .value = 0.0f}};
+    ribbon.colorKeys = {{.time = 0.0f, .rgb = {255, 255, 255}, .transparency = 0}};
+    definition->ribbons.push_back(ribbon);
+    EffectLibrary library;
+    std::string error;
+    REQUIRE(library.add(definition, error));
+    EffectSystem effects(&library);
+    EffectSpawnParams params;
+    params.position = {100.0f, 0.0f, 50.0f};
+    const EffectHandle handle = effects.spawn("test:beam", params);
+    REQUIRE(effects.setBeamTarget(handle, {100.0f, 400.0f, 50.0f}));
+    effects.update(1.0f / 60.0f);
+
+    REQUIRE_EQ(effects.ribbons().size(), 1);
+    const std::vector<EffectRibbonPoint> &points = effects.ribbons().front().points;
+    // 400 units in samples of at most 25.
+    REQUIRE_EQ(points.size(), 17u);
+    CHECK(points.front().position[1] == doctest::Approx(0.0f));
+    CHECK(points.back().position[1] == doctest::Approx(400.0f));
+    CHECK(points.front().jitterOffset == 0.0f);
+    CHECK(points.back().jitterOffset == 0.0f);
+    CHECK(std::any_of(points.begin(), points.end(),
+        [](const EffectRibbonPoint &point) { return point.jitterOffset != 0.0f; }));
+    CHECK(points.front().width == doctest::Approx(10.0f));
+    CHECK(points[8].width == doctest::Approx(10.0f));
+    CHECK(points[12].width == doctest::Approx(5.0f));
+    CHECK(points.back().width == doctest::Approx(0.0f));
+
+    // The target moves and the effect with it: the beam follows, no trail.
+    REQUIRE(effects.setTransform(handle, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f));
+    REQUIRE(effects.setBeamTarget(handle, {0.0f, 0.0f, 100.0f}));
+    effects.update(1.0f / 60.0f);
+    REQUIRE_EQ(effects.ribbons().size(), 1);
+    CHECK_EQ(effects.ribbons().front().points.size(), 5u);
+    CHECK(effects.ribbons().front().points.back().position[2] == doctest::Approx(100.0f));
+
+    REQUIRE(effects.stop(handle, EffectStopMode::Drain));
+    effects.update(1.0f / 60.0f);
+    effects.update(1.0f / 60.0f);
+    CHECK(effects.ribbons().empty());
+}

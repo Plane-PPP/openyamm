@@ -1,5 +1,6 @@
 #include "game/items/AlchemyBenchRuntime.h"
 
+#include "game/items/InventoryBags.h"
 #include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MergedBaseTables.h"
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -19,9 +21,52 @@ namespace
 struct ItemLocation
 {
     size_t memberIndex = 0;
+    uint8_t bag = 0;
     uint8_t gridX = 0;
     uint8_t gridY = 0;
+
+    bool operator==(const ItemLocation &) const = default;
 };
+
+int bagCountOf(const Party &party)
+{
+    return std::max(1, party.rules().items.bagCount(party));
+}
+
+// Every item in the members' bags (InventoryBags), member by member and bag by bag.
+void forEachCarriedItem(
+    const Party &party,
+    const std::function<void(const ItemLocation &, const InventoryItem &)> &visit)
+{
+    const int bagCount = bagCountOf(party);
+
+    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+    {
+        for (int bag = 0; bag < bagCount; ++bag)
+        {
+            for (const InventoryItem &item : InventoryBags::itemsInBag(party.members()[memberIndex], uint8_t(bag)))
+            {
+                visit(ItemLocation{memberIndex, uint8_t(bag), item.gridX, item.gridY}, item);
+            }
+        }
+    }
+}
+
+const InventoryItem *itemAt(const Party &party, const ItemLocation &location)
+{
+    const Character *pMember = party.member(location.memberIndex);
+    return pMember != nullptr
+        ? InventoryBags::itemInBagAt(*pMember, location.bag, location.gridX, location.gridY)
+        : nullptr;
+}
+
+InventoryItem *itemAt(Party &party, const ItemLocation &location)
+{
+    Character *pMember = party.member(location.memberIndex);
+    return pMember != nullptr
+        ? InventoryBags::itemInBagAt(*pMember, location.bag, location.gridX, location.gridY)
+        : nullptr;
+}
 
 std::optional<ItemLocation> findStrongestItem(
     const Party &party,
@@ -30,32 +75,20 @@ std::optional<ItemLocation> findStrongestItem(
 {
     std::optional<ItemLocation> best;
     uint16_t bestPower = 0;
-
-    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
-    {
-        for (const InventoryItem &item : party.members()[memberIndex].inventory)
+    forEachCarriedItem(party,
+        [&](const ItemLocation &location, const InventoryItem &item)
         {
-            if (item.objectDescriptionId != itemId)
+            if (item.objectDescriptionId != itemId || location == excluded)
             {
-                continue;
-            }
-
-            if (excluded.has_value()
-                && excluded->memberIndex == memberIndex
-                && excluded->gridX == item.gridX
-                && excluded->gridY == item.gridY)
-            {
-                continue;
+                return;
             }
 
             if (!best.has_value() || item.standardEnchantPower > bestPower)
             {
-                best = ItemLocation{memberIndex, item.gridX, item.gridY};
+                best = location;
                 bestPower = item.standardEnchantPower;
             }
-        }
-    }
-
+        });
     return best;
 }
 
@@ -251,15 +284,14 @@ std::vector<AlchemyIngredient> AlchemyBenchRuntime::collectIngredients(
     std::vector<AlchemyIngredient> ingredients;
     const AlchemistInfo alchemist = resolveAlchemist(party);
 
-    for (const Character &member : party.members())
-    {
-        for (const InventoryItem &item : member.inventory)
+    forEachCarriedItem(party,
+        [&](const ItemLocation &, const InventoryItem &item)
         {
             const std::optional<AlchemyIngredientKind> kind = ingredientKind(item.objectDescriptionId, tables);
 
             if (!kind.has_value())
             {
-                continue;
+                return;
             }
 
             const uint16_t power = ingredientPower(item, *kind, tables, alchemist);
@@ -278,8 +310,7 @@ std::vector<AlchemyIngredient> AlchemyBenchRuntime::collectIngredients(
                 ++found->count;
                 found->bestPower = std::max(found->bestPower, power);
             }
-        }
-    }
+        });
 
     const auto sortKey =
         [&tables](const AlchemyIngredient &ingredient)
@@ -570,12 +601,8 @@ AlchemyPreview AlchemyBenchRuntime::preview(
 
     const std::optional<ItemLocation> targetLocation = findStrongestItem(party, recipe.targetItemId, std::nullopt);
     const std::optional<ItemLocation> heldLocation = findStrongestItem(party, recipe.heldItemId, targetLocation);
-    const InventoryItem *pTarget = targetLocation
-        ? party.memberInventoryItem(targetLocation->memberIndex, targetLocation->gridX, targetLocation->gridY)
-        : nullptr;
-    const InventoryItem *pHeld = heldLocation
-        ? party.memberInventoryItem(heldLocation->memberIndex, heldLocation->gridX, heldLocation->gridY)
-        : nullptr;
+    const InventoryItem *pTarget = targetLocation ? itemAt(party, *targetLocation) : nullptr;
+    const InventoryItem *pHeld = heldLocation ? itemAt(party, *heldLocation) : nullptr;
 
     if (pTarget == nullptr || pHeld == nullptr)
     {
@@ -646,13 +673,16 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
     AlchemyMixOutcome outcome = {};
     const std::optional<ItemLocation> targetLocation = findStrongestItem(party, recipe.targetItemId, std::nullopt);
     const std::optional<ItemLocation> heldLocation = findStrongestItem(party, recipe.heldItemId, targetLocation);
-    Character *pHeldOwner = heldLocation ? party.member(heldLocation->memberIndex) : nullptr;
+    const int bagCount = bagCountOf(party);
     InventoryItem heldItem = {};
 
     if (!targetLocation
-        || pHeldOwner == nullptr
-        || !party.takeItemFromMemberInventoryCell(
+        || !heldLocation
+        || !InventoryBags::takeFromBag(
+            party,
             heldLocation->memberIndex,
+            heldLocation->bag,
+            bagCount,
             heldLocation->gridX,
             heldLocation->gridY,
             heldItem))
@@ -660,8 +690,8 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
         return outcome;
     }
 
-    InventoryItem *pTarget =
-        party.memberInventoryItemMutable(targetLocation->memberIndex, targetLocation->gridX, targetLocation->gridY);
+    // Looked up after the held item is out, which may move the bag's other items.
+    InventoryItem *pTarget = itemAt(party, *targetLocation);
     const AlchemistInfo alchemist = resolveAlchemist(party);
 
     if (pTarget != nullptr)
@@ -680,7 +710,9 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
 
     if (!outcome.result.handled || !outcome.result.heldItemConsumed)
     {
-        pHeldOwner->addInventoryItemAt(heldItem, heldLocation->gridX, heldLocation->gridY);
+        std::optional<InventoryItem> replaced;
+        InventoryBags::placeInBag(party, heldLocation->memberIndex, heldLocation->bag, bagCount, heldItem,
+            heldLocation->gridX, heldLocation->gridY, replaced);
         return outcome;
     }
 
@@ -697,8 +729,11 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
     if (outcome.result.targetItemRemoved)
     {
         InventoryItem removedItem = {};
-        party.takeItemFromMemberInventoryCell(
+        InventoryBags::takeFromBag(
+            party,
             targetLocation->memberIndex,
+            targetLocation->bag,
+            bagCount,
             targetLocation->gridX,
             targetLocation->gridY,
             removedItem);
@@ -709,8 +744,7 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
         const InventoryItem bottle =
             InventoryItemMixingRuntime::makeBottleItem(tables.itemTable, tables.potionSettingTable.emptyBottleItemId());
 
-        if (!party.tryAutoPlaceItemInMemberInventory(targetLocation->memberIndex, bottle)
-            && !party.tryGrantInventoryItem(bottle))
+        if (!party.tryGrantInventoryItemStartingAt(targetLocation->memberIndex, bottle))
         {
             outcome.overflowItem = bottle;
         }
@@ -835,9 +869,8 @@ AlchemyChainPlanner::AlchemyChainPlanner(
     , m_alchemistLevel(alchemist.level)
     , m_bottleItemId(tables.potionSettingTable.emptyBottleItemId())
 {
-    for (const Character &member : party.members())
-    {
-        for (const InventoryItem &item : member.inventory)
+    forEachCarriedItem(party,
+        [&](const ItemLocation &, const InventoryItem &item)
         {
             const std::optional<AlchemyIngredientKind> kind = ingredientKind(item.objectDescriptionId, tables);
 
@@ -845,8 +878,7 @@ AlchemyChainPlanner::AlchemyChainPlanner(
             {
                 m_carried.push_back({item.objectDescriptionId, ingredientPower(item, *kind, tables, alchemist)});
             }
-        }
-    }
+        });
 }
 
 bool AlchemyChainPlanner::obtain(uint32_t itemId, Stock &stock, Search &search, int depth) const

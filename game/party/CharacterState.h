@@ -143,6 +143,8 @@ struct EquippedItemRuntimeState
     uint16_t maxCharges = 0;
     float temporaryBonusRemainingSeconds = 0.0f;
     ItemRulesetFields rulesetFields;
+    // The Workshop mod fitted to it (InventoryItem::workshopModId).
+    uint16_t workshopModId = 0;
 
     bool operator==(const EquippedItemRuntimeState &) const = default;
 };

@@ -40,7 +40,15 @@ struct WeatherMapChances
     std::optional<float> rainPercent;
     std::optional<float> snowPercent;
     std::optional<float> ashPercent;
+    // The flake look its ash falls with (a flakes key, e.g. ember); unset: flakes.ash.
+    std::optional<std::string> ashLook;
+    // The daily chance of dry lightning: strikes without rain all that day.
+    std::optional<float> dryLightningPercent;
+    // Its rain's colour before the light (acid rain); unset: DefaultRainColor.
+    std::optional<std::array<float, 3>> rainColor;
 };
+
+constexpr std::array<float, 3> DefaultRainColor = {0.7f, 0.76f, 0.84f};
 
 // How one kind of falling flake looks and moves (weather.yml flakes). The defaults are the engine's snow.
 struct WeatherFlakeLook
@@ -107,6 +115,8 @@ struct WeatherRules
     WeatherFlakeLook snowFlakes = {};
     WeatherFlakeLook ashFlakes = {{0.58f, 0.56f, 0.6f}, 55.0f, {2.4f, 4.8f}, {0.85f, 0.7f}, 55.0f, 0.55f,
         {2500.0f, 12000.0f}};
+    // flakes beside snow and ash (e.g. ember): looks a map's ash_look names, each starting from the ash look.
+    std::unordered_map<std::string, WeatherFlakeLook> namedFlakes;
 
     bool loadFromYaml(const std::string &yamlText, std::string &errorMessage);
     // A named intensity level ("light", "medium", "heavy", "very_heavy"), if defined.
@@ -124,6 +134,10 @@ struct WeatherMapSettings
     // Ash is enabled by its own weather.yml map entry, independent of bolster_maps.txt.
     bool ashEnabled = false;
     float ashChancePercent = 0.0f;
+    // The map's own ash look (weather.yml ash_look); unset: the rules' ash flakes.
+    std::optional<WeatherFlakeLook> ashLook;
+    float dryLightningPercent = 0.0f;
+    std::array<float, 3> rainColor = DefaultRainColor;
 };
 
 WeatherMapSettings resolveWeatherMapSettings(const WeatherRules &rules, uint32_t mapId,
@@ -142,6 +156,8 @@ struct WeatherDayPlan
     float variationPhase = 0.0f;
     float windDirectionRadians = 0.0f;
     float calmWindSpeed = 0.0f;
+    // A day of dry lightning (weather.yml dry_lightning).
+    bool dryLightning = false;
 };
 
 // Everything the world shows of the weather at one moment. Wind is in world units per second.
@@ -153,6 +169,8 @@ struct WeatherSample
     float windX = 0.0f;
     float windY = 0.0f;
     bool storm = false;
+    // Lightning without rain (a dry-lightning day while it does not rain).
+    bool dryLightning = false;
     float wetness = 0.0f;
 };
 
@@ -172,8 +190,10 @@ WeatherSample sampleWeather(const WeatherRules &rules, const WeatherMapSettings 
 int weatherLadderState(int dryState, int stateCount, const WeatherSample &sample, float stormThreshold);
 // Continuous ladder position for MMerge fog distances, so fog thickens smoothly as rain builds.
 float weatherFogLadderPosition(int dryState, int stateCount, const WeatherSample &sample, float stormThreshold);
-// The look of falling flakes of a kind (snow or ash), or nothing for rain and dry weather.
-const WeatherFlakeLook *weatherFlakeLook(const WeatherRules &rules, PrecipitationKind kind);
+// The look of falling flakes of a kind (snow or ash, the map's own ash look when it has one), or nothing for rain and
+// dry weather.
+const WeatherFlakeLook *weatherFlakeLook(
+    const WeatherRules &rules, PrecipitationKind kind, const WeatherMapSettings *pSettings = nullptr);
 
 struct WeatherFogDistances
 {
@@ -186,5 +206,6 @@ struct WeatherFogDistances
 WeatherFogDistances weatherLadderFog(float position, int stateCount);
 // Fog closing in with falling flakes that have a haze (ash): from distant at a trace to the look's haze distances
 // at full strength. Not foggy when the sample has no haze.
-WeatherFogDistances weatherPrecipitationHaze(const WeatherRules &rules, const WeatherSample &sample);
+WeatherFogDistances weatherPrecipitationHaze(
+    const WeatherRules &rules, const WeatherSample &sample, const WeatherMapSettings *pSettings = nullptr);
 }

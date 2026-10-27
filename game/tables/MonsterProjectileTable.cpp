@@ -41,6 +41,7 @@ bool MonsterProjectileTable::loadFromRows(const std::vector<std::vector<std::str
 {
     m_entries.clear();
     m_entryIndexByNormalizedToken.clear();
+    m_partyGunByItemId.clear();
 
     for (const std::vector<std::string> &row : rows)
     {
@@ -98,7 +99,7 @@ bool MonsterProjectileTable::loadWorldYaml(const std::string &text, const std::s
             for (const auto &field : node)
             {
                 const std::string key = field.first.as<std::string>();
-                if (key != "object" && key != "impact_object" && key != "tier")
+                if (key != "object" && key != "impact_object" && key != "tier" && key != "impact_sound_id")
                 {
                     error = context + "unknown key " + key;
                     return false;
@@ -107,6 +108,7 @@ bool MonsterProjectileTable::loadWorldYaml(const std::string &text, const std::s
 
             entry.objectId = node["object"].as<int>(0);
             entry.impactObjectId = node["impact_object"].as<int>(0);
+            entry.impactSoundId = node["impact_sound_id"].as<uint32_t>(0);
 
             if (entry.objectId < int64_t(objectBegin) || entry.objectId > int64_t(objectEnd))
             {
@@ -134,10 +136,61 @@ bool MonsterProjectileTable::loadWorldYaml(const std::string &text, const std::s
             added.push_back(std::move(entry));
         }
 
+        // The party's guns name a missile of this file or one the table had.
+        std::unordered_map<uint32_t, PartyGun> addedGuns;
+
+        if (const YAML::Node party = root["party"])
+        {
+            if (!party.IsMap())
+            {
+                error = where + "party must map item ids to {missile, shot_sound_id}";
+                return false;
+            }
+
+            for (const auto &item : party)
+            {
+                const uint32_t itemId = item.first.as<uint32_t>(0);
+                const YAML::Node &node = item.second;
+                const std::string context = where + "party " + item.first.as<std::string>() + ": ";
+                const std::string token = node.IsMap() ? node["missile"].as<std::string>("") : "";
+                const std::string normalized = normalizeToken(token);
+                PartyGun gun = {};
+
+                if (itemId == 0 || token.empty())
+                {
+                    error = context + "expected an item id and {missile: <token>}";
+                    return false;
+                }
+
+                if (const auto addedIt = addedIndex.find(normalized); addedIt != addedIndex.end())
+                {
+                    gun.entryIndex = m_entries.size() + addedIt->second;
+                }
+                else if (const auto entryIt = m_entryIndexByNormalizedToken.find(normalized);
+                         entryIt != m_entryIndexByNormalizedToken.end())
+                {
+                    gun.entryIndex = entryIt->second;
+                }
+                else
+                {
+                    error = context + "unknown missile " + token;
+                    return false;
+                }
+
+                gun.shotSoundId = node["shot_sound_id"].as<uint32_t>(0);
+                addedGuns[itemId] = gun;
+            }
+        }
+
         for (MonsterProjectileEntry &entry : added)
         {
             m_entryIndexByNormalizedToken[entry.normalizedToken] = m_entries.size();
             m_entries.push_back(std::move(entry));
+        }
+
+        for (const auto &[itemId, gun] : addedGuns)
+        {
+            m_partyGunByItemId[itemId] = gun;
         }
     }
     catch (const YAML::Exception &exception)
@@ -147,6 +200,18 @@ bool MonsterProjectileTable::loadWorldYaml(const std::string &text, const std::s
     }
 
     return true;
+}
+
+std::optional<PartyGunMissile> MonsterProjectileTable::findPartyGun(uint32_t itemId) const
+{
+    const auto gunIt = m_partyGunByItemId.find(itemId);
+
+    if (gunIt == m_partyGunByItemId.end())
+    {
+        return std::nullopt;
+    }
+
+    return PartyGunMissile{&m_entries[gunIt->second.entryIndex], gunIt->second.shotSoundId};
 }
 
 const MonsterProjectileEntry *MonsterProjectileTable::findByToken(const std::string &token) const

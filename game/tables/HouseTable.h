@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <array>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -44,6 +45,8 @@ struct HouseEntry
         uint16_t standardEnchantId = 0;
         uint16_t standardEnchantPower = 0;
         uint16_t specialEnchantId = 0;
+        // Offered once the party has done this many of the world's major objectives (vendor_stock min_objectives).
+        uint16_t minObjectives = 0;
     };
 
     struct DeterministicStockPage
@@ -128,10 +131,18 @@ struct HouseEntry
     int specialStockTier = 0;
     int stockRefreshDays = 0;
     int trainingMaxLevel = 0;
+    // The most a vendor pays for an item, a per cent of its value (vendors resale_cap_percent); 100: uncapped.
+    int resaleCapPercent = 100;
     int openHour = 0;
     int closeHour = 0;
     std::string enterText;
     std::vector<std::string> offeredSkills;
+    // The skill cell said `none`: it teaches nothing, rather than its type's skills.
+    bool teachesNothing = false;
+    // A price switched by an objective (house_data cell 25, "qbit:multiplier"): once the party has the QBit, the
+    // house's price multiplier is priceAfterQBit (HouseTable::get answers with the switched entry). 0: none.
+    uint32_t priceQBit = 0;
+    float priceAfterQBit = 0.0f;
     std::vector<uint32_t> residentNpcIds;
     std::vector<TransportRoute> transportRoutes;
     std::optional<ArcomageRule> arcomageRule;
@@ -189,6 +200,9 @@ public:
     void applyMapWorlds(const MapStats &mapStats);
     std::optional<std::string> getName(uint32_t houseId) const;
     const HouseEntry *get(uint32_t houseId) const;
+    // Answers whether the party has a QBit, for the houses whose price an objective switches (HouseEntry::priceQBit).
+    // The session sets it; without one every house keeps its own price.
+    void setQuestBitQuery(std::function<bool(uint32_t)> query) const;
     const HouseEntry *resolvePackageSourceVendorId(
         const std::string &packageId,
         uint32_t sourceVendorId) const;
@@ -198,6 +212,8 @@ public:
     const std::unordered_map<uint32_t, HouseEntry> &entries() const;
 
 private:
+    mutable std::function<bool(uint32_t)> m_questBitQuery;
+    mutable std::unordered_map<uint32_t, HouseEntry> m_priceSwitchedEntries;
     bool loadAnimationRows(
         const std::vector<std::vector<std::string>> &rows,
         const std::unordered_map<uint32_t, std::string> &movieStemsByAnimationId);

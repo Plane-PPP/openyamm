@@ -84,6 +84,7 @@ add_executable(openyamm_unit_tests
     IndoorRenderRevisionTests.cpp
     InventoryEquipRegressionTests.cpp
     LegacyLuaExportTests.cpp
+    EventScriptingTests.cpp
     MapStatsRegressionTests.cpp
     MapDeltaDataTests.cpp
     MM7MechanicsRuntimeTests.cpp

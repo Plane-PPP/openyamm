@@ -15,6 +15,7 @@
 namespace OpenYAMM::Game
 {
 class ItemTable;
+class MonsterProjectileTable;
 class MonsterTable;
 class Party;
 class GameplayScreenRuntime;
@@ -111,6 +112,8 @@ public:
         const ItemTable *pItemTable = nullptr;
         const SpellTable *pSpellTable = nullptr;
         const MonsterTable *pMonsterTable = nullptr;
+        // The worlds' party guns (monster_projectiles.yml party): a listed gun fires its own missile and sound.
+        const MonsterProjectileTable *pMonsterProjectileTable = nullptr;
         const SpecialItemEnchantTable *pSpecialItemEnchantTable = nullptr;
         std::optional<size_t> directTargetActorIndex;
         std::optional<WorldPoint> directTargetHitPoint;

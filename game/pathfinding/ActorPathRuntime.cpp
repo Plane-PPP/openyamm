@@ -1,5 +1,7 @@
 #include "game/pathfinding/ActorPathRuntime.h"
 
+#include <cstdlib>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -47,7 +49,8 @@ bool directCheckObjectMatchesRequest(const ActorPathState &state, const ActorPat
         && previousObject.height == object.height
         && previousObject.stepLength == object.stepLength
         && previousObject.stepHeight == object.stepHeight
-        && previousObject.dropHeight == object.dropHeight;
+        && previousObject.dropHeight == object.dropHeight
+        && previousObject.riserHeight == object.riserHeight;
 }
 
 bool directCheckMatchesRequest(const ActorPathState &state, const ActorPathResolveRequest &request)
@@ -149,6 +152,15 @@ ActorPathRuntime::~ActorPathRuntime()
 
 void ActorPathRuntime::setWorkerCount(size_t workerCount)
 {
+    // Headless runs simulate many seconds in a few wall-clock milliseconds, so a plan on a worker would land long
+    // after the moment it was asked for (or never): they plan on the calling thread (main.cpp sets the variable).
+    static const bool synchronousPlans = std::getenv("OPENYAMM_SYNCHRONOUS_PATH_PLANS") != nullptr;
+
+    if (synchronousPlans)
+    {
+        workerCount = 0;
+    }
+
     if (workerCount == m_workers.size())
     {
         return;

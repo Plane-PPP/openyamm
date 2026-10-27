@@ -76,6 +76,12 @@ public:
     // Swings the swinging placements (chandeliers, cages) to their pose at timeSeconds, and moves the placements
     // turning into a turn_in model's pose.
     void animate(float timeSeconds);
+    // Turns a placed decoration by yawRadians about its origin from its rest pose and pulls it back `back` world units
+    // along its front (asset +z): an aimed gun and its recoil (EventRuntimeState::decorationAims).
+    void pose(size_t billboardIndex, float yawRadians, float back);
+    // Poses every billboard whose sprite override key aimed answers for (its yaw and pull-back).
+    using Aimed = std::function<bool(uint32_t spriteOverrideKey, float &yawRadians, float &back)>;
+    void poseAimed(const std::vector<DecorationBillboard> &billboards, const Aimed &aimed);
     // Billboards of wall-mounted bindings without a wall in reach or a free_model; they keep their map facing.
     const std::vector<size_t> &unmountedBillboards() const
     {
@@ -102,6 +108,9 @@ private:
         float yawOffset = 0.0f;
         float zOffset = 0.0f;
         std::array<float, 3> lodPixels = Engine::ModelLodPixels;
+        // variant: the glTF material variant (KHR_materials_variants) it draws, one GLB serving several colours;
+        // 0 is the default material.
+        uint32_t materialVariant = 0;
         // mount: wall turns the model's back (asset -z) onto the nearest wall face; free_model (its own binding,
         // drawn into its own group) stands where no wall is in reach.
         bool mountWall = false;

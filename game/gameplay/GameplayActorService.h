@@ -71,6 +71,23 @@ public:
     void bindTables(const MonsterTable *pMonsterTable, const SpellTable *pSpellTable);
     void setPartyEngagementRange(float range);
     float configuredPartyEngagementRange() const;
+    // The world's melee vertical reach (WorldActorCombatDefinition; 0: melee ignores height).
+    void setMeleeVerticalReach(float share);
+    float meleeVerticalReach() const
+    {
+        return m_meleeVerticalReach;
+    }
+    // True when a melee blow between bodies standing at these feet heights reaches across their height difference:
+    // always with no vertical reach (share 0), else when the difference is at most the reach share of the lower
+    // body's height (at least MinimumMeleeVerticalReach, so a step never stops a blow).
+    static bool meleeReachesVertically(float share, float attackerFootZ, float attackerHeight, float targetFootZ,
+        float targetHeight);
+    bool meleeReachesVertically(float attackerFootZ, float attackerHeight, float targetFootZ,
+        float targetHeight) const
+    {
+        return meleeReachesVertically(m_meleeVerticalReach, attackerFootZ, attackerHeight, targetFootZ, targetHeight);
+    }
+    static constexpr float MinimumMeleeVerticalReach = 48.0f;
     bool isBound() const;
     bool actorLooksUndead(int16_t monsterId) const;
     int16_t relationMonsterId(int16_t monsterId, uint32_t allyMonsterType) const;
@@ -144,9 +161,17 @@ public:
     int effectiveAttackHitBonus(const GameplayActorSpellEffectState &state) const;
     bool halveIncomingMissileDamage(const GameplayActorSpellEffectState &state) const;
     bool hasPainReflection(const GameplayActorSpellEffectState &state) const;
+    // pRelationOverrides: the map's evt.SetMonsterRelation rows (EventRuntimeState::monsterRelationOverrides), which
+    // replace the faction relation between the two monsters: a positive one makes the actor engage at its range, 0
+    // stops it.
     GameplayActorTargetPolicyResult resolveActorTargetPolicy(
         const GameplayActorTargetPolicyState &actor,
-        const GameplayActorTargetPolicyState &target) const;
+        const GameplayActorTargetPolicyState &target,
+        const std::unordered_map<uint32_t, int32_t> *pRelationOverrides = nullptr) const;
+    static uint32_t relationOverrideKey(uint32_t leftMonsterId, uint32_t rightMonsterId)
+    {
+        return (leftMonsterId << 16) | (rightMonsterId & 0xFFFFu);
+    }
 
     bool clearSpellEffects(
         GameplayActorSpellEffectState &state,
@@ -157,8 +182,12 @@ public:
     int effectiveArmorClass(int baseArmorClass, const GameplayActorSpellEffectState &state) const;
 
 private:
+    GameplayActorTargetPolicyResult resolveFactionTargetPolicy(
+        const GameplayActorTargetPolicyState &actor,
+        const GameplayActorTargetPolicyState &target) const;
     const MonsterTable *m_pMonsterTable = nullptr;
     const SpellTable *m_pSpellTable = nullptr;
     float m_partyEngagementRange = MaximumPartyEngagementRange;
+    float m_meleeVerticalReach = 0.0f;
 };
 }

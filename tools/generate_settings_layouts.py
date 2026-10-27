@@ -41,6 +41,8 @@ TAB_HEIGHT = 34.1333
 CONTROLS = {
     "toggle": (70.4, 32.158),
     "select": (110.9333, 23.4667),
+    # A select-sized field whose click opens a window of its own (the Rules tab's loot filter).
+    "window": (110.9333, 23.4667),
     "range": (88.5333, 16.0),
     # A button the game draws itself, the size of Controls' Configure Keyboard.
     "action": (118.6501, 20.2667),
@@ -133,7 +135,7 @@ def setting_rows(prefix, settings, measure):
         if kind == "toggle":
             control["asset"] = {"default": "hud_x2/menus/omenu_toggle_off.png",
                                 "selected": "hud_x2/menus/omenu_toggle_on.png"}
-        elif kind == "select":
+        elif kind in ("select", "window"):
             control["asset"] = {"default": "hud_x2/menus/omenu_text_field.png"}
             control["text"] = text("{" + setting["id"] + "}", "menu_lucida", "#e9dcc0", 0.71529, pad_x=6.9333)
         rows.append(control)

@@ -85,6 +85,8 @@ public:
     // Actor models (settings `actor_models`): the merged models/actors.yml of every mounted world, or only
     // overrideManifestPath when it is set. Map loads then skip the sprites of the monsters they bind.
     void setActorModels(bool enabled, const std::string &overrideManifestPath);
+    // Loads the actor model manifest (every mounted world's actors.yml) when actor models are on; a map load does it.
+    bool ensureActorModelManifest(const Engine::AssetFileSystem &assetFileSystem);
     // Null while actor models are off or before the first map load.
     const std::shared_ptr<const ActorModelManifest> &actorModelManifest() const;
     bool load(const Engine::AssetFileSystem &assetFileSystem);
@@ -269,8 +271,6 @@ private:
         const std::string &virtualPath,
         std::vector<std::vector<std::string>> &rows
     ) const;
-
-    bool ensureActorModelManifest(const Engine::AssetFileSystem &assetFileSystem);
 
     std::vector<LoadedTableSummary> m_loadedTables;
     std::string m_activeWorldId = "mm8";

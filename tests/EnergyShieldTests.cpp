@@ -33,6 +33,8 @@ grades:
   Light:
     rates: {physical: 0.5, classic_blaster: 1.0, kreegan_energy: 1.0, spell: 0.0}
     color: [1.0, 0.4, 0.7]
+    intensity: 0.7
+    rest_intensity: 0.12
     regen_seconds: 2.0
     hit_sound: shield_hit_light
     break_sound: shield_break
@@ -100,6 +102,9 @@ TEST_CASE("energy shield table loads grades, sounds and monsters within the worl
     REQUIRE(pTrooper != nullptr);
     CHECK(pTrooper->pool == 1000);
     CHECK(table.grade(*pTrooper)->name == "Light");
+    // A faint rim at rest; the full strength shows on a hit, the raise and the break. Unset: the intensity throughout.
+    CHECK(table.grade(*pTrooper)->restIntensity.value_or(0.0f) == doctest::Approx(0.12f));
+    CHECK_FALSE(table.grade(*table.find(10040))->restIntensity.has_value());
     CHECK(pTrooper->regenDelaySeconds == doctest::Approx(4.0f));
     CHECK(pTrooper->regenSeconds == doctest::Approx(2.0f));
     const MonsterShieldProfile *pDrudge = table.find(10000);
@@ -115,6 +120,11 @@ TEST_CASE("energy shield table loads grades, sounds and monsters within the worl
     CHECK_FALSE(outOfRange.loadWorldYaml(
         "schema: openyamm.shields.v1\ngrades: {}\nmonsters: {307: {}}\n", "hesper", 10000, 10999, error));
     CHECK(error.find("outside the world's monster id range") != std::string::npos);
+
+    MonsterShieldTable brighterAtRest;
+    CHECK_FALSE(brighterAtRest.loadWorldYaml("schema: openyamm.shields.v1\ngrades: {Light: {rates: {physical: 1.0}, "
+        "intensity: 0.3, rest_intensity: 0.5}}\n", "hesper", 10000, 10999, error));
+    CHECK(error.find("rest_intensity") != std::string::npos);
 
     MonsterShieldTable unknownGrade;
     CHECK_FALSE(unknownGrade.loadWorldYaml(
@@ -162,6 +172,42 @@ TEST_CASE("energy shield hits follow the grade rate table, lose overflow and exp
     hit = resolveMonsterShieldHit(table, drudge, 0.0f, 27, ShieldAttackTier::ClassicBlaster);
     CHECK_FALSE(hit.absorbed);
     CHECK(hit.bodyDamage == 41);
+}
+
+TEST_CASE("tech weapon perks: more damage to shields, more on exposed bodies, and a cleave through a breaking shield")
+{
+    const MonsterShieldTable table = loadShields();
+    const MonsterShieldProfile &trooper = *table.find(10010);
+
+    // +25 % to a raised shield.
+    ShieldHitModifiers modifiers;
+    modifiers.shieldDamageMultiplier = 1.25f;
+    ShieldHitResolution hit = resolveMonsterShieldHit(table, trooper, 1000.0f, 100, ShieldAttackTier::KreeganEnergy,
+        modifiers);
+    CHECK(hit.shieldDamage == doctest::Approx(125.0f));
+    CHECK(hit.bodyDamage == 0);
+
+    // +20 % on an exposed body: x1.5 x1.2.
+    modifiers = {};
+    modifiers.exposedMultiplier = 1.2f;
+    CHECK(resolveMonsterShieldHit(table, trooper, 0.0f, 100, ShieldAttackTier::KreeganEnergy, modifiers).bodyDamage
+        == 180);
+    CHECK(resolveMonsterShieldHit(table, trooper, 0.0f, 100, ShieldAttackTier::Physical, modifiers).bodyDamage == 100);
+
+    // Cleave: a 500 Physical hit breaks a 40-point Light shield with 80 of it (half rate); half the other 420 reach the
+    // body, which reacts. Without breaking, or without cleave, nothing reaches it.
+    modifiers = {};
+    modifiers.cleave = true;
+    hit = resolveMonsterShieldHit(table, trooper, 40.0f, 500, ShieldAttackTier::Physical, modifiers);
+    CHECK(hit.broke);
+    CHECK(hit.cleaved);
+    CHECK_FALSE(hit.absorbed);
+    CHECK(hit.shieldDamage == doctest::Approx(40.0f));
+    CHECK(hit.bodyDamage == 210);
+    hit = resolveMonsterShieldHit(table, trooper, 1000.0f, 500, ShieldAttackTier::Physical, modifiers);
+    CHECK_FALSE(hit.cleaved);
+    CHECK(hit.bodyDamage == 0);
+    CHECK(resolveMonsterShieldHit(table, trooper, 40.0f, 500, ShieldAttackTier::Physical).bodyDamage == 0);
 }
 
 TEST_CASE("energy shield regeneration waits for its delay without damage, then fills at its rate")

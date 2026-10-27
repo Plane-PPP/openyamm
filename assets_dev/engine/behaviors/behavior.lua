@@ -24,7 +24,10 @@
 --   startTimer(name, seconds) stopTimer(name) hasTimer(name)
 --   castNext{spell=, skill=, mastery=} setSpell{spell=, skill=, mastery=, chance=} clearSpell()
 --   setAiType("suicide" | "wimp" | "normal" | "aggressive" | nil) setNoFlee(enabled)
---   summon(monsterId [, count [, radius]])
+--   summon(monsterId [, count [, radius]]) summonAt(monsterId, x, y, z [, count [, spread]])
+--   blink() suspendShield([seconds]) restoreShield() leave([effect]) setSpeed(multiplier) setInvulnerable(on)
+--   qbit(id) runEvent(eventId) bearingToParty() setArmoredFront([degrees, damageMultiplier])
+--   setLeash([radius]) setRangedBand([min, max]) moveTo([x, y, z])
 
 Behavior = {}
 

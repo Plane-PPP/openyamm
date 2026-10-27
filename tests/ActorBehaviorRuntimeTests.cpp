@@ -682,7 +682,7 @@ TEST_CASE("actor behaviour catalogue reads the shield_break tactic and rejects u
     CHECK(pTrooper->shieldBreakSeconds == doctest::Approx(5.0f));
     CHECK(catalog.tacticsForMonster(10072)->shieldBreakSeconds == doctest::Approx(8.0f));
 
-    for (const char *pTactics : {"{shield_break: {react: blink}}", "{shield_break: fall_back}",
+    for (const char *pTactics : {"{shield_break: {react: teleport}}", "{shield_break: fall_back}",
              "{shield_break: {react: fall_back, max_seconds: 0}}", "{shield_break: {react: fall_back, seconds: 3}}"})
     {
         ActorBehaviorCatalog bad;
@@ -1073,4 +1073,166 @@ TEST_CASE("actor behaviour runtime leaves actors without a turret scan untouched
     runtime.applyPresentation(0, state);
     CHECK_FALSE(state.aimScanning);
     CHECK_FALSE(state.hasAimTarget);
+}
+
+TEST_CASE("actor behaviour commands: blink, shield, leave, speed, invulnerability and QBit queries")
+{
+    const ActorBehaviorCatalog catalog = makeCatalog(R"(
+        return Behavior.define{
+            onStart = function(self, s)
+                self:blink()
+                self:suspendShield(4)
+                self:restoreShield()
+                self:leave("openyamm:fx/arcane_pulse")
+                self:setSpeed(1.5)
+                self:setInvulnerable(true)
+                self:summonAt(308, 10, 20, 30, 2, 0)
+                self:say(self:qbit(5) and "qbit" or "no qbit")
+            end,
+        }
+    )");
+    ActorBehaviorRuntime runtime;
+    runtime.bind(&catalog, nullptr);
+
+    const ActorBehaviorFrameResult result = runtime.update(makeFrame(makeActor(100)));
+    using Kind = OpenYAMM::Game::ActorBehaviorActorCommand::Kind;
+    REQUIRE_EQ(result.actorCommands.size(), 4u);
+    CHECK(result.actorCommands[0].kind == Kind::Blink);
+    CHECK(result.actorCommands[1].kind == Kind::SuspendShield);
+    CHECK_EQ(result.actorCommands[1].seconds, doctest::Approx(4.0f));
+    CHECK(result.actorCommands[2].kind == Kind::RestoreShield);
+    CHECK(result.actorCommands[3].kind == Kind::Leave);
+    CHECK_EQ(result.actorCommands[3].effectId, "openyamm:fx/arcane_pulse");
+    REQUIRE_EQ(result.summons.size(), 2u);
+    CHECK_EQ(result.summons[0].position.x, doctest::Approx(10.0f));
+    CHECK_EQ(result.summons[1].position.z, doctest::Approx(30.0f));
+    CHECK(hasMessage(result, "no qbit"));
+    CHECK_EQ(runtime.speedMultiplier(0, 41), doctest::Approx(1.5f));
+    CHECK(runtime.invulnerable(0));
+
+    ActorAiFrameFacts facts = {};
+    ActorAiFacts actor = makeAiActor();
+    actor.movement.effectiveMoveSpeed = 100.0f;
+    facts.activeActors.push_back(actor);
+    runtime.applyAiFacts(facts);
+    CHECK_EQ(facts.activeActors.front().movement.effectiveMoveSpeed, doctest::Approx(150.0f));
+    CHECK_EQ(facts.activeActors.front().behavior.attackRateMultiplier, doctest::Approx(1.5f));
+}
+
+TEST_CASE("actor behaviour tactics per actor: leash, ranged band, move-to point, map events, bearing and front armour")
+{
+    const ActorBehaviorCatalog catalog = makeCatalog(R"(
+        return Behavior.define{
+            onStart = function(self, s)
+                self:setLeash(600)
+                self:setRangedBand(300, 900)
+                self:moveTo(50, 60, 0)
+                self:runEvent(41)
+                self:setArmoredFront(60, 0.25)
+                self:say(string.format("bearing %.0f", self:bearingToParty()))
+            end,
+        }
+    )");
+    ActorBehaviorRuntime runtime;
+    runtime.bind(&catalog, nullptr);
+
+    ActorBehaviorFrameFacts frame = makeFrame(makeActor(100));
+    // The actor at (1000, 0) faces north (90 degrees); the party is due west of it: 90 degrees to its left.
+    frame.actors.front().yawRadians = 1.5707964f;
+    frame.partyPosition = {0.0f, 0.0f, 0.0f};
+    const ActorBehaviorFrameResult result = runtime.update(frame);
+    CHECK(hasMessage(result, "bearing 90"));
+    REQUIRE_EQ(result.mapEvents.size(), 1u);
+    CHECK_EQ(result.mapEvents.front(), 41);
+
+    ActorAiFrameFacts facts = {};
+    facts.activeActors.push_back(makeAiActor());
+    ActorAiFacts placed = makeAiActor();
+    placed.actorIndex = 1;
+    placed.actorId = 42;
+    placed.movement.placedLeashRadius = 400.0f;
+    facts.activeActors.push_back(placed);
+    runtime.applyAiFacts(facts);
+    const ActorAiFacts &scripted = facts.activeActors[0];
+    CHECK(scripted.tactics.holdPost);
+    CHECK_EQ(scripted.tactics.postLeashRadius, doctest::Approx(600.0f));
+    CHECK_EQ(scripted.tactics.rangedMinDistance, doctest::Approx(300.0f));
+    CHECK_EQ(scripted.tactics.rangedMaxDistance, doctest::Approx(900.0f));
+    CHECK_EQ(scripted.movement.homePosition.x, doctest::Approx(50.0f));
+    CHECK(facts.activeActors[1].tactics.holdPost);
+    CHECK_EQ(facts.activeActors[1].tactics.postLeashRadius, doctest::Approx(400.0f));
+
+    // A hit from ahead (north of it) loses three quarters; one from behind does not.
+    const OpenYAMM::Game::GameplayWorldPoint actorPosition = {1000.0f, 0.0f, 0.0f};
+    CHECK_EQ(runtime.incomingDamageMultiplier(0, actorPosition, 1.5707964f, {1000.0f, 500.0f, 0.0f}),
+        doctest::Approx(0.25f));
+    CHECK_EQ(runtime.incomingDamageMultiplier(0, actorPosition, 1.5707964f, {1000.0f, -500.0f, 0.0f}),
+        doctest::Approx(1.0f));
+}
+
+TEST_CASE("a resting (dormant) actor holds still without turning to its target")
+{
+    ActorBehaviorRuntime runtime;
+    ActorAiFrameFacts facts = {};
+    ActorAiFacts actor = makeAiActor();
+    actor.movement.dormant = true;
+    facts.activeActors.push_back(actor);
+    runtime.applyAiFacts(facts);
+    CHECK(facts.activeActors.front().behavior.holdActive);
+    CHECK(facts.activeActors.front().behavior.holdKeepsFacing);
+    CHECK(facts.activeActors.front().behavior.holdAnimation == ActorAiAnimationState::Standing);
+}
+
+TEST_CASE("a patrolling actor walks its waypoints in turn as a post walks home")
+{
+    const std::vector<std::array<int32_t, 3>> points = {{0, 0, 0}, {1000, 0, 0}, {1000, 1000, 0}};
+    size_t index = 0;
+    // Far from the first waypoint it heads there; once within reach of one it heads for the next, round and round.
+    CHECK_EQ(OpenYAMM::Game::nextPatrolWaypoint(points, index, 500.0f, 500.0f).x, doctest::Approx(0.0f));
+    CHECK_EQ(OpenYAMM::Game::nextPatrolWaypoint(points, index, 20.0f, 0.0f).x, doctest::Approx(1000.0f));
+    CHECK_EQ(index, 1u);
+    CHECK_EQ(OpenYAMM::Game::nextPatrolWaypoint(points, index, 1000.0f, 50.0f).y, doctest::Approx(1000.0f));
+    CHECK_EQ(OpenYAMM::Game::nextPatrolWaypoint(points, index, 1000.0f, 1000.0f).x, doctest::Approx(0.0f));
+    CHECK_EQ(index, 0u);
+
+    ActorBehaviorRuntime runtime;
+    ActorAiFrameFacts facts = {};
+    ActorAiFacts actor = makeAiActor();
+    actor.movement.patrolTarget = OpenYAMM::Game::GameplayWorldPoint{1000.0f, 0.0f, 0.0f};
+    facts.activeActors.push_back(actor);
+    actor.movement.dormant = true;
+    facts.activeActors.push_back(actor);
+    runtime.applyAiFacts(facts);
+    CHECK(facts.activeActors[0].tactics.holdPost);
+    CHECK(facts.activeActors[0].movement.movementAllowed);
+    CHECK_FALSE(facts.activeActors[0].movement.hasHomeYaw);
+    CHECK_EQ(facts.activeActors[0].movement.homePosition.x, doctest::Approx(1000.0f));
+    // A resting one stays put.
+    CHECK_FALSE(facts.activeActors[1].tactics.holdPost);
+}
+
+TEST_CASE("shield-break climb lifts a falling-back flyer above its target")
+{
+    ActorBehaviorCatalog catalog;
+    std::string error;
+    REQUIRE_MESSAGE(loadTacticsCatalog(
+        "schema: openyamm.actorBehaviors.v1\ntactics:\n  10030: {shield_break: {react: climb, max_seconds: 5}}\n",
+        catalog, error), error);
+    ActorBehaviorRuntime runtime;
+    runtime.bind(&catalog, nullptr);
+    ActorAiFacts facts = makeAiActor();
+    facts.identity.monsterId = 10030;
+    facts.status.hostileToParty = true;
+    facts.status.shieldDownSinceBreakSeconds = 1.0f;
+    facts.target.currentKind = ActorAiTargetKind::Party;
+    ActorAiFrameFacts frame = {};
+    frame.activeActors.push_back(facts);
+    facts.status.shieldDownSinceBreakSeconds = 6.0f;
+    frame.activeActors.push_back(facts);
+    runtime.applyAiFacts(frame);
+    CHECK(frame.activeActors[0].status.forceFleeFromParty);
+    CHECK(frame.activeActors[0].status.climbAboveTarget > 0.0f);
+    // Past its seconds it fights on at its own height.
+    CHECK_FALSE(frame.activeActors[1].status.forceFleeFromParty);
+    CHECK(frame.activeActors[1].status.climbAboveTarget == 0.0f);
 }

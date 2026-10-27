@@ -29,6 +29,8 @@ struct InventoryItem
     uint16_t maxCharges = 0;
     float temporaryBonusRemainingSeconds = 0.0f;
     ItemRulesetFields rulesetFields;
+    // The Workshop mod fitted to it (a world's workshop_mods row), 0: none.
+    uint16_t workshopModId = 0;
 
     bool operator==(const InventoryItem &) const = default;
 };

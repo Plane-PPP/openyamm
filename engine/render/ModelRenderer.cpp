@@ -467,6 +467,8 @@ struct ModelRenderer::Draw
     ModelInstanceHandle instance;
     // Creature hit flash (ModelInstanceSystem::hitFlash), carried in u_modelEdge.y.
     float hitFlash = 0.0f;
+    // Creature emission multiplier (ModelInstanceSystem::emissionMultiplier).
+    float emissionMultiplier = 1.0f;
     // The instance's burn (ModelInstanceSystem::burn), null when whole.
     const ModelBurn *pBurn = nullptr;
     // The instance's energy shield shell (ModelInstanceSystem::shieldShell), null without one.
@@ -567,6 +569,13 @@ uint32_t ModelRenderer::jointPaletteRow(const Draw &draw)
         }
         if (row + rows > m_jointRowsUsed.size())
         {
+            // The search stops short of the end for multi-row skins without checking that start: the grown rows
+            // continue only the free run at the old end, never a row another skin uses.
+            row = uint32_t(m_jointRowsUsed.size());
+            while (row > 0 && m_jointRowsUsed[row - 1] == 0)
+            {
+                --row;
+            }
             const uint32_t limit = bgfx::getCaps()->limits.maxTextureSize;
             uint32_t height = std::max<uint32_t>(64, uint32_t(m_jointRowsUsed.size()));
             while (height < row + rows)
@@ -718,7 +727,7 @@ void ModelRenderer::submit(const Draw &draw, uint16_t viewId, const ModelRenderL
     const bool hasNormal = bgfx::isValid(textures.normal);
     // Single draws are creatures (skinned or morphing): their pulse scales the emission here.
     const std::array<float, 4> surface = surfaceUniform(material, textures,
-        modelCreaturePulse(material, m_creatureTimeSeconds));
+        modelCreaturePulse(material, m_creatureTimeSeconds) * draw.emissionMultiplier);
     const float pbr[4] = {material.metallic, material.roughness, material.translucency, modelSpecularUniform(material)};
     bgfx::setTexture(1, m_normalSamplerHandle, hasNormal ? textures.normal : m_whiteTextureHandle,
         samplerFlags(material.normalSampler));
@@ -2637,10 +2646,12 @@ std::vector<ModelRenderer::Draw> ModelRenderer::collectDraws(const ModelInstance
             appendMeshDraws(draws, *asset, *pResources, *pPose, nodeIndex, meshIndex, variant,
                 instances.outlineColor(handle), handle);
             const float hitFlash = instances.hitFlash(handle);
+            const float emissionMultiplier = instances.emissionMultiplier(handle);
             const ModelShieldShell *pShield = shadow ? nullptr : instances.shieldShell(handle);
             for (size_t drawIndex = firstDraw; drawIndex < draws.size(); ++drawIndex)
             {
                 draws[drawIndex].hitFlash = hitFlash;
+                draws[drawIndex].emissionMultiplier = emissionMultiplier;
                 draws[drawIndex].pBurn = pBurn;
                 draws[drawIndex].pShield = pShield;
             }
@@ -2781,11 +2792,13 @@ void ModelRenderer::render(
     if (bgfx::isValid(m_skinnedInstancedProgramHandle) && bgfx::isValid(m_staticUniformHandle) && m_skinnedInstancing)
     {
         // Skinned creatures lit only by the shared sun and their own ambient draw instanced; point-lit, outlined,
-        // hit-flashing and morphing ones keep their own draws (point lights, outline shells and flashes are per draw).
+        // hit-flashing, glow-boosted and morphing ones keep their own draws (point lights, outline shells, flashes and
+        // emission multipliers are per draw).
         std::vector<Draw> single;
         for (const Draw &draw : opaqueDraws)
         {
             const bool eligible = draw.pSkin != nullptr && draw.outlineColorAbgr == 0 && draw.hitFlash <= 0.0f
+                && draw.emissionMultiplier == 1.0f
                 && draw.pBurn == nullptr && draw.pLighting->pointCount == 0
                 && (instanced.empty() || sameSharedLighting(*instanced.front().pLighting, *draw.pLighting));
             (eligible ? instanced : single).push_back(draw);

@@ -76,6 +76,18 @@ public:
     // The effect at both ends and the sound at the arrival, queued into the world's event runtime state.
     static void queueBlinkPresentation(EventRuntimeState &eventRuntimeState, const BlinkModifier &blink,
         const std::array<float, 3> &fromCenter, const std::array<float, 3> &toCenter);
+    // The blink of a monster without the modifier that a script or the console makes blink (the modifier's defaults).
+    static const BlinkModifier &defaultBlink()
+    {
+        static const BlinkModifier blink = {};
+        return blink;
+    }
+    // Stagger rules (MonsterModifierSet::stagger): body damage the actor took, the clock their window and cooldown run
+    // on, and whether a hit may start a hit reaction now (true for a monster without the rules; a yes starts its
+    // cooldown).
+    void recordDamage(size_t actorIndex, int16_t monsterId, uint32_t actorId, int damage);
+    void tickStagger(float deltaSeconds);
+    bool allowsStagger(size_t actorIndex, int16_t monsterId, uint32_t actorId, int maxHp);
     // Blinks so far (console, tests).
     uint32_t blinkCount() const
     {
@@ -98,14 +110,24 @@ public:
         uint32_t actorId = 0;
         // Alive and free to act (not dying, stunned, paralysed, invisible or mid-attack).
         bool canAct = false;
+        // Not dying or dead.
+        bool alive = false;
+        // Hit points over maximum (frenzy's health_below).
+        float healthShare = 1.0f;
         // Hostile to the party and aware of it (not party-controlled).
         bool engagesParty = false;
+        // Hostile to the party (not party-controlled), aware of it or not: frenzy's health and shield triggers.
+        bool hostileToParty = false;
         // Feet.
         std::array<float, 3> position = {};
         // Horizontal distance between the actor's and the party's edges.
         float partyEdgeDistance = 0.0f;
         // The party's feet.
         std::array<float, 3> partyPosition = {};
+        // A post's leash (an actor placed `immobile` whose tactics hold a post): a dash stops this far from home.
+        // 0 without a post.
+        float leashRadius = 0.0f;
+        std::array<float, 3> homePosition = {};
     };
 
     enum class ChargeStepResult
@@ -142,6 +164,8 @@ public:
         std::function<bool(size_t actorIndex)> hasLineOfSightToParty;
         std::function<ChargeStepResult(size_t actorIndex, float x, float y, float maxHeightChange, float yaw)> step;
         std::function<void(const ChargeEvent &event)> handle;
+        // A frenzy's roar starts (its flash and sound).
+        std::function<void(size_t actorIndex, const FrenzyModifier &frenzy)> frenzyRoared;
     };
 
     // A charge step is at most this long (so a fast dash cannot step through a thin wall or past the party), and the
@@ -162,6 +186,12 @@ public:
     void applyChargeHolds(ActorAiFrameFacts &facts) const;
     // The actor's charge phase (Ready without a charge).
     ChargePhase chargePhase(size_t actorIndex) const;
+    // While a charger recovers from a hit with ChargeModifier::strikeSeconds: true, and the playback time of its
+    // `charge_strike` script clip.
+    bool chargeStrikeClip(size_t actorIndex, uint32_t actorId, float &clipSeconds) const;
+    // The script clip role (actors.yml `script_clips`) a modifier plays on the actor's model now and its playback
+    // time: `frenzy` in a frenzy's roar, `spent` in its spent hold, `charge_strike` after a charge's hit.
+    bool scriptedClip(size_t actorIndex, uint32_t actorId, const char *&pRole, float &clipSeconds) const;
     // Starts a charge now when the actor has the modifier (console, scenarios): the trigger band, sight and cooldown
     // are not checked. False without the modifier or while it charges already.
     bool startCharge(size_t actorIndex, int16_t monsterId, uint32_t actorId, const std::array<float, 3> &position,
@@ -187,6 +217,44 @@ public:
         // Contact always lands (stepping aside is the defence): an attack bonus past any armour roll.
         int attackBonus = 1000;
     };
+
+    // Frenzies (MonsterModifierSet::frenzy). Phases of one frenzy: the roar, the frenzy itself, then the spent hold;
+    // between frenzies the cooldown runs. A frenzy and a charge never overlap: no charge starts in the roar or the
+    // spent hold, and no frenzy starts during a charge.
+    enum class FrenzyPhase
+    {
+        Ready,
+        Roar,
+        Active,
+        Spent,
+    };
+
+    bool frenzyActive() const
+    {
+        return m_pTable != nullptr && m_pTable->hasFrenzy();
+    }
+    // Per fixed actor step, after the AI: triggers, the roar, the frenzy and the spent hold (the charges' facts).
+    void updateFrenzies(float deltaSeconds, size_t actorCount,
+        const std::function<ChargeActorFacts(size_t)> &actorFacts, const ChargeWorld &world);
+    // Before the AI: the roar and the spent hold hold the actor; a frenzy multiplies its move speed and the rate its
+    // attack recovery runs down.
+    void applyFrenzies(ActorAiFrameFacts &facts) const;
+    FrenzyPhase frenzyPhase(size_t actorIndex) const;
+    // Starts a frenzy's roar now when the actor has the modifier (console, scenarios): the triggers and the cooldown
+    // are not checked. False without the modifier, while it is in a frenzy or while it charges.
+    bool startFrenzy(size_t actorIndex, int16_t monsterId, uint32_t actorId, const ChargeWorld &world);
+    // The multiplier of the actor's move speed: the frenzy's speed_multiplier while it lasts, else 1.
+    float moveSpeedMultiplier(size_t actorIndex, uint32_t actorId) const;
+    // The multiplier of the actor's model emission: the frenzy's glow_multiplier while it lasts, else 1.
+    float emissionMultiplier(size_t actorIndex, uint32_t actorId) const;
+    // Frenzies so far (console, tests).
+    uint32_t frenzyCount() const
+    {
+        return m_frenzyCount;
+    }
+    // The roar's flash and sound, queued into the world's event runtime state.
+    static void queueFrenzyPresentation(EventRuntimeState &eventRuntimeState, const FrenzyModifier &frenzy,
+        const std::array<float, 3> &center);
 
     // A charge's hit: its fixed damage (physical), or a roll of the monster's melee attack from seed: Attack1, or
     // Attack2 when Attack1 fires a missile and Attack2 does not (a Lancer's lance thrust).
@@ -224,7 +292,34 @@ private:
     void beginWindup(ChargeEntry &entry, size_t actorIndex, const std::array<float, 3> &position,
         const std::array<float, 3> &partyPosition, const ChargeWorld &world);
     void endDash(ChargeEntry &entry, size_t actorIndex, bool hit, const ChargeWorld &world);
+    // True when (x, y) lies beyond the actor's post leash.
+    static bool beyondLeash(const ChargeActorFacts &facts, float x, float y);
 
+    struct FrenzyEntry
+    {
+        bool used = false;
+        uint32_t actorId = 0;
+        int16_t monsterId = 0;
+        const FrenzyModifier *pFrenzy = nullptr;
+        FrenzyPhase phase = FrenzyPhase::Ready;
+        float timerSeconds = 0.0f;
+        float cooldownSeconds = 0.0f;
+        float sincePeriodicSeconds = 0.0f;
+        // The health trigger fired (it fires once); its frenzy still waits to start.
+        bool healthTriggerUsed = false;
+        bool healthPending = false;
+        // A shield break asked for a frenzy, for shieldPendingSeconds more.
+        float shieldPendingSeconds = 0.0f;
+    };
+
+    FrenzyEntry *ensureFrenzy(size_t actorIndex, int16_t monsterId, uint32_t actorId);
+    const FrenzyEntry *frenzyEntry(size_t actorIndex, uint32_t actorId) const;
+    void beginRoar(FrenzyEntry &entry, size_t actorIndex, const ChargeWorld &world);
+    // True while the actor's frenzy holds it (the roar or the spent hold): no charge starts.
+    bool frenzyHolds(size_t actorIndex, uint32_t actorId) const;
+
+    std::vector<FrenzyEntry> m_frenzies;
+    uint32_t m_frenzyCount = 0;
     std::vector<ChargeEntry> m_charges;
     uint32_t m_chargeCount = 0;
     uint32_t m_chargeHitCount = 0;
@@ -249,7 +344,20 @@ private:
 
     Entry *ensure(size_t actorIndex, int16_t monsterId, uint32_t actorId);
 
+    struct StaggerEntry
+    {
+        uint32_t actorId = 0;
+        int16_t monsterId = 0;
+        float cooldownUntilSeconds = 0.0f;
+        // Damage and when it landed (the stagger clock), oldest first.
+        std::vector<std::pair<float, int>> damage;
+    };
+
+    StaggerEntry *staggerEntry(size_t actorIndex, int16_t monsterId, uint32_t actorId, const StaggerModifier *&pStagger);
+
     const MonsterModifierTable *m_pTable = nullptr;
+    std::vector<StaggerEntry> m_staggers;
+    float m_staggerClockSeconds = 0.0f;
     std::vector<Entry> m_entries;
     uint32_t m_blinkCount = 0;
 };

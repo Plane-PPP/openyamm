@@ -1,5 +1,7 @@
 #include "doctest/doctest.h"
+#include "game/items/AlchemyBenchRuntime.h"
 #include "game/items/CraftingRuntime.h"
+#include "game/items/InventoryBags.h"
 #include "game/items/ItemGenerator.h"
 #include "game/party/Party.h"
 #include "game/rules/GameRules.h"
@@ -402,6 +404,123 @@ TEST_CASE("the Workbench batches gems from the cheapest tier and combines three 
     REQUIRE_EQ(after.size(), 1u);
     CHECK_EQ(after[0].key.itemId, 1042u);
     CHECK_EQ(after[0].refs.size(), 2u);
+}
+
+TEST_CASE("the Workbench sees every bag: a target and gems in closed bags craft there (players, 2026-10-27)")
+{
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    const std::unique_ptr<MawRules> pRules = mawRules();
+    const CraftingRules &crafting = pRules->gameRules().crafting;
+    const ItemDefinition &sword = baseItem(*pRules, "Weapon");
+
+    Character member;
+    member.name = "Smith";
+    member.level = 100;
+    PartySeed seed;
+    seed.members = {member, member};
+    Party party;
+    party.setItemTable(&gameData.itemTable);
+    party.seed(seed);
+    party.setRules(&pRules->gameRules());
+    Character &smith = *party.member(0);
+    Character &helper = *party.member(1);
+    REQUIRE(InventoryBags::openBag(smith, 3, 4));
+    REQUIRE(smith.addInventoryItem(item(sword, 1, 0)));
+    REQUIRE(smith.addInventoryItem(material(1041)));
+    REQUIRE(InventoryBags::openBag(smith, 0, 4));
+    REQUIRE(InventoryBags::openBag(helper, 2, 4));
+    REQUIRE(helper.addInventoryItem(material(1041)));
+    REQUIRE(helper.addInventoryItem(material(1041)));
+    REQUIRE(InventoryBags::openBag(helper, 0, 4));
+    REQUIRE(smith.inventory.empty());
+    REQUIRE(helper.inventory.empty());
+
+    CraftingTables tables;
+    tables.pItemTable = &gameData.itemTable;
+    tables.pStandardEnchantTable = &gameData.standardItemEnchantTable;
+    tables.pSpecialEnchantTable = &gameData.specialItemEnchantTable;
+    tables.pPotionEffects = &gameData.mergedPotionSettingTable.effects();
+    const std::vector<CraftTargetEntry> targets = CraftingRuntime::collectTargets(party, tables);
+    REQUIRE_EQ(targets.size(), 1u);
+    CHECK_EQ(targets[0].ref.bag, 3);
+    const std::vector<CraftMaterialEntry> materials = CraftingRuntime::collectMaterials(party, crafting);
+    REQUIRE_EQ(materials.size(), 1u);
+    CHECK_EQ(materials[0].refs.size(), 3u);
+
+    // Tier-1 gems take Might 0 -> 6 (cap 6) in two steps; the third has nothing left to raise.
+    CraftPlan applied;
+    std::optional<InventoryItem> overflow;
+    REQUIRE(CraftingRuntime::apply(party, targets[0].ref, materials[0].key, 100, false, crafting, tables, applied,
+        overflow));
+    CHECK_EQ(applied.applications, 2u);
+    CHECK_EQ(CraftingRuntime::itemAt(party, targets[0].ref)->standardEnchantPower, 6);
+    CHECK_EQ(CraftingRuntime::collectMaterials(party, crafting)[0].refs.size(), 1u);
+    CHECK_EQ(smith.rulesetState.currentBag, 0);
+    CHECK_EQ(helper.rulesetState.currentBag, 0);
+    CHECK(smith.inventory.empty());
+    CHECK(helper.inventory.empty());
+    CHECK_EQ(InventoryBags::itemsInBag(smith, 3).size() + InventoryBags::itemsInBag(helper, 2).size(), 2u);
+
+    // Gem merges count and take the gems of every bag too.
+    REQUIRE(InventoryBags::openBag(helper, 1, 4));
+    REQUIRE(helper.addInventoryItem(material(1041)));
+    REQUIRE(helper.addInventoryItem(material(1041)));
+    REQUIRE(InventoryBags::openBag(helper, 0, 4));
+    const GemCombinePlan combine = CraftingRuntime::planCombine(party, 1041, false, crafting);
+    REQUIRE_EQ(combine.steps.size(), 1u);
+    CHECK_EQ(combine.steps[0].merges, 1u);
+    REQUIRE(CraftingRuntime::combine(party, combine, crafting, gameData.itemTable));
+    const std::vector<CraftMaterialEntry> after = CraftingRuntime::collectMaterials(party, crafting);
+    REQUIRE_EQ(after.size(), 1u);
+    CHECK_EQ(after[0].key.itemId, 1042u);
+}
+
+TEST_CASE("the Workbench's Alchemy tab mixes the ingredients of closed bags (players, 2026-10-27)")
+{
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    const std::unique_ptr<MawRules> pRules = mawRules();
+    constexpr uint32_t BottleItemId = 220;
+    constexpr uint32_t WidowsweepBerriesItemId = 200;
+
+    Character member;
+    member.name = "Alchemist";
+    member.level = 10;
+    member.skills["Alchemy"] = {"Alchemy", 4, SkillMastery::Expert};
+    PartySeed seed;
+    seed.members = {member};
+    Party party;
+    party.setItemTable(&gameData.itemTable);
+    party.seed(seed);
+    party.setRules(&pRules->gameRules());
+    Character &alchemist = *party.member(0);
+    REQUIRE(InventoryBags::openBag(alchemist, 3, 4));
+    REQUIRE(alchemist.addInventoryItem(material(BottleItemId)));
+    REQUIRE(InventoryBags::openBag(alchemist, 1, 4));
+    REQUIRE(alchemist.addInventoryItem(material(WidowsweepBerriesItemId)));
+    REQUIRE(InventoryBags::openBag(alchemist, 0, 4));
+    REQUIRE(alchemist.inventory.empty());
+
+    const AlchemyBenchTables tables{
+        gameData.itemTable,
+        gameData.potionMixingTable,
+        gameData.potionNoteTable,
+        gameData.mergedPotionSettingTable,
+        gameData.mergedReagentSettingTable};
+    const std::vector<AlchemyIngredient> ingredients = AlchemyBenchRuntime::collectIngredients(party, tables);
+    REQUIRE_EQ(ingredients.size(), 2u);
+    const AlchemyRecipe recipe{BottleItemId, WidowsweepBerriesItemId};
+    CHECK_EQ(AlchemyBenchRuntime::brewableCount(recipe, ingredients), 1u);
+
+    const AlchemyMixOutcome outcome = AlchemyBenchRuntime::mix(party, recipe, tables);
+    REQUIRE(outcome.result.success);
+    CHECK_EQ(alchemist.rulesetState.currentBag, 0);
+    CHECK(alchemist.inventory.empty());
+    CHECK(InventoryBags::itemsInBag(alchemist, 1).empty());
+    REQUIRE_EQ(InventoryBags::itemsInBag(alchemist, 3).size(), 1u);
+    CHECK_EQ(InventoryBags::itemsInBag(alchemist, 3)[0].objectDescriptionId, outcome.resultItem.objectDescriptionId);
+    CHECK_NE(outcome.resultItem.objectDescriptionId, BottleItemId);
 }
 
 TEST_CASE("MAW magic shops and alchemists stock crafting materials in place of gems")

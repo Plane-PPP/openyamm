@@ -24,7 +24,9 @@ struct AssetReadStream::Impl
 {
     ~Impl()
     {
-        if (pFile != nullptr)
+        // PHYSFS_deinit closes every open file itself: a stream outliving it (a house video when an exception unwinds
+        // the game) must not close its handle again.
+        if (pFile != nullptr && PHYSFS_isInit() != 0)
         {
             PHYSFS_close(pFile);
         }

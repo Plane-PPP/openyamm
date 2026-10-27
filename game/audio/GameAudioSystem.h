@@ -131,6 +131,9 @@ public:
     bool playSpeech(const Character &character, SpeechId speechId, uint32_t seed = 0, uint32_t speakerKey = 0);
     const SpeechReactionEntry *findSpeechReaction(SpeechId speechId) const;
     void stopSoundInstance(uint64_t instanceId);
+    // A map's ambience bed (world.yml ambience): one looping sound by name under the music, in the World group at
+    // volume (0-1); another name replaces it, an empty one stops it. Restarted on every call with a name.
+    void setAmbience(const std::string &soundName, float volume);
     // Volume of a playing instance relative to its group, so sound-volume changes still apply.
     void setSoundInstanceVolume(uint64_t instanceId, PlaybackGroup group, float volume);
     void setSoundInstancePosition(uint64_t instanceId, const WorldPosition &position);
@@ -182,6 +185,7 @@ private:
     int m_activeMusicTrack = 0;
     int m_pendingMusicTrack = 0;
     uint64_t m_activeMusicInstanceId = 0;
+    uint64_t m_ambienceInstanceId = 0;
     float m_activeMusicVolume = 0.0f;
     float m_musicFadeVelocity = 0.0f;
     bool m_backgroundMusicPaused = false;

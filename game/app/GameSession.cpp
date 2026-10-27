@@ -1,4 +1,5 @@
 #include "game/app/GameSession.h"
+#include "game/StringUtils.h"
 
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayActionController.h"
@@ -608,21 +609,51 @@ void GameSession::bindActiveWorldRuntime(IGameplayWorldRuntime *pWorldRuntime)
             {
                 refreshGenericActorNpcRoster(*pState, pWorldRuntime->gameMinutes());
             }
-            refreshMercenaryRecruitmentForCurrentMap(
-                *pMap, *pParty, *pState, pWorldRuntime->gameMinutes(),
-                MercenaryRecruitmentTables{
-                    .pHouseTable = &data().houseTable(),
-                    .pNpcNameTable = &data().mergedNpcNameTable(),
-                    .pCharacterSelectionTable = &data().mergedCharacterSelectionTable(),
-                    .pCharacterDollTable = &data().characterDollTable(),
-                    .pClassSkillTable = &data().classSkillTable(),
-                    .pClassMultiplierTable = &data().classMultiplierTable(),
-                    .pRaceStartingStatsTable = &data().raceStartingStatsTable(),
-                    .pItemTable = &data().itemTable(),
-                    .pStandardItemEnchantTable = &data().standardItemEnchantTable(),
-                    .pSpecialItemEnchantTable = &data().specialItemEnchantTable(),
-                    .pSpellTable = &data().spellTable(),
-                });
+            // House prices that an objective switches read the active party's QBits.
+            data().houseTable().setQuestBitQuery([this](uint32_t qbit)
+            {
+                const Party *pActiveParty =
+                    m_pActiveWorldRuntime != nullptr ? m_pActiveWorldRuntime->party() : nullptr;
+                return pActiveParty != nullptr && pActiveParty->hasQuestBit(qbit);
+            });
+            const auto mapHum = m_worldHum.mapPercents.find(toLowerCopy(m_currentMapFileName));
+            pParty->setSpellField(m_worldHum.qbits, m_worldHum.percents,
+                mapHum != m_worldHum.mapPercents.end() ? std::optional<int>(mapHum->second) : std::nullopt);
+            const auto mapBurn = m_worldFloorBurn.mapTypes.find(toLowerCopy(m_currentMapFileName));
+            pParty->setFloorBurn(GameMechanics::parseCombatDamageType(
+                mapBurn != m_worldFloorBurn.mapTypes.end() ? mapBurn->second : m_worldFloorBurn.type),
+                m_worldFloorBurn.resisted);
+            pParty->setObjectiveQBits(m_worldObjectiveQBits);
+
+            if (m_tavernHirelings)
+            {
+                refreshMercenaryRecruitmentForCurrentMap(
+                    *pMap, *pParty, *pState, pWorldRuntime->gameMinutes(),
+                    MercenaryRecruitmentTables{
+                        .pHouseTable = &data().houseTable(),
+                        .pNpcNameTable = &data().mergedNpcNameTable(),
+                        .pCharacterSelectionTable = &data().mergedCharacterSelectionTable(),
+                        .pCharacterDollTable = &data().characterDollTable(),
+                        .pClassSkillTable = &data().classSkillTable(),
+                        .pClassMultiplierTable = &data().classMultiplierTable(),
+                        .pRaceStartingStatsTable = &data().raceStartingStatsTable(),
+                        .pItemTable = &data().itemTable(),
+                        .pStandardItemEnchantTable = &data().standardItemEnchantTable(),
+                        .pSpecialItemEnchantTable = &data().specialItemEnchantTable(),
+                        .pSpellTable = &data().spellTable(),
+                    });
+            }
+            else
+            {
+                // A world without tavern hirelings: none seated, and none kept from an older save.
+                for (const auto &[npcId, recruit] : pState->generatedMercenaryRecruitsByNpcId)
+                {
+                    pState->npcHouseOverrides.erase(npcId);
+                    pParty->clearNpcHouseOverride(npcId);
+                }
+
+                pState->generatedMercenaryRecruitsByNpcId.clear();
+            }
         }
     }
     m_mm9QuestMarkerCache.clear();

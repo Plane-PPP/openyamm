@@ -1375,7 +1375,9 @@ ActorEngagementState resolveActorEngagement(
     result.shouldEngageTarget = result.hasCombatTarget && combatTarget.canSense && !invisiblePartyTarget;
     result.inMeleeRange =
         combatTarget.edgeDistance <= meleeRangeForCombatTarget(result.targetIsActor)
-        && combatTarget.attackLineOfSight;
+        && combatTarget.attackLineOfSight
+        && (!result.targetIsParty || GameplayActorService::meleeReachesVertically(frame.meleeVerticalReach,
+            actor.movement.position.z, float(actor.stats.height), frame.party.position.z, frame.party.collisionHeight));
 
     if (result.targetIsActor)
     {
@@ -1931,7 +1933,8 @@ ActorFrameTimerAging ageActorFrameTimers(const ActorAiFacts &actor, const ActorA
     const bool attacking = actor.runtime.motionState == ActorAiMotionState::Attacking;
 
     result.idleDecisionSeconds = std::max(0.0f, actor.runtime.idleDecisionSeconds - deltaSeconds);
-    result.attackCooldownSeconds = std::max(0.0f, actor.runtime.attackCooldownSeconds - recoveryStepSeconds);
+    result.attackCooldownSeconds = std::max(0.0f,
+        actor.runtime.attackCooldownSeconds - recoveryStepSeconds * actor.behavior.attackRateMultiplier);
     result.actionSeconds = std::max(
         0.0f,
         actor.runtime.actionSeconds - (attacking ? recoveryStepSeconds : deltaSeconds));
@@ -2506,7 +2509,8 @@ void applyActiveMovementCommit(
 
     if (actor.stats.canFly)
     {
-        const float verticalTargetDelta = movementTargetPosition.z - actor.world.targetZ;
+        const float verticalTargetDelta =
+            movementTargetPosition.z + actor.status.climbAboveTarget - actor.world.targetZ;
         const float horizontalDistance =
             std::sqrt(
                 (movementTargetPosition.x - actor.movement.position.x)
@@ -4353,7 +4357,8 @@ ActorAiUpdate AI_ScriptedHold(
         ai.setAnimationTimeTicks(0.0f);
     }
 
-    if (actor.target.currentKind != ActorAiTargetKind::None && actor.target.currentCanSense)
+    if (!actor.behavior.holdKeepsFacing && actor.target.currentKind != ActorAiTargetKind::None
+        && actor.target.currentCanSense)
     {
         const float dx = actor.target.currentPosition.x - actor.movement.position.x;
         const float dy = actor.target.currentPosition.y - actor.movement.position.y;

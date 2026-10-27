@@ -173,10 +173,14 @@ public:
         const Character &caster,
         const SpellTable &spellTable,
         uint32_t spellId);
+    // Whether a quick or attack cast of this spell on a member picks its own target (quickCastCharacterTarget): the
+    // heals, cures and revivals. A buff on one member asks for its target.
+    static bool hasQuickCastCharacterTarget(uint32_t spellId);
     // The member a quick or attack spell on a member targets: the dead for Raise Dead and Resurrection, the
     // petrified for Stone to Flesh; for a heal the lowest HP share among members at or below a third of their
-    // maximum, else the one who gains the most from this cast (ties to the lowest share); a cure's condition; for
-    // the rest the wounded member with the fewest HP. Nothing when nobody fits.
+    // maximum, else the one who gains the most from this cast (ties to the lowest share), else, nobody wounded, a
+    // member with the condition it cures (MAW's Greater Heal and Remove Curse); a cure's condition; for the rest the
+    // wounded member with the fewest HP. Nothing when nobody fits.
     static std::optional<size_t> quickCastCharacterTarget(
         const Party &party,
         size_t casterIndex,

@@ -132,6 +132,8 @@ struct GameplayChargeCounts
     uint32_t started = 0;
     uint32_t hits = 0;
     uint32_t misses = 0;
+    // Frenzies (MonsterModifierSet::frenzy) started so far.
+    uint32_t frenzies = 0;
 };
 
 enum class ActorTurnBasedMode : uint8_t
@@ -213,6 +215,8 @@ struct GameplayRuntimeActorState
     float scriptedClipSeconds = 0.0f;
     // Hit flash mixed over the sprite or model (GameplayActorHitFeedback), 0 when none.
     float hitFlash = 0.0f;
+    // Multiplier of the model's emission (a frenzy's glow, GameplayActorModifiers), 1 when none.
+    float emissionMultiplier = 1.0f;
     // Energy shield (GameplayActorShields); `present` is false for every monster without a shield profile.
     GameplayActorShieldView shield;
     // The target an actor with tactics is engaging (ActorBehaviorRuntime; its attack aim point), for a model whose
@@ -250,6 +254,9 @@ enum class GameplayActorControlMode : uint8_t
     ControlUndead = 4,
     Reanimated = 5,
 };
+
+// How long evt.TurnActor's "for good" lasts: a control that never runs out in play (about thirty years).
+constexpr float TurnedForGoodSeconds = 1.0e9f;
 
 // A monster that fights for the party for good (MAW's Ally 9999): a summon, controlled undead, the reanimated. A
 // charmed or berserk monster is only borrowed.
@@ -576,11 +583,14 @@ struct GameplayPartyAttackProjectileRequest
     size_t sourcePartyMemberIndex = 0;
     uint32_t objectId = 0;
     uint32_t impactObjectId = 0;
+    // Its impact's sound (a party gun's world missile), 0: the object's own.
+    uint32_t impactSoundId = 0;
     int damage = 0;
     int attackBonus = 0;
     bool useActorHitChance = false;
     CombatDamageType damageType = CombatDamageType::Physical;
     ShieldAttackTier shieldTier = ShieldAttackTier::Physical;
+    ShieldHitModifiers shieldModifiers;
     // Resisted by the lower of the monster's physical and fire resistance (MAW's Grandmaster fire arrows).
     bool weakerOfPhysicalAndFire = false;
     // The radius the missile's damage reaches around its impact (Carnage arrows); 0 strikes only what it hits.
@@ -590,6 +600,8 @@ struct GameplayPartyAttackProjectileRequest
     bool turnBasedPendingAction = false;
     // The actor the shot was aimed at, for rules whose missiles home (MAW).
     std::optional<size_t> targetActorIndex;
+    // Its shots home (CharacterAttackResult::homing).
+    bool homing = false;
 };
 
 struct GameplayPartyAttackFallbackQuery
@@ -998,6 +1010,19 @@ public:
         (void)actorIndex;
         return false;
     }
+    // An actor script's self:suspendShield / self:restoreShield: its energy shield down without regeneration for the
+    // seconds (negative: until restored), or regenerating again. False without a shield.
+    virtual bool suspendActorShield(size_t actorIndex, float seconds)
+    {
+        (void)actorIndex;
+        (void)seconds;
+        return false;
+    }
+    virtual bool restoreActorShield(size_t actorIndex)
+    {
+        (void)actorIndex;
+        return false;
+    }
     // Swaps the places of a living actor and another one, or the party without one (MAW's Swapper bosses); the
     // actors keep their homes. False where the world cannot.
     virtual bool swapActorPlaces(size_t actorIndex, std::optional<size_t> otherActorIndex)
@@ -1064,6 +1089,13 @@ public:
     // Starts the actor's charge at the party now (its wind-up, then the dash), regardless of its trigger band, sight
     // and cooldown; false without the charge modifier or while it charges already.
     virtual bool chargeActor(size_t actorIndex)
+    {
+        (void)actorIndex;
+        return false;
+    }
+    // Starts the actor's frenzy now (its roar, then the frenzy), regardless of its triggers and cooldown; false
+    // without the frenzy modifier, while it is in a frenzy or while it charges.
+    virtual bool frenzyActor(size_t actorIndex)
     {
         (void)actorIndex;
         return false;
@@ -1156,12 +1188,14 @@ public:
         (void)query;
         return std::nullopt;
     }
-    // shieldTier: what the blow is to an energy shield (GameplayActorShields).
+    // shieldTier: what the blow is to an energy shield (GameplayActorShields); shieldModifiers: what the weapon's tech
+    // skill adds to it.
     virtual bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
         const GameplayWorldPoint &source,
-        ShieldAttackTier shieldTier) = 0;
+        ShieldAttackTier shieldTier,
+        const ShieldHitModifiers &shieldModifiers = {}) = 0;
     virtual bool applyPartyAttackMeleeBModelDamage(size_t bModelIndex, int damage)
     {
         (void)bModelIndex;

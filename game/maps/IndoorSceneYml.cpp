@@ -132,6 +132,36 @@ bool parsePositionNode(
     return false;
 }
 
+// A placed actor's patrol (scene patrol): a sequence of [x, y, z] waypoints; absent is none.
+bool parsePatrolNode(const YAML::Node &node, std::vector<std::array<int32_t, 3>> &points, std::string &errorMessage)
+{
+    points.clear();
+
+    if (!node)
+    {
+        return true;
+    }
+
+    if (!node.IsSequence())
+    {
+        errorMessage = "patrol must be a list of [x, y, z] waypoints";
+        return false;
+    }
+
+    for (const YAML::Node &point : node)
+    {
+        if (!point.IsSequence() || point.size() != 3)
+        {
+            errorMessage = "patrol must be a list of [x, y, z] waypoints";
+            return false;
+        }
+
+        points.push_back({point[0].as<int32_t>(), point[1].as<int32_t>(), point[2].as<int32_t>()});
+    }
+
+    return true;
+}
+
 bool parseArenaDefinition(
     const YAML::Node &rootNode,
     std::optional<MapArenaDefinition> &definition,
@@ -1069,6 +1099,10 @@ std::optional<IndoorSceneData> IndoorSceneYmlLoader::loadFromText(
             || !readScalarNode(actorNode, "mm9_guard", actor.mm9Guard, errorMessage, false)
             || !readScalarNode(actorNode, "initial_yaw_units", actor.initialYawUnits, errorMessage, false)
             || !readScalarNode(actorNode, "immobile", actor.immobile, errorMessage, false)
+            || !readScalarNode(actorNode, "leash_radius", actor.leashRadius, errorMessage, false)
+            || !readScalarNode(actorNode, "dormant", actor.dormant, errorMessage, false)
+            || !parsePatrolNode(actorNode["patrol"], actor.patrolPoints, errorMessage)
+            || !readScalarNode(actorNode, "keeps_height", actor.keepsHeight, errorMessage, false)
             || !readScalarNode(actorNode, "attributes", actor.attributes, errorMessage)
             || !readScalarNode(actorNode, "hp", actor.hp, errorMessage)
             || !readScalarNode(actorNode, "hostility_type", actor.hostilityType, errorMessage)

@@ -2772,6 +2772,8 @@ Character buildFreshCreatedCharacter(
     character.playerBits.clear();
     character.npcs2 = 0;
     character.merchantBonus = 0;
+    character.glamourPower = 0;
+    character.glamourMastery = SkillMastery::None;
     character.weaponEnchantmentDamageBonus = 0;
     character.vampiricHealFraction = 0.0f;
     character.physicalAttackDisabled = false;
@@ -3909,7 +3911,8 @@ void GameApplication::registerDebugConsoleCommands()
         .usage = "actor count <id> [ids...] | actor spawn <id> [count] [x y z] [group|friendly|boss]"
             " | actor kill <radius>"
             " | actor behavior [<index> <behavior-id>] | actor damage <index|last> <amount> [tier]"
-            " | actor shield <index|last> [points] | actor blink <index|last> | actor charge <index|last>",
+            " | actor shield <index|last> [points] | actor blink <index|last> | actor charge <index|last>"
+            " | actor frenzy <index|last>",
         .callback = [this, activeGameplayWorld, commandResult](const DebugConsole::CommandContext &context)
         {
             if (!context.args.empty() && toLowerCopy(context.args[0]) == "spawn")
@@ -3991,6 +3994,18 @@ void GameApplication::registerDebugConsoleCommands()
                     : parseInt32Argument(context.args[1]);
                 const bool charged = parsedIndex && *parsedIndex >= 0 && pWorld->chargeActor(size_t(*parsedIndex));
                 return commandResult(charged, charged ? "Charging." : "No charge (no charge modifier, or charging).");
+            }
+            if (context.args.size() == 2 && toLowerCopy(context.args[0]) == "frenzy")
+            {
+                // A frenzy now, as the actor's frenzy modifier would (MonsterModifiers), for captures and checks.
+                IGameplayWorldRuntime *pWorld = activeGameplayWorld();
+                const bool last = toLowerCopy(context.args[1]) == "last";
+                const std::optional<int32_t> parsedIndex = pWorld == nullptr ? std::nullopt : last
+                    ? std::optional<int32_t>(int32_t(pWorld->mapActorCount()) - 1)
+                    : parseInt32Argument(context.args[1]);
+                const bool frenzied = parsedIndex && *parsedIndex >= 0 && pWorld->frenzyActor(size_t(*parsedIndex));
+                return commandResult(frenzied,
+                    frenzied ? "Frenzy." : "No frenzy (no frenzy modifier, in a frenzy, or charging).");
             }
             if ((context.args.size() == 2 || context.args.size() == 3) && toLowerCopy(context.args[0]) == "shield")
             {
@@ -7998,6 +8013,7 @@ bool GameApplication::activateWorldForMap(const MapStatsEntry &map)
 
     m_config.activeWorldId = targetWorldId;
     m_activeWorldManifest = std::move(targetManifest);
+    m_mapMusicAreas = nullptr;
     m_gameDataLoader.setActiveWorldId(targetWorldId);
     m_gameDataLoader.setInitialMapFileName(m_activeWorldManifest.start.mapFileName);
     return true;
@@ -8153,6 +8169,11 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
         actorAwareness.declared
             ? actorAwareness.partyEngagementRange
             : GameplayActorService::MaximumPartyEngagementRange);
+    m_gameSession.gameplayActorService().setMeleeVerticalReach(m_activeWorldManifest.actorCombat.meleeVerticalReach);
+    m_gameSession.setTavernHirelings(m_activeWorldManifest.tavernHirelings);
+    m_gameSession.setWorldHum(m_activeWorldManifest.hum);
+    m_gameSession.setWorldFloorBurn(m_activeWorldManifest.floorBurn);
+    m_gameSession.setWorldObjectiveQBits(m_activeWorldManifest.objectiveQBits);
 
     if (selectedMap->outdoorMapData)
     {
@@ -8368,6 +8389,7 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
         timingLogger.stage("outdoor app mode set");
 
         m_gameAudioSystem.setBackgroundMusicTrack(selectedMap->map.redbookTrack);
+        startMapAmbienceAndMusic(selectedMap->map.fileName, selectedMap->map.redbookTrack);
         timingLogger.stage("outdoor background music set");
         applyCurrentSettingsToActiveRuntime();
         timingLogger.stage("outdoor settings applied");
@@ -8425,6 +8447,7 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
         m_gameSession.setCurrentMapFileName(selectedMap->map.fileName);
         m_screenManager.setCurrentMode(AppMode::GameplayIndoor);
         m_gameAudioSystem.setBackgroundMusicTrack(selectedMap->map.redbookTrack);
+        startMapAmbienceAndMusic(selectedMap->map.fileName, selectedMap->map.redbookTrack);
         applyCurrentSettingsToActiveRuntime();
         Party &party = ensureSessionPartyState();
         const SpriteFrameTable *pIndoorActorSpriteFrameTable =
@@ -8591,6 +8614,7 @@ bool GameApplication::initializeSelectedMapRuntime(bool initializeView)
         timingLogger.stage("indoor gameplay sounds preloaded");
 
         pIndoorSceneRuntime->partyRuntime().setMovementSpeedMultiplier(m_settings.movementSpeedMultiplier);
+        pIndoorSceneRuntime->partyRuntime().setFaceWadeSpeeds(selectedMap->indoorFaceWadeSpeeds);
         pIndoorSceneRuntime->partyRuntime().setAlwaysRunEnabled(m_settings.alwaysRun);
         pIndoorSceneRuntime->partyRuntime().setCollisionTraceEnabled(
             m_settings.collisionTrace,
@@ -8902,6 +8926,131 @@ bool GameApplication::loadCurrentSessionMap(
     return true;
 }
 
+void GameApplication::syncActorSounds(IGameplayWorldRuntime &world)
+{
+    const MonsterTable &monsterTable = m_gameSession.data().monsterTable();
+
+    // A new map (a new runtime): its actors' ids start over.
+    if (m_pActorSoundWorld != &world)
+    {
+        for (const auto &[actorId, instanceId] : m_actorLoopSounds)
+        {
+            m_gameAudioSystem.stopSoundInstance(instanceId);
+        }
+
+        m_actorLoopSounds.clear();
+        m_actorAwareStates.clear();
+        m_pActorSoundWorld = &world;
+    }
+
+    if (!monsterTable.modifiers().hasSounds())
+    {
+        return;
+    }
+
+    std::unordered_set<uint32_t> looping;
+
+    for (size_t actorIndex = 0; actorIndex < world.mapActorCount(); ++actorIndex)
+    {
+        GameplayRuntimeActorState actor = {};
+        const MonsterModifierSet *pModifiers = world.actorRuntimeState(actorIndex, actor)
+            ? monsterTable.findModifiers(actor.monsterId) : nullptr;
+
+        if (pModifiers == nullptr || !pModifiers->sounds || actor.isDead || actor.isInvisible)
+        {
+            continue;
+        }
+
+        const ActorSoundsModifier &sounds = *pModifiers->sounds;
+        const GameAudioSystem::WorldPosition position = {actor.preciseX, actor.preciseY, actor.preciseZ + 64.0f};
+        const bool aware = actor.hasDetectedParty && actor.hostileToParty;
+        bool &wasAware = m_actorAwareStates[actor.actorId];
+
+        if (aware && !wasAware && !sounds.aware.empty())
+        {
+            m_gameAudioSystem.playSoundInstanceByName(sounds.aware, GameAudioSystem::PlaybackGroup::World,
+                SoundScope::World, position, false);
+        }
+
+        wasAware = aware;
+        const bool moving = actor.animationState == ActorAiAnimationState::Walking;
+
+        if (sounds.loop.empty() || !(moving || sounds.loopAlways))
+        {
+            continue;
+        }
+
+        looping.insert(actor.actorId);
+        const auto playing = m_actorLoopSounds.find(actor.actorId);
+
+        if (playing != m_actorLoopSounds.end())
+        {
+            m_gameAudioSystem.setSoundInstancePosition(playing->second, position);
+            continue;
+        }
+
+        const uint64_t instanceId = m_gameAudioSystem.playSoundInstanceByName(sounds.loop,
+            GameAudioSystem::PlaybackGroup::World, SoundScope::World, position, true);
+
+        if (instanceId != 0)
+        {
+            m_gameAudioSystem.setSoundInstanceVolume(instanceId, GameAudioSystem::PlaybackGroup::World,
+                sounds.loopVolume);
+            m_actorLoopSounds[actor.actorId] = instanceId;
+        }
+    }
+
+    for (auto playing = m_actorLoopSounds.begin(); playing != m_actorLoopSounds.end();)
+    {
+        if (looping.contains(playing->first))
+        {
+            ++playing;
+            continue;
+        }
+
+        m_gameAudioSystem.stopSoundInstance(playing->second);
+        playing = m_actorLoopSounds.erase(playing);
+    }
+}
+
+void GameApplication::startMapAmbienceAndMusic(const std::string &mapFileName, int mapMusicTrack)
+{
+    const std::string map = toLowerCopy(mapFileName);
+    m_pActorSoundWorld = nullptr;
+    const auto ambience = m_activeWorldManifest.ambience.find(map);
+    m_gameAudioSystem.setAmbience(ambience != m_activeWorldManifest.ambience.end() ? ambience->second : std::string(),
+        m_activeWorldManifest.ambienceVolume);
+    const auto areas = m_activeWorldManifest.musicAreas.find(map);
+    m_mapMusicAreas = areas != m_activeWorldManifest.musicAreas.end() ? &areas->second : nullptr;
+    m_mapMusicTrack = mapMusicTrack;
+    m_areaMusicTrack = mapMusicTrack;
+}
+
+void GameApplication::updateMusicArea(float partyX, float partyY)
+{
+    if (m_mapMusicAreas == nullptr)
+    {
+        return;
+    }
+
+    int track = m_mapMusicTrack;
+
+    for (const WorldManifest::MusicArea &area : *m_mapMusicAreas)
+    {
+        if (partyX >= area.rect[0] && partyX <= area.rect[2] && partyY >= area.rect[1] && partyY <= area.rect[3])
+        {
+            track = area.track;
+            break;
+        }
+    }
+
+    if (track != m_areaMusicTrack)
+    {
+        m_areaMusicTrack = track;
+        m_gameAudioSystem.setBackgroundMusicTrack(track);
+    }
+}
+
 void GameApplication::beginLoadingOverlay(LoadingOverlayScreen::Presentation presentation)
 {
     setGameplayProfilingEnabled(false);
@@ -8941,8 +9090,12 @@ void GameApplication::beginLoadingOverlay(LoadingOverlayScreen::Presentation pre
     {
         std::random_device randomDevice;
         std::mt19937 rng(randomDevice());
-        const int backgroundIndex = std::uniform_int_distribution<int>(1, LoadingOverlayBackgroundCount)(rng);
-        m_loadingOverlayBackgroundTextureName = "loading" + std::to_string(backgroundIndex);
+        // The world's own pages (world.yml loadingScreens), else the engine's.
+        const std::vector<std::string> &worldPages = m_activeWorldManifest.loadingScreens;
+        const int backgroundIndex = std::uniform_int_distribution<int>(
+            1, worldPages.empty() ? LoadingOverlayBackgroundCount : int(worldPages.size()))(rng);
+        m_loadingOverlayBackgroundTextureName = worldPages.empty()
+            ? "loading" + std::to_string(backgroundIndex) : worldPages[size_t(backgroundIndex - 1)];
     }
     else
     {
@@ -11480,6 +11633,13 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
         // Before the models: a corpse whose body is gone has no actor model to update.
         worldFx.syncCorpseSatchels(*pWorldRuntime, gameplayWorldPaused ? 0.0f : scaledGameplayDeltaSeconds);
         worldFx.syncShieldDomes(*pWorldRuntime, gameplayWorldPaused ? 0.0f : scaledGameplayDeltaSeconds);
+        worldFx.syncBeams(*pWorldRuntime, gameplayWorldPaused ? 0.0f : scaledGameplayDeltaSeconds);
+        if (EventRuntimeState *pEvents = pWorldRuntime->eventRuntimeState())
+        {
+            advanceDecorationAims(*pEvents, gameplayWorldPaused ? 0.0f : scaledGameplayDeltaSeconds);
+        }
+        updateMusicArea(pWorldRuntime->partyX(), pWorldRuntime->partyY());
+        syncActorSounds(*pWorldRuntime);
         if (!syncActorModels(*pWorldRuntime, gameplayWorldPaused ? 0.0f : scaledGameplayDeltaSeconds,
                 scaledGameplayDeltaSeconds))
         {

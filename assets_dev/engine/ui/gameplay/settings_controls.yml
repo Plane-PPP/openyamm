@@ -424,7 +424,7 @@ elements:
     - id: SettingsControlsKeyboardButton
       anchor: top_left
       offset_x: 0.0
-      offset_y: 301.7434
+      offset_y: 382.0522
       width: 118.6501
       height: 20.2667
       z_index: 10
@@ -475,6 +475,23 @@ elements:
       interactive: false
       text:
         value: Movement
+        font: fondamento
+        color: '#e0c990'
+        align_x: left
+        align_y: middle
+        scale: 0.4
+        pad_x: 0.0
+    - id: SettingsControlsGroup3
+      anchor: top_left
+      offset_x: 0.0
+      offset_y: 295.7434
+      width: 525.3333
+      height: 18.1333
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Inventory
         font: fondamento
         color: '#e0c990'
         align_x: left
@@ -739,6 +756,60 @@ elements:
       asset:
         default: hud_x2/menus/omenu_toggle_off.png
         selected: hud_x2/menus/omenu_toggle_on.png
+    - id: SettingsControlsBagNumberKeysLabel
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 321.3434
+      width: 395.2
+      height: 14.0752
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Number keys
+        font: menu_arrus
+        color: '#eadfc6'
+        align_x: left
+        align_y: middle
+        scale: 0.74105
+        pad_x: 0.0
+    - id: SettingsControlsBagNumberKeysDescription
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 337.5519
+      width: 395.2
+      height: 23.0336
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Number keys on the inventory page and in shops and chests; Shift with a number does the other. A party
+          of one opens bags.
+        font: menu_lucida
+        color: '#aeb5a5'
+        align_x: left
+        align_y: middle
+        scale: 0.60235
+        pad_x: 0.0
+    - id: SettingsControlsBagNumberKeysControl
+      anchor: top_left
+      offset_x: 412.8
+      offset_y: 329.2311
+      width: 110.9333
+      height: 23.4667
+      z_index: 10
+      visible: true
+      interactive: true
+      asset:
+        default: hud_x2/menus/omenu_text_field.png
+      text:
+        value: '{bag_number_keys}'
+        font: menu_lucida
+        color: '#e9dcc0'
+        align_x: left
+        align_y: middle
+        scale: 0.71529
+        pad_x: 6.9333
   - id: SettingsControlsNavigationRule
     anchor: top_left
     offset_x: 201.6

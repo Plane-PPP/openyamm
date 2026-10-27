@@ -107,7 +107,7 @@ bool mainHandAttackUsesBlasterRecovery(const Character &character, const ItemTab
 {
     const ItemDefinition *pMainHandItem = itemTable.get(character.equipment.mainHand);
     const std::string skillName = pMainHandItem != nullptr ? canonicalSkillName(pMainHandItem->skillGroup) : "";
-    return skillName == "Blaster" || skillName == "EnergyGuns";
+    return skillName == "Blaster";
 }
 
 std::string attackRecoveryInspectSupplement(

@@ -401,7 +401,9 @@ enum class GameplayCharacterPointerTargetType
     InventoryItem,
     InventoryCell,
     EquipmentSlot,
-    DollPanel
+    DollPanel,
+    // An implant socket of the Augment row (implantSocket).
+    ImplantSocket
 };
 
 struct GameplayCharacterPointerTarget
@@ -420,6 +422,7 @@ struct GameplayCharacterPointerTarget
     uint8_t bagButton = 0;
     // The bag (0-based) of an overview target; gridX and gridY are its cell.
     uint8_t bag = 0;
+    uint8_t implantSocket = 0;
 
     bool operator==(const GameplayCharacterPointerTarget &other) const = default;
 };
