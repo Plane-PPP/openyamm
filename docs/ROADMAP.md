@@ -1,18 +1,17 @@
-# Next patch — shared gameplay fixes
+# Windows gameplay fixes — packaged / manual retest pending
 
-- Alchemy equipment bonuses: Implemented / Automatically tested on Linux; Windows/manual testing pending.
-- Mind Resistance duration: Implemented / Automatically tested on Linux; Windows/manual testing pending.
-- Levitate indoor/outdoor environmental protection: Implemented / Automatically tested on Linux.
-  Windows packaging/manual testing pending; existing pressure-plate filtering preserved.
-81 selected Linux cases / 32,164 assertions passed. Protected jobs=4 build completed in 260.385 s,
-peak 4.09 GiB, no swap/pressure/limit events. No jobs=6 experiment.
-[Investigation](research/2026-10-27-gameplay-fixes.md) /
-[resource measurements](research/safe-heavy-run-2026-10-27.md).
-Windows patch packaging authorized and being prepared on GitHub windows-latest with actual-runner
-parallelism selection and resource monitoring. Next: confirm Actions success/artifact, then manual retests.
-Released ZIP/baseline remain unchanged until packaging completes.
+Alchemy equipment bonuses, Levitate environmental protection and Mind Resistance duration:
+Implemented / Automatically tested on Linux and Windows / Windows ZIP packaged.
+81 selected Windows cases / 32,164 assertions passed; installer and package checks passed.
+[Package, measurements and instructions](research/windows-gameplay-fixes-build.md).
+Source `c991da37a2de3b6c74a5ed838e38537fb6a5cc2b`, successful run40541424092.
+22.2 MB update for installed `minotaur-1.14-0b4fc6589a50-19-1`; 132 content packs reused.
+Next-update baseline: `minotaur-1.14-c991da37a2de-20-1`.
+Remote Windows runner had 4 vCPU / ~16 GiB and used jobs=4; peak RAM 7.40 GiB.
+Local Ubuntu limits unchanged; no jobs=8 experiment. Next: user's actual-save installation/gameplay retest.
+Identify Monster, bestiary and teacher flavour/next-teacher hints remain deferred/pending as previously recorded.
 
-# OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged
+# Initial OpenYAMM 1.14 port / Minotaur v0.4 + Luck — previous package
 
 New official1.14 appeared during1.13 validation; exact1.14 now supersedes that unpublished
 intermediate port. The update still targets installed `minotaur-1.10-b7e80f0583df-14-1`.

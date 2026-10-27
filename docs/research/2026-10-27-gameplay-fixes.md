@@ -1,6 +1,7 @@
 # Gameplay fixes after the 2026-10-27 interruption
 
-Status: Implemented / Automatically tested on Linux. Windows packaging and manual gameplay pending.
+Status: Implemented / Automatically tested on Linux. Windows ZIP packaged and 81 selected Windows cases passed; manual gameplay pending.
+See [Windows package/report](windows-gameplay-fixes-build.md).
 
 ## Alchemy
 
@@ -60,5 +61,6 @@ No system installation, save schema change, Windows publication or balance chang
 - `git diff --check` passed. Lighting check reports 0 stale bakes in the available sparse checkout;
   this is not an audit of absent assets.
 
-See [protected build measurements](safe-heavy-run-2026-10-27.md). No Windows artifact was built,
-no push/release performed, and the installed-update baseline remains 1.14.
+See [protected build measurements](safe-heavy-run-2026-10-27.md). The initial Linux stage produced no Windows artifact. The later authorized
+[Windows packaging stage](windows-gameplay-fixes-build.md) succeeded and updated the next-patch baseline.
+No upstream/main merge was performed.

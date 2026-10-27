@@ -1,11 +1,12 @@
-# Next patch (2026-10-27) — not packaged
+# Windows gameplay fixes patch (2026-10-27)
 
-Implemented / Automatically tested on Linux; Windows packaging/manual gameplay pending:
+Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual gameplay pending:
 - Apply effective Alchemy bonuses to bench and inventory brewing; preserve reagent power and MAW caps.
 - Give Mind Resistance its intended duration, restoring the existing buff and Stats bonus.
 - Make Levitate prevent indoor/outdoor lava and water hazard ticks, without granting Fly.
   Preserve selective pressure-plate filtering and general fire damage.
-81 selected Linux cases / 32,164 assertions passed under safe-heavy-run; jobs=4 build succeeded.
+81 selected cases / 32,164 assertions passed on both Linux and Windows.
+[Windows ZIP and resource report](docs/research/windows-gameplay-fixes-build.md): 22.2 MB, all 132 resource packs reused.
 No save schema or Minotaur balance changes.
 [Investigation](docs/research/2026-10-27-gameplay-fixes.md).
 

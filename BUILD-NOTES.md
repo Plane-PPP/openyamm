@@ -1,17 +1,25 @@
-## Next Windows patch — Alchemy / Levitate / Mind Resistance
+## Windows gameplay fixes ZIP — 2026-10-27
 
-Authorized Windows packaging in feature/minotaur-rebalance. Build executes on the fork's GitHub-hosted
-`windows-latest` runner using native MSYS2 UCRT64, not on the Ubuntu VM. Detect actual CPU/RAM before
-choosing compilation jobs (at most 8, CPU count, and 2 GiB per job after a 2 GiB available reserve).
-Standard public Windows runners normally have 4 vCPU / 16 GB, so do not force jobs=8 from Ubuntu numbers.
-No Ubuntu safe-heavy-run settings or limits are changed.
+Implemented / Automatically tested on Windows / Packaged; manual gameplay pending.
+Source `c991da37a2de3b6c74a5ed838e38537fb6a5cc2b`.
+[Successful Actions run](https://github.com/Plane-PPP/openyamm/actions/runs/40541424092).
+[Download ZIP](https://github.com/Plane-PPP/openyamm/actions/runs/40541424092/artifacts/12753968279):
+`Minotaur-Update-minotaur-1.14-c991da37a2de-20-1.zip` (22,234,588 bytes).
+Base `minotaur-1.14-0b4fc6589a50-19-1`; target `minotaur-1.14-c991da37a2de-20-1`.
+SHA256 `de2984f9ea537bdb719bd9524dd2aeaa624db58fad172be70960ca294110f14b`.
+No changed resource packs; 132 packs / 5,777,255,868 bytes reused.
 
-New per-phase telemetry: elapsed time, whole-runner RAM peak, commit charge and average/peak CPU.
-Metrics are sampled every second; Windows commit is not disk swap and Linux PSI is unavailable.
-A sustained low-memory condition stops the workload tree; workflow does not retry automatically.
-ZIP, actual SHA, Actions result and measurements will be recorded after completion. Manual retesting pending.
+Alchemy equipment bonuses, Levitate lava/water protection and Mind Resistance duration included.
+No Minotaur balance or save schema changes. 81 selected Windows cases / 32,164 assertions passed;
+installer, package-validation and native resource-monitoring checks passed.
+Actual GitHub Windows runner: 4 vCPU / ~16 GiB, jobs=4. Peak whole-runner RAM 7.404 GiB,
+minimum available 8.591 GiB; compilation CPU means 91.44% / 98.75%, peak 100%.
+Game compilation 19m40s; unit compilation 15m47s; Windows job total 50m34s.
+All monitored commands exited 0; no guard stop/retry. No local Ubuntu compilation or jobs=8 experiment.
+[Full measurements and test instructions](docs/research/windows-gameplay-fixes-build.md).
+Back up saves; extract the ZIP and run Apply-MinotaurUpdate.cmd for the existing 1.14 mod install.
 
-## 2026-10-27 — local validation, no Windows package
+## 2026-10-27 — earlier local validation, no Windows package at that stage
 
 Implemented / Automatically tested locally; not packaged: Alchemy equipment bonuses, Levitate environmental protection and Mind Resistance duration.
 The restored Linux unit build passed under safe-heavy-run, jobs=4: 260.385 s, peak 4.09 GiB, no swap,

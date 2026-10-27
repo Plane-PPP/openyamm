@@ -1,13 +1,15 @@
-## Next patch: shared gameplay fixes
+## Packaged shared gameplay fixes (2026-10-27)
 
 Alchemy bonus calculation, Levitate hazard protection and Mind Resistance duration passed selected automatic tests
 locally after the 2026-10-27 interruption. No Lethal Strike, Axe, Damage Resistance or save schema changes.
-See [investigation](research/2026-10-27-gameplay-fixes.md). Windows packaging/manual testing remain pending.
+See [investigation](research/2026-10-27-gameplay-fixes.md) and
+[Windows package/report](research/windows-gameplay-fixes-build.md). Windows packaging and 81 selected tests
+are complete; manual gameplay testing remains pending.
 
-# OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged
+# Initial OpenYAMM 1.14 port / Minotaur v0.4 + Luck — previous package
 
 New official1.14 appeared during1.13 validation; exact1.14 now supersedes that unpublished
-intermediate port. The update still targets installed `minotaur-1.10-b7e80f0583df-14-1`.
+intermediate port. That initial update targets installed `minotaur-1.10-b7e80f0583df-14-1`.
 Installer root detection fixed; Minotaur balance retained. New save OYMINO1/v132 maps to
 schema131; production mod95 still explicitly maps to94. [Compatibility](research/openyamm-1.14-compatibility.md).
 Windows build/tests and ZIP publication succeeded; manual gameplay pending. Earlier1.13 entries below are history.
