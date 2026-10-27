@@ -133,6 +133,7 @@ void OutdoorMovementDriver::initialize(float x, float y, float footZHint)
     m_pendingImpulseVelocityZ = 0.0f;
     m_dashSeconds = 0.0f;
     m_flyingAvailable = false;
+    m_levitateActive = false;
     m_movementAccumulatorSeconds = 0.0f;
     m_startedFallingEventSeconds = 0.0f;
     m_landedEventSeconds = 0.0f;
@@ -640,6 +641,7 @@ void OutdoorMovementDriver::update(
     if (!input.turnBasedPhysicsStep
         && m_state.supportOnWater
         && !m_partyMovementState.waterWalk
+        && !m_levitateActive
         && !m_partyMovementState.flying)
     {
         m_waterDamageTimerSeconds += deltaSeconds;
@@ -656,7 +658,8 @@ void OutdoorMovementDriver::update(
         m_waterDamageTimerSeconds = 0.0f;
     }
 
-    if (!input.turnBasedPhysicsStep && m_state.supportOnBurning && !m_partyMovementState.flying)
+    if (!input.turnBasedPhysicsStep && m_state.supportOnBurning
+        && !m_partyMovementState.flying && !m_levitateActive)
     {
         m_burningDamageTimerSeconds += deltaSeconds;
 
@@ -873,6 +876,11 @@ bool OutdoorMovementDriver::isRunningMovement(const OutdoorMovementInput &input)
 void OutdoorMovementDriver::setRunning(bool active)
 {
     m_partyMovementState.running = active;
+}
+
+void OutdoorMovementDriver::setLevitateActive(bool active)
+{
+    m_levitateActive = active;
 }
 
 void OutdoorMovementDriver::setWaterWalkActive(bool active)

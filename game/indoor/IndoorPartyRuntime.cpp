@@ -394,7 +394,8 @@ void IndoorPartyRuntime::update(
         m_movementState.fallDistance = landingFallDistance;
     }
 
-    if (m_movementState.grounded && m_movementController.supportFaceIsBurning(m_movementState.supportFaceIndex))
+    if (m_movementState.grounded && !m_party.hasPartyBuff(PartyBuffId::Levitate)
+        && m_movementController.supportFaceIsBurning(m_movementState.supportFaceIndex))
     {
         m_burningDamageTimerSeconds += deltaSeconds;
 

@@ -42,6 +42,7 @@ void OutdoorPartyRuntime::update(
     GameplayWorldMovementFrameDiagnostics *pPerformanceDiagnostics)
 {
     m_movementStatusText.clear();
+    syncSpellMovementStatesFromPartyBuffs();
     OutdoorMovementInput rulesInput = input;
     rulesInput.movementSpeedScale *= m_party.rulesMovementMultiplier();
     m_movementDriver.update(rulesInput, deltaSeconds, pPerformanceDiagnostics);
@@ -268,8 +269,10 @@ void OutdoorPartyRuntime::setCollisionTraceEnabled(bool enabled, const std::stri
 
 void OutdoorPartyRuntime::syncSpellMovementStatesFromPartyBuffs()
 {
-    m_movementDriver.setFeatherFallActive(m_party.hasPartyBuff(PartyBuffId::FeatherFall));
-    m_movementDriver.setWaterWalkActive(m_party.hasPartyBuff(PartyBuffId::WaterWalk));
+    const bool levitate = m_party.hasPartyBuff(PartyBuffId::Levitate);
+    m_movementDriver.setLevitateActive(levitate);
+    m_movementDriver.setFeatherFallActive(m_party.hasPartyBuff(PartyBuffId::FeatherFall) || levitate);
+    m_movementDriver.setWaterWalkActive(m_party.hasPartyBuff(PartyBuffId::WaterWalk) || levitate);
     m_movementDriver.setFlyingAvailable(m_party.hasPartyBuff(PartyBuffId::Fly) || m_debugFlyingOverride);
 }
 

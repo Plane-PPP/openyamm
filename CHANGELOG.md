@@ -3,6 +3,8 @@
 Implemented / Automatically tested on Linux; Windows packaging/manual gameplay pending:
 - Apply effective Alchemy bonuses to bench and inventory brewing; preserve reagent power and MAW caps.
 - Give Mind Resistance its intended duration, restoring the existing buff and Stats bonus.
+- Make Levitate prevent indoor/outdoor lava and water hazard ticks, without granting Fly.
+  Preserve selective pressure-plate filtering and general fire damage.
 No save schema or Minotaur balance changes.
 [Investigation](docs/research/2026-10-27-gameplay-fixes.md).
 

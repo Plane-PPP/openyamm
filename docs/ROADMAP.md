@@ -2,7 +2,8 @@
 
 - Alchemy equipment bonuses: Implemented / Automatically tested on Linux; Windows/manual testing pending.
 - Mind Resistance duration: Implemented / Automatically tested on Linux; Windows/manual testing pending.
-- Levitate: validation complete locally; separate fix being recorded.
+- Levitate indoor/outdoor environmental protection: Implemented / Automatically tested on Linux.
+  Windows packaging/manual testing pending; existing pressure-plate filtering preserved.
 [Investigation](research/2026-10-27-gameplay-fixes.md). Released ZIP and packaging baseline remain unchanged.
 
 # OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged

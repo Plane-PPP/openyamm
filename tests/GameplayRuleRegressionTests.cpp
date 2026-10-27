@@ -6283,10 +6283,33 @@ TEST_CASE("indoor lava support applies recurring burning damage")
 
     REQUIRE(partyRuntime.movementState().grounded);
     REQUIRE_EQ(partyRuntime.movementState().supportFaceIndex, 0u);
+    bool protectedByLevitate = false;
+    SUBCASE("unprotected lava")
+    {
+    }
+    SUBCASE("Water Walk alone does not protect against lava")
+    {
+        partyRuntime.party().applyPartyBuff(OpenYAMM::Game::PartyBuffId::WaterWalk,
+            600, 0, 27, 4, OpenYAMM::Game::SkillMastery::Expert, 0);
+    }
+    SUBCASE("Levitate blocks lava and clearing restores damage")
+    {
+        partyRuntime.party().applyPartyBuff(OpenYAMM::Game::PartyBuffId::Levitate,
+            600, 0, 112, 4, OpenYAMM::Game::SkillMastery::Expert, 0);
+        protectedByLevitate = true;
+    }
     const int initialHealth = partyRuntime.party().totalHealth();
 
     partyRuntime.update(0.0f, 0.0f, false, false, 1.0f);
 
+    if (protectedByLevitate)
+    {
+        CHECK(partyRuntime.party().totalHealth() == initialHealth);
+        CHECK(partyRuntime.party().burningDamageTicks() == 0);
+        CHECK(partyRuntime.movementStatusText() != "You are burning!");
+        partyRuntime.party().clearPartyBuff(OpenYAMM::Game::PartyBuffId::Levitate);
+        partyRuntime.update(0, 0, false, false, 1);
+    }
     CHECK_EQ(partyRuntime.party().burningDamageTicks(), 1u);
     CHECK_LT(partyRuntime.party().totalHealth(), initialHealth);
     CHECK_EQ(partyRuntime.party().lastStatus(), "burning damage");
@@ -11300,4 +11323,37 @@ TEST_CASE("found item messages use the generic name of an item")
 
     scroll.unidentifiedName = "N / A";
     CHECK(OpenYAMM::Game::ItemRuntime::foundItemName(scroll) == "Spirit Lash");
+}
+
+TEST_CASE("regression Levitate blocks outdoor lava water and queued hazard ticks until expiry")
+{
+    using namespace OpenYAMM::Game;
+    auto terrain = createSyntheticOutdoorWaterBoundaryScenario();
+    terrain.mapData.attributeMap[63 * OutdoorMapData::TerrainWidth + 62] = 0x03; // Water + Burning.
+    OutdoorMovementDriver driver(terrain.mapData, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    ItemTable items;
+    OutdoorPartyRuntime runtime(std::move(driver), items);
+    runtime.initialize(terrain.waterX, terrain.waterY, 0, true);
+    runtime.party().applyPartyBuff(PartyBuffId::Levitate, 600, 0, 112, 4, SkillMastery::Expert, 0);
+    const int hp = runtime.party().totalHealth();
+    OutdoorMovementInput input; input.flyUp = true;
+    runtime.update(input, 1);
+    CHECK_FALSE(runtime.partyMovementState().flying); // Levitate must not grant Fly.
+    CHECK(runtime.party().totalHealth() == hp);
+    CHECK(runtime.party().waterDamageTicks() == 0);
+    CHECK(runtime.party().burningDamageTicks() == 0);
+    CHECK(runtime.movementStatusText() != "You are burning!");
+    CHECK(runtime.movementStatusText() != "You are drowning!");
+    // Also defend against already queued effects or direct event application.
+    OutdoorMovementEffects queued; queued.burningDamageTicks = queued.waterDamageTicks = 1;
+    runtime.party().applyMovementEffects(queued);
+    CHECK(runtime.party().totalHealth() == hp);
+    CHECK(runtime.party().waterDamageTicks() == 0);
+    CHECK(runtime.party().burningDamageTicks() == 0);
+    runtime.party().advanceTimedStates(600);
+    REQUIRE_FALSE(runtime.party().hasPartyBuff(PartyBuffId::Levitate));
+    runtime.update({}, 1);
+    CHECK(runtime.party().totalHealth() < hp);
+    CHECK(runtime.party().burningDamageTicks() == 1);
+    CHECK(runtime.party().waterDamageTicks() == 1);
 }

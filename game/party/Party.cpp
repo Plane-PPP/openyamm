@@ -2775,7 +2775,8 @@ void Party::seed(const PartySeed &seed)
 
 void Party::applyMovementEffects(const OutdoorMovementEffects &effects)
 {
-    for (uint32_t i = 0; i < effects.waterDamageTicks; ++i)
+    const bool levitate = hasPartyBuff(PartyBuffId::Levitate);
+    for (uint32_t i = 0; !levitate && i < effects.waterDamageTicks; ++i)
     {
         for (size_t memberIndex = 0; memberIndex < m_members.size(); ++memberIndex)
         {
@@ -2793,7 +2794,7 @@ void Party::applyMovementEffects(const OutdoorMovementEffects &effects)
         m_lastStatus = "water damage";
     }
 
-    for (uint32_t i = 0; i < effects.burningDamageTicks; ++i)
+    for (uint32_t i = 0; !levitate && i < effects.burningDamageTicks; ++i)
     {
         for (size_t memberIndex = 0; memberIndex < m_members.size(); ++memberIndex)
         {
