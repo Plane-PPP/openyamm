@@ -1,6 +1,8 @@
 #include "doctest/doctest.h"
 
 #include "game/items/AlchemyBenchRuntime.h"
+#include "game/items/InventoryItemMixingRuntime.h"
+#include "game/rules/PotionRules.h"
 #include "game/party/Party.h"
 
 #include "tests/RegressionGameData.h"
@@ -464,4 +466,51 @@ TEST_CASE("alchemy chain planner names the step that blocks a chain")
         .plan(HasteItemId, 1);
     CHECK_EQ(tooHard.block, AlchemyChainBlock::NeedsMastery);
     CHECK_EQ(tooHard.blockItemId, HasteItemId);
+}
+
+TEST_CASE("regression alchemy item bonuses strengthen both bench and inventory catalyst brewing")
+{
+    const auto &data = requireRegressionGameData();
+    Party party = makeParty(data, 1);
+    giveAlchemy(party, 0, 4, SkillMastery::Expert);
+    addItem(party, 0, BottleItemId);
+    // MM8 Wasp Wing: a gray reagent with its own power 10.
+    constexpr uint32_t Reagent = 217;
+    party.member(0)->itemSkillBonuses["Alchemy"] = 25;
+    CHECK(standardPotionRules().mixingAlchemyLevel(*party.member(0)) == 29);
+    CHECK(AlchemyBenchRuntime::resolveAlchemist(party).level == 29);
+    SUBCASE("alchemy bench")
+    {
+        addItem(party, 0, Reagent);
+        party.member(0)->itemSkillBonuses["Alchemy"] = 25;
+        const auto result = AlchemyBenchRuntime::mix(party, {BottleItemId, Reagent}, benchTables(data));
+        REQUIRE(result.result.success);
+    }
+    SUBCASE("inventory drag and drop")
+    {
+        const auto &bottle = party.member(0)->inventory.front();
+        InventoryItem held; held.objectDescriptionId = Reagent;
+        const auto result = InventoryItemMixingRuntime::tryApplyHeldItemToInventoryItem(
+            party, 0, held, bottle.gridX, bottle.gridY, data.itemTable, data.potionMixingTable,
+            data.mergedPotionSettingTable, data.mergedReagentSettingTable, &data.potionNoteTable);
+        REQUIRE(result.success);
+    }
+    const auto &items = party.member(0)->inventory;
+    const auto potion = std::find_if(items.begin(), items.end(), [](const auto &item)
+        { return item.objectDescriptionId == 221; });
+    REQUIRE(potion != items.end());
+    CHECK(potion->standardEnchantPower == 39); // 4 trained + 25 bonus + 10 reagent.
+}
+
+TEST_CASE("alchemy bonuses require a learned skill and do not mutate its trained level")
+{
+    Character alchemist;
+    alchemist.itemSkillBonuses["Alchemy"] = 25;
+    CHECK(standardPotionRules().mixingAlchemyLevel(alchemist) == 0);
+    alchemist.skills["Alchemy"] = {"Alchemy", 4, SkillMastery::Expert};
+    CHECK(standardPotionRules().mixingAlchemyLevel(alchemist) == 29);
+    CHECK(alchemist.findSkill("Alchemy")->level == 4);
+    CHECK(alchemist.findSkill("Alchemy")->mastery == SkillMastery::Expert);
+    alchemist.itemSkillBonuses["Alchemy"] = -25;
+    CHECK(standardPotionRules().mixingAlchemyLevel(alchemist) == 0);
 }

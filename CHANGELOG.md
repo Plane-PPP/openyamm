@@ -1,3 +1,10 @@
+# Next patch (2026-10-27) — not packaged
+
+Implemented / Automatically tested on Linux; Windows packaging/manual gameplay pending:
+- Apply effective Alchemy bonuses to bench and inventory brewing; preserve reagent power and MAW caps.
+No save schema or Minotaur balance changes.
+[Investigation](docs/research/2026-10-27-gameplay-fixes.md).
+
 # Minotaur on OpenYAMM 1.14 (2026-10-26)
 
 Implemented / Automatically tested / Windows ZIP packaged ([run40325494796](https://github.com/Plane-PPP/openyamm/actions/runs/40325494796)); manual gameplay pending:

@@ -92,7 +92,7 @@ TEST_CASE("MAW mixes with the Alchemy skill and its item bonus, at most twice th
     Character alchemist;
     alchemist.skills["Alchemy"] = {"Alchemy", 40, SkillMastery::Grandmaster};
     alchemist.itemSkillBonuses["Alchemy"] = 30;
-    CHECK_EQ(standardPotionRules().mixingAlchemyLevel(alchemist), 40u);
+    CHECK_EQ(standardPotionRules().mixingAlchemyLevel(alchemist), 70u);
     CHECK_EQ(rules.gameRules().potions.mixingAlchemyLevel(alchemist), 70u);
     alchemist.itemSkillBonuses["Alchemy"] = 500;
     CHECK_EQ(rules.gameRules().potions.mixingAlchemyLevel(alchemist), 120u);

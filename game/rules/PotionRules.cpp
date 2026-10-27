@@ -5,6 +5,7 @@
 #include "game/tables/ItemTable.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace OpenYAMM::Game
 {
@@ -21,7 +22,10 @@ double PotionRules::estimatedPool(PotionPool, int) const
 uint32_t PotionRules::mixingAlchemyLevel(const Character &alchemist) const
 {
     const CharacterSkill *pSkill = alchemist.findSkill("Alchemy");
-    return pSkill != nullptr ? pSkill->level : 0;
+    return pSkill != nullptr
+        ? uint32_t(std::clamp<int64_t>(int64_t(pSkill->level) + alchemist.skillBonus("Alchemy"),
+            0, std::numeric_limits<uint32_t>::max()))
+        : 0;
 }
 
 int PotionRules::catalystMixPower(int targetPower, int heldPower, bool bothCatalysts, SkillMastery, uint32_t) const
