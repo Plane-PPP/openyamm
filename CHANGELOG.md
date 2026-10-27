@@ -2,6 +2,7 @@
 
 Implemented / Automatically tested on Linux; Windows packaging/manual gameplay pending:
 - Apply effective Alchemy bonuses to bench and inventory brewing; preserve reagent power and MAW caps.
+- Give Mind Resistance its intended duration, restoring the existing buff and Stats bonus.
 No save schema or Minotaur balance changes.
 [Investigation](docs/research/2026-10-27-gameplay-fixes.md).
 

@@ -2535,3 +2535,54 @@ TEST_CASE("party spell scroll override bypasses required spell mastery")
     CHECK(worldRuntime.projectileRequests().front().skillMastery == OpenYAMM::Game::SkillMastery::Master);
     CHECK_EQ(pCaster->spellPoints, initialSpellPoints);
 }
+
+TEST_CASE("regression all six resistance spells retain duration stats and buffs for a level20 cleric")
+{
+    using namespace OpenYAMM::Game;
+    const auto &data = requireRegressionGameData();
+    const std::array spells = {SpellId::FireResistance, SpellId::AirResistance, SpellId::WaterResistance,
+        SpellId::EarthResistance, SpellId::MindResistance, SpellId::BodyResistance};
+    const std::array buffs = {PartyBuffId::FireResistance, PartyBuffId::AirResistance, PartyBuffId::WaterResistance,
+        PartyBuffId::EarthResistance, PartyBuffId::MindResistance, PartyBuffId::BodyResistance};
+    const std::array<const char *,6> skills = {"FireMagic", "AirMagic", "WaterMagic", "EarthMagic", "MindMagic", "BodyMagic"};
+    const auto actual = [](const CharacterSheetSummary &s, size_t i)
+    {
+        const std::array values = {s.fireResistance.actual, s.airResistance.actual, s.waterResistance.actual,
+            s.earthResistance.actual, s.mindResistance.actual, s.bodyResistance.actual};
+        return values[i];
+    };
+    for (size_t i = 0; i < spells.size(); ++i)
+    for (auto mastery : {SkillMastery::Normal, SkillMastery::Expert, SkillMastery::Master, SkillMastery::Grandmaster})
+    {
+        INFO("spell=" << spellIdValue(spells[i]) << " mastery=" << int(mastery));
+        Party party = OpenYAMM::Tests::makeSpellRegressionParty(data);
+        auto *caster = party.member(0);
+        caster->className = "Cleric";
+        caster->level = 20;
+        caster->skills[skills[i]] = {skills[i], 4, mastery};
+        caster->spellPoints = caster->maxSpellPoints = 1000;
+        caster->learnSpell(spellIdValue(spells[i]));
+        std::vector<int> before;
+        for (const auto &c : party.members())
+        {
+            before.push_back(actual(GameMechanics::buildCharacterSheetSummary(c, &data.itemTable), i));
+        }
+        OpenYAMM::Tests::PartySpellTestWorldRuntime world; world.bindParty(&party);
+        PartySpellCastRequest request; request.spellId = spellIdValue(spells[i]);
+        const auto result = PartySpellSystem::castSpell(party, world, data.spellTable, request);
+        REQUIRE(result.succeeded());
+        const auto *buff = party.partyBuff(buffs[i]);
+        REQUIRE(buff != nullptr);
+        CHECK(buff->remainingSeconds == doctest::Approx(4 * 3600));
+        CHECK(buff->power == 4 * int(mastery));
+        party.advanceTimedStates(1);
+        REQUIRE(party.hasPartyBuff(buffs[i]));
+        for (size_t n = 0; n < party.members().size(); ++n)
+            CHECK(actual(GameMechanics::buildCharacterSheetSummary(*party.member(n), &data.itemTable), i)
+                == before[n] + 4 * int(mastery));
+        party.advanceTimedStates(4 * 3600);
+        CHECK_FALSE(party.hasPartyBuff(buffs[i]));
+        for (size_t n = 0; n < party.members().size(); ++n)
+            CHECK(actual(GameMechanics::buildCharacterSheetSummary(*party.member(n), &data.itemTable), i) == before[n]);
+    }
+}

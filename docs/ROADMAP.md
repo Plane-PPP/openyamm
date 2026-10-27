@@ -1,7 +1,8 @@
 ## Next patch — shared gameplay fixes
 
 - Alchemy equipment bonuses: Implemented / Automatically tested on Linux; Windows/manual testing pending.
-- Levitate and Mind Resistance: validation complete locally; separate fixes being recorded.
+- Mind Resistance duration: Implemented / Automatically tested on Linux; Windows/manual testing pending.
+- Levitate: validation complete locally; separate fix being recorded.
 [Investigation](research/2026-10-27-gameplay-fixes.md). Released ZIP and packaging baseline remain unchanged.
 
 # OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged
