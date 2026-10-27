@@ -63,6 +63,10 @@ jobs:
         run: python tools/test_minotaur_updates.py
       - name: Test full and thin package validation
         run: python tools/test_verify_minotaur_windows_package.py
+      - name: Test Windows resource monitoring
+        run: |
+          python tools/test_measure_windows_build.py
+          python tools/measure_windows_build.py --phase smoke -- python -c "print('Native Windows monitoring smoke test')"
 
   windows:
     needs: update_tests
@@ -145,6 +149,9 @@ jobs:
           printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.14-%s-%s-%s\n' \
             "$base_path" "$base_sha" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
 
+      - name: Detect actual runner resources and compilation parallelism
+        run: /ucrt64/bin/python.exe tools/measure_windows_build.py --probe
+
       - name: Configure release build
         run: >-
           cmake -S . -B build-windows -G Ninja
@@ -179,18 +186,20 @@ jobs:
 
       - name: Build Windows program, shaders and cooker
         run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase program --
           cmake --build build-windows
           --target openyamm openyamm_launcher openyamm_runtime_shaders openyamm_sprite_atlas_cook
-          --parallel 4
+          --parallel "$MINOTAUR_BUILD_JOBS"
 
       - name: Build and test Minotaur combat and save compatibility
         run: |
-          cmake --build build-windows --target openyamm_unit_tests --parallel 4
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests --parallel "$MINOTAUR_BUILD_JOBS"
           # MM9 is not shipped by this MM6/MM7/MM8 package; Bloodaxe is not an Axe mechanic test.
-          build-windows/tests/openyamm_unit_tests.exe --test-case='*Lethal Strike*,*Minotaur*,*Axe*' --test-case-exclude='MM9*'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*' --test-case-exclude='MM9*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
 
       - name: Prepare indexed content (not included in unchanged update payloads)
         run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content --
           /ucrt64/bin/python.exe tools/package_runtime_assets.py
           --assets-root assets_dev --output build-windows/minotaur-content
           --profile desktop --cooker build-windows/game/openyamm_sprite_atlas_cook.exe
@@ -198,7 +207,7 @@ jobs:
 
       - name: Package and verify the small program archive
         run: |
-          cmake --build build-windows --target openyamm_release_package --parallel 4
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
           /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
             build-windows/release/OpenYAMM-windows-x64-Release.zip \
             --stage build-windows/release/Release/OpenYAMM \
@@ -206,6 +215,7 @@ jobs:
 
       - name: Create incremental ZIP and next baseline
         run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase update-zip --
           /ucrt64/bin/python.exe tools/minotaur_updates.py build
           --stage build-windows/release/Release/OpenYAMM
           --content build-windows/minotaur-content
@@ -235,7 +245,7 @@ jobs:
         if: env.MINOTAUR_PACKAGE_MODE != 'update'
         run: |
           cmake -S . -B build-windows -DOPENYAMM_RELEASE_THIN=OFF
-          cmake --build build-windows --target openyamm_release_package --parallel 4
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase full-package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
           /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
             build-windows/release/OpenYAMM-windows-x64-Release.zip \
             --stage build-windows/release/Release/OpenYAMM
@@ -249,3 +259,12 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload runner resource measurements even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: minotaur-build-resources-${{ github.sha }}
+          path: build-resources/
+          if-no-files-found: warn
+          retention-days: 90

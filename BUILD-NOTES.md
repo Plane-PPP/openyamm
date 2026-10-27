@@ -1,3 +1,16 @@
+## Next Windows patch — Alchemy / Levitate / Mind Resistance
+
+Authorized Windows packaging in feature/minotaur-rebalance. Build executes on the fork's GitHub-hosted
+`windows-latest` runner using native MSYS2 UCRT64, not on the Ubuntu VM. Detect actual CPU/RAM before
+choosing compilation jobs (at most 8, CPU count, and 2 GiB per job after a 2 GiB available reserve).
+Standard public Windows runners normally have 4 vCPU / 16 GB, so do not force jobs=8 from Ubuntu numbers.
+No Ubuntu safe-heavy-run settings or limits are changed.
+
+New per-phase telemetry: elapsed time, whole-runner RAM peak, commit charge and average/peak CPU.
+Metrics are sampled every second; Windows commit is not disk swap and Linux PSI is unavailable.
+A sustained low-memory condition stops the workload tree; workflow does not retry automatically.
+ZIP, actual SHA, Actions result and measurements will be recorded after completion. Manual retesting pending.
+
 ## 2026-10-27 — local validation, no Windows package
 
 Implemented / Automatically tested locally; not packaged: Alchemy equipment bonuses, Levitate environmental protection and Mind Resistance duration.

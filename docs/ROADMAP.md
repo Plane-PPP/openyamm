@@ -8,7 +8,9 @@
 peak 4.09 GiB, no swap/pressure/limit events. No jobs=6 experiment.
 [Investigation](research/2026-10-27-gameplay-fixes.md) /
 [resource measurements](research/safe-heavy-run-2026-10-27.md).
-Next: authorized Windows patch packaging, then manual retests. Released ZIP/baseline remain unchanged.
+Windows patch packaging authorized and being prepared on GitHub windows-latest with actual-runner
+parallelism selection and resource monitoring. Next: confirm Actions success/artifact, then manual retests.
+Released ZIP/baseline remain unchanged until packaging completes.
 
 # OpenYAMM 1.14 / Minotaur v0.4 + Luck — Windows ZIP packaged
 
