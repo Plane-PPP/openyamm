@@ -1,0 +1,100 @@
+{
+  "refs": {
+    "base": "f1d7c45d8a7c1fb2edbb4542b4a144cb476b9486",
+    "ours": "3d4d2fd8ab1afb059caafc58bf195087323694d2",
+    "theirs": "fc4e117a75de0cb620ec818c3dd3f8278a8e2627"
+  },
+  "files": [
+    {
+      "file": "game/rules/PotionRules.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "game/rules/PotionRules.h",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "game/rules/maw/MawPotionRules.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "game/party/PartySpellSystem.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "game/party/Party.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "game/indoor/IndoorPartyRuntime.cpp",
+      "exit_code": 1,
+      "conflicts": 1,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "game/outdoor/OutdoorMovementDriver.cpp",
+      "exit_code": 2,
+      "conflicts": 2,
+      "setter_definitions": 2,
+      "setter_declarations": 0
+    },
+    {
+      "file": "game/outdoor/OutdoorMovementDriver.h",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 2
+    },
+    {
+      "file": "game/outdoor/OutdoorPartyRuntime.cpp",
+      "exit_code": 1,
+      "conflicts": 1,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "tests/AlchemyBenchRegressionTests.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "tests/MawContentUiTests.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "tests/SpellRegressionTests.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    },
+    {
+      "file": "tests/GameplayRuleRegressionTests.cpp",
+      "exit_code": 0,
+      "conflicts": 0,
+      "setter_definitions": 0,
+      "setter_declarations": 0
+    }
+  ]
+}

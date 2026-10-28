@@ -1,3 +1,13 @@
+## Подготовка будущего обновления upstream — исследование завершено
+
+Проверены наши Alchemy/Mind Resistance/Levitate против upstream `fc4e117` (2026-10-28).
+[План объединения и проверки](research/upstream-fc4e117-fix-integration.md).
+Найдены 4 конфликтных фрагмента в 3 файлах Levitate и скрытые дубликаты setter, включая
+автоматически объединённый заголовок. Полного merge/реализации/сборки не было.
+Alchemy/Mind Resistance пока сохранить; объединить Levitate без дубликатов, сохраняя новые
+upstream floorBurn/сопротивления/FireImmune и наши first-update/queued-tick guards.
+Реальная интеграция и все её проверки остаются Pending. Последняя Windows-сборка ниже не менялась.
+
 # Windows gameplay fixes — packaged / manual retest pending
 
 Alchemy equipment bonuses, Levitate environmental protection and Mind Resistance duration:
