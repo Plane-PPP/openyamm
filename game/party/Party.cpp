@@ -1962,6 +1962,7 @@ bool Character::addInventoryItem(const InventoryItem &item, const ItemTable *pTa
             {
                 const uint32_t moved = std::min(remaining.quantity, ReagentStacks::Limit - target.quantity);
                 target.quantity += moved;
+                target.width = target.height = 1;
                 remaining.quantity -= moved;
             }
         }
@@ -2155,6 +2156,7 @@ bool Character::tryPlaceInventoryItemAt(
         const uint32_t space = target.quantity < ReagentStacks::Limit ? ReagentStacks::Limit - target.quantity : 0;
         const uint32_t moved = std::min(space, item.quantity);
         target.quantity += moved;
+        target.width = target.height = 1;
         if (item.quantity > moved)
         {
             replacedItem = item;
@@ -5266,6 +5268,10 @@ bool Party::takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, u
         return false;
     }
 
+    if (ReagentStacks::eligible(item, m_pItemTable))
+    {
+        item.width = item.height = 1;
+    }
     m_lastStatus = "item picked up";
     return true;
 }

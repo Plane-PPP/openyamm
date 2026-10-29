@@ -1,3 +1,5 @@
+#include "game/items/ReagentStacks.h"
+#include "game/ui/InventoryIconGeometry.h"
 #include "game/ui/GameplayHudOverlayRenderer.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
 #include "game/gameplay/GameplayInputFrame.h"
@@ -46,13 +48,7 @@ struct InventoryGridMetrics
     float scale = 1.0f;
 };
 
-struct InventoryItemScreenRect
-{
-    float x = 0.0f;
-    float y = 0.0f;
-    float width = 0.0f;
-    float height = 0.0f;
-};
+using InventoryItemScreenRect = InventoryIconRect;
 
 struct PointerRenderInput
 {
@@ -150,23 +146,14 @@ InventoryItemScreenRect computeInventoryItemScreenRect(
     const InventoryGridMetrics &gridMetrics,
     const InventoryItem &item,
     float textureWidth,
-    float textureHeight)
+    float textureHeight,
+    bool compactStack = false)
 {
-    const float slotSpanWidth = static_cast<float>(item.width) * gridMetrics.cellWidth;
-    const float slotSpanHeight = static_cast<float>(item.height) * gridMetrics.cellHeight;
-    const float offsetX = (slotSpanWidth - textureWidth) * 0.5f;
-    const float offsetY = (slotSpanHeight - textureHeight) * 0.5f;
-
-    InventoryItemScreenRect rect = {};
-    rect.x = std::round(
-        gridMetrics.x + static_cast<float>(item.gridX) * gridMetrics.cellWidth
-        + offsetX);
-    rect.y = std::round(
-        gridMetrics.y + static_cast<float>(item.gridY) * gridMetrics.cellHeight
-        + offsetY);
-    rect.width = textureWidth;
-    rect.height = textureHeight;
-    return rect;
+    const float spanWidth = (compactStack ? 1 : item.width) * gridMetrics.cellWidth;
+    const float spanHeight = (compactStack ? 1 : item.height) * gridMetrics.cellHeight;
+    return placeInventoryIcon({gridMetrics.x + item.gridX * gridMetrics.cellWidth,
+        gridMetrics.y + item.gridY * gridMetrics.cellHeight, spanWidth, spanHeight},
+        textureWidth, textureHeight, compactStack);
 }
 
 bool shouldRenderInCurrentPass(bool renderAboveHud, int hudZThreshold, int zIndex)
@@ -408,7 +395,8 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
                 const float itemWidth = static_cast<float>(goldTexture->width) * gridMetrics.scale;
                 const float itemHeight = static_cast<float>(goldTexture->height) * gridMetrics.scale;
                 const InventoryItemScreenRect itemRect =
-                    computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight);
+                    computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight,
+                        ReagentStacks::eligible(renderItem, view.itemTable()));
                 view.submitHudTexturedQuad(*goldTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
 
                 GameplayRenderedInspectableHudItem inspectableItem = {};
@@ -444,7 +432,8 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
             const float itemHeight =
                 static_cast<float>(itemTexture->height) * gridMetrics.scale * pItemDefinition->inventoryDrawScale;
             const InventoryItemScreenRect itemRect =
-                computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight);
+                computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight,
+                    ReagentStacks::eligible(renderItem, view.itemTable()));
             GameplayHudOverlaySupport::renderItemRarityGlow(
                 view, item.item, *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height,
                 gridMetrics.scale);
@@ -577,7 +566,8 @@ void GameplayHudOverlayRenderer::renderInventoryNestedOverlay(
         const float itemHeight =
             static_cast<float>(itemTexture->height) * gridMetrics.scale * pItemDefinition->inventoryDrawScale;
         const InventoryItemScreenRect itemRect =
-            computeInventoryItemScreenRect(gridMetrics, item, itemWidth, itemHeight);
+            computeInventoryItemScreenRect(gridMetrics, item, itemWidth, itemHeight,
+                ReagentStacks::eligible(item, view.itemTable()));
 
         // OE keeps status tints unchanged between Display, Sell, Identify, and Repair.
         const ItemTintContext tintContext =
@@ -595,6 +585,8 @@ void GameplayHudOverlayRenderer::renderInventoryNestedOverlay(
         GameplayHudOverlaySupport::renderItemRarityGlow(
             view, item, *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
         view.submitHudTexturedQuad(renderedTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
+        GameplayHudOverlaySupport::renderReagentQuantity(view, item,
+            itemRect.x, itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
 
         GameplayRenderedInspectableHudItem inspectableItem = {};
         inspectableItem.objectDescriptionId = pItemDefinition->itemId;

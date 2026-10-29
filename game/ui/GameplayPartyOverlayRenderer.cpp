@@ -1,3 +1,4 @@
+#include "game/ui/InventoryIconGeometry.h"
 #include "game/ui/GameplayPartyOverlayRenderer.h"
 #include "game/items/InventoryBags.h"
 #include "game/items/ReagentStacks.h"
@@ -1455,13 +1456,7 @@ struct InventoryGridMetrics
     float scale = 1.0f;
 };
 
-struct InventoryItemScreenRect
-{
-    float x = 0.0f;
-    float y = 0.0f;
-    float width = 0.0f;
-    float height = 0.0f;
-};
+using InventoryItemScreenRect = InventoryIconRect;
 
 struct CharacterSkillUiRow
 {
@@ -1885,21 +1880,14 @@ InventoryItemScreenRect computeInventoryItemScreenRect(
     const InventoryGridMetrics &gridMetrics,
     const InventoryItem &item,
     float textureWidth,
-    float textureHeight)
+    float textureHeight,
+    bool compactStack = false)
 {
-    const float slotSpanWidth = static_cast<float>(item.width) * gridMetrics.cellWidth;
-    const float slotSpanHeight = static_cast<float>(item.height) * gridMetrics.cellHeight;
-    const float offsetX = (slotSpanWidth - textureWidth) * 0.5f;
-    const float offsetY = (slotSpanHeight - textureHeight) * 0.5f;
-
-    InventoryItemScreenRect rect = {};
-    rect.x = std::round(
-        gridMetrics.x + static_cast<float>(item.gridX) * gridMetrics.cellWidth + offsetX);
-    rect.y = std::round(
-        gridMetrics.y + static_cast<float>(item.gridY) * gridMetrics.cellHeight + offsetY);
-    rect.width = textureWidth;
-    rect.height = textureHeight;
-    return rect;
+    const float spanWidth = (compactStack ? 1 : item.width) * gridMetrics.cellWidth;
+    const float spanHeight = (compactStack ? 1 : item.height) * gridMetrics.cellHeight;
+    return placeInventoryIcon({gridMetrics.x + item.gridX * gridMetrics.cellWidth,
+        gridMetrics.y + item.gridY * gridMetrics.cellHeight, spanWidth, spanHeight},
+        textureWidth, textureHeight, compactStack);
 }
 
 uint32_t equippedItemId(const CharacterEquipment &equipment, EquipmentSlot slot)
@@ -2199,9 +2187,11 @@ void renderBagOverviewDropPreview(
     }
 
     const float iconScale = grid.scale * slot.fraction * pDefinition->inventoryDrawScale;
+    const auto extent = fitInventoryIcon(float(icon->width) * iconScale, float(icon->height) * iconScale,
+        slot.width / Character::InventoryWidth, slot.height / Character::InventoryHeight,
+        ReagentStacks::eligible(held.item, context.itemTable()));
     const auto [dropX, dropY] = InventoryBagOverview::dropCell(slot, character, bag, held.item,
-        float(icon->width) * iconScale, float(icon->height) * iconScale, mouseX, mouseY, held.grabOffsetX,
-        held.grabOffsetY);
+        extent.first, extent.second, mouseX, mouseY, held.grabOffsetX, held.grabOffsetY);
     const InventoryBags::PlacementPreview preview = dropX >= 0 && dropY >= 0
         ? InventoryBags::previewPlaceInBag(character, bag, held.item, uint8_t(dropX), uint8_t(dropY), context.itemTable())
         : InventoryBags::PlacementPreview{};
@@ -6234,10 +6224,22 @@ void GameplayPartyOverlayRenderer::renderHeldInventoryItem(GameplayScreenRuntime
     const float fraction = bagOverviewFractionAt(context, width, height, mouseX, mouseY);
     const float itemX = std::round(mouseX - heldItem.grabOffsetX * fraction);
     const float itemY = std::round(mouseY - heldItem.grabOffsetY * fraction);
-    const float itemWidth =
+    float itemWidth =
         static_cast<float>(texture->width) * scale * fraction * pItemDefinition->inventoryDrawScale;
-    const float itemHeight =
+    float itemHeight =
         static_cast<float>(texture->height) * scale * fraction * pItemDefinition->inventoryDrawScale;
+    if (ReagentStacks::eligible(heldItem.item, context.itemTable()))
+    {
+        const auto *pGrid = context.findHudLayoutElement("CharacterInventoryGrid");
+        if (pGrid != nullptr)
+        {
+            const auto extent = fitInventoryIcon(itemWidth, itemHeight,
+                pGrid->width / Character::InventoryWidth * scale * fraction,
+                pGrid->height / Character::InventoryHeight * scale * fraction, true);
+            itemWidth = extent.first;
+            itemHeight = extent.second;
+        }
+    }
 
     context.submitHudTexturedQuad(*texture, itemX, itemY, itemWidth, itemHeight);
     submitItemTintOverlay(
@@ -10632,7 +10634,8 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                             static_cast<float>(itemTexture->height) * gridMetrics.scale
                                 * pItemDefinition->inventoryDrawScale;
                         const InventoryItemScreenRect itemRect =
-                            computeInventoryItemScreenRect(gridMetrics, item, itemWidth, itemHeight);
+                            computeInventoryItemScreenRect(gridMetrics, item, itemWidth, itemHeight,
+                                ReagentStacks::eligible(item, context.itemTable()));
                         GameplayHudOverlaySupport::renderItemRarityGlow(context, item, *itemTexture, itemRect.x,
                             itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
                         context.submitHudTexturedQuad(

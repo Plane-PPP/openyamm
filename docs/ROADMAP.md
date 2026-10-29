@@ -1,3 +1,10 @@
+## Inventory geometry hotfix — implemented / locally compiled and tested
+
+Shared one-cell aspect fit now matches render, grab and drop geometry for compact stack items.
+Confirmed real oversized Wasp Wing and Gog Blood icons; no global equipment-icon shrink.
+Logical merge/pickup dimensions normalize safely. [Details](research/ui-inventory-hotfix.md).
+Bottle stacks, simplified tooltips and Windows packaging remain next.
+
 ## UI & inventory hotfix — names fixed / implementation ongoing
 
 Confirmed upstream raw-identification title mismatch from2026-03-29, independent of recent stacks/merge.

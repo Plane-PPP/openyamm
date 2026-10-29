@@ -44,3 +44,13 @@ HitPointsValue has x115.208333,width85, whereas SP/AC end at240.208333; HP ends4
 layout's common right edge, not string padding. Threshold table removal preserves real current/next bonuses.
 
 Bottle stacks, final tests, Windows packaging and manual verification: pending.
+
+## Geometry implementation
+
+Actual icons_x2 PNG dimensions: Wasp Wing126x50 (logical63x25), Gog Blood60x120 (30x60),
+Obsidian80x66 (40x33), empty bottle64x120 (32x60). Inventory cells are32x32 logical.
+A shared aspect-fit/bounded rectangle function now serves drawing, grab offsets and drop placement, including
+MAW bag overview, chest and nested/shop inventory. Compact stack items alone fit a single cell; non-stack art
+retains native extents. Counts inset from the edge and also appear in nested inventories.
+New reagent definitions and merge/pickup geometry normalize to1x1; old save positions/counts are not mass-rewritten.
+Full native game and unit targets compiled; focused geometry/name/stack checks completed locally.

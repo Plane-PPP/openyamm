@@ -1,3 +1,4 @@
+#include "game/items/ReagentStacks.h"
 #include "game/tables/ItemTable.h"
 #include "engine/ImageAssetLoader.h"
 #include "game/party/SkillData.h"
@@ -1001,6 +1002,12 @@ void ItemTable::applyPotionSettings(const MergedPotionSettingTable &potionSettin
     for (ItemDefinition &entry : m_entries)
     {
         entry.hasPotionPower = false;
+        InventoryItem probe;
+        probe.objectDescriptionId = entry.itemId;
+        if (ReagentStacks::eligible(probe, this))
+        {
+            entry.inventoryWidth = entry.inventoryHeight = 1;
+        }
     }
 
     for (const MergedPotionSettingEntry &setting : potionSettingTable.entries())

@@ -478,8 +478,8 @@ void GameplayHudOverlaySupport::renderReagentQuantity(
     const std::string text = "x" + std::to_string(item.quantity);
     const float fontScale = std::max(0.5f, scale * 0.65f);
     const float textWidth = context.measureHudTextWidth("SMALLNUM", text) * fontScale;
-    const float textX = std::round(x + std::max(0.0f, width - textWidth));
-    const float textY = std::round(y + std::max(0.0f, height - font->fontHeight * fontScale));
+    const float textX = std::floor(x + std::max(0.0f, width - textWidth - scale));
+    const float textY = std::floor(y + std::max(0.0f, height - font->fontHeight * fontScale - scale));
     context.renderHudFontLayer(*font, font->shadowTextureHandle, text, textX, textY, fontScale);
     context.renderHudFontLayer(*font, context.hudFontMainLayer(*font, 0xffffffffu),
         text, textX, textY, fontScale);

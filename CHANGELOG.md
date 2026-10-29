@@ -2,6 +2,7 @@
 
 Implemented / locally tested, not packaged: zero-difficulty item names follow the existing identification rule;
 otherwise equal reagent stacks ignore only irrelevant identification flags. Genuine unknowns stay unknown.
+Compact stack icon drawing/grabbing/dropping now shares bounded aspect-fit geometry; other item art is unchanged.
 No potion effects, prices, recipe difficulties or save fields changed. [Investigation](docs/research/ui-inventory-hotfix.md).
 
 # Minotaur on OpenYAMM 1.18 — Windows ZIP packaged (2026-10-29)
