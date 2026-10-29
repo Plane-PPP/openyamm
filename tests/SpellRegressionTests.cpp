@@ -2575,6 +2575,7 @@ TEST_CASE("regression all six resistance spells retain duration stats and buffs 
         }
         OpenYAMM::Tests::PartySpellTestWorldRuntime world; world.bindParty(&party);
         PartySpellCastRequest request; request.spellId = spellIdValue(spells[i]);
+        request.applyRecovery = false;
         const auto result = PartySpellSystem::castSpell(party, world, data.spellTable, request);
         REQUIRE(result.succeeded());
         const auto *buff = party.partyBuff(buffs[i]);
@@ -2586,6 +2587,12 @@ TEST_CASE("regression all six resistance spells retain duration stats and buffs 
         for (size_t n = 0; n < party.members().size(); ++n)
             CHECK(actual(GameMechanics::buildCharacterSheetSummary(*party.member(n), &data.itemTable), i)
                 == before[n] + 4 * int(mastery));
+        REQUIRE(PartySpellSystem::castSpell(party, world, data.spellTable, request).succeeded());
+        REQUIRE(party.partyBuff(buffs[i]) != nullptr);
+        CHECK(party.partyBuff(buffs[i])->remainingSeconds == doctest::Approx(4 * 3600));
+        for (size_t n = 0; n < party.members().size(); ++n)
+            CHECK(actual(GameMechanics::buildCharacterSheetSummary(*party.member(n), &data.itemTable), i)
+                == before[n] + 4 * int(mastery)); // Refresh, never stack the resistance twice.
         party.advanceTimedStates(4 * 3600);
         CHECK_FALSE(party.hasPartyBuff(buffs[i]));
         for (size_t n = 0; n < party.members().size(); ++n)

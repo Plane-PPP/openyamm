@@ -146,7 +146,7 @@ jobs:
           if [ -n "$PREVIOUS_BUILD_SHA" ] && [ "$PREVIOUS_BUILD_SHA" != "$base_sha" ]; then
             echo "previous_build_sha must match the selected baseline"; exit 1
           fi
-          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.14-%s-%s-%s\n' \
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.18-%s-%s-%s\n' \
             "$base_path" "$base_sha" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
 
       - name: Detect actual runner resources and compilation parallelism
@@ -193,9 +193,10 @@ jobs:
 
       - name: Build and test Minotaur combat and save compatibility
         run: |
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests --parallel "$MINOTAUR_BUILD_JOBS"
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests openyamm_runtime_tests --parallel "$MINOTAUR_BUILD_JOBS"
           # MM9 is not shipped by this MM6/MM7/MM8 package; Bloodaxe is not an Axe mechanic test.
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*' --test-case-exclude='MM9*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inspect *,*potion*,*bag*,technology skills are appended*' --test-case-exclude='MM9*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*'
 
       - name: Prepare indexed content (not included in unchanged update payloads)
         run: >-

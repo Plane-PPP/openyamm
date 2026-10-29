@@ -1,3 +1,13 @@
+# OpenYAMM1.18 / Minotaur — implementation and local validation complete, Windows pending
+
+Official base4ab07ed519a66feab24599d69bc0ae19971250e2; update baseline remains
+minotaur-1.14-c991da37a2de-20-1. Merge, reagent stacks and numeric inspection supplements implemented.
+152 selected Linux cases /35,969 assertions plus3 native Lethal Strike cases /58 assertions passed.
+Native game, unit and runtime targets compile under safe-heavy-run/jobs4, no swap/PSI/OOM events.
+Windows workflow retains adaptive runner parallelism, adds the new tests and emits minotaur-1.18 versions.
+ZIP, real Windows installer checks and Windows measurements are pending; no manual retest claimed.
+[Implementation, compatibility and installation](docs/minotaur-1.18.md).
+
 ## Windows gameplay fixes ZIP — 2026-10-27
 
 Implemented / Automatically tested on Windows / Packaged; manual gameplay pending.

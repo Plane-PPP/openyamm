@@ -189,6 +189,6 @@ TEST_CASE("Lethal Strike new game creation adds innate skill beyond chosen skill
     REQUIRE(loader.loadCommonForGameplay(assets));
     GameDataRepository data;
     data.bind(loader);
-    NewGameScreen screen(assets, nullptr, data, false, false, true, {}, {});
+    NewGameScreen screen(assets, nullptr, data, false, false, true, {}, {}, {});
     NewGameScreenTestAccess::checkInnateLethalStrike(screen);
 }

@@ -2,6 +2,7 @@
 
 #include "game/items/AlchemyBenchRuntime.h"
 #include "game/items/InventoryItemMixingRuntime.h"
+#include "game/items/InventoryItemUseRuntime.h"
 #include "game/rules/PotionRules.h"
 #include "game/party/Party.h"
 
@@ -513,4 +514,44 @@ TEST_CASE("alchemy bonuses require a learned skill and do not mutate its trained
     CHECK(alchemist.findSkill("Alchemy")->mastery == SkillMastery::Expert);
     alchemist.itemSkillBonuses["Alchemy"] = -25;
     CHECK(standardPotionRules().mixingAlchemyLevel(alchemist) == 0);
+}
+
+TEST_CASE("alchemy official item and hireling bonuses are added exactly once")
+{
+    Character c;
+    c.skills["Alchemy"] = {"Alchemy", 4, SkillMastery::Expert};
+    c.itemSkillBonuses["Alchemy"] = 25;
+    c.hiredNpcSkillBonuses["Alchemy"] = 8;
+    CHECK(standardPotionRules().mixingAlchemyLevel(c) == 37);
+    CHECK(c.findSkill("Alchemy")->level == 4);
+    CHECK(c.findSkill("Alchemy")->mastery == SkillMastery::Expert);
+}
+
+TEST_CASE("black potions official once per character limit survives repeated use")
+{
+    const auto &data = requireRegressionGameData();
+    int checked = 0;
+    for (const auto &entry : data.itemTable.entries())
+    {
+        const auto *effect = data.mergedPotionSettingTable.effects().find(entry.itemId);
+        if (!effect || !effect->oncePerCharacter) continue;
+        Party party = makeParty(data, 2);
+        InventoryItem potion; potion.objectDescriptionId = entry.itemId; potion.standardEnchantPower = 50;
+        const auto use = [&](size_t member)
+        {
+            return InventoryItemUseRuntime::useItemOnMember(party, member, potion, data.itemTable,
+                &data.readableScrollTable, &data.mergedPotionSettingTable);
+        };
+        INFO(entry.name);
+        REQUIRE(use(0).consumed);
+        const auto bonus = party.member(0)->permanentBonuses;
+        const auto repeated = use(0);
+        CHECK_FALSE(repeated.consumed);
+        CHECK(party.member(0)->permanentBonuses.might == bonus.might);
+        CHECK(party.member(0)->permanentBonuses.intellect == bonus.intellect);
+        CHECK(party.member(0)->permanentBonuses.endurance == bonus.endurance);
+        CHECK(use(1).consumed);
+        ++checked;
+    }
+    CHECK(checked >= 7);
 }

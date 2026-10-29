@@ -1,3 +1,11 @@
+## Current OpenYAMM1.18 update
+
+Merged official1.18 without changing Minotaur balance. Ordinary reagents stack to50;
+RMB supplements show actual engine stat thresholds and armor/weapon Recovery.
+Production1.14 v132 fixture loads; new writer is mod140/upstream139.
+152 unit/regression cases and3 native Lethal Strike cases passed; Windows packaging remains pending.
+See [current notes](minotaur-1.18.md) for controls, compatibility, known boundaries and manual checks.
+
 ## Packaged shared gameplay fixes (2026-10-27)
 
 Alchemy bonus calculation, Levitate hazard protection and Mind Resistance duration passed selected automatic tests

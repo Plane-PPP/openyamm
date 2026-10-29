@@ -56,3 +56,30 @@ Full native executable compiled successfully (protected run 20261029T083305Z-241
 Final native/runtime/unit build passed. Three genuine indoor/outdoor/new-game Lethal Strike cases /58 assertions passed.
 Windows ZIP packaging: Pending.
 Manual tests, including the user's actual saves and Android/widescreen rendering, are not claimed.
+
+## Installation and manual checks
+
+Windows CI will produce an incremental ZIP against installed minotaur-1.14-c991da37a2de-20-1.
+Back up the actual save directory before the first launch; retain the old files separately for rollback.
+Extract the whole update ZIP, not its inner payload alone. Run Apply-MinotaurUpdate.cmd with
+`-InstallationRoot "D:\path\to\OpenYAMM"` pointing at the directory containing `app/current`, then launch the
+usual OpenYAMM.exe. The installer validates baseline/packs, writes a versioned program directory and switches
+the pointer only after validation; unchanged heavy packs are reused. It does not migrate saves itself.
+The new game loads old saves and writes mod140; do not open new saves in the old1.14 executable.
+
+Manual checklist: load a copy of an actual1.14 campaign save, verify party/equipment/skills and save/reload.
+Sort old reagent singles; merge49+3, split1/half, transfer between characters, brew repeatedly and sell a split
+portion. Check counts after dropping/picking up, chests/corpses and saving. Compare Recovery on both dual weapons,
+then change Axe mastery/Speed/Haste/armor. Check preserved descriptions, tier tables, wheel/touch scrolling and
+layout at4:3/16:9/ultrawide; Android native visual checks remain unperformed. Retest Lethal Strike notifications,
+GIANT threshold, Axe combinations, physical resistance, and retained teacher services.
+Teacher flavor/next-teacher dialogue, Identify Monster and expanded bestiary remain Deferred.
+
+## Local resource evidence
+
+[Recorded runs](research/v1.18-local-resources.csv): all compilation/tests under safe-heavy-run, jobs4,
+16/18GiB RAM and1GiB swap budget. No limit events, OOM, swap use or measurable memory PSI.
+The largest task peak (5,619MiB) occurred in an otherwise successful native build followed by a stale runtime-test
+constructor compile error; that test API was corrected, not a memory retry. Final native/runtime/unit build passed.
+Linux packaging tests:20 discovered,10 passed and10 Windows-only skipped; actual PowerShell tests run on Windows CI.
+Sparse local stale-bake check returned0; this is not a complete downloaded-assets lighting audit.
