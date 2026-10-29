@@ -68,7 +68,6 @@ std::optional<std::string> MawPotionRules::noBenefitText() const
 
 uint32_t MawPotionRules::mixingAlchemyLevel(const Character &alchemist) const
 {
-    // MAW owns its item-only bonus and cap; Standard already includes skill bonuses.
     const CharacterSkill *pSkill = alchemist.findSkill("Alchemy");
     const uint32_t trained = pSkill != nullptr ? pSkill->level : 0;
     const auto bonus = alchemist.itemSkillBonuses.find("Alchemy");

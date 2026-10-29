@@ -832,7 +832,7 @@ elements:
       visible: true
       interactive: false
       text:
-        value: Monster loot of this rarity or lower turns into its gold value when picked up.
+        value: Drops you would rather not carry turn into gold. Opens the filter with its presets.
         font: menu_lucida
         color: '#aeb5a5'
         align_x: left

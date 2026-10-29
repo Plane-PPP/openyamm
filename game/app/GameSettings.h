@@ -63,6 +63,12 @@ inline bool validRarityGlowValue(std::string_view value)
     return value == "off" || value == "hold" || value == "always";
 }
 
+// "member" or "bag" (controls.bag_number_keys).
+inline bool validBagNumberKeysValue(std::string_view value)
+{
+    return value == "member" || value == "bag";
+}
+
 bool parseLightGridQualityValue(const std::string &value, LightGridQuality &result);
 std::string lightGridQualityValue(LightGridQuality quality);
 
@@ -161,6 +167,10 @@ struct GameSettings
     bool walksound = true;
     bool showHits = true;
     bool alwaysRun = true;
+    // What the number keys do on the inventory page and in shops and chests when a ruleset gives bags (MAW):
+    // "member" selects a party member, as in MAW and the original games, and Shift with the Bag keys opens a bag;
+    // "bag" swaps them. A party of one opens bags either way.
+    std::string bagNumberKeys = "member";
     bool flipOnExit = false;
     int mouseSensitivity = 100;
     bool invertMouseY = false;
@@ -319,6 +329,8 @@ struct GameSettings
     std::string enemyHealthBarValues = "target";
     bool enemyHealthBarDamageTrail = true;
     bool questMarkers = false;
+    // The load and save lists: false keeps Quicksave, Autosave, then the rest by name; true puts the newest first.
+    bool saveListNewestFirst = false;
     // Obsidian basebar frame behind the gameplay party portraits; fullscreen overlays always draw their own strip.
     bool partyFrame = true;
     // The round potion quick-slot button at each gameplay portrait; the Potion Wheel key opens the ring without it.

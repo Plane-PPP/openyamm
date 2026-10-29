@@ -886,6 +886,14 @@ bool IndoorSceneRuntime::updateTimers(float deltaGameMinutes)
         initializeTimers(static_cast<double>(m_worldRuntime.gameMinutes()) - deltaGameMinutes);
     }
 
+    for (const EventRuntimeState::TimerControl &control : m_eventRuntimeState->timerControls)
+    {
+        controlScriptedEventTimers(m_timers, control.eventId, control.start, control.delayGameMinutes,
+            static_cast<double>(m_worldRuntime.gameMinutes()));
+    }
+
+    m_eventRuntimeState->timerControls.clear();
+
     if (m_timers.empty())
     {
         return false;

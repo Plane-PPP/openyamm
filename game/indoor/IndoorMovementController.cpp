@@ -32,6 +32,8 @@ constexpr int MaxIndoorMovementSubsteps = 64;
 constexpr float WallOverlapRecoveryMinVelocity = 480.0f;
 constexpr float BlockedWallMinimumUsefulResponseDistance = 0.25f;
 constexpr uint8_t StuckAirborneRecoveryRetrySteps = 32;
+// At least the edge slack the floor sampler allows around a face's bounds (IndoorGeometryUtils' FloorSlack).
+constexpr float SupportFaceBoundsSlack = 16.0f;
 
 bool hasCylinderCollisionHorizontalComponent(float x, float y)
 {
@@ -285,6 +287,16 @@ IndoorFloorSample sampleInvisibleSupportFaceWithFootprint(
     }
 
     const float probeRadius = std::max(radius, 0.0f);
+
+    // Every map's ramps are tried on each step of each body: skip the ones no probe of the footprint can reach.
+    if (x + probeRadius < pGeometry->minX - SupportFaceBoundsSlack
+        || x - probeRadius > pGeometry->maxX + SupportFaceBoundsSlack
+        || y + probeRadius < pGeometry->minY - SupportFaceBoundsSlack
+        || y - probeRadius > pGeometry->maxY + SupportFaceBoundsSlack)
+    {
+        return {};
+    }
+
     const float diagonalProbeRadius = probeRadius * 0.70710678f;
     const std::array<std::pair<float, float>, 9> probes = {{
         {0.0f, 0.0f},
@@ -2849,7 +2861,10 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
             return finalizeFallState(result);
         }
 
+        // Nothing moved, so gravity must not keep accelerating the body: an ever larger fall speed would only
+        // raise the substep count of every later step.
         IndoorMoveState stuckState = result;
+        stuckState.verticalVelocity = 0.0f;
 
         if (stuckState.stuckRecoveryCooldownSteps > 0)
         {

@@ -253,6 +253,34 @@ std::vector<ScriptedEventTimerState> reconcileScriptedEventTimers(
     return states;
 }
 
+void controlScriptedEventTimers(
+    std::vector<ScriptedEventTimerState> &states,
+    uint16_t eventId,
+    bool start,
+    double delayGameMinutes,
+    double currentGameMinutes)
+{
+    for (ScriptedEventTimerState &state : states)
+    {
+        if (state.definition.eventId != eventId)
+        {
+            continue;
+        }
+
+        state.stopped = !start;
+
+        if (start)
+        {
+            const double intervalGameMinutes =
+                std::max(MinimumNativeTimerIntervalGameMinutes, state.definition.intervalGameMinutes);
+            state.nextAlarmGameMinutes =
+                currentGameMinutes + (delayGameMinutes >= 0.0 ? delayGameMinutes : intervalGameMinutes);
+            state.eligibleGameMinutes = std::min(state.eligibleGameMinutes, currentGameMinutes);
+            state.hasFired = false;
+        }
+    }
+}
+
 bool updateScriptedEventTimers(
     std::vector<ScriptedEventTimerState> &states,
     double currentGameMinutes,
@@ -262,7 +290,8 @@ bool updateScriptedEventTimers(
 
     for (ScriptedEventTimerState &state : states)
     {
-        if ((state.hasFired && !state.definition.repeating)
+        if (state.stopped
+            || (state.hasFired && !state.definition.repeating)
             || currentGameMinutes < state.eligibleGameMinutes
             || currentGameMinutes < state.nextAlarmGameMinutes)
         {

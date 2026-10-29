@@ -3,6 +3,7 @@
 #include "game/content/ContentTableComposer.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayActorService.h"
+#include "game/gameplay/GameplayCombatController.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 #include "game/party/EventSpellBuffs.h"
 #include "game/party/Party.h"
@@ -261,6 +262,60 @@ TEST_CASE("quick-cast heals go to the endangered, else where they heal the most,
     CHECK_EQ(target(mawParty, 68), std::optional<size_t>(1));
 }
 
+TEST_CASE("quick-cast heals, cures and revivals pick their member; MAW's healing cures fall back to the condition")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+
+    // The heals, cures and revivals on one member pick it; a buff on one member (Bless at Normal) asks.
+    for (SpellId spell : {SpellId::Heal, SpellId::CureDisease, SpellId::RemoveCurse, SpellId::RemoveFear,
+             SpellId::CureParalysis, SpellId::CureInsanity, SpellId::CureWeakness, SpellId::CurePoison,
+             SpellId::RaiseDead, SpellId::Resurrection})
+    {
+        CHECK(PartySpellSystem::hasQuickCastCharacterTarget(spellIdValue(spell)));
+        const std::optional<PartySpellDescriptor> descriptor = PartySpellSystem::describeSpell(spellIdValue(spell));
+        REQUIRE(descriptor.has_value());
+        CHECK(descriptor->targetKind == PartySpellCastTargetKind::Character);
+    }
+
+    CHECK_FALSE(PartySpellSystem::hasQuickCastCharacterTarget(spellIdValue(SpellId::Bless)));
+    CHECK_FALSE(PartySpellSystem::hasQuickCastCharacterTarget(spellIdValue(SpellId::Preservation)));
+
+    PartySeed seed;
+    seed.members = {member("Healer", "Cleric", 10), member("Ariel", "Knight", 10), member("Brom", "Knight", 10)};
+    Party party;
+    party.seed(seed);
+    party.member(0)->skills["BodyMagic"] = {"BodyMagic", 20, SkillMastery::Grandmaster};
+    party.member(0)->skills["SpiritMagic"] = {"SpiritMagic", 20, SkillMastery::Grandmaster};
+    // Brom is cursed and diseased at full health; Ariel is whole.
+    party.member(2)->conditions.set(size_t(CharacterCondition::Cursed));
+    party.member(2)->conditions.set(size_t(CharacterCondition::DiseaseWeak));
+    const auto target = [&gameData](const Party &party, SpellId spell)
+    {
+        return PartySpellSystem::quickCastCharacterTarget(party, 0, spellIdValue(spell), &gameData.spellTable);
+    };
+
+    // Standard's Remove Curse and Cure Disease do not heal: they go to the condition.
+    CHECK_EQ(target(party, SpellId::RemoveCurse), std::optional<size_t>(2));
+    CHECK_EQ(target(party, SpellId::CureDisease), std::optional<size_t>(2));
+
+    // MAW's Greater Heal and Remove Curse heal: nobody wounded, they still cure Brom.
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    party.setRules(&rules.gameRules());
+    REQUIRE(PartySpellSystem::healAmount(party, *party.member(0), gameData.spellTable,
+        spellIdValue(SpellId::CureDisease)).has_value());
+    REQUIRE(PartySpellSystem::healAmount(party, *party.member(0), gameData.spellTable,
+        spellIdValue(SpellId::RemoveCurse)).has_value());
+    CHECK_EQ(target(party, SpellId::CureDisease), std::optional<size_t>(2));
+    CHECK_EQ(target(party, SpellId::RemoveCurse), std::optional<size_t>(2));
+    // A wounded member takes the heal first, as A7.2 rules.
+    party.member(1)->health = 1;
+    CHECK_EQ(target(party, SpellId::CureDisease), std::optional<size_t>(1));
+    // Heal cures nothing: with nobody wounded it has no target.
+    party.member(1)->health = Party::effectiveMaximumHealth(*party.member(1));
+    CHECK_FALSE(target(party, SpellId::Heal));
+}
+
 TEST_CASE("MAW auras need no target to quick-cast (A7.4)")
 {
     MawRules rules(RulesetOptions{}, MawMapLevels{});
@@ -422,6 +477,9 @@ TEST_CASE("MAW dragon rules follow the portrait's race (A6.1, A6.3)")
         int(std::round(bare * 1.3)));
     CHECK(mawCharacterAttackDelay(rules, humanDragon, items, CharacterAttackMode::Melee, 0).delay < bare);
     CHECK_EQ(mawCharacterAttackDelay(rules, dragon, items, CharacterAttackMode::DragonBreath, 0).delay,
+        int(std::round(bare * 1.3)));
+    // The Shoot tooltip and Ranged Power ask for a bow's delay; a dragon's ranged delay is its breath's.
+    CHECK_EQ(mawCharacterAttackDelay(rules, dragon, items, CharacterAttackMode::Bow, 0).delay,
         int(std::round(bare * 1.3)));
 
     // Scales never dodge, Grandmaster Dodging or not.
@@ -620,6 +678,19 @@ TEST_CASE("MAW Invisibility lasts longer and Resurrection only heals the living 
     REQUIRE(result.status == PartySpellCastStatus::Succeeded);
     CHECK_EQ(party.member(2)->health, Party::effectiveMaximumHealth(*party.member(2)));
     CHECK_FALSE(party.member(2)->conditions.test(size_t(CharacterCondition::Weak)));
+
+    // Remove Curse heals as well, but a heal never raises the dead: the target is uncursed and stays dead.
+    Character &dead = *party.member(2);
+    dead.health = -50;
+    dead.conditions.set(size_t(CharacterCondition::Dead));
+    dead.conditions.set(size_t(CharacterCondition::Cursed));
+    request.spellId = spellIdValue(SpellId::RemoveCurse);
+    caster.recoverySecondsRemaining = 0.0f;
+    REQUIRE(PartySpellSystem::castSpell(party, world, gameData.spellTable, request).status
+        == PartySpellCastStatus::Succeeded);
+    CHECK(dead.conditions.test(size_t(CharacterCondition::Dead)));
+    CHECK_FALSE(dead.conditions.test(size_t(CharacterCondition::Cursed)));
+    CHECK_EQ(dead.health, -50);
 }
 
 TEST_CASE("MAW solo parties keep their travel scrolls and see by Wizard Eye and torchlight (A7.12)")
@@ -1590,4 +1661,72 @@ TEST_CASE("a MAW dragon breathes by its race, whatever its class")
     CHECK(breathes(knight));
     CHECK_FALSE(breathes(human));
     bindGameRules(nullptr);
+}
+
+TEST_CASE("MAW missile and spell crits reach the status line: breath's Flame Blast, Fireball; Standard none (user)")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    const SpellEntry *pFlameBlast = gameData.spellTable.findById(123);
+    const SpellEntry *pFireball = gameData.spellTable.findById(spellIdValue(SpellId::Fireball));
+    REQUIRE(pFlameBlast != nullptr);
+    REQUIRE(pFireball != nullptr);
+
+    Character dragon;
+    dragon.name = "Dragon";
+    dragon.className = "Dragon";
+    dragon.raceId = 5;
+    dragon.level = 50;
+    dragon.might = dragon.accuracy = dragon.speed = 89;
+    dragon.skills["DragonAbility"] = {"DragonAbility", 17, SkillMastery::Grandmaster};
+    Character sorcerer;
+    sorcerer.name = "Sorcerer";
+    sorcerer.className = "Sorcerer";
+    sorcerer.level = 50;
+    sorcerer.skills["FireMagic"] = {"FireMagic", 17, SkillMastery::Grandmaster};
+
+    const auto criticalShare = [&](Character &caster, const SpellEntry &spell, const GameRules &gameRules)
+    {
+        CharacterSpellCast cast;
+        cast.pCaster = &caster;
+        cast.pItemTable = &gameData.itemTable;
+        cast.pSpell = &spell;
+        cast.mastery = SkillMastery::Grandmaster;
+        cast.skillLevel = 17;
+        int criticals = 0;
+
+        for (int roll = 0; roll < 200; ++roll)
+        {
+            bool critical = true;
+            gameRules.combat.rollSpellDamage(cast, &critical);
+            criticals += critical ? 1 : 0;
+        }
+
+        return criticals;
+    };
+
+    // Luck far past the crit cap crits every roll; no Luck crits about one roll in twenty.
+    dragon.luck = sorcerer.luck = 100000;
+    CHECK_EQ(criticalShare(dragon, *pFlameBlast, rules.gameRules()), 200);
+    CHECK_EQ(criticalShare(sorcerer, *pFireball, rules.gameRules()), 200);
+    dragon.luck = sorcerer.luck = 0;
+    CHECK(criticalShare(dragon, *pFlameBlast, rules.gameRules()) < 100);
+    CHECK(criticalShare(sorcerer, *pFireball, rules.gameRules()) < 100);
+    sorcerer.luck = 100000;
+    CHECK_EQ(criticalShare(sorcerer, *pFireball, standardGameRules()), 0);
+
+    // A missile's crit rides its impact event to MAW's status line, and only when it hits.
+    GameplayCombatController combat;
+    combat.recordPartyProjectileActorImpact(1, 0, 7, 120, 123, true, false, true);
+    combat.recordPartyProjectileActorImpact(1, 0, 7, 120, 123, true, false, false);
+    combat.recordPartyProjectileActorImpact(1, 0, 7, 0, 123, false, false, true);
+    const std::vector<GameplayCombatController::CombatEvent> &events = combat.pendingCombatEvents();
+    REQUIRE_EQ(events.size(), 3u);
+    CHECK(events[0].critical);
+    CHECK(GameplayCombatController::formatPartyProjectileActorImpactStatusText("Dragon", "Ogre", events[0],
+        &rules.gameRules().combat).find("(CRIT!)") != std::string::npos);
+    CHECK(GameplayCombatController::formatPartyProjectileActorImpactStatusText("Dragon", "Ogre", events[1],
+        &rules.gameRules().combat).find("(CRIT!)") == std::string::npos);
+    CHECK_FALSE(events[2].critical);
 }

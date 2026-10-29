@@ -273,15 +273,17 @@ TEST_CASE("EffectDefinitionLoader composes authored showcase with MM9 for all le
         const auto definitions = loader.load("engine/effects/library.yml", error);
         INFO(world, ": ", error);
         REQUIRE(definitions.has_value());
-        // Twelve authored recipes (three showcase, three creature hand/staff emitters, the behaviour ward sparks, five
-        // ground item sparkles), the 122 generated projectile flight, settled, impact and aura effects, the 63 melee
-        // effects (nine blows, three misses, 18 element accents, eleven material contacts in three strengths), the
-        // MM8 wisp stars and the MM9 library.
-        REQUIRE_EQ(definitions->size(), 235);
+        // Fourteen authored recipes (three showcase, three creature hand/staff emitters, the behaviour ward sparks,
+        // five ground item sparkles, two beams), the 122 generated projectile flight, settled, impact and aura
+        // effects, the 63 melee effects (nine blows, three misses, 18 element accents, eleven material contacts in
+        // three strengths), the MM8 wisp stars and the MM9 library.
+        REQUIRE_EQ(definitions->size(), 237);
         Game::EffectLibrary library;
         REQUIRE(library.replace(*definitions, error));
         REQUIRE(library.find("mm9:spell_reaver") != nullptr);
         REQUIRE(library.find("openyamm:fx/creature_dark_staff") != nullptr);
+        REQUIRE(library.find("openyamm:fx/energy_beam") != nullptr);
+        CHECK(library.find("openyamm:fx/arc_beam")->ribbons.front().beam);
         Game::EffectResourceLibrary resources;
         Engine::ModelAssetCache models;
         REQUIRE(resources.load(assets, "engine/effects/resource_bindings.yml", *definitions, error, &models));
@@ -449,6 +451,7 @@ effects:
         erosion: 0.5
         jitter: 6
         jitter_rate: 20
+        beam: true
         width_keys: [{time: 0, value: 1}, {time: 1, value: 0.2}]
         color_keys: [{time: 0, rgb: [255, 200, 100], transparency: 0}]
       - {id: 3, type: sprite_system, start_seconds: 0, end_seconds: 30, sprite_resource: test:flame,
@@ -466,6 +469,7 @@ effects:
     CHECK(ribbon.maxLength == doctest::Approx(200.0f));
     CHECK(ribbon.fill == doctest::Approx(0.0f));
     CHECK(ribbon.jitter == doctest::Approx(6.0f));
+    CHECK(ribbon.beam);
     CHECK_EQ(ribbon.widthKeys.size(), 2);
     REQUIRE_EQ(definition.spriteEmitters.size(), 1);
     CHECK(definition.spriteEmitters[0].emissionDistance == doctest::Approx(12.0f));

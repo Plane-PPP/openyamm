@@ -942,10 +942,14 @@ std::vector<InventoryItem> generateGuildSpellbookStock(
     return results;
 }
 
+// A vendor's fixed stock for one restock: the page of the restock's turn. A tiered lane (a row gated by the world's
+// objectives, min_objectives) shows instead every row the party has earned, in page and slot order, a page's worth at
+// a time, each restock the next (wrapping; a short list repeats).
 std::vector<InventoryItem> deterministicStockItems(
     const ItemTable &itemTable,
     const std::vector<HouseEntry::DeterministicStockPage> &pages,
-    uint32_t refreshSequence)
+    uint32_t refreshSequence,
+    size_t objectivesDone)
 {
     if (pages.empty())
     {
@@ -953,20 +957,55 @@ std::vector<InventoryItem> deterministicStockItems(
     }
 
     const size_t pageOrdinal = refreshSequence > 0 ? static_cast<size_t>(refreshSequence - 1) : 0;
-    const HouseEntry::DeterministicStockPage &page = pages[pageOrdinal % pages.size()];
+    size_t pageSize = 0;
+    bool tiered = false;
+    std::vector<const HouseEntry::DeterministicStockItem *> earned;
+
+    for (const HouseEntry::DeterministicStockPage &page : pages)
+    {
+        pageSize = std::max(pageSize, page.items.size());
+
+        for (const HouseEntry::DeterministicStockItem &stockItem : page.items)
+        {
+            tiered = tiered || stockItem.minObjectives > 0;
+
+            if (stockItem.itemId != 0 && stockItem.minObjectives <= objectivesDone)
+            {
+                earned.push_back(&stockItem);
+            }
+        }
+    }
+
+    std::vector<const HouseEntry::DeterministicStockItem *> shown;
+
+    if (tiered)
+    {
+        for (size_t slot = 0; slot < pageSize && !earned.empty(); ++slot)
+        {
+            shown.push_back(earned[(pageOrdinal * pageSize + slot) % earned.size()]);
+        }
+    }
+    else
+    {
+        for (const HouseEntry::DeterministicStockItem &stockItem : pages[pageOrdinal % pages.size()].items)
+        {
+            shown.push_back(&stockItem);
+        }
+    }
+
     std::vector<InventoryItem> result;
-    result.reserve(page.items.size());
-    for (const HouseEntry::DeterministicStockItem &stockItem : page.items)
+    result.reserve(shown.size());
+    for (const HouseEntry::DeterministicStockItem *pStockItem : shown)
     {
         InventoryItem item = ItemGenerator::makeInventoryItem(
-            stockItem.itemId,
+            pStockItem->itemId,
             itemTable,
             ItemGenerationMode::Shop);
-        item.quantity = stockItem.quantity;
-        item.identified = stockItem.identified;
-        item.standardEnchantId = stockItem.standardEnchantId;
-        item.standardEnchantPower = stockItem.standardEnchantPower;
-        item.specialEnchantId = stockItem.specialEnchantId;
+        item.quantity = pStockItem->quantity;
+        item.identified = pStockItem->identified;
+        item.standardEnchantId = pStockItem->standardEnchantId;
+        item.standardEnchantPower = pStockItem->standardEnchantPower;
+        item.specialEnchantId = pStockItem->specialEnchantId;
         result.push_back(item);
     }
     return result;
@@ -1000,11 +1039,13 @@ Party::HouseStockState &ensureHouseStockGenerated(
         state.standardStock = deterministicStockItems(
             itemTable,
             houseEntry.deterministicStandardStockPages,
-            state.refreshSequence);
+            state.refreshSequence,
+            party.objectivesDone());
         state.specialStock = deterministicStockItems(
             itemTable,
             houseEntry.deterministicSpecialStockPages,
-            state.refreshSequence);
+            state.refreshSequence,
+            party.objectivesDone());
         state.spellbookStock.clear();
         return state;
     }
@@ -1178,7 +1219,8 @@ std::string buildSellPhrase(
         houseEntry.priceMultiplier,
         pStandardItemEnchantTable,
         pSpecialItemEnchantTable,
-        effectiveReputation);
+        effectiveReputation,
+        houseEntry.resaleCapPercent);
     const int listedPrice = std::max(1, static_cast<int>(std::round(
         static_cast<float>(std::max(
             1,
@@ -1450,7 +1492,8 @@ int HouseServiceRuntime::sellPrice(
         houseEntry.priceMultiplier,
         &standardItemEnchantTable,
         &specialItemEnchantTable,
-        effectiveReputation);
+        effectiveReputation,
+        houseEntry.resaleCapPercent);
 }
 
 bool HouseServiceRuntime::canSellItemToHouse(
@@ -1818,27 +1861,10 @@ bool HouseServiceRuntime::tryStealStockItem(
 
     const int itemValue =
         PriceCalculator::itemValue(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
-    const Party::Snapshot snapshot = party.snapshot();
-    const bool inventoryHasRoom = party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), item);
-    party.restoreSnapshot(snapshot);
-    pMember = party.activeMember();
-
-    if (pMember == nullptr)
-    {
-        statusText = "That item is unavailable.";
-
-        if (pResult != nullptr)
-        {
-            *pResult = ShopItemServiceResult::Unavailable;
-        }
-
-        return false;
-    }
-
     StealingAttemptInput input = {};
     input.targetKind = StealingTargetKind::Shop;
     input.itemValue = itemValue;
-    input.inventoryHasRoom = inventoryHasRoom;
+    input.inventoryHasRoom = party.canGrantInventoryItem(item);
     input.successRoll = successRoll;
     input.caughtRoll = caughtRoll;
 

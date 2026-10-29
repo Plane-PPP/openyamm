@@ -190,6 +190,10 @@ public:
     // The fewest monster types an Arena bout draws from: types nearest the bout's level range join when fewer lie in it
     // (MAW: 12, MawCore/Fixes.lua:87-107). Standard: none.
     virtual size_t arenaMinimumTypes() const;
+    // The level an Arena bout draws a monster type by: the original engine reads the table's level after the ruleset
+    // has set it for the map (MAW: d42's six-fold levels, at most 255). Standard: the table's.
+    virtual int arenaDrawLevel(
+        const MonsterTable::MonsterStatsEntry &stats, const MonsterTable &monsterTable, const MapStatsEntry &map) const;
     // Days after which a left map refills its monsters (0: never). Standard: the map table's.
     virtual int mapRespawnDays(const MapStatsEntry &map) const;
     // Whether the party may reset a map it is about to enter (MAW: a completed dungeon, except in Road to Insanity and

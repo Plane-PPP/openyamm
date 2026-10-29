@@ -63,6 +63,8 @@ struct ScriptedEventTimerState
     bool initialCalendarFirePending = false;
     bool migratedFromLegacySave = false;
     double migratedRemainingGameMinutes = 0.0;
+    // Stopped by evt.StopTimer until evt.StartTimer; saved with the map's timers.
+    bool stopped = false;
 };
 
 double legacyTimerGameMinutesFromTicks(int64_t legacyTicks);
@@ -78,6 +80,15 @@ std::vector<ScriptedEventTimerState> reconcileScriptedEventTimers(
     double currentGameMinutes,
     int64_t lastVisitTime,
     bool resetLegacyTimers);
+
+// evt.StopTimer / evt.StartTimer on the timers of an event: stop them, or run them again with their next alarm
+// delayGameMinutes from now (negative: one interval; a one-shot timer may fire again).
+void controlScriptedEventTimers(
+    std::vector<ScriptedEventTimerState> &states,
+    uint16_t eventId,
+    bool start,
+    double delayGameMinutes,
+    double currentGameMinutes);
 
 bool updateScriptedEventTimers(
     std::vector<ScriptedEventTimerState> &states,

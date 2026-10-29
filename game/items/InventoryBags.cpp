@@ -613,9 +613,11 @@ const InventoryItem *itemInBagAt(const Character &character, uint8_t bag, uint8_
     return nullptr;
 }
 
-namespace
+InventoryItem *itemInBagAt(Character &character, uint8_t bag, uint8_t gridX, uint8_t gridY)
 {
-// Runs the open bag's own operation on `bag`: it is opened for the call and the bag that was open is opened again.
+    return const_cast<InventoryItem *>(itemInBagAt(std::as_const(character), bag, gridX, gridY));
+}
+
 bool withBagOpen(Party &party, size_t memberIndex, uint8_t bag, int bagCount, const std::function<bool()> &operation)
 {
     Character *pMember = party.member(memberIndex);
@@ -636,7 +638,6 @@ bool withBagOpen(Party &party, size_t memberIndex, uint8_t bag, int bagCount, co
     const bool done = operation();
     openBag(*pMember, openBagIndex, bagCount);
     return done;
-}
 }
 
 bool placeInBag(

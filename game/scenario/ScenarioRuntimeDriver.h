@@ -263,6 +263,8 @@ public:
     bool blinkActor(size_t actorIndex, std::string &failure);
     // The actor starts its charge at the party now (its charge modifier's wind-up, then the dash).
     bool chargeActor(size_t actorIndex, std::string &failure);
+    // The actor starts its frenzy now (its frenzy modifier's roar, then the frenzy).
+    bool frenzyActor(size_t actorIndex, std::string &failure);
     // The map's charges so far (empty without a map that runs them).
     std::optional<GameplayChargeCounts> chargeCounts() const;
     // The active map's projectiles (null without a map).

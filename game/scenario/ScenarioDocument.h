@@ -44,6 +44,7 @@ enum class ScenarioStepKind
     BlinkActor,
     ExecuteEvent,
     ChargeActor,
+    FrenzyActor,
     SetupShortcut,
     GrantItem,
     RulesetBanks,

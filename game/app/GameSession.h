@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/content/ContentManifest.h"
+
 #include "game/events/EventRuntime.h"
 #include "game/app/GameSettings.h"
 #include "game/gameplay/GameplayFxService.h"
@@ -124,6 +126,26 @@ public:
     const GameplayUiRuntime &gameplayUiRuntime() const;
     GameplayActorService &gameplayActorService();
     const GameplayActorService &gameplayActorService() const;
+    // The active world's taverns seat generated mercenaries (world.yml tavernHirelings).
+    void setTavernHirelings(bool enabled)
+    {
+        m_tavernHirelings = enabled;
+    }
+    // The active world's Hum (world.yml hum), handed to the party for each map it enters.
+    void setWorldHum(const WorldHumDefinition &hum)
+    {
+        m_worldHum = hum;
+    }
+
+    void setWorldFloorBurn(const WorldFloorBurnDefinition &floorBurn)
+    {
+        m_worldFloorBurn = floorBurn;
+    }
+
+    void setWorldObjectiveQBits(const std::vector<uint32_t> &qbits)
+    {
+        m_worldObjectiveQBits = qbits;
+    }
     GameplayCombatController &gameplayCombatController();
     const GameplayCombatController &gameplayCombatController() const;
     GameplayItemService &gameplayItemService();
@@ -175,7 +197,6 @@ public:
 
     const std::unordered_map<std::string, OutdoorWorldRuntime::Snapshot> &outdoorWorldStates() const;
     std::unordered_map<std::string, OutdoorWorldRuntime::Snapshot> &outdoorWorldStates();
-    void storeOutdoorWorldState(const std::string &mapFileName, const OutdoorWorldRuntime::Snapshot &snapshot);
 
     const std::optional<IndoorSceneRuntime::Snapshot> &currentIndoorSceneState() const;
     void setCurrentIndoorSceneState(const IndoorSceneRuntime::Snapshot &snapshot);
@@ -183,7 +204,6 @@ public:
 
     const std::unordered_map<std::string, IndoorSceneRuntime::Snapshot> &indoorSceneStates() const;
     std::unordered_map<std::string, IndoorSceneRuntime::Snapshot> &indoorSceneStates();
-    void storeIndoorSceneState(const std::string &mapFileName, const IndoorSceneRuntime::Snapshot &snapshot);
 
     const std::unordered_map<std::string, int32_t> &namedGlobalVars() const;
     int32_t namedGlobalVar(const std::string &name, int32_t defaultValue = 0) const;
@@ -244,6 +264,9 @@ public:
     void restoreHeldInventoryItemFromSaveData(const GameSaveData &saveData);
 
 private:
+    // The one key a map's stored state goes under: its canonical id, or the file name of a map MapStats does not list.
+    std::string mapStateKey(const std::string &mapFileName) const;
+
     struct GameplayUpdatePerformanceDiagnostics
     {
         uint64_t frames = 0;
@@ -306,6 +329,10 @@ private:
     GameplayUiController m_gameplayUiController;
     GameplayUiRuntime m_gameplayUiRuntime;
     GameplayActorService m_gameplayActorService;
+    bool m_tavernHirelings = true;
+    WorldHumDefinition m_worldHum;
+    WorldFloorBurnDefinition m_worldFloorBurn;
+    std::vector<uint32_t> m_worldObjectiveQBits;
     GameplayCombatController m_gameplayCombatController;
     GameplayItemService m_gameplayItemService;
     GameplayProjectileService m_gameplayProjectileService;

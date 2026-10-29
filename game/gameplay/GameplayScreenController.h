@@ -195,6 +195,8 @@ public:
 
     static void applySharedItemInspectSkillInteraction(
         GameplayScreenRuntime &context);
+    // Which item an inspection's identify/repair attempt was made on: a held right button tries each item once.
+    static uint64_t itemInspectInteractionKey(const GameplayUiController::ItemInspectOverlayState &overlay);
 
     static void updateRestOverlayProgress(
         GameplayScreenRuntime &context,

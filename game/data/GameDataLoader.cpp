@@ -4569,6 +4569,7 @@ bool GameDataLoader::loadItemTable(const Engine::AssetFileSystem &assetFileSyste
 
     std::vector<KeyedTableContributionRows> itemEffectContributions;
     std::vector<std::vector<std::string>> itemSetRows;
+    std::vector<std::vector<std::string>> workshopModRows;
     std::vector<std::vector<std::string>> itemAliasRows;
 
     for (const WorldManifest &manifest : mountedWorlds)
@@ -4577,6 +4578,7 @@ bool GameDataLoader::loadItemTable(const Engine::AssetFileSystem &assetFileSyste
         {
             if (contribution.table != "item_effects"
                 && contribution.table != "item_sets"
+                && contribution.table != "workshop_mods"
                 && contribution.table != "item_aliases")
             {
                 continue;
@@ -4620,6 +4622,10 @@ bool GameDataLoader::loadItemTable(const Engine::AssetFileSystem &assetFileSyste
             {
                 itemSetRows.insert(itemSetRows.end(), contributionRows.begin(), contributionRows.end());
             }
+            else if (contribution.table == "workshop_mods")
+            {
+                workshopModRows.insert(workshopModRows.end(), contributionRows.begin(), contributionRows.end());
+            }
             else
             {
                 itemAliasRows.insert(itemAliasRows.end(), contributionRows.begin(), contributionRows.end());
@@ -4637,10 +4643,30 @@ bool GameDataLoader::loadItemTable(const Engine::AssetFileSystem &assetFileSyste
 
     if (!m_itemTable.loadContentEffectRows(itemEffectRows, compositionError)
         || !m_itemTable.loadItemSetRows(itemSetRows, compositionError)
+        || !m_itemTable.loadWorkshopModRows(workshopModRows, compositionError)
         || !m_itemTable.loadSourceAliasRows(itemAliasRows, compositionError))
     {
         std::cerr << "Failed to parse contributed item effects: " << compositionError << '\n';
         return false;
+    }
+
+    for (const WorldManifest &manifest : mountedWorlds)
+    {
+        const std::string lootPath = "worlds/" + manifest.id + "/loot.yml";
+
+        if (!assetFileSystem.exists(lootPath))
+        {
+            continue;
+        }
+
+        const std::optional<std::string> text = assetFileSystem.readTextFile(lootPath);
+        std::string lootError = "worlds/" + manifest.id + "/loot.yml: unreadable";
+
+        if (!text || !m_itemTable.loadWorldLootYaml(*text, manifest.id, lootError))
+        {
+            std::cerr << "Failed to load " << lootError << '\n';
+            return false;
+        }
     }
 
     ItemModelBindings groundModels;
@@ -4683,6 +4709,31 @@ bool GameDataLoader::loadItemEnchantTables(const Engine::AssetFileSystem &assetF
     {
         std::cerr << "Failed to parse item enchant tables: STDITEMS / SPCITEMS\n";
         return false;
+    }
+
+    // World add-ons: a world's own enchantments (worlds/<world>/enchantments.yml), rolled only on its items.
+    std::vector<WorldManifest> mountedWorlds;
+    std::string manifestError;
+
+    if (!loadMountedWorldManifests(assetFileSystem, mountedWorlds, manifestError))
+    {
+        std::cerr << "Failed to resolve world enchantments: " << manifestError << '\n';
+        return false;
+    }
+
+    for (const WorldManifest &manifest : mountedWorlds)
+    {
+        const std::string path = "worlds/" + manifest.id + "/enchantments.yml";
+        const std::optional<std::string> text =
+            assetFileSystem.exists(path) ? assetFileSystem.readTextFile(path) : std::nullopt;
+        std::string error;
+
+        if (text && !loadWorldEnchantments(*text, manifest.id, m_standardItemEnchantTable, m_specialItemEnchantTable,
+                error))
+        {
+            std::cerr << "Failed to load " << error << '\n';
+            return false;
+        }
     }
 
     return true;

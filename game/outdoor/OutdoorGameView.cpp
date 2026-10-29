@@ -3785,6 +3785,13 @@ float OutdoorGameView::cameraPitchRadians() const
     return m_cameraPitchRadians;
 }
 
+float OutdoorGameView::viewAspectRatio() const
+{
+    return m_lastRenderWidth > 0 && m_lastRenderHeight > 0
+        ? static_cast<float>(m_lastRenderWidth) / static_cast<float>(m_lastRenderHeight)
+        : 4.0f / 3.0f;
+}
+
 void OutdoorGameView::syncGameplayMouseLookMode(SDL_Window *pWindow, bool enabled)
 {
     const bool windowFocused = windowHasInputFocus(pWindow);

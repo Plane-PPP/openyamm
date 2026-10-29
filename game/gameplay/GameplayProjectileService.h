@@ -55,10 +55,10 @@ public:
         float elapsedSeconds = 0.0f;
         // The target is gone (dead or removed): it flies straight on.
         bool lost = false;
-        // Homes only while its flight points within this many radians of the target, seen from above, tested again
-        // each frame: outside the cone it flies straight on until its line crosses the target again (0: no cone).
-        // MAW's monster missiles (FSPS-2-10).
-        float lockConeRadians = 0.0f;
+        // Homes only while the target's direction, seen from above, turns away from its flight slower than this
+        // many radians a second, tested again each step: a faster sidestep leaves it flying straight on until its
+        // line crosses the target again (0: no lock). MAW's monster missiles (FSPS-2-10), frame-rate independent.
+        float lockRadiansPerSecond = 0.0f;
     };
 
     struct ProjectileState
@@ -105,12 +105,24 @@ public:
         int attackBonus = 0;
         CombatDamageType damageType = CombatDamageType::Physical;
         // Set for party attacks (CharacterAttackResult::shieldTier); otherwise the tier follows from the spell and
-        // damage type (projectileShieldTier). Not saved: a projectile in flight at a save falls back to that.
+        // damage type (projectileShieldTier). Saved from save version 135.
         std::optional<ShieldAttackTier> shieldTier;
+        // What the party weapon's tech skill adds to its shield hit (CharacterAttackResult::shieldModifiers); not
+        // saved.
+        ShieldHitModifiers shieldModifiers;
         // Resisted by the lower of the monster's physical and fire resistance (MAW's fire arrows); not saved.
         bool weakerOfPhysicalAndFire = false;
-        // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); not saved.
+        // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); saved.
         float explosionRadius = 0.0f;
+        // A party missile or spell whose damage was a critical hit, for the status line and combat log where it
+        // lands; not saved.
+        bool critical = false;
+        // An event's missile (evt.FireMissile): it passes the party, whose damage the event deals itself, and bursts
+        // at its target when its flight time ends unless it strikes something first; saved.
+        bool eventMissile = false;
+        float targetX = 0.0f;
+        float targetY = 0.0f;
+        float targetZ = 0.0f;
         bool useActorHitChance = false;
         bool turnBasedPendingAction = false;
         std::optional<ProjectileHoming> homing;
@@ -132,6 +144,10 @@ public:
         int sourceSpellId = 0;
         // Presentation only (per-monster impact visuals); not saved, so a loaded impact shows the recipe's own.
         int16_t sourceMonsterId = 0;
+        // Presentation only, not saved: the unit direction the projectile flew when it struck, zero when unknown.
+        float flightDirectionX = 0.0f;
+        float flightDirectionY = 0.0f;
+        float flightDirectionZ = 0.0f;
         std::string objectName;
         std::string objectSpriteName;
         std::string sourceObjectName;
@@ -181,10 +197,19 @@ public:
         int attackBonus = 0;
         CombatDamageType damageType = CombatDamageType::Physical;
         std::optional<ShieldAttackTier> shieldTier;
+        // What the party weapon's tech skill adds to its shield hit (CharacterAttackResult::shieldModifiers); not
+        // saved.
+        ShieldHitModifiers shieldModifiers;
         // Resisted by the lower of the monster's physical and fire resistance (MAW's fire arrows); not saved.
         bool weakerOfPhysicalAndFire = false;
         // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); not saved.
         float explosionRadius = 0.0f;
+        // Its damage was a critical hit (ProjectileState::critical).
+        bool critical = false;
+        // An event's missile (ProjectileState::eventMissile), reaching its target in flightSeconds (0: at the
+        // object's speed).
+        bool eventMissile = false;
+        float flightSeconds = 0.0f;
         bool useActorHitChance = false;
         bool turnBasedPendingAction = false;
         uint32_t impactSoundIdOverride = 0;
@@ -385,6 +410,8 @@ public:
         int partyCount = 1;
         // The party member who fired a party missile, while in the party.
         const Character *pShooter = nullptr;
+        // The target's monster id (a world enchantment's bonus against its monsters).
+        int targetMonsterId = 0;
     };
 
     struct ProjectileDirectActorImpact
@@ -423,6 +450,8 @@ public:
         int partyCount = 1;
         // The party member who fired a party missile, while in the party.
         const Character *pShooter = nullptr;
+        // The target's monster id (ProjectileDirectActorImpactInput::targetMonsterId).
+        int targetMonsterId = 0;
         bool waterTerrainImpact = false;
         ProjectileBounceSurfaceFacts bounceSurface;
     };
@@ -657,6 +686,9 @@ public:
     static uint32_t ticksFromDeltaSeconds(float deltaSeconds);
     // What the projectile is to an energy shield: its party attack tier, else a spell, else by damage type.
     static ShieldAttackTier projectileShieldTier(const ProjectileState &projectile);
+    // What the party's projectile adds to its shield hit: its weapon's modifiers, or its caster's Lattice Resonator
+    // for a spell.
+    static ShieldHitModifiers partyShieldModifiers(const ProjectileState &projectile, const Party *pParty);
     ProjectileSpawnResult spawnProjectile(const ProjectileSpawnRequest &request);
     // A party spell that leaps on from the monster it hit (MAW's Chain Lightning): a copy, one mastery lower, from that
     // monster to the nearest other living hostile one within 768; nothing when the rules stop it or none is near.

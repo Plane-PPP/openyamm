@@ -2,9 +2,11 @@
 
 #include "game/audio/SoundRef.h"
 #include "game/events/EventRuntime.h"
+#include "game/events/EvtEnums.h"
 #include "game/gameplay/ActorBehaviorCatalog.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/MonsterSpellSupport.h"
+#include "game/party/Party.h"
 #include "game/tables/SpellTable.h"
 
 extern "C"
@@ -27,11 +29,14 @@ struct ActorBehaviorRuntime::LuaCallContext
     const ActorBehaviorActorFacts *pActor = nullptr;
     ActorBehaviorFrameResult *pResult = nullptr;
     GameplayWorldPoint partyPosition;
+    const Party *pParty = nullptr;
 };
 
 namespace
 {
 constexpr const char *RuntimeRegistryKey = "openyamm.actorBehaviorRuntime";
+// A climbing flyer's height above its target after its shield breaks (out of melee reach).
+constexpr float ShieldBreakClimbHeight = 600.0f;
 constexpr const char *SelfMetatableName = "openyamm.actorBehaviorSelf";
 constexpr const char *SelfActorKey = "__actor";
 constexpr float DefaultThinkIntervalSeconds = 0.5f;
@@ -792,6 +797,178 @@ int luaSelfSummon(lua_State *pLuaState)
     return 0;
 }
 
+// self:summonAt(monsterId, x, y, z[, count[, spread]]): monsters around a point (count up to 16, spread 0).
+int luaSelfSummonAt(lua_State *pLuaState)
+{
+    const ActorBehaviorRuntime::LuaCallContext &context = callContext(pLuaState);
+    const lua_Integer monsterId = luaL_checkinteger(pLuaState, 2);
+    const float x = static_cast<float>(luaL_checknumber(pLuaState, 3));
+    const float y = static_cast<float>(luaL_checknumber(pLuaState, 4));
+    const float z = static_cast<float>(luaL_checknumber(pLuaState, 5));
+    const lua_Integer count = luaL_optinteger(pLuaState, 6, 1);
+    const float spread = static_cast<float>(luaL_optnumber(pLuaState, 7, 0.0));
+    luaL_argcheck(pLuaState, monsterId > 0 && monsterId <= 32767, 2, "invalid monster id");
+    luaL_argcheck(pLuaState, count > 0 && count <= 16, 6, "summon count must be 1..16");
+
+    for (lua_Integer index = 0; index < count; ++index)
+    {
+        const float angle = float(nextRandom(context.pState->randomState) >> 8) / float(1u << 24)
+            * 6.2831853f;
+        ActorBehaviorSummonRequest request = {};
+        request.monsterId = static_cast<int16_t>(monsterId);
+        request.count = 1;
+        request.position = {x + std::cos(angle) * spread, y + std::sin(angle) * spread, z};
+        context.pResult->summons.push_back(request);
+    }
+
+    return 0;
+}
+
+void pushActorCommand(lua_State *pLuaState, ActorBehaviorActorCommand::Kind kind, float seconds,
+    const std::string &effectId)
+{
+    const ActorBehaviorRuntime::LuaCallContext &context = callContext(pLuaState);
+    ActorBehaviorActorCommand command = {};
+    command.kind = kind;
+    command.actorIndex = context.pActor->actorIndex;
+    command.seconds = seconds;
+    command.effectId = effectId;
+    context.pResult->actorCommands.push_back(std::move(command));
+}
+
+// self:blink(): blinks away now, as the blink modifier does (its range, or the default one without it).
+int luaSelfBlink(lua_State *pLuaState)
+{
+    pushActorCommand(pLuaState, ActorBehaviorActorCommand::Kind::Blink, 0.0f, {});
+    return 0;
+}
+
+// self:suspendShield([seconds]): its energy shield drops and does not regenerate for the seconds (none: until
+// self:restoreShield()).
+int luaSelfSuspendShield(lua_State *pLuaState)
+{
+    pushActorCommand(pLuaState, ActorBehaviorActorCommand::Kind::SuspendShield,
+        static_cast<float>(luaL_optnumber(pLuaState, 2, -1.0)), {});
+    return 0;
+}
+
+int luaSelfRestoreShield(lua_State *pLuaState)
+{
+    pushActorCommand(pLuaState, ActorBehaviorActorCommand::Kind::RestoreShield, 0.0f, {});
+    return 0;
+}
+
+// self:leave([effect]): leaves the map (hidden for good, as SetMonsterBit's invisible bit), with the effect at it.
+int luaSelfLeave(lua_State *pLuaState)
+{
+    pushActorCommand(pLuaState, ActorBehaviorActorCommand::Kind::Leave, 0.0f, luaL_optstring(pLuaState, 2, ""));
+    return 0;
+}
+
+// self:setSpeed(multiplier): moves and attacks this much faster (1 restores); saved with the instance.
+int luaSelfSetSpeed(lua_State *pLuaState)
+{
+    const float multiplier = static_cast<float>(luaL_checknumber(pLuaState, 2));
+    luaL_argcheck(pLuaState, multiplier > 0.0f && multiplier <= 10.0f, 2, "speed must be in (0, 10]");
+    callContext(pLuaState).pState->speedMultiplier = multiplier;
+    return 0;
+}
+
+// self:setInvulnerable(on): no damage reaches it while on (the Bulwark while its couplings stand).
+int luaSelfSetInvulnerable(lua_State *pLuaState)
+{
+    callContext(pLuaState).pState->invulnerable = lua_toboolean(pLuaState, 2) != 0;
+    return 0;
+}
+
+// self:setLeash(radius): a post at most radius from its home, walking back with no target (nil or 0 clears it).
+int luaSelfSetLeash(lua_State *pLuaState)
+{
+    const float radius = static_cast<float>(luaL_optnumber(pLuaState, 2, 0.0));
+    ActorBehaviorInstanceState &state = *callContext(pLuaState).pState;
+    state.leashRadius = radius > 0.0f ? std::optional<float>(radius) : std::nullopt;
+    return 0;
+}
+
+// self:setRangedBand(min, max): keeps that distance to its target between shots (no arguments clears it).
+int luaSelfSetRangedBand(lua_State *pLuaState)
+{
+    ActorBehaviorInstanceState &state = *callContext(pLuaState).pState;
+    if (lua_isnoneornil(pLuaState, 2))
+    {
+        state.rangedBand.reset();
+        return 0;
+    }
+    const float minimum = static_cast<float>(luaL_checknumber(pLuaState, 2));
+    const float maximum = static_cast<float>(luaL_checknumber(pLuaState, 3));
+    luaL_argcheck(pLuaState, minimum >= 0.0f && maximum > minimum, 3, "the band needs 0 <= min < max");
+    state.rangedBand = std::array<float, 2>{minimum, maximum};
+    return 0;
+}
+
+// self:moveTo(x, y, z): its home becomes the point: it walks there and holds it while it has no target (no arguments
+// clears it).
+int luaSelfMoveTo(lua_State *pLuaState)
+{
+    ActorBehaviorInstanceState &state = *callContext(pLuaState).pState;
+    if (lua_isnoneornil(pLuaState, 2))
+    {
+        state.moveTarget.reset();
+        return 0;
+    }
+    state.moveTarget = GameplayWorldPoint{static_cast<float>(luaL_checknumber(pLuaState, 2)),
+        static_cast<float>(luaL_checknumber(pLuaState, 3)), static_cast<float>(luaL_checknumber(pLuaState, 4))};
+    return 0;
+}
+
+// self:runEvent(eventId): runs a map event (a boss's phase handing the map its cue).
+int luaSelfRunEvent(lua_State *pLuaState)
+{
+    const lua_Integer eventId = luaL_checkinteger(pLuaState, 2);
+    luaL_argcheck(pLuaState, eventId > 0 && eventId <= 65535, 2, "invalid event id");
+    callContext(pLuaState).pResult->mapEvents.push_back(uint16_t(eventId));
+    return 0;
+}
+
+// self:bearingToParty(): degrees from its facing to the party, -180..180 (positive: the party is to its left).
+int luaSelfBearingToParty(lua_State *pLuaState)
+{
+    const ActorBehaviorRuntime::LuaCallContext &context = callContext(pLuaState);
+    const float toParty = std::atan2(context.partyPosition.y - context.pActor->position.y,
+        context.partyPosition.x - context.pActor->position.x);
+    const float bearing = std::remainder(toParty - context.pActor->yawRadians, 2.0f * std::numbers::pi_v<float>);
+    lua_pushnumber(pLuaState, bearing * 180.0f / std::numbers::pi_v<float>);
+    return 1;
+}
+
+// self:setArmoredFront(degrees, damageMultiplier): hits from within degrees either side of its facing deal this share
+// of their damage (no arguments clears it).
+int luaSelfSetArmoredFront(lua_State *pLuaState)
+{
+    ActorBehaviorInstanceState &state = *callContext(pLuaState).pState;
+    if (lua_isnoneornil(pLuaState, 2))
+    {
+        state.armoredFront.reset();
+        return 0;
+    }
+    const float degrees = static_cast<float>(luaL_checknumber(pLuaState, 2));
+    const float multiplier = static_cast<float>(luaL_checknumber(pLuaState, 3));
+    luaL_argcheck(pLuaState, degrees > 0.0f && degrees <= 180.0f, 2, "the arc is 0..180 degrees either side");
+    luaL_argcheck(pLuaState, multiplier >= 0.0f && multiplier <= 1.0f, 3, "the multiplier is 0..1");
+    state.armoredFront = std::array<float, 2>{degrees * std::numbers::pi_v<float> / 180.0f, multiplier};
+    return 0;
+}
+
+// self:qbit(id): whether the party has the QBit set.
+int luaSelfQBit(lua_State *pLuaState)
+{
+    const ActorBehaviorRuntime::LuaCallContext &context = callContext(pLuaState);
+    const lua_Integer qbit = luaL_checkinteger(pLuaState, 2);
+    lua_pushboolean(pLuaState,
+        context.pParty != nullptr && qbit > 0 && context.pParty->hasQuestBit(uint32_t(qbit)) ? 1 : 0);
+    return 1;
+}
+
 const luaL_Reg SelfMethods[] = {
     {"hp", luaSelfHp},
     {"maxHp", luaSelfMaxHp},
@@ -819,6 +996,20 @@ const luaL_Reg SelfMethods[] = {
     {"setAiType", luaSelfSetAiType},
     {"setNoFlee", luaSelfSetNoFlee},
     {"summon", luaSelfSummon},
+    {"summonAt", luaSelfSummonAt},
+    {"blink", luaSelfBlink},
+    {"suspendShield", luaSelfSuspendShield},
+    {"restoreShield", luaSelfRestoreShield},
+    {"leave", luaSelfLeave},
+    {"setSpeed", luaSelfSetSpeed},
+    {"setInvulnerable", luaSelfSetInvulnerable},
+    {"qbit", luaSelfQBit},
+    {"setLeash", luaSelfSetLeash},
+    {"setRangedBand", luaSelfSetRangedBand},
+    {"moveTo", luaSelfMoveTo},
+    {"runEvent", luaSelfRunEvent},
+    {"bearingToParty", luaSelfBearingToParty},
+    {"setArmoredFront", luaSelfSetArmoredFront},
     {nullptr, nullptr},
 };
 
@@ -893,6 +1084,7 @@ ActorBehaviorFrameFacts ActorBehaviorRuntime::collectFrameFacts(
     ActorBehaviorFrameFacts facts = {};
     facts.deltaSeconds = deltaSeconds;
     facts.partyPosition = {world.partyX(), world.partyY(), world.partyFootZ()};
+    facts.pParty = world.party();
     facts.actorCount = static_cast<uint32_t>(world.mapActorCount());
 
     std::vector<size_t> actorIndices;
@@ -935,6 +1127,7 @@ ActorBehaviorFrameFacts ActorBehaviorRuntime::collectFrameFacts(
         actor.position = {state.preciseX, state.preciseY, state.preciseZ};
         actor.height = static_cast<float>(state.bodyHeight > 0 ? state.bodyHeight : state.height);
         actor.animationState = state.animationState;
+        actor.yawRadians = state.yawRadians;
         facts.actors.push_back(actor);
     }
 
@@ -1035,6 +1228,54 @@ void ActorBehaviorRuntime::applyFrameResult(IGameplayWorldRuntime &world, const 
         }
     }
 
+    for (const uint16_t eventId : result.mapEvents)
+    {
+        size_t previousMessageCount = 0;
+
+        if (!world.executeMapEvent(eventId, previousMessageCount))
+        {
+            std::cerr << "Actor behaviour map event " << eventId << " did not run\n";
+        }
+    }
+
+    for (const ActorBehaviorActorCommand &command : result.actorCommands)
+    {
+        switch (command.kind)
+        {
+            case ActorBehaviorActorCommand::Kind::Blink:
+                world.blinkActor(command.actorIndex);
+                break;
+            case ActorBehaviorActorCommand::Kind::SuspendShield:
+                world.suspendActorShield(command.actorIndex, command.seconds);
+                break;
+            case ActorBehaviorActorCommand::Kind::RestoreShield:
+                world.restoreActorShield(command.actorIndex);
+                break;
+            case ActorBehaviorActorCommand::Kind::Leave:
+            {
+                GameplayRuntimeActorState actor = {};
+
+                if (pEventRuntimeState != nullptr && world.actorRuntimeState(command.actorIndex, actor))
+                {
+                    if (!command.effectId.empty())
+                    {
+                        EventRuntimeState::WorldEffectRequest request = {};
+                        request.id = command.effectId;
+                        request.position = {actor.preciseX, actor.preciseY, actor.preciseZ + actor.height * 0.5f};
+                        pEventRuntimeState->worldEffectRequests.push_back(std::move(request));
+                    }
+
+                    const uint32_t actorKey = uint32_t(command.actorIndex);
+                    const uint32_t invisible = uint32_t(EvtActorAttribute::Invisible);
+                    pEventRuntimeState->actorSetMasks[actorKey] |= invisible;
+                    pEventRuntimeState->actorClearMasks[actorKey] &= ~invisible;
+                }
+
+                break;
+            }
+        }
+    }
+
     for (const ActorBehaviorSummonRequest &summon : result.summons)
     {
         if (!world.summonHostileMonsterById(
@@ -1055,6 +1296,36 @@ void ActorBehaviorRuntime::applyAiFacts(ActorAiFrameFacts &facts)
     if (m_pCatalog != nullptr && m_pCatalog->hasTactics())
     {
         applyTactics(facts);
+    }
+
+    // A placement's own leash (scene leash_radius) over its monster's tactics, and a resting (dormant) one's hold.
+    for (std::vector<ActorAiFacts> *pActors : {&facts.activeActors, &facts.backgroundActors})
+    {
+        for (ActorAiFacts &actor : *pActors)
+        {
+            if (actor.movement.dormant)
+            {
+                actor.behavior.holdActive = true;
+                actor.behavior.holdAnimation = ActorAiAnimationState::Standing;
+                actor.behavior.holdKeepsFacing = true;
+            }
+
+            if (actor.movement.placedLeashRadius > 0.0f)
+            {
+                actor.tactics.holdPost = true;
+                actor.tactics.postLeashRadius = actor.movement.placedLeashRadius;
+                actor.movement.movementAllowed = true;
+            }
+
+            // A patrol walks its waypoints as a post walks home: the waypoint is home while nothing is in reach.
+            if (actor.movement.patrolTarget && !actor.movement.dormant)
+            {
+                actor.movement.homePosition = *actor.movement.patrolTarget;
+                actor.movement.hasHomeYaw = false;
+                actor.tactics.holdPost = true;
+                actor.movement.movementAllowed = true;
+            }
+        }
     }
 
     if (m_instances.empty())
@@ -1102,6 +1373,33 @@ void ActorBehaviorRuntime::applyAiFacts(ActorAiFrameFacts &facts)
             {
                 actor.status.suppressLowHealthFlee = true;
             }
+
+            if (state.speedMultiplier != 1.0f)
+            {
+                actor.movement.effectiveMoveSpeed *= state.speedMultiplier;
+                actor.behavior.attackRateMultiplier *= state.speedMultiplier;
+            }
+
+            if (state.rangedBand)
+            {
+                actor.tactics.rangedMinDistance = (*state.rangedBand)[0];
+                actor.tactics.rangedMaxDistance = (*state.rangedBand)[1];
+            }
+
+            if (state.moveTarget)
+            {
+                actor.movement.homePosition = *state.moveTarget;
+                actor.movement.hasHomeYaw = false;
+                actor.tactics.holdPost = true;
+                actor.movement.movementAllowed = true;
+            }
+
+            if (state.leashRadius)
+            {
+                actor.tactics.holdPost = true;
+                actor.tactics.postLeashRadius = *state.leashRadius;
+                actor.movement.movementAllowed = true;
+            }
         };
 
     for (ActorAiFacts &actor : facts.activeActors)
@@ -1113,6 +1411,35 @@ void ActorBehaviorRuntime::applyAiFacts(ActorAiFrameFacts &facts)
     {
         applyToActor(actor);
     }
+}
+
+float ActorBehaviorRuntime::speedMultiplier(size_t actorIndex, uint32_t actorId) const
+{
+    const auto iterator = m_instances.find(actorIndex);
+    return iterator != m_instances.end() && iterator->second.state.actorId == actorId
+        && !iterator->second.state.deathHandled ? iterator->second.state.speedMultiplier : 1.0f;
+}
+
+float ActorBehaviorRuntime::incomingDamageMultiplier(size_t actorIndex, const GameplayWorldPoint &actorPosition,
+    float actorYawRadians, const GameplayWorldPoint &source) const
+{
+    const auto iterator = m_instances.find(actorIndex);
+
+    if (iterator == m_instances.end() || !iterator->second.state.armoredFront)
+    {
+        return 1.0f;
+    }
+
+    const auto &[arc, multiplier] = *iterator->second.state.armoredFront;
+    const float toSource = std::atan2(source.y - actorPosition.y, source.x - actorPosition.x);
+    return std::abs(std::remainder(toSource - actorYawRadians, 2.0f * std::numbers::pi_v<float>)) <= arc
+        ? multiplier : 1.0f;
+}
+
+bool ActorBehaviorRuntime::invulnerable(size_t actorIndex) const
+{
+    const auto iterator = m_instances.find(actorIndex);
+    return iterator != m_instances.end() && iterator->second.state.invulnerable;
 }
 
 void ActorBehaviorRuntime::applyTactics(ActorAiFrameFacts &facts)
@@ -1145,11 +1472,28 @@ void ActorBehaviorRuntime::applyTactics(ActorAiFrameFacts &facts)
             // Shield broken: a hostile actor falls back from its target (the native flee) while the shield is down.
             const float shieldDownSeconds = actor.status.shieldDownSinceBreakSeconds;
 
-            if (actor.tactics.shieldBreakReaction == ActorShieldBreakReaction::FallBack && shieldDownSeconds >= 0.0f
+            const bool fallsBack = actor.tactics.shieldBreakReaction == ActorShieldBreakReaction::FallBack
+                || actor.tactics.shieldBreakReaction == ActorShieldBreakReaction::Climb;
+
+            if (fallsBack && shieldDownSeconds >= 0.0f
                 && shieldDownSeconds < actor.tactics.shieldBreakSeconds && actor.status.hostileToParty
                 && !actor.status.dead && actor.target.currentKind != ActorAiTargetKind::None)
             {
                 actor.status.forceFleeFromParty = true;
+
+                if (actor.tactics.shieldBreakReaction == ActorShieldBreakReaction::Climb)
+                {
+                    actor.status.climbAboveTarget = ShieldBreakClimbHeight;
+                }
+            }
+
+            // Shield broken: a staggering actor holds its hit pose for the reaction's seconds.
+            if (actor.tactics.shieldBreakReaction == ActorShieldBreakReaction::Stagger && shieldDownSeconds >= 0.0f
+                && shieldDownSeconds < actor.tactics.shieldBreakSeconds && !actor.status.dead)
+            {
+                actor.behavior.holdActive = true;
+                actor.behavior.holdAnimation = ActorAiAnimationState::GotHit;
+                actor.behavior.holdKeepsFacing = true;
             }
 
             // The turret state reads the last aim (its hold) before this step replaces it.
@@ -1318,6 +1662,17 @@ bool ActorBehaviorRuntime::turnsAtTraverseRate(int16_t monsterId) const
 
     const ActorTacticsFacts *pTactics = m_pCatalog->tacticsForMonster(monsterId);
     return pTactics != nullptr && pTactics->traverseRadiansPerSecond > 0.0f;
+}
+
+float ActorBehaviorRuntime::postLeashRadius(int16_t monsterId) const
+{
+    if (m_pCatalog == nullptr || !m_pCatalog->hasTactics())
+    {
+        return 0.0f;
+    }
+
+    const ActorTacticsFacts *pTactics = m_pCatalog->tacticsForMonster(monsterId);
+    return pTactics != nullptr && pTactics->holdPost ? pTactics->postLeashRadius : 0.0f;
 }
 
 void ActorBehaviorRuntime::observeAiResult(const ActorAiFrameResult &result)
@@ -1760,6 +2115,7 @@ bool ActorBehaviorRuntime::callPushedHandler(
     context.pActor = &actor;
     context.pResult = &result;
     context.partyPosition = facts.partyPosition;
+    context.pParty = facts.pParty;
     m_pActiveCall = &context;
     std::optional<std::string> error;
     const bool called = m_lua->call(2 + argumentCount, 0, error);

@@ -1374,7 +1374,13 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         }
 
         options.push_back(std::move(food));
-        options.push_back(makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
+
+        // A tavern whose skill cell says none (HouseEntry::teachesNothing) has no lessons to offer.
+        if (!houseEntry.teachesNothing)
+        {
+            options.push_back(
+                makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
+        }
 
         if (houseEntry.arcomageRule.has_value())
         {
@@ -1541,7 +1547,11 @@ std::vector<HouseActionOption> buildHouseActionOptions(
             }
         }
 
-        options.push_back(makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
+        if (!houseEntry.teachesNothing)
+        {
+            options.push_back(
+                makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
+        }
         return finalizeHouseActionOptions(houseEntry, serviceType, menuId, pParty, pWorldRuntime, currentGameMinutes, std::move(options));
     }
 

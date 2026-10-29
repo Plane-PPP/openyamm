@@ -4864,6 +4864,25 @@ std::optional<MapAssetInfo> MapAssetLoader::load(
                 }
             }
 
+            // Shallow liquid floors slow the party wading through them (liquids.yml wade_speed).
+            if (liquidTable)
+            {
+                const std::vector<IndoorFace> &faces = assetInfo.indoorMapData->faces;
+
+                for (size_t faceIndex = 0; faceIndex < faces.size(); ++faceIndex)
+                {
+                    const LiquidDefinition *pLiquid = faces[faceIndex].isPortal ? nullptr
+                        : liquidTable->findMatch(toLowerCopy(faces[faceIndex].textureName), faces[faceIndex].attributes,
+                            false);
+
+                    if (pLiquid != nullptr && pLiquid->wadeSpeed < 1.0f)
+                    {
+                        assetInfo.indoorFaceWadeSpeeds.resize(faces.size(), 1.0f);
+                        assetInfo.indoorFaceWadeSpeeds[faceIndex] = pLiquid->wadeSpeed;
+                    }
+                }
+            }
+
             if (loadFullPresentation)
             {
                 assetInfo.indoorTextureSet = buildIndoorTextureSet(

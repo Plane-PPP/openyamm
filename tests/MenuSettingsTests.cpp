@@ -33,6 +33,21 @@ TEST_CASE("creature shadow quality and LOD settings validate and persist")
     std::filesystem::remove(path);
 }
 
+TEST_CASE("MAW number keys select a member by default and the bag choice persists")
+{
+    GameSettings settings = GameSettings::createDefault();
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "openyamm-bag-number-keys.ini";
+    std::string error;
+    CHECK(menuSettingValue(settings, "bag_number_keys") == "member");
+    CHECK_FALSE(setMenuSettingValue(settings, "bag_number_keys", "shift"));
+    REQUIRE(setMenuSettingValue(settings, "bag_number_keys", "bag"));
+    REQUIRE(saveGameSettings(path, settings, error));
+    const std::optional<GameSettings> loaded = loadGameSettings(path, error);
+    REQUIRE_MESSAGE(loaded, error);
+    CHECK_EQ(loaded->bagNumberKeys, "bag");
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("menu settings validate input and preserve unrelated game configuration")
 {
     GameSettings settings = GameSettings::createDefault();
@@ -69,8 +84,9 @@ TEST_CASE("menu binding reservation and equality follow native single input bind
 {
     constexpr KeyboardAction Jump = KeyboardAction::Jump;
     CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_ESCAPE), Jump));
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F9), Jump));
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F10), Jump));
+    // Quick save and load are bindings of their own (F9 and F10 by default), so those keys are free to assign.
+    CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F9), Jump));
+    CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F10), Jump));
     CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_5), Jump));
     CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F2), Jump));
     CHECK_FALSE(reservedMenuBinding(mouseButtonInputBinding(SDL_BUTTON_LEFT), Jump));

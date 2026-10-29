@@ -72,7 +72,7 @@
 70	35	Armor Shop	143	448	Quality Armor	John	Armorsmith	1037	0	0	0	2.5	1	"L4 Shld,Helm or Gaunt"	14			6	18	0	0	0	
 71	36	Armor Shop	141	448	Mail and Greaves	Dwight	Armorsmith	1037	0	0	0	2.5	1	"L4 Plate,Helm or Gaunt"	14			6	18	0	0	0	
 72	37	Armor Shop	144	447	The Footman's Friend	Lyndon	Armorsmith	0001	0	0	0	3	1	"L4 Leat,Helm or Gaunt"	21			6	18	0	0	0	
-73	38	Armor Shop	140	447	Armorworks 	George	Armorsmith	0001	0	0	0	3	1	"L4 Chain,Helm or Gaunt"	21			6	18	0	0	0	
+73	38	Armor Shop	140	447	Armorworks	George	Armorsmith	0001	0	0	0	3	1	"L4 Chain,Helm or Gaunt"	21			6	18	0	0	0	
 74	39	Armor Shop	143	447	Silver Lining Armor & Shield	Franklin	Armorsmith	0001	0	0	0	3	1	"L4 Shld,Helm or Gaunt"	21			6	18	0	0	0	
 75	40	Armor Shop	138	447	The Enchanted Hauberk	Theodore	Armorsmith	0001	0	0	0	3	1	"L5 Plate,Helm or Gaunt"	28			6	18	0	0	0	
 76	1	Magic Shop	1	19	Fearsome Fetishes	Zith	Magician	1126	0	0	0	1.5	1		7			6	18	0	0	0	0
@@ -245,7 +245,7 @@
 243	16	Tavern	66	207	The Snobbish Goblin	Kasia	Innkeep	1511	0	0	0	14	1					17	14	0	0	0	0
 244	17	Tavern	67	209	Familiar Place	Bismor	Innkeep	1500	0	0	0	14	1					5	2	0	0	0	0
 245	18	Tavern	99	209	The Blessed Brew	Joseph	Innkeep	1500	0	0	0	30	1.5					5	2	0	0	0	0
-246	19	Tavern	100	207	The Vampyre Lounge 	Paul	Innkeep	1511	0	0	0	30	1.5					17	14	0	0	0	0
+246	19	Tavern	100	207	The Vampyre Lounge	Paul	Innkeep	1511	0	0	0	30	1.5					17	14	0	0	0	0
 247	20	Tavern	68	206	The Laughing Monk	Winston	Innkeep	0535	0	0	0	6	1					5	2	0	0	0	0
 248	21	Tavern	69	210	Fortune's Folly	Phillepe	Innkeep	1519	0	0	0	60	2					17	14	0	0	0	0
 249	22	Tavern	70	208	Miner's Only	Irving	Innkeep	0485	0	0	0	18	1					5	2	0	0	0	0
@@ -470,7 +470,7 @@
 468	17	Stables	0	200	Placeholder	Lisha	Stablemaster	0917	0	0	0	1.5	1					6	18	0	0	0	0
 469	18	Stables	0	200	Placeholder	Faile	Stablemaster	0917	0	0	0	1.5	1					6	18	0	0	0	0
 470	19	Stables	151	414	New Sorpigal Coach Company	Aaron	Stablemaster	0068	0	0	0	1		-	-			5	18	0	0	0	
-471	20	Stables	148	414	Royal Lines 	Sean	Stablemaster	0068	0	0	0	2		"Free Haven C2,S,Tu,4"	"Arena, Sun,1"	Stables Get:		5	18	0	0	0	
+471	20	Stables	148	414	Royal Lines	Sean	Stablemaster	0068	0	0	0	2		"Free Haven C2,S,Tu,4"	"Arena, Sun,1"	Stables Get:		5	18	0	0	0	
 472	21	Stables	144	414	Free Haven Travel East	Mark	Stablemaster	0068	0	0	0	6		"Kriegspire B1,Tu,F,3"	"White Cap C1,W,Sa,3"	"Destination,Area"	Teleport to	5	18	0	0	0	
 473	22	Stables	144	414	Free Haven Travel West	Walter	Stablemaster	0068	0	0	0	4		"Castle Ironfist D3,T,F,4"	"Darkmoor C3,W,Sa,5"	"Days leaving,"	Other Stable	5	18	0	0	0	
 474	23	Stables	145	414	Darkmoor Travel	Scott	Stablemaster	0068	0	0	0	10		-	-	Days Travel Time		5	18	0	0	0	
@@ -546,7 +546,7 @@
 544	37	House	10	110	House 322	Placeholder			0	0	0	1.5				85				0	0		
 545	38	House	12	109	Black Current's House	Placeholder			0	0	0	1.5				85				0	0		
 546	39	House	9	111	House 324	Placeholder			0	0	0	1.5				85				0	0		
-547	40	House	3	27	 Home of Rihansi 	Placeholder			0	0	0	1.5				85				0	0		
+547	40	House	3	27	Home of Rihansi	Placeholder			0	0	0	1.5				85				0	0		
 548	41	House	3	27	Bombah Hall	Placeholder			0	0	0	1.5				85				0	0		
 549	42	House	3	27	Keldon's Cottage	Placeholder			0	0	0	1.5				88				0	0		
 550	43	House	3	27	Veldon's Cottage	Placeholder			0	0	0	1.5				88				0	0		
@@ -773,7 +773,7 @@
 771	264	House	0	10	Placeholder	Placeholder	Scribe		0	0	0	1.5	1		14			6	18	0	0	0	0
 772	265	House	18	91	Wererat Smuggler Leader	Placeholder	Wererat Smuggler		0	0	0	1.5				168		  	 	0	0	0	0
 773	266	House	3	38	Merchant Guildhouse	Placeholder	Merchant		0	0	0	1.5				169		 	 	0	0	0	0
-774	267	House	28	82	Dragon Leader's Cavern 	Placeholder	Dragon		0	0	0	1.5				170		 	 	0	0	0	0
+774	267	House	28	82	Dragon Leader's Cavern	Placeholder	Dragon		0	0	0	1.5				170		 	 	0	0	0	0
 775	268	House	46	103	Escaton's Throne Room	Placeholder	Escaton		0	0	0	1.5				Kastore		 	 	0	0	0	0
 776	269	House	1	13	Rohtnax's House	Placeholder			0	0	0	1.5								0	0		
 777	270	House	2	25	Iver's Estate	Placeholder			0	0	0	1.5				76				0	0		
@@ -902,7 +902,7 @@
 900	393	House	2	56	Hostel	Placeholder			0	0	0	1.5				73				0	0		
 901	394	House	2	27	Brigham's Home	Placeholder			0	0	0	1.5				73				0	0		
 902	395	House	2	68	House Memoria	Placeholder			0	0	0	1.5				73				0	0		
-903	396	House	2	66	House of Hawthorne 	Placeholder			0	0	0	1.5				73				0	0		
+903	396	House	2	66	House of Hawthorne	Placeholder			0	0	0	1.5				73				0	0		
 904	397	House	2	66	Lott's Family Home	Placeholder			0	0	0	1.5				73				0	0		
 905	398	House	2	25	House of Nosewort	Placeholder			0	0	0	1.5				73				0	0		
 906	399	House	2	57	Hall of the Tracker	Placeholder			0	0	0	1.5				73				0	0		

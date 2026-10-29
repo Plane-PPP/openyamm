@@ -60,6 +60,8 @@ enum class EventDialogActionKind
     Mm9RudeSkillTrainerBack,
     Mm9RudeTransportRoute,
     Mm9RudeTransportBack,
+    // An event's choice box (AskChoiceWithAnswerSteps): id is the answer's index.
+    EventChoice,
 };
 
 enum class EventDialogParticipantVisual

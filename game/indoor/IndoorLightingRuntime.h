@@ -123,6 +123,8 @@ public:
 
     static bool isBlvLightEnabledByState(uint32_t attributes, const EventRuntimeState *pState, size_t lightId);
     static float ambientFromMinAmbientLightLevel(int minAmbientLightLevel);
+    // A sector's ambient level (0-31): an event's evt.SetSectorAmbient, else the map's minAmbientLightLevel.
+    static int sectorAmbientLevel(const IndoorMapData &mapData, const EventRuntimeState *pState, size_t sectorId);
     // The sector's own ambient; the frame's for no sector.
     static float sectorAmbient(const IndoorLightingFrame &frame, int16_t sectorId);
     const IndoorLightReach &lightReach() const

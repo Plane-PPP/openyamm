@@ -39,6 +39,31 @@ std::vector<std::vector<std::string>> readTable(const std::filesystem::path &pat
     return rows;
 }
 
+struct FixtureActor
+{
+    int16_t monsterId = 0;
+    int x = 0;
+    int y = 0;
+    int z = 0;
+    int16_t sectorId = -1;
+    uint32_t attributes = 0;
+};
+
+// GW_3's victim upstairs and allies in the sealed lower room. Start without its bad cached detection.
+const std::vector<FixtureActor> Gw3Actors = {
+    {487, -152, 4225, 0, 3, 0},
+    {487, 1671, 3845, -632, 24, 0},
+    {488, 1595, 3807, -632, 24, DetectionAttributes | uint32_t(EvtActorAttribute::Aggressor)},
+    {487, 6665, 7033, 128, 44, 0},
+    {550, 2300, 3750, -768, 24, 0},
+};
+
+// Mist villagers of one class: A to B is 2650, B to C 3544 and A to C 5420, beyond the 4096 alert range.
+constexpr int16_t Villager = 596;
+constexpr FixtureActor VillagerA = {Villager, -152, 4225, 0, 3, 0};
+constexpr FixtureActor VillagerB = {Villager, 2300, 3750, -768, 24, 0};
+constexpr FixtureActor VillagerC = {Villager, 3641, 431, -768, -1, 0};
+
 struct GoblinwatchFactionFixture
 {
     const OpenYAMM::Tests::RegressionGameData &data = OpenYAMM::Tests::regressionGameData();
@@ -52,7 +77,7 @@ struct GoblinwatchFactionFixture
     std::unique_ptr<IndoorPartyRuntime> partyRuntime;
     IndoorWorldRuntime world;
 
-    GoblinwatchFactionFixture()
+    explicit GoblinwatchFactionFixture(const std::vector<FixtureActor> &actors = Gw3Actors)
     {
         REQUIRE_MESSAGE(OpenYAMM::Tests::regressionGameDataLoaded(), OpenYAMM::Tests::regressionGameDataFailure());
         const std::filesystem::path tables =
@@ -72,28 +97,22 @@ struct GoblinwatchFactionFixture
         map.spawns.clear();
         delta->actors.clear();
 
-        const auto addActor = [&](int16_t monsterId, int x, int y, int z, int16_t sectorId, uint32_t attributes)
+        for (const FixtureActor &fixtureActor : actors)
         {
-            const MonsterTable::MonsterStatsEntry *pStats = monsters.findStatsById(monsterId);
+            const MonsterTable::MonsterStatsEntry *pStats = monsters.findStatsById(fixtureActor.monsterId);
             REQUIRE(pStats != nullptr);
             MapDeltaActor actor = {};
-            actor.monsterId = monsterId;
-            actor.monsterInfoId = monsterId;
+            actor.monsterId = fixtureActor.monsterId;
+            actor.monsterInfoId = fixtureActor.monsterId;
             actor.hp = pStats->hitPoints;
-            actor.x = x;
-            actor.y = y;
-            actor.z = z;
-            actor.sectorId = sectorId;
-            actor.attributes = attributes;
+            actor.x = fixtureActor.x;
+            actor.y = fixtureActor.y;
+            actor.z = fixtureActor.z;
+            actor.sectorId = fixtureActor.sectorId;
+            actor.attributes = fixtureActor.attributes;
             delta->actors.push_back(actor);
-        };
+        }
 
-        // GW_3's victim upstairs and allies in the sealed lower room. Start without its bad cached detection.
-        addActor(487, -152, 4225, 0, 3, 0);
-        addActor(487, 1671, 3845, -632, 24, 0);
-        addActor(488, 1595, 3807, -632, 24, DetectionAttributes | uint32_t(EvtActorAttribute::Aggressor));
-        addActor(487, 6665, 7033, 128, 44, 0);
-        addActor(550, 2300, 3750, -768, 24, 0);
         EventRuntime{}.initializeMapRuntimeState(*delta, *events);
         partyRuntime = std::make_unique<IndoorPartyRuntime>(
             IndoorMovementController(map, &delta, &events), data.itemTable);
@@ -107,8 +126,19 @@ struct GoblinwatchFactionFixture
         mapStats.name = "Goblinwatch";
         world.initialize(mapStats, monsters, objects, data.itemTable, chests,
             &partyRuntime->party(), partyRuntime.get(), &delta, &events, &actorService, nullptr, &map);
-        REQUIRE_EQ(world.mapActorCount(), 5);
+        REQUIRE_EQ(world.mapActorCount(), actors.size());
         REQUIRE_EQ(world.snapshot().mapActorAiStates[1].sectorId, 24);
+    }
+
+    bool hostile(size_t actorIndex) const
+    {
+        return world.snapshot().mapActorAiStates[actorIndex].hostileToParty;
+    }
+
+    void hit(size_t actorIndex)
+    {
+        REQUIRE(world.applyPartyAttackMeleeDamage(
+            actorIndex, 1, {1356.65f, 4589.76f, 96.0f}, ShieldAttackTier::Physical));
     }
 
     void checkUndetectedAlly() const
@@ -189,4 +219,38 @@ TEST_CASE("indoor faction alert survives restore without granting detection and 
     CHECK(encountered.mapActorAiStates[1].hasDetectedParty);
     CHECK((fixture.delta->actors[1].attributes & uint32_t(EvtActorAttribute::FullAi)) != 0);
     CHECK((fixture.delta->actors[1].attributes & uint32_t(EvtActorAttribute::Nearby)) != 0);
+}
+
+TEST_CASE("indoor faction alert: a monster hostile on its own turns no friendly actor of its class")
+{
+    // Mount Nighon's raiding warlocks share their class with the town's.
+    FixtureActor raider = VillagerA;
+    raider.attributes = uint32_t(EvtActorAttribute::Aggressor);
+    GoblinwatchFactionFixture fixture({raider, VillagerB});
+    REQUIRE(fixture.hostile(0));
+    REQUIRE_FALSE(fixture.hostile(1));
+
+    fixture.hit(0);
+    CHECK_FALSE(fixture.hostile(1));
+    CHECK_FALSE(fixture.world.snapshot().mapActorAiStates[0].angeredByParty);
+}
+
+TEST_CASE("indoor faction alert: a monster the party angered still alerts its class, also after a restore")
+{
+    GoblinwatchFactionFixture fixture({VillagerA, VillagerB, VillagerC});
+    REQUIRE_FALSE(fixture.hostile(0));
+    REQUIRE_FALSE(fixture.hostile(1));
+    REQUIRE_FALSE(fixture.hostile(2));
+
+    fixture.hit(0);
+    CHECK(fixture.hostile(0));
+    CHECK(fixture.hostile(1));
+    CHECK_FALSE(fixture.hostile(2)); // Beyond the alert range of the first victim.
+    CHECK(fixture.world.snapshot().mapActorAiStates[0].angeredByParty);
+    CHECK(fixture.world.snapshot().mapActorAiStates[1].angeredByParty);
+
+    const IndoorWorldRuntime::Snapshot saved = fixture.world.snapshot();
+    fixture.world.restoreSnapshot(saved);
+    fixture.hit(1);
+    CHECK(fixture.hostile(2));
 }

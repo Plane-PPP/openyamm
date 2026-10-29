@@ -4121,10 +4121,45 @@ bool runChargeActor(
     return true;
 }
 
-// assert charges: {started, hits, misses, min_started, min_hits, min_misses}: the map's charges so far (exact or at
-// least).
-// combat_log: {min_entries, dealt_min, taken_min, with_stages_min, loot_min}: the combat log's entries so far (loot:
-// the loot filter's "Filtered: ... -> N gold" lines).
+// frenzy_actor: {actor_index}: the actor starts its frenzy now (fails without the frenzy modifier).
+bool runFrenzyActor(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    if (!payloadIsMap(step, failures))
+    {
+        return false;
+    }
+
+    if (!step.payload["actor_index"] || !step.payload["actor_index"].IsScalar())
+    {
+        failures.push_back(stepLocation(step) + ": frenzy_actor requires scalar field 'actor_index'");
+        return false;
+    }
+
+    if (!ensureRuntimeDriver(context, failures))
+    {
+        return false;
+    }
+
+    seedRuntimeDriverFromContext(context);
+    std::string failure;
+
+    if (!context.runtimeDriver->frenzyActor(scenarioActorIndex(context, step.payload["actor_index"]), failure))
+    {
+        failures.push_back(stepLocation(step) + ": " + failure);
+        return false;
+    }
+
+    syncContextFromRuntime(context);
+    return true;
+}
+
+// assert charges: {started, hits, misses, frenzies, min_started, min_hits, min_misses, min_frenzies}: the map's charges
+// and frenzies so far (exact or at least).
+// combat_log: {min_entries, dealt_min, taken_min, with_stages_min, loot_min, critical_min}: the combat log's entries
+// so far (loot: the loot filter's "Filtered: ... -> N gold" lines; critical: the party's critical hits).
 bool assertCombatLog(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -4147,17 +4182,18 @@ bool assertCombatLog(
     size_t taken = 0;
     size_t loot = 0;
     size_t withStages = 0;
+    size_t critical = 0;
     const std::deque<CombatLogEntry> &entries = context.runtimeDriver->combatLog().entries();
-
     for (const CombatLogEntry &entry : entries)
     {
         (entry.kind == CombatLogKind::Dealt ? dealt : entry.kind == CombatLogKind::Taken ? taken : loot) += 1;
         withStages += entry.stages.empty() ? 0 : 1;
+        critical += entry.kind == CombatLogKind::Dealt && entry.critical ? 1 : 0;
     }
 
-    const std::array<std::pair<const char *, size_t>, 5> counts = {{
+    const std::array<std::pair<const char *, size_t>, 6> counts = {{
         {"min_entries", entries.size()}, {"dealt_min", dealt}, {"taken_min", taken}, {"with_stages_min", withStages},
-        {"loot_min", loot},
+        {"loot_min", loot}, {"critical_min", critical},
     }};
 
     for (const auto &[key, count] : counts)
@@ -4195,7 +4231,8 @@ bool assertCharges(
     }
 
     scenarioLog(context, ScenarioLogColor::Cyan, "CHARGES started=" + std::to_string(counts->started) + " hits="
-        + std::to_string(counts->hits) + " misses=" + std::to_string(counts->misses));
+        + std::to_string(counts->hits) + " misses=" + std::to_string(counts->misses) + " frenzies="
+        + std::to_string(counts->frenzies));
     bool success = true;
     const auto check = [&](const char *pName, uint32_t actual, bool atLeast)
     {
@@ -4212,6 +4249,8 @@ bool assertCharges(
     check("min_started", counts->started, true);
     check("min_hits", counts->hits, true);
     check("min_misses", counts->misses, true);
+    check("frenzies", counts->frenzies, false);
+    check("min_frenzies", counts->frenzies, true);
     return success;
 }
 
@@ -7955,8 +7994,9 @@ bool assertActorVisible(
         success = checkRuntimeField(pKey, boolText(value)) && success;
     }
 
-    // near: {x, y, max_distance}: the actor stands within max_distance of a point (horizontally); far: {x, y,
-    // min_distance}: at least that far from it; faces: {x, y, within_degrees}: its yaw points at it.
+    // near: {x, y, max_distance, min_z}: the actor stands within max_distance of a point (horizontally), its feet at
+    // least min_z high when given (on a ledge); far: {x, y, min_distance}: at least that far from it; faces: {x, y,
+    // within_degrees}: its yaw points at it.
     for (const char *pKey : {"near", "far", "faces"})
     {
         const YAML::Node pointNode = actorNode[pKey];
@@ -7983,14 +8023,15 @@ bool assertActorVisible(
         const float distance = std::hypot(dx, dy);
         const float offDegrees = std::abs(std::remainder(std::atan2(dy, dx) - runtimeState.yawRadians,
             2.0f * 3.14159265f)) * 180.0f / 3.14159265f;
-        const bool passed = std::string(pKey) == "near" ? distance <= limit
+        const bool highEnough = !pointNode["min_z"] || runtimeState.preciseZ >= pointNode["min_z"].as<float>();
+        const bool passed = std::string(pKey) == "near" ? distance <= limit && highEnough
             : std::string(pKey) == "far" ? distance >= limit : offDegrees <= limit;
 
         if (!passed)
         {
             std::ostringstream message;
             message << stepLocation(step) << ": actor_visible " << pKey << " failed: distance=" << distance
-                    << " off_degrees=" << offDegrees << " limit=" << limit;
+                    << " z=" << runtimeState.preciseZ << " off_degrees=" << offDegrees << " limit=" << limit;
             failures.push_back(message.str());
             success = false;
         }
@@ -9742,6 +9783,9 @@ ScenarioRunResult ScenarioRunner::run(
             break;
         case ScenarioStepKind::ChargeActor:
             stepSuccess = runChargeActor(context, step, result.failures);
+            break;
+        case ScenarioStepKind::FrenzyActor:
+            stepSuccess = runFrenzyActor(context, step, result.failures);
             break;
         case ScenarioStepKind::WaitUntil:
             stepSuccess = runWaitUntil(context, step, result.failures);

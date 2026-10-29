@@ -2471,6 +2471,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 {"JournalNotesSeerButton", GameplayJournalPointerTargetType::NotesSeerButton},
                 {"JournalNotesMiscButton", GameplayJournalPointerTargetType::NotesMiscButton},
                 {"JournalNotesTrainerButton", GameplayJournalPointerTargetType::NotesTrainerButton},
+                {"JournalNotesArcomageButton", GameplayJournalPointerTargetType::NotesArcomageButton},
                 {"JournalNotesSearch", GameplayJournalPointerTargetType::NotesSearchField},
             };
 
@@ -2791,6 +2792,12 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 journalScreen.notesPage = 0;
                 break;
 
+            case GameplayJournalPointerTargetType::NotesArcomageButton:
+                journalScreen.view = GameplayUiController::JournalView::Notes;
+                journalScreen.notesCategory = GameplayUiController::JournalNotesCategory::Arcomage;
+                journalScreen.notesPage = 0;
+                break;
+
             case GameplayJournalPointerTargetType::NotesSearchField:
                 journalScreen.notesSearchActive = true;
                 break;
@@ -2861,6 +2868,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
             case GameplayJournalPointerTargetType::NotesSeerButton:
             case GameplayJournalPointerTargetType::NotesMiscButton:
             case GameplayJournalPointerTargetType::NotesTrainerButton:
+            case GameplayJournalPointerTargetType::NotesArcomageButton:
             case GameplayJournalPointerTargetType::NotesSearchField:
             case GameplayJournalPointerTargetType::MapNote:
             case GameplayJournalPointerTargetType::CloseButton:
@@ -2993,11 +3001,13 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             SDL_SCANCODE_4,
             SDL_SCANCODE_5,
         };
-        // A shop's party inventory: a held bag key (by default 1-4) opens its bag and selects no member.
+        // A shop's party inventory: a held bag key (by default 1-4, with Shift as bag_number_keys says) opens its bag
+        // and selects no member.
         const bool shiftHeld = pKeyboardState[SDL_SCANCODE_LSHIFT] || pKeyboardState[SDL_SCANCODE_RSHIFT];
+        const bool bagKeysEnabled = shiftHeld == GameplayPartyOverlayInputController::bagKeysNeedShift(view);
         bool bagKeyHeld = false;
 
-        for (int bag = 0; bag < 4 && !shiftHeld; ++bag)
+        for (int bag = 0; bag < 4 && bagKeysEnabled; ++bag)
         {
             bagKeyHeld = bagKeyHeld || input.action(KeyboardAction(size_t(KeyboardAction::Bag1) + size_t(bag))).held;
         }

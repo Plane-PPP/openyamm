@@ -79,6 +79,9 @@ TEST_CASE("content manifests parse mounted world definition")
         "  maxStepHeight: 40.96\n"
         "actorAwareness:\n"
         "  partyEngagementRange: 4096\n"
+        "actorCombat:\n"
+        "  meleeVerticalReach: 0.5\n"
+        "tavernHirelings: false\n"
         "start:\n"
         "  map: custom01.odm\n"
         "  introMovie: custom_intro\n");
@@ -110,6 +113,8 @@ TEST_CASE("content manifests parse mounted world definition")
         CHECK_EQ(world.partyMovement.maxStepHeight, doctest::Approx(40.96f));
         REQUIRE(world.actorAwareness.declared);
         CHECK_EQ(world.actorAwareness.partyEngagementRange, 4096.0f);
+        CHECK_EQ(world.actorCombat.meleeVerticalReach, 0.5f);
+        CHECK_FALSE(world.tavernHirelings);
     }
 
     std::filesystem::remove_all(temporaryRoot);
@@ -173,6 +178,40 @@ TEST_CASE("content manifests reject invalid actor awareness profiles")
             "invalid",
             error).has_value());
         CHECK(error.find("partyEngagementRange") != std::string::npos);
+    }
+
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("content manifests reject invalid actor combat profiles; without one melee ignores height")
+{
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assetRoot = temporaryRoot / "assets_dev";
+
+    writeTextFile(
+        assetRoot / "worlds" / "invalid" / "world.yml", "id: invalid\nactorCombat:\n  meleeVerticalReach: -1\n");
+    writeTextFile(assetRoot / "worlds" / "missing" / "world.yml", "id: missing\nactorCombat: {}\n");
+    writeTextFile(assetRoot / "worlds" / "plain" / "world.yml", "id: plain\n");
+
+    {
+        OpenYAMM::Engine::AssetFileSystem assetFileSystem;
+        REQUIRE(assetFileSystem.initialize(
+            temporaryRoot,
+            assetRoot,
+            OpenYAMM::Engine::AssetScaleTier::X1,
+            "mm8"));
+
+        std::string error;
+        CHECK_FALSE(OpenYAMM::Game::loadWorldManifest(assetFileSystem, "worlds/invalid/world.yml", "invalid", error)
+            .has_value());
+        CHECK(error.find("meleeVerticalReach must be a number in 0-4") != std::string::npos);
+        CHECK_FALSE(OpenYAMM::Game::loadWorldManifest(assetFileSystem, "worlds/missing/world.yml", "missing", error)
+            .has_value());
+        CHECK(error.find("actorCombat must declare meleeVerticalReach") != std::string::npos);
+        const std::optional<OpenYAMM::Game::WorldManifest> plain =
+            OpenYAMM::Game::loadWorldManifest(assetFileSystem, "worlds/plain/world.yml", "plain", error);
+        REQUIRE(plain.has_value());
+        CHECK_EQ(plain->actorCombat.meleeVerticalReach, 0.0f);
     }
 
     std::filesystem::remove_all(temporaryRoot);

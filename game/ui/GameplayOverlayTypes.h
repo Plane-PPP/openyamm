@@ -401,7 +401,9 @@ enum class GameplayCharacterPointerTargetType
     InventoryItem,
     InventoryCell,
     EquipmentSlot,
-    DollPanel
+    DollPanel,
+    // An implant socket of the Augment row (implantSocket).
+    ImplantSocket
 };
 
 struct GameplayCharacterPointerTarget
@@ -420,6 +422,7 @@ struct GameplayCharacterPointerTarget
     uint8_t bagButton = 0;
     // The bag (0-based) of an overview target; gridX and gridY are its cell.
     uint8_t bag = 0;
+    uint8_t implantSocket = 0;
 
     bool operator==(const GameplayCharacterPointerTarget &other) const = default;
 };
@@ -496,6 +499,7 @@ enum class GameplayJournalPointerTargetType
     NotesSeerButton,
     NotesMiscButton,
     NotesTrainerButton,
+    NotesArcomageButton,
     NotesSearchField,
     MapZoomInButton,
     MapZoomOutButton,
@@ -858,6 +862,8 @@ struct GameplayRenderedInspectableHudItem
     size_t sourceMemberIndex = 0;
     uint8_t sourceGridX = 0;
     uint8_t sourceGridY = 0;
+    // The bag the inventory item lies in (MAW's bag overview shows every bag, not only the open one).
+    uint8_t sourceBag = 0;
     EquipmentSlot equipmentSlot = EquipmentSlot::MainHand;
     size_t sourceLootItemIndex = 0;
     std::string textureName;

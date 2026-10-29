@@ -100,6 +100,8 @@ public:
         float windX = 0.0f;
         float windY = 0.0f;
         bool storm = false;
+        // Lightning without rain (weather.yml dry_lightning).
+        bool dryLightning = false;
         float wetness = 0.0f;
         // Haze of falling flakes that have one (ash), not saved: the fog closes to at most these distances while
         // it lasts. A strong distance of 0 is no haze.
@@ -268,6 +270,8 @@ public:
         GameplayActorAiType aiType = GameplayActorAiType::Normal;
         int armorClass = 0;
         bool immobile = false;
+        // Resting until hurt or woken (the placement's dormant; MapDeltaActor::dormant).
+        bool dormant = false;
         bool canFly = false;
         CombatDamageType attack1DamageType = CombatDamageType::Physical;
         CombatDamageType attack2DamageType = CombatDamageType::Physical;
@@ -306,6 +310,15 @@ public:
         bool alertStatusBit = false;
         bool bloodSplatSpawned = false;
         bool hasDetectedParty = false;
+        // The party made it hostile (hit it or its faction), so a hit on it still alerts its friendly faction; an
+        // actor hostile on its own (map, template, event) alerts none.
+        bool angeredByParty = false;
+        // A party hit woke it beyond the full-AI range: it acts out to the engagement range until it comes within
+        // the full-AI range or loses the party (MM8 leaves an outdoor monster shot from afar standing).
+        bool provokedByParty = false;
+        // The distance of the party's last hit when beyond the native missile reach: it may shoot back from there
+        // (0 for the native reach), until it loses the party.
+        float provokedAttackReach = 0.0f;
         ActorAiState aiState = ActorAiState::Standing;
         ActorAnimation animation = ActorAnimation::Standing;
         float animationTimeTicks = 0.0f;
@@ -706,6 +719,8 @@ public:
     const DebugSkyOverrides &debugSkyOverrides() const;
     // The weather rules this map uses, and its rolled weather (no event or debug overrides) at a game time.
     const WeatherRules &weatherRules() const;
+    // The map's weather.yml settings (chances, ash look, dry lightning, rain colour).
+    WeatherMapSettings weatherMapSettings() const;
     WeatherSample rolledWeatherAt(double gameMinutes) const;
     void advanceGameMinutes(float minutes) override;
     void updateMapActors(float deltaSeconds, float partyX, float partyY, float partyZ);
@@ -793,14 +808,16 @@ public:
     bool debugSpawnEncounterFromSpawnPoint(size_t spawnIndex, uint32_t countOverride = 0);
     bool setMapActorDead(size_t actorIndex, bool isDead, bool emitAudio = true);
     bool applyPartyAttackToMapActor(size_t actorIndex, int damage, float partyX, float partyY, float partyZ,
-        ShieldAttackTier shieldTier = ShieldAttackTier::Physical, bool lethalStrike = false);
+        ShieldAttackTier shieldTier = ShieldAttackTier::Physical,
+        const ShieldHitModifiers &shieldModifiers = {}, bool lethalStrike = false);
     bool debugSetActorHealth(size_t actorIndex, int health) override;
     bool killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source) override;
     bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
         const GameplayWorldPoint &source,
-        ShieldAttackTier shieldTier) override;
+        ShieldAttackTier shieldTier,
+        const ShieldHitModifiers &shieldModifiers = {}) override;
     void applyPartyAttackMeleeEffects(
         size_t actorIndex,
         const CharacterAttackResult &attack,
@@ -831,7 +848,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex = 0) override;
+        uint32_t sourcePartyMemberIndex = 0,
+        bool critical = false) override;
     bool applyPartySpellToMapActor(
         size_t actorIndex,
         uint32_t spellId,
@@ -841,7 +859,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex = 0);
+        uint32_t sourcePartyMemberIndex = 0,
+        bool critical = false);
     bool applyDirectSpellImpactToMapActor(
         size_t actorIndex,
         uint32_t spellId,
@@ -849,7 +868,8 @@ public:
         float partyY,
         float partyZ,
         uint32_t sourcePartyMemberIndex,
-        const GameplayActorService::DirectSpellImpactResult &impact);
+        const GameplayActorService::DirectSpellImpactResult &impact,
+        bool critical = false);
     bool healMapActor(size_t actorIndex, int amount) override;
     ActorRulesetFacts *mutableActorRulesetFacts(size_t actorIndex) override;
     bool resurrectMapActor(size_t actorIndex, int health, bool friendlyToParty);
@@ -1000,6 +1020,7 @@ public:
     float partyEngagementRange() const override;
     float gameplayCameraYawRadians() const override;
     float gameplayCameraPitchRadians() const override;
+    float gameplayViewAspectRatio() const override;
     bool partyIsAirborneForRest() const override;
     bool partyIsFlyingForEventChecks() const override;
     bool partyIsActivelyFlyingForHud() const override;
@@ -1068,6 +1089,12 @@ public:
     bool applyPartyAttackMeleeBModelDamage(size_t bModelIndex, int damage) override;
     bool isPartyAttackMeleeBModelTarget(size_t bModelIndex) const override;
     bool isOutdoorDestructibleBModel(size_t bModelIndex) const;
+    bool fireEventMissile(const EventMissileRequest &request) override;
+    bool turnMapActors(std::optional<size_t> actorIndex, uint32_t group, float seconds) override;
+    bool wakeMapActors(std::optional<size_t> actorIndex, uint32_t group) override;
+    bool hasLineOfSight(float fromX, float fromY, float fromZ, float toX, float toY, float toZ) const override;
+    bool summonEventGold(uint32_t amount, int32_t x, int32_t y, int32_t z, int32_t speed) override;
+    bool mapActorPosition(size_t actorIndex, float &x, float &y, float &z) const override;
     bool castEventSpell(
         uint32_t spellId,
         uint32_t skillLevel,
@@ -1124,6 +1151,8 @@ public:
         const GameplayWorldPoint &target) override;
     bool debugFireActorProjectileAtParty(size_t actorIndex, GameplayActorAttackAbility ability, int damage) override;
     bool blinkActor(size_t actorIndex) override;
+    bool suspendActorShield(size_t actorIndex, float seconds) override;
+    bool restoreActorShield(size_t actorIndex) override;
     bool swapActorPlaces(size_t actorIndex, std::optional<size_t> otherActorIndex) override;
     bool pushActor(size_t actorIndex, float directionX, float directionY, float distance) override;
     bool launchParty(float headingRadians, float horizontalSpeed, float verticalSpeed) override;
@@ -1136,6 +1165,7 @@ public:
         return &projectileService();
     }
     bool chargeActor(size_t actorIndex) override;
+    bool frenzyActor(size_t actorIndex) override;
     std::optional<GameplayChargeCounts> chargeCounts() const override;
     // Moves a living actor to (x, y) for a blink or a charge's step when the spot is free: a floor within
     // maxHeightChange of its own (no water or steep slope for walkers), no wall, decoration, other actor or the party
@@ -1179,6 +1209,8 @@ public:
         std::string impactObjectSpriteName;
         // A world missile's shield tier (monster_projectiles.yml); unset follows the attack's damage type.
         std::optional<ShieldAttackTier> shieldTier;
+        // Its impact's sound (monster_projectiles.yml impact_sound_id), 0: none.
+        uint32_t impactSoundId = 0;
     };
 
     enum class RuntimeSpellSourceKind
@@ -1212,6 +1244,8 @@ public:
         uint32_t effectSoundIdOverride = 0;
         uint32_t impactSoundIdOverride = 0;
         bool turnBasedPendingAction = false;
+        // A party spell whose damage was a critical hit (ProjectileState::critical).
+        bool critical = false;
     };
 
     struct PartyProjectileRequest
@@ -1219,11 +1253,13 @@ public:
         uint32_t sourcePartyMemberIndex = 0;
         uint32_t objectId = 0;
         uint32_t impactObjectId = 0;
+        uint32_t impactSoundId = 0;
         int damage = 0;
         int attackBonus = 0;
         bool useActorHitChance = false;
         CombatDamageType damageType = CombatDamageType::Physical;
         std::optional<ShieldAttackTier> shieldTier;
+        ShieldHitModifiers shieldModifiers;
         bool weakerOfPhysicalAndFire = false;
         float explosionRadius = 0.0f;
         float sourceX = 0.0f;
@@ -1233,6 +1269,8 @@ public:
         float targetY = 0.0f;
         float targetZ = 0.0f;
         bool turnBasedPendingAction = false;
+        // Its damage was a critical hit (ProjectileState::critical).
+        bool critical = false;
     };
 
     struct MonsterVisualState
@@ -1260,10 +1298,13 @@ private:
     // After a kill: the ruleset's reward for clearing the map, if it has one.
     void rewardRulesetMapProgress();
     // Homing for the missiles a party member just fired at an actor, when the rules make them home (MAW).
+    // The ruleset's homing (MAW), or a weapon's (weaponHoming: an Energy Guns Grandmaster's shot, 360 degrees a second
+    // for 1.5 s).
     void attachPartyMissileHoming(
         uint32_t firstProjectileId,
         uint32_t sourcePartyMemberIndex,
-        std::optional<size_t> targetActorIndex);
+        std::optional<size_t> targetActorIndex,
+        bool weaponHoming = false);
     GameplayBolsterRuntimeContext monsterRulesContext() const;
     // The ruleset's map-wide choices when the map's monsters are first placed (MAW bosses).
     void placeRulesetMapMonsters();
@@ -1298,7 +1339,7 @@ private:
     void refreshConditionalMonsterRelations();
     // A hit through the actor's shield (GameplayActorShields::applyHit), the ripple at the source's side of the body.
     GameplayActorShieldHit applyActorShieldHit(size_t actorIndex, int damage, ShieldAttackTier shieldTier,
-        float sourceX, float sourceY, float sourceZ);
+        float sourceX, float sourceY, float sourceZ, const ShieldHitModifiers &shieldModifiers = {});
     // Monster modifiers (MonsterModifiers): blinks per actor step, a true_aim monster's shots, never_staggers.
     void updateActorModifiers(float deltaSeconds);
     bool blinkMapActor(const GameplayActorModifiers::BlinkRequest &request);
@@ -1329,7 +1370,12 @@ private:
         size_t spawnPointIndex,
         bool aggro);
     bool setMapActorHostileToParty(size_t actorIndex, float partyX, float partyY, float partyZ, bool resetActionState);
-    void aggroNearbyMapActorFaction(size_t actorIndex, float partyX, float partyY, float partyZ);
+    void aggroNearbyMapActorFaction(
+        size_t actorIndex,
+        bool alertsFriendlyActors,
+        float partyX,
+        float partyY,
+        float partyZ);
     ChestViewState buildChestView(uint32_t chestId) const;
     void activateChestView(uint32_t chestId);
     bool attemptOpenChest(uint32_t chestId, bool openedByTelekinesis = false);
@@ -1731,13 +1777,16 @@ private:
     bool logOutdoorPathfindingEnabled() const;
     void updateGameplayScreenOverlay(float deltaSeconds);
     void updateActorFrameGlobalEffects(float deltaSeconds, float partyX, float partyY, float partyZ);
-    std::vector<bool> selectOutdoorActiveActors(float partyX, float partyY, float partyZ) const;
+    std::vector<bool> selectOutdoorActiveActors(float partyX, float partyY, float partyZ);
     ActorAiFrameFacts collectOutdoorActorAiFrameFacts(
         float deltaSeconds,
         float partyX,
         float partyY,
         float partyZ,
         const std::vector<bool> &activeActorMask) const;
+    // Each patrolling actor's place in its round (MapDeltaActor::patrolPoints); advanced as the AI facts are read, not
+    // saved (a load starts the round at its first waypoint).
+    mutable std::unordered_map<size_t, size_t> m_actorPatrolIndices;
     std::optional<ActorAiFacts> collectOutdoorActorAiFacts(
         size_t actorIndex,
         bool active,
@@ -1821,7 +1870,6 @@ private:
     int cachedMergedWeatherState(const OutdoorWeatherProfile &profile);
     int mergedLadderState(const OutdoorWeatherProfile &profile, const WeatherSample &sample);
     bool isMergedWeatherMap() const;
-    WeatherMapSettings weatherMapSettings() const;
     // The weather now, with scene, event and debug overrides applied.
     WeatherSample currentWeatherSample();
     void applyPrecipitationState(const WeatherSample &sample);

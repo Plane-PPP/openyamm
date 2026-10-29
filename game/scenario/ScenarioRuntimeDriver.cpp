@@ -122,6 +122,10 @@ const char *scenarioDialogActionKindName(EventDialogActionKind kind)
             return "mm9_rude_skill_trainer_learn";
         case EventDialogActionKind::Mm9RudeSkillTrainerBack:
             return "mm9_rude_skill_trainer_back";
+        case EventDialogActionKind::EventChoice:
+            return "event_choice";
+        default:
+            break;
     }
 
     return "unknown";
@@ -1225,6 +1229,20 @@ bool ScenarioRuntimeDriver::chargeActor(size_t actorIndex, std::string &failure)
     return true;
 }
 
+bool ScenarioRuntimeDriver::frenzyActor(size_t actorIndex, std::string &failure)
+{
+    IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
+
+    if (pWorldRuntime == nullptr || actorIndex >= pWorldRuntime->mapActorCount()
+        || !pWorldRuntime->frenzyActor(actorIndex))
+    {
+        failure = "frenzy_actor: actor " + std::to_string(actorIndex) + " did not start a frenzy";
+        return false;
+    }
+
+    return true;
+}
+
 std::optional<GameplayChargeCounts> ScenarioRuntimeDriver::chargeCounts() const
 {
     const IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
@@ -2253,7 +2271,8 @@ bool ScenarioRuntimeDriver::craftItem(
         {
             if (item.objectDescriptionId == targetItemId)
             {
-                target = CraftItemRef{memberIndex, false, item.gridX, item.gridY, EquipmentSlot::MainHand};
+                target = CraftItemRef{memberIndex, false, item.gridX, item.gridY, EquipmentSlot::MainHand,
+                    pMember->rulesetState.currentBag};
                 break;
             }
         }
@@ -2485,9 +2504,16 @@ bool ScenarioRuntimeDriver::activateInteractionResult(ScenarioInteractionResult 
 
     if (result.activated)
     {
-        ScenarioGameApplicationAccess::gameSession(m_application)
-            .gameplayScreenRuntime()
-            .ensurePendingEventDialogPresented(true);
+        GameSession &session = ScenarioGameApplicationAccess::gameSession(m_application);
+
+        // As the game views do after a click: the items the event gave (evt.GiveItem) come to the hand.
+        if (EventRuntimeState *pEventRuntimeState = eventRuntimeState())
+        {
+            GameplayHeldItemController::applyGrantedEventItemsToHeldInventory(
+                session.gameplayScreenRuntime(), *pEventRuntimeState, session.data().itemTable());
+        }
+
+        session.gameplayScreenRuntime().ensurePendingEventDialogPresented(true);
     }
 
     return result.activated;

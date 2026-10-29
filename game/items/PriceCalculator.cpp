@@ -219,7 +219,8 @@ int PriceCalculator::itemSellingPrice(
     float priceMultiplier,
     const StandardItemEnchantTable *pStandardEnchantTable,
     const SpecialItemEnchantTable *pSpecialEnchantTable,
-    int effectiveReputation)
+    int effectiveReputation,
+    int resaleCapPercent)
 {
     if (item.broken)
     {
@@ -237,7 +238,9 @@ int PriceCalculator::itemSellingPrice(
     const int result = static_cast<int>(
         static_cast<float>(realValue) / (priceMultiplier + 2.0f)
         + static_cast<float>(realValue * merchant) / 100.0f);
-    return std::clamp(result, 1, realValue) * std::max(1u, item.quantity);
+    const int cap = std::max(1, static_cast<int>(static_cast<int64_t>(realValue) * std::clamp(resaleCapPercent, 1, 100)
+        / 100));
+    return std::clamp(result, 1, cap) * std::max(1u, item.quantity);
 }
 
 int PriceCalculator::itemIdentificationPrice(

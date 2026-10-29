@@ -1354,7 +1354,8 @@ GameplayCombatController::CombatEvent GameplayCombatController::buildPartyProjec
     int damage,
     int spellId,
     bool hit,
-    bool killed)
+    bool killed,
+    bool critical)
 {
     CombatEvent event = {};
     event.type = CombatEventType::PartyProjectileActorImpact;
@@ -1365,6 +1366,7 @@ GameplayCombatController::CombatEvent GameplayCombatController::buildPartyProjec
     event.spellId = spellId;
     event.hit = hit;
     event.killed = killed;
+    event.critical = hit && critical;
     return event;
 }
 
@@ -1393,6 +1395,7 @@ std::string GameplayCombatController::formatPartyProjectileActorImpactStatusText
         status.targetName = targetName;
         status.damage = monstersHit >= 2 ? totalDamage : event.damage;
         status.killed = event.killed;
+        status.critical = event.critical;
         status.missile = true;
         status.spellId = uint32_t(std::max(0, event.spellId));
         status.monstersHit = monstersHit;
@@ -1755,6 +1758,7 @@ void GameplayCombatController::handlePendingCombatEvents(
                 entry.spell = event.spellId > 0 ? combatLogSpellName(context.pRuntime, event.spellId) : std::string();
                 entry.target = targetName;
                 entry.amount = event.damage;
+                entry.critical = event.critical;
                 entry.killed = event.killed;
 
                 if (monstersHit <= 1)
@@ -2377,7 +2381,8 @@ void GameplayCombatController::recordPartyProjectileActorImpact(
     int damage,
     int spellId,
     bool hit,
-    bool killed)
+    bool killed,
+    bool critical)
 {
     m_pendingCombatEvents.push_back(
         buildPartyProjectileActorImpactEvent(
@@ -2387,7 +2392,8 @@ void GameplayCombatController::recordPartyProjectileActorImpact(
             damage,
             spellId,
             hit,
-            killed));
+            killed,
+            critical));
 }
 
 const std::vector<GameplayCombatController::CombatEvent> &GameplayCombatController::pendingCombatEvents() const

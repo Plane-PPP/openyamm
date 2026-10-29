@@ -87,6 +87,7 @@ add_executable(openyamm_unit_tests
     IndoorRenderRevisionTests.cpp
     InventoryEquipRegressionTests.cpp
     LegacyLuaExportTests.cpp
+    EventScriptingTests.cpp
     MapStatsRegressionTests.cpp
     MapDeltaDataTests.cpp
     MM7MechanicsRuntimeTests.cpp
@@ -241,6 +242,7 @@ add_executable(openyamm_unit_tests
     ../game/gameplay/GenericActorDialog.cpp
     ../game/gameplay/HouseInteraction.cpp
     ../game/gameplay/HouseServiceRuntime.cpp
+    ../game/gameplay/JournalArcomageRuntime.cpp
     ../game/gameplay/JournalQuestRuntime.cpp
     ../game/gameplay/MasteryTeacherDialog.cpp
     ../game/gameplay/NpcFollowerRuntime.cpp
@@ -492,6 +494,7 @@ add_executable(openyamm_runtime_tests
     IndoorActorDetectionRuntimeTests.cpp
     IndoorActorFlyingRuntimeTests.cpp
     IndoorMovingFloorRuntimeTests.cpp
+    IndoorFacetBitRuntimeTests.cpp
     IndoorActorFactionRuntimeTests.cpp
     IndoorDecorationInteractionTests.cpp
     OutdoorLightingProbeRuntimeTests.cpp

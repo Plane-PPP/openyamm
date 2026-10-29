@@ -501,8 +501,8 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
         bytes,
         static_cast<size_t>(markerIt - bytes.begin()) - sizeof(uint64_t),
         sizeof(uint64_t) + marker.size() + 10);
-    // The held item ends with the bonus timer, the hardened flag and then the ruleset-fields byte.
-    eraseBytes(bytes, findValue(bytes, heldItemMarker) + sizeof(float) + 1, 1);
+    // The held item ends with the bonus timer, the hardened flag, the ruleset-fields byte and the Workshop mod (136).
+    eraseBytes(bytes, findValue(bytes, heldItemMarker) + sizeof(float) + 1, 1 + sizeof(uint16_t));
     const uint32_t previousVersion = 95;
     std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
     writeBytes(path, bytes);
@@ -543,7 +543,7 @@ TEST_CASE("older saves move the MM6 maps' SetTexture swaps to the face they name
 {
     // Audit STD3-6, plan D10: the MM6 scripts name faces with a negative reference now, stored under the face key;
     // saves before version 115 kept the face number itself, which the renderer now reads as a cog.
-    const uint32_t faceKey = OpenYAMM::Game::EventRuntime::indoorFaceTextureOverrideKey(2011);
+    const uint32_t faceKey = OpenYAMM::Game::EventRuntime::indoorFaceReferenceKey(2011);
     OpenYAMM::Game::GameSaveData save = minimalSave();
     save.sourceSaveVersion = 94;
     save.indoorSceneStates["6d01.blv"].eventRuntimeState.emplace().textureOverrides[2011] = "lever_down";

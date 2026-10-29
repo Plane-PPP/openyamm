@@ -979,12 +979,21 @@ PathTraceResult PathMap::traceLine(
     return traceLineInternal(from, to, radius, checkBody, &cache);
 }
 
+bool PathMap::isSteppableRiser(const FacetGeometry &geometry, float fromFloorZ, float riserHeight) const
+{
+    // The floor sampling along the walk already limits each rise to a step; a face the low probes touch ahead whose
+    // top is within riserHeight of the floor the body walks from (a riser or tread of a stair whose treads are
+    // shorter than the body's radius) is one it climbs, not a wall.
+    return riserHeight > 0.0f && geometry.bounds.maxZ <= fromFloorZ + riserHeight + PathEpsilon;
+}
+
 PathTraceResult PathMap::traceLineInternal(
     const PathPoint &from,
     const PathPoint &to,
     float radius,
     bool checkBody,
-    TraceCandidateCache *pCache) const
+    TraceCandidateCache *pCache,
+    float riserHeight) const
 {
     if (!pointIsFinite(from) || !pointIsFinite(to) || !std::isfinite(radius))
     {
@@ -1067,6 +1076,13 @@ PathTraceResult PathMap::traceLineInternal(
                     continue;
                 }
 
+                // A radius probe at the body's height reaches a stair's next riser before the body has climbed the
+                // tread in between (a tread shorter than the radius): isSteppableRiser.
+                if (traceIndex > 0 && isSteppableRiser(geometry, from.z - radius, riserHeight))
+                {
+                    continue;
+                }
+
                 result.blocked = true;
                 result.facetIndex = facetIndex;
                 result.point = hitPoint;
@@ -1081,7 +1097,8 @@ PathTraceResult PathMap::traceLineInternal(
                     facet,
                     geometry.normal,
                     radius,
-                    hitPoint))
+                    hitPoint)
+                && !isSteppableRiser(geometry, from.z - radius, riserHeight))
             {
                 result.blocked = true;
                 result.facetIndex = facetIndex;
@@ -1286,7 +1303,7 @@ PathTraceResult PathMap::traceWalkBody(
 
     const PathPoint lowFrom = {from.x, from.y, from.z + object.radius};
     const PathPoint lowTo = {to.x, to.y, to.z + object.radius};
-    PathTraceResult result = traceLineInternal(lowFrom, lowTo, object.radius, true, &cache);
+    PathTraceResult result = traceLineInternal(lowFrom, lowTo, object.radius, true, &cache, object.riserHeight);
     if (result.blocked || object.height <= 0.0f)
     {
         return result;

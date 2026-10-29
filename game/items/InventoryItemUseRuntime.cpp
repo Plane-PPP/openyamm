@@ -923,6 +923,21 @@ InventoryItemUseAction InventoryItemUseRuntime::classifyItemUse(
         return InventoryItemUseAction::ThrowEmpGrenade;
     }
 
+    if (lowerAscii(pItemDefinition->useAction) == "usestim")
+    {
+        return InventoryItemUseAction::UseStim;
+    }
+
+    if (lowerAscii(pItemDefinition->useAction) == "placebreachcharge")
+    {
+        return InventoryItemUseAction::PlaceBreachCharge;
+    }
+
+    if (lowerAscii(pItemDefinition->useAction) == "eatfood")
+    {
+        return InventoryItemUseAction::EatFoodItem;
+    }
+
     if (pItemDefinition->equipStat == "Sscroll")
     {
         return InventoryItemUseAction::CastScroll;
@@ -1373,6 +1388,37 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
             return result;
         }
 
+        case InventoryItemUseAction::UseStim:
+        {
+            if (pTargetMember->conditions.test(static_cast<size_t>(CharacterCondition::Dead))
+                || pTargetMember->conditions.test(static_cast<size_t>(CharacterCondition::Eradicated)))
+            {
+                return makeFailure(result.action, inactiveCharacterStatusText(*pTargetMember));
+            }
+
+            const int percent = pItemDefinition->varA > 0 ? pItemDefinition->varA : 30;
+            party.healMember(targetMemberIndex,
+                std::max(1, party.member(targetMemberIndex)->maxHealth * percent / 100));
+            pTargetMember->conditions.reset(static_cast<size_t>(CharacterCondition::Weak));
+            result.handled = true;
+            result.consumed = true;
+            result.soundId = SoundId::Drink;
+            return result;
+        }
+
+        case InventoryItemUseAction::PlaceBreachCharge:
+        {
+            if (!canUseSpellItem(*pTargetMember))
+            {
+                return makeFailure(result.action, inactiveCharacterStatusText(*pTargetMember));
+            }
+
+            result.handled = true;
+            result.consumed = true;
+            result.statusText = "The charge blows!";
+            return result;
+        }
+
         case InventoryItemUseAction::ThrowEmpGrenade:
         {
             if (!canUseSpellItem(*pTargetMember))
@@ -1425,7 +1471,8 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
 
         case InventoryItemUseAction::EatFoodItem:
         {
-            party.addFood(1);
+            // An eatFood item (Hesper's rations) adds its VarA in food; MM's food items one.
+            party.addFood(lowerAscii(pItemDefinition->useAction) == "eatfood" ? std::max(1, pItemDefinition->varA) : 1);
             result.handled = true;
             result.consumed = true;
             result.soundId = SoundId::Eat;

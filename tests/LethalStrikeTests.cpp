@@ -65,7 +65,7 @@ public:
             .displayName = "Target", .position = {targetDistance, 0, 0}, .currentHp = hp, .maxHp = maximum,
             .effectiveLevel = level, .isDead = hp <= 0, .hostileToParty = true};
     }
-    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier) override
+    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier, const ShieldHitModifiers & = {}) override
     {
         ++ordinaryApplications;
         damage = value;
@@ -164,7 +164,8 @@ TEST_CASE("Lethal Strike GIANT strict sixty percent and approved template regist
 TEST_CASE("Lethal Strike innate migration hiring promotion and save persistence")
 {
     CHECK(allCanonicalSkillNames()[39] == "Throwing");
-    CHECK(allCanonicalSkillNames()[48] == "LethalStrike");
+    CHECK(allCanonicalSkillNames()[48] == "Cybernetics");
+    CHECK(allCanonicalSkillNames()[49] == "LethalStrike");
     CHECK(allCanonicalSkillNames()[40] == "EnergyGuns");
     CHECK_FALSE(isRulesetSkill("LethalStrike"));
     CHECK_FALSE(isTechnologySkill("LethalStrike"));
@@ -751,7 +752,7 @@ TEST_CASE("Lethal Strike latest separates technology and named mod skills throug
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     save = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(save, error);
-    CHECK(save->sourceSaveVersion == 131);
+    CHECK(save->sourceSaveVersion == 139);
     const auto &c = save->party.members[0];
     CHECK(c.techPoints == 321);
     CHECK(c.spellbookSchool == 2);
@@ -761,5 +762,34 @@ TEST_CASE("Lethal Strike latest separates technology and named mod skills throug
     REQUIRE(c.findSkill("LethalStrike"));
     CHECK(c.findSkill("LethalStrike")->level == 7);
     CHECK(c.findSkill("LethalStrike")->mastery == SkillMastery::Master);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Lethal Strike production 1.14 v132 migrates to 1.18 without losing named skills")
+{
+    std::string error;
+    auto save = loadGameDataFromPath(std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "tests/fixtures/minotaur-1.14-v132.oysav", error);
+    REQUIRE_MESSAGE(save, error);
+    CHECK(save->sourceSaveVersion == 131);
+    REQUIRE(save->party.members.size() == 1);
+    const auto &old = save->party.members.front();
+    CHECK(old.techPoints == 321);
+    CHECK(old.spellbookSchool == 2);
+    REQUIRE(old.findSkill("LethalStrike"));
+    CHECK(old.findSkill("LethalStrike")->level == 7);
+    CHECK(old.findSkill("LethalStrike")->mastery == SkillMastery::Master);
+    CHECK_FALSE(old.findSkill("Cybernetics"));
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-v118-migration.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
+    auto loaded = loadGameDataFromPath(path, error);
+    REQUIRE_MESSAGE(loaded, error);
+    CHECK(loaded->sourceSaveVersion == 139);
+    CHECK(loaded->party.members.front().inventory == old.inventory);
+    CHECK(loaded->party.members.front().techPoints == 321);
+    CHECK(loaded->party.members.front().findSkill("LethalStrike")->level == 7);
+    CHECK(loaded->party.members.front().findSkill("EnergyGuns")->level == 4);
+    CHECK(loaded->outdoorWorldStates.size() == save->outdoorWorldStates.size());
+    CHECK(loaded->indoorSceneStates.size() == save->indoorSceneStates.size());
     std::filesystem::remove(path);
 }

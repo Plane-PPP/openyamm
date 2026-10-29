@@ -1,6 +1,7 @@
 #include "game/ui/GameplayCraftingBenchRenderer.h"
 
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/items/ItemRuntime.h"
 #include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MergedBaseTables.h"
@@ -49,6 +50,13 @@ std::vector<CompareLine> itemLines(const GameplayScreenRuntime &context, const I
     const ItemRules &itemRules = gameRulesFor(pParty).items;
     const Character *pViewer = pParty != nullptr ? pParty->member(pParty->activeMemberIndex()) : nullptr;
     lines.push_back({GameplayCraftingBenchView::itemDisplayName(context, item), GameplayUiSkin::Ivory});
+
+    // Like the inspect popup, an unidentified item tells nothing beyond its generic name.
+    if (!item.identified && ItemRuntime::requiresIdentification(*pDefinition))
+    {
+        lines.push_back({"Not identified", WarningTextColor});
+        return lines;
+    }
 
     if (const std::optional<ItemBaseStats> stats =
             itemRules.baseStats(*pDefinition, item.rulesetFields, pViewer != nullptr ? int(pViewer->level) : 1))
@@ -270,7 +278,10 @@ void GameplayCraftingBenchRenderer::render(GameplayScreenRuntime &context, const
         {
             painter.itemIcon(pItemTable->get(pTarget->item.objectDescriptionId), iconBox(*slot));
             addInspectable(context, pTarget->item, *slot);
-            slotLabels(*slot, itemName(context, pTarget->item.objectDescriptionId), "", DimTextColor);
+            slotLabels(*slot,
+                pTarget->item.identified ? itemName(context, pTarget->item.objectDescriptionId)
+                                         : GameplayCraftingBenchView::itemDisplayName(context, pTarget->item),
+                "", DimTextColor);
         }
         else
         {

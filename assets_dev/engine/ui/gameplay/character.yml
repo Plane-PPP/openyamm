@@ -1756,6 +1756,35 @@ elements:
           width: 40
           height: 40
           notes: Jewelry overlay ring slot 6
+        - id: CharacterDollImplant1Slot
+          anchor: top_left
+          offset_x: 4
+          offset_y: 288
+          width: 30
+          height: 30
+          notes: Implant socket 1 (Hesper's Augment row; shown only for a character with Cybernetics or an implant). The
+            four sockets stay left of the magnifier button (x 137-170, y 277-327 here).
+        - id: CharacterDollImplant2Slot
+          anchor: top_left
+          offset_x: 37
+          offset_y: 288
+          width: 30
+          height: 30
+          notes: Implant socket 2 (Hesper's Augment row; shown only for a character with Cybernetics or an implant)
+        - id: CharacterDollImplant3Slot
+          anchor: top_left
+          offset_x: 70
+          offset_y: 288
+          width: 30
+          height: 30
+          notes: Implant socket 3 (Hesper's Augment row; shown only for a character with Cybernetics or an implant)
+        - id: CharacterDollImplant4Slot
+          anchor: top_left
+          offset_x: 103
+          offset_y: 288
+          width: 30
+          height: 30
+          notes: Implant socket 4 (Hesper's Augment row; shown only for a character with Cybernetics or an implant)
     - id: CharacterDollBowSlot
       anchor: top_left
       offset_x: 0

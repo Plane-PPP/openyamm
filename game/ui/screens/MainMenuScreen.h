@@ -107,6 +107,9 @@ class MainMenuScreen : public MenuDesignScreen
     std::string m_latestSaveMap;
     std::string m_latestSaveLocation;
     std::optional<KeyboardAction> m_capture;
+    // A modifier pressed while capturing: bound when released alone, passed over when a key follows (a mouse's side
+    // button that sends a combination such as Ctrl+F9 binds F9).
+    std::optional<SDL_Scancode> m_captureModifier;
     Page m_page = Page::Home;
     // Owned by the application so that reopening the menu returns to the last Settings section this session.
     std::string &m_section;

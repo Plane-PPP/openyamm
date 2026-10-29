@@ -347,7 +347,8 @@ TEST_CASE("weather flake looks keep the engine's snow and the repository's ash")
     CHECK(partial.ashFlakes.color == defaults.ashFlakes.color);
     CHECK(partial.snowFlakes.fallSpeed == engineSnow.fallSpeed);
     CHECK_FALSE(partial.loadFromYaml("version: 1\nflakes:\n  ash: {haze: [9000, 100]}\n", errorMessage));
-    CHECK_FALSE(partial.loadFromYaml("version: 1\nflakes:\n  hail: {}\n", errorMessage));
+    // Other keys are named looks (ember), checked as the ash look is.
+    CHECK_FALSE(partial.loadFromYaml("version: 1\nflakes:\n  hail: {glow: 1}\n", errorMessage));
 }
 
 TEST_CASE("ash falls only on maps weather.yml gives it and leaves every other roll unchanged")
@@ -455,5 +456,80 @@ TEST_CASE("weather presentation fades ash without overlapping snow")
 
     CHECK(presentation.snowLevel() == 0.0f);
     CHECK(presentation.ashLevel() == doctest::Approx(0.7f));
+    CHECK_FALSE(presentation.storm());
+}
+
+TEST_CASE("a map's weather entry gives dry lightning days, its own ash look and its rain colour")
+{
+    WeatherRules rules;
+    std::string errorMessage;
+    REQUIRE_MESSAGE(rules.loadFromYaml("version: 1\n"
+        "flakes:\n  ash: {fall_speed: 50}\n  ember: {color: [1.6, 0.6, 0.2], haze: none}\n"
+        "maps:\n  crown.odm: {dry_lightning: 100}\n  scour.odm: {ash: 50, ash_look: ember}\n"
+        "  brood.odm: {rain_color: [0.6, 0.85, 0.4]}\n", errorMessage), errorMessage);
+
+    // A named look starts from the ash look.
+    REQUIRE(rules.namedFlakes.contains("ember"));
+    CHECK(rules.namedFlakes.at("ember").fallSpeed == doctest::Approx(50.0f));
+    CHECK(rules.namedFlakes.at("ember").color[0] == doctest::Approx(1.6f));
+
+    const WeatherMapSettings scour = resolveWeatherMapSettings(rules, 2, "scour.odm", false, false);
+    REQUIRE(scour.ashLook.has_value());
+    CHECK(weatherFlakeLook(rules, PrecipitationKind::Ash, &scour) == &*scour.ashLook);
+    CHECK(weatherFlakeLook(rules, PrecipitationKind::Ash) == &rules.ashFlakes);
+    WeatherSample ashFall;
+    ashFall.precipitation = PrecipitationKind::Ash;
+    ashFall.intensity = 1.0f;
+    CHECK(weatherPrecipitationHaze(rules, ashFall).foggy);
+    CHECK_FALSE(weatherPrecipitationHaze(rules, ashFall, &scour).foggy);
+
+    const WeatherMapSettings brood = resolveWeatherMapSettings(rules, 3, "brood.odm", true, false);
+    CHECK(brood.rainColor[1] == doctest::Approx(0.85f));
+    CHECK(scour.rainColor == DefaultRainColor);
+
+    // Every day of the crown is a dry-lightning day; no other map has one, and the other rolls are unchanged.
+    const WeatherMapSettings crown = resolveWeatherMapSettings(rules, 4, "crown.odm", false, false);
+    WeatherMapSettings plain = crown;
+    plain.dryLightningPercent = 0.0f;
+
+    for (int day = 0; day < 40; ++day)
+    {
+        CHECK(planWeatherDay(rules, crown, day).dryLightning);
+        CHECK_FALSE(planWeatherDay(rules, plain, day).dryLightning);
+        CHECK(planWeatherDay(rules, crown, day).windDirectionRadians
+            == planWeatherDay(rules, plain, day).windDirectionRadians);
+    }
+
+    CHECK(sampleRolledWeather(rules, crown, 600.0).dryLightning);
+    CHECK_FALSE(sampleRolledWeather(rules, scour, 600.0).dryLightning);
+
+    WeatherRules bad;
+    CHECK_FALSE(bad.loadFromYaml("version: 1\nmaps:\n  scour.odm: {ash: 50, ash_look: smoke}\n", errorMessage));
+    CHECK(errorMessage.find("ash_look names no flakes entry") != std::string::npos);
+}
+
+TEST_CASE("weather presentation throws dry lightning without rain, mostly far off")
+{
+    const WeatherRules rules = loadRepositoryRules();
+    WeatherPresentation presentation;
+    WeatherSample dry;
+    dry.dryLightning = true;
+    size_t strikes = 0;
+    size_t near = 0;
+
+    for (int frame = 0; frame < 60 * 600; ++frame)
+    {
+        presentation.update(rules, dry, 1.0f / 60.0f);
+        CHECK(presentation.rainLevel() == 0.0f);
+
+        for (const LightningStrike &strike : presentation.takeStrikes())
+        {
+            ++strikes;
+            near += strike.distance == LightningDistance::Near ? 1 : 0;
+        }
+    }
+
+    CHECK(strikes >= 10);
+    CHECK(near * 5 < strikes);
     CHECK_FALSE(presentation.storm());
 }

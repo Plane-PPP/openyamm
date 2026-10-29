@@ -92,6 +92,7 @@ TEST_CASE("MAW mixes with the Alchemy skill and its item bonus, at most twice th
     Character alchemist;
     alchemist.skills["Alchemy"] = {"Alchemy", 40, SkillMastery::Grandmaster};
     alchemist.itemSkillBonuses["Alchemy"] = 30;
+    // Standard mixes with the effective level too; MAW counts the item bonus once, then caps it.
     CHECK_EQ(standardPotionRules().mixingAlchemyLevel(alchemist), 70u);
     CHECK_EQ(rules.gameRules().potions.mixingAlchemyLevel(alchemist), 70u);
     alchemist.itemSkillBonuses["Alchemy"] = 500;
@@ -201,6 +202,30 @@ TEST_CASE("multibag: an item the party gets goes into any bag with room before t
     REQUIRE(standard.member(0)->addInventoryItem(packItem(100, Character::InventoryWidth, Character::InventoryHeight)));
     REQUIRE(standard.tryGrantInventoryItem(packItem(200, 2, 4), &recipient));
     CHECK_EQ(recipient, 1u);
+}
+
+TEST_CASE("multibag: event item checks see every bag (user, 2026-10-26: Markham's Contestant's Shield)")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    Party party = mawParty(rules, 4);
+    Character &holder = *party.member(2);
+    REQUIRE(InventoryBags::openBag(holder, 2, 4));
+    REQUIRE(holder.addInventoryItem(packItem(1460, 2, 2)));
+    REQUIRE(holder.addInventoryItem(packItem(1437, 1, 1)));
+    REQUIRE(InventoryBags::openBag(holder, 0, 4));
+    REQUIRE(holder.inventory.empty());
+
+    CHECK_EQ(party.inventoryItemCount(1460), 1);
+    CHECK_EQ(party.inventoryItemCount(1460, 2), 1);
+    CHECK_EQ(party.inventoryItemCount(1460, 0), 0);
+    CHECK(party.hasItemAnywhere(1460));
+
+    REQUIRE(party.removeItem(1460));
+    REQUIRE(party.removeItemFromMember(2, 1437));
+    CHECK_EQ(party.inventoryItemCount(1460), 0);
+    CHECK_EQ(party.inventoryItemCount(1437), 0);
+    CHECK_EQ(holder.rulesetState.currentBag, 0);
+    CHECK_FALSE(party.removeItem(1460));
 }
 
 TEST_CASE("multibag: sorting all bags puts the tallest first and fills the bags in order (H.1)")

@@ -448,7 +448,7 @@ ruleset package that is mounted only for MAW games, see §3.0).
   - MAW: Alliance step when QBit 63 (Overdune's quest done) and not QBit 59, **without Overdune in the party**; same
     rewards (10000 XP, award 5, QBits 13–18 and 59, 4000 gold, topics on NPCs 5/13); always enters house 773
   - Base: Requires `HasPlayer(4)` and Overdune in party
-  - Port: Replace 197 (relaxes a story check; decide per ruleset)
+  - Port: done, `out03_maw.lua` (MAW players expect it)
 - **d05 63/110/45**
   - MAW: MP rewrite: floor-trap timer watches lights 1–8 instead of `MapVar(12)`, button 45 no longer resets
     `MapVar(33)`
@@ -462,12 +462,13 @@ ruleset package that is mounted only for MAW games, see §3.0).
   - MAW: Door opens only with Dyson (roster 34) able to act, or NPC 11's topic D = 634; transformer destroyed only with
     Dyson. **Drops** QBit 19 (Necromancer alliance) and the invisibility path, and the transformer relaxation
   - Base: `d19_mmmerge.lua` keeps the relaxed version
-  - Port: Keep ours
+  - Port: `d19_maw.lua` adds only the topic path (Dyson's join offer opens the door without him, read with
+    `evt.GetNPCTopic`); the alliance paths and the transformer stay ours
 - **d22 5 (load), 452**
   - MAW: `mapvars.mapAffixes` (dimension-map run): clerics hostile and secret button (facet 5) shown; door 452 opens
     with QBit 28 **or** affix run; MAW also drops the Dyson requirement for both (its MP timer still checks Dyson)
   - Base: Base requires Dyson in the party for the button and door
-  - Port: Replace 5 and 452 under the dimension-map rule only
+  - Port: done, `d22_maw.lua` (QBit 28 without Dyson; a run needs neither)
 - **d26 131 Sarcophagus**
   - MAW: Once per game (`vars.sarcophagus`)
   - Base: Guard QBit 81, which is set only when the party holds 612 and 627; a map refill shows the facet again and
@@ -519,8 +520,9 @@ ruleset package that is mounted only for MAW games, see §3.0).
 | 6d05 9 | Door locked after the axe is returned (QBit 1051); key consumed | kept (generated) |
 | 7d32 4 | Door 7 only with QBit 547 | kept |
 | 7d34 151 | `Counter(4)` guard | kept |
-| d22 5/452 | Dyson required for the secret button and door | kept |
-| out03 197 | Overdune in the party | kept |
+| d22 5/452 | Dyson required for the secret button and door | dropped as MAW does (`d22_maw.lua`) |
+| out03 197 | Overdune in the party | dropped as MAW does (`out03_maw.lua`) |
+| d19 15 | Dyson in the party for the inner door | also opens on his join offer (`d19_maw.lua`) |
 | d07 | Group 8 visible when hostile | kept (`d07_mmmerge.lua`) |
 | The Seer slot A | "Pilgrimage" topic (hidden by Dimensional Maps) | kept |
 

@@ -92,6 +92,31 @@ TEST_CASE("world missile tokens load within the world's objects range and leave 
     CHECK_FALSE(fresh.loadWorldYaml("missiles: {}\n", "hesper", 21000, 21999, error));
 }
 
+TEST_CASE("a world's party guns fire their own missiles and shot sounds; other guns keep MM's bolt")
+{
+    MonsterProjectileTable table = engineMissiles();
+    std::string error;
+    REQUIRE_MESSAGE(table.loadWorldYaml(std::string(HesperMissiles)
+        + "party:\n  11000: {missile: KrPlasma, shot_sound_id: 60010}\n  11420: {missile: Ener}\n",
+        "hesper", 21000, 21999, error), error);
+
+    const std::optional<PartyGunMissile> pistol = table.findPartyGun(11000);
+    REQUIRE(pistol.has_value());
+    CHECK_EQ(pistol->pMissile->objectId, 21011);
+    CHECK_EQ(pistol->shotSoundId, 60010);
+    const std::optional<PartyGunMissile> repeater = table.findPartyGun(11420);
+    REQUIRE(repeater.has_value());
+    CHECK_EQ(repeater->pMissile->objectId, 555);
+    CHECK_EQ(repeater->shotSoundId, 0);
+    CHECK_FALSE(table.findPartyGun(64).has_value());
+
+    MonsterProjectileTable unknown = engineMissiles();
+    CHECK_FALSE(unknown.loadWorldYaml(std::string(HesperMissiles) + "party:\n  11000: {missile: Nope}\n",
+        "hesper", 21000, 21999, error));
+    CHECK(error.find("unknown missile Nope") != std::string::npos);
+    CHECK_EQ(unknown.entries().size(), 2);
+}
+
 TEST_CASE("a monster naming a world missile token gets its ranged attack; MM's tokens are unchanged")
 {
     // The draft rows' layout: attack 1 type, dice, missile in columns 17-19, attack 2 chance, type, dice, missile in
@@ -319,6 +344,11 @@ TEST_CASE("the staged Hesper missiles resolve to their objects, tiers and effect
         }
         else
         {
+            // A beam (hesper:fx/beam/...) lasts until its script stops it.
+            if (definition->id.starts_with("hesper:fx/beam/"))
+            {
+                effects.stop(handle, EffectStopMode::Drain);
+            }
             for (int tick = 0; tick < 60 * 4 && effects.contains(handle); ++tick)
             {
                 effects.update(1.0f / 60.0f);

@@ -322,14 +322,12 @@ private:
     std::unique_ptr<OutdoorWorldRuntime> m_pOutdoorWorldRuntime;
     std::unique_ptr<IMapSceneRuntime> m_pMapSceneRuntime;
     Engine::AssetFileSystem *m_pAssetFileSystem;
-    bool m_quickSaveLatch = false;
     // Console `render` profiling switches: decoration-model foliage, and a frozen world (no actor/time updates) so a
     // view stays identical while layers are measured. Without the HUD, gameplay draws only the world (clean captures).
     bool m_renderFoliage = true;
     bool m_renderHud = true;
     bool m_renderInstancing = true;
     bool m_renderFreezeWorld = false;
-    bool m_quickLoadLatch = false;
     bool m_doubleSpeedActive = false;
     bool m_advanceTimeLatch = false;
     bool m_traceSnapshotStartLatch = false;
@@ -351,6 +349,18 @@ private:
     uint32_t m_mainMenuRenderedFrameCount = 0;
     uint8_t m_deferredMainMenuChildWarmupStage = 0;
     std::unique_ptr<LoadingOverlayScreen> m_pLoadingOverlayScreen;
+    // Monsters' own sounds (MonsterModifierSet::sounds): the loops while they move and the one-shot when they notice the
+    // party, by actor id, for the world runtime they belong to.
+    void syncActorSounds(IGameplayWorldRuntime &world);
+    const IGameplayWorldRuntime *m_pActorSoundWorld = nullptr;
+    std::unordered_map<uint32_t, uint64_t> m_actorLoopSounds;
+    std::unordered_map<uint32_t, bool> m_actorAwareStates;
+    // The map's ambience bed and music areas (world.yml ambience, musicAreas) and the track playing for its area.
+    void startMapAmbienceAndMusic(const std::string &mapFileName, int mapMusicTrack);
+    void updateMusicArea(float partyX, float partyY);
+    const std::vector<WorldManifest::MusicArea> *m_mapMusicAreas = nullptr;
+    int m_mapMusicTrack = 0;
+    int m_areaMusicTrack = 0;
     std::string m_loadingOverlayBackgroundTextureName;
     LoadingOverlayScreen::Presentation m_loadingOverlayPresentation = LoadingOverlayScreen::Presentation::Fullscreen;
     bool m_loadingOverlayActive = false;

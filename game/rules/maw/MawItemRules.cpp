@@ -2141,7 +2141,11 @@ std::optional<int> MawItemRules::merchantValue(const Character &member) const
     const CharacterSkill *pSkill = member.findSkill("Merchant");
     const int mastery = pSkill != nullptr ? int(pSkill->mastery) : 0;
     const int level = pSkill != nullptr ? int(pSkill->level) + member.skillBonus("Merchant") : 0;
-    const int total = level * mastery + std::max(0, member.merchantBonus);
+    // The member's Glamour adds mastery x power; a Grandmaster Glamour trades at cost.
+    const int glamour = member.glamourMastery == SkillMastery::Grandmaster
+        ? 100
+        : int(member.glamourMastery) * member.glamourPower;
+    const int total = level * mastery + std::max(0, member.merchantBonus - member.glamourPower) + glamour;
     const int value = total > 0 && (mastery == int(SkillMastery::Grandmaster) || total >= 45) ? 100 : total;
     return std::min(7 + value, 100);
 }
@@ -2302,6 +2306,13 @@ std::optional<LootFilterFacts> MawItemRules::lootFilterFacts(
     const InventoryItem &item,
     const ItemDefinition &itemDefinition) const
 {
+    // Items without a price (the blasters, Wetsuit, quest artifacts) are never filtered; MAW's chest filter sold the
+    // Control Center's blasters for nothing (DEVIATIONS 182).
+    if (itemDefinition.value <= 0)
+    {
+        return std::nullopt;
+    }
+
     const std::string &stat = itemDefinition.equipStat;
     LootFilterFacts facts;
 

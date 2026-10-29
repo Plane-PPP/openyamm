@@ -141,8 +141,9 @@ public:
     void setFlyingAvailable(bool active);
     void setRunning(bool active);
     void setWaterWalkActive(bool active);
-    void setLevitateActive(bool active);
     void setFeatherFallActive(bool active);
+    // Levitate keeps the party off water and lava damage.
+    void setLevitateActive(bool active);
     void setSpeedMultiplier(float multiplier);
     void setBodyDimensions(float radius, float height, float maxStepHeight = 128.0f);
     void setCollisionTraceEnabled(bool enabled, std::string mapName);

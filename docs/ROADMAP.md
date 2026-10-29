@@ -1,3 +1,16 @@
+## OpenYAMM v1.18 integration — Implemented / selected Linux tests passed
+
+Merged official v1.18 `4ab07ed519a66feab24599d69bc0ae19971250e2` into the feature branch,
+from backup `backup/minotaur-before-v1.18-2026-10-29` (`9dcf1c7`).
+Official Alchemy/item/follower, black-potion and Mind Resistance fixes retained; no duplicate bonus.
+Levitate setter duplication removed; pre-movement sync and queued-effect guards retained.
+Adapted Lethal Strike death handling to ShieldHitModifiers without changing balance.
+Cybernetics keeps upstream ID48; Lethal Strike moves to49, named saved skills and teachers preserved.
+Mod save140 maps to upstream139; production mod132 maps explicitly to131; older mappings retained.
+Original 1.14 binary generated a frozen v132 fixture; 85 selected cases /32,239 assertions passed.
+Reagent stacks, expanded tooltips, full integration/UI checks and Windows packaging are still Pending.
+No new Windows artifact is claimed at this stage.
+
 ## Подготовка будущего обновления upstream — исследование завершено
 
 Проверены наши Alchemy/Mind Resistance/Levitate против upstream `fc4e117` (2026-10-28).

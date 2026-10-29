@@ -976,6 +976,11 @@ const HouseTable *GameplayScreenRuntime::houseTable() const
     return &m_session.data().houseTable();
 }
 
+const MapStats &GameplayScreenRuntime::mapStats() const
+{
+    return m_session.data().mapStats();
+}
+
 const ChestTable *GameplayScreenRuntime::chestTable() const
 {
     return &m_session.data().chestTable();
@@ -989,6 +994,11 @@ const NpcDialogTable *GameplayScreenRuntime::npcDialogTable() const
 const MonsterTable *GameplayScreenRuntime::monsterTable() const
 {
     return &m_session.data().monsterTable();
+}
+
+const MonsterProjectileTable *GameplayScreenRuntime::monsterProjectileTable() const
+{
+    return &m_session.data().monsterProjectileTable();
 }
 
 GameplayUiController::CharacterScreenState &GameplayScreenRuntime::characterScreen() const

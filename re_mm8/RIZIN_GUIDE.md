@@ -65,6 +65,10 @@ when the whole attack sprite animation has elapsed, not on a drawn contact frame
 condition exclusions and melee/projectile callers in original MM8, with a separately fingerprinted MM7 comparison.
 Its [MM8 annotations](mm8_rel_5326d564_party_targeting.rz) target the same original executable.
 
+[Monsters hit by the party from far away](PARTY_HIT_AGGRO.md) traces what a party hit sets on a monster, why the
+outdoor full-AI list ignores it beyond 5632 units, and how far party projectiles fly (lifetime, speed units).
+Its [annotations](mm8_rel_5326d564_party_hit_aggro.rz) target the same original executable.
+
 [Party slope climbing](PARTY_SLOPE_CLIMBING.md) traces the party's outdoor and indoor slope rules (terrain slide,
 model-face and dungeon-slope responses), GrayFace's `ClimbBetter` byte patch, and the gaps in OpenEnroth and OpenYAMM.
 

@@ -418,6 +418,61 @@ void DecorationModelSet::update(const std::vector<DecorationBillboard> &billboar
     m_settled = true;
 }
 
+void DecorationModelSet::pose(size_t billboardIndex, float yawRadians, float back)
+{
+    if (billboardIndex >= m_slots.size() || m_slots[billboardIndex].group < 0 || m_slots[billboardIndex].turning)
+    {
+        return;
+    }
+
+    const Slot &slot = m_slots[billboardIndex];
+    const auto posed = [yawRadians, back](const Engine::ModelMatrix &rest)
+    {
+        Engine::ModelMatrix matrix = rest;
+        const float cosine = std::cos(yawRadians);
+        const float sine = std::sin(yawRadians);
+        for (size_t column = 0; column < 3; ++column)
+        {
+            const float x = rest[column * 4];
+            const float y = rest[column * 4 + 1];
+            matrix[column * 4] = cosine * x - sine * y;
+            matrix[column * 4 + 1] = sine * x + cosine * y;
+        }
+        const float length = std::sqrt(matrix[8] * matrix[8] + matrix[9] * matrix[9] + matrix[10] * matrix[10]);
+        if (length > 0.0f)
+        {
+            for (size_t axis = 0; axis < 3; ++axis)
+            {
+                matrix[12 + axis] -= matrix[8 + axis] / length * back;
+            }
+        }
+        return matrix;
+    };
+    for (const auto &[group, index] :
+        {std::pair{slot.group, slot.index}, std::pair{slot.overlayGroup, slot.overlayIndex}})
+    {
+        if (group >= 0)
+        {
+            Engine::ModelStaticGroup &placements = m_groups[size_t(group)];
+            placements.placements[index].matrix = posed(m_restMatrices[size_t(group)][index]);
+            placements.bounds[index] = placements.placementBounds(placements.placements[index]);
+        }
+    }
+}
+
+void DecorationModelSet::poseAimed(const std::vector<DecorationBillboard> &billboards, const Aimed &aimed)
+{
+    for (size_t index = 0; index < billboards.size() && index < m_slots.size(); ++index)
+    {
+        float yawRadians = 0.0f;
+        float back = 0.0f;
+        if (aimed(billboards[index].spriteOverrideKey(), yawRadians, back))
+        {
+            pose(index, yawRadians, back);
+        }
+    }
+}
+
 void DecorationModelSet::animate(float timeSeconds)
 {
     for (size_t entry = 0; entry < m_turningBillboards.size();)
@@ -625,6 +680,18 @@ bool DecorationModelSet::load(const Engine::AssetFileSystem &assets, const std::
                 binding.swingRadians = swing[0] * std::numbers::pi_v<float> / 180.0f;
                 binding.swingPeriod = swing[1];
             }
+            if (entry["variant"])
+            {
+                const std::string variant = entry["variant"].as<std::string>();
+                const std::vector<std::string> &variants = binding.asset->materialVariants;
+                const auto found = std::find(variants.begin(), variants.end(), variant);
+                if (found == variants.end())
+                {
+                    error = "decoration model variant " + variant + " is not one of its model's: " + name;
+                    return false;
+                }
+                binding.materialVariant = uint32_t(found - variants.begin()) + 1;
+            }
             // Validated here; read by the animation regression (an animated sprite kept still on purpose).
             entry["still"].as<bool>(false);
             if (entry["lod_pixels"])
@@ -691,7 +758,7 @@ bool DecorationModelSet::load(const Engine::AssetFileSystem &assets, const std::
             for (size_t added = index; added < m_bindings.size(); ++added)
             {
                 const Binding &drawn = m_bindings[added];
-                m_groups.push_back({drawn.asset, 0, drawn.lodPixels, {}, {}, {}, {}});
+                m_groups.push_back({drawn.asset, drawn.materialVariant, drawn.lodPixels, {}, {}, {}, {}});
                 m_billboardIndices.emplace_back();
                 m_restMatrices.emplace_back();
                 if (drawn.swingPeriod > 0.0f)

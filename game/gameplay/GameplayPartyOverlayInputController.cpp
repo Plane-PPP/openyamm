@@ -1992,6 +1992,12 @@ bool GameplayPartyOverlayInputController::bagKeysActive(const GameplayScreenRunt
                 && !context.isAdventurersInnCharacterSourceActive()));
 }
 
+bool GameplayPartyOverlayInputController::bagKeysNeedShift(const GameplayScreenRuntime &context)
+{
+    const Party *pParty = context.partyReadOnly();
+    return context.settingsSnapshot().bagNumberKeys != "bag" && pParty != nullptr && pParty->memberCount() > 1;
+}
+
 bool GameplayPartyOverlayInputController::openBagForKey(GameplayScreenRuntime &context, int bag)
 {
     Party *pParty = context.party();
@@ -2732,6 +2738,30 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 {"CharacterDollRing5Slot", EquipmentSlot::Ring5, true},
                 {"CharacterDollRing6Slot", EquipmentSlot::Ring6, true},
             };
+
+            // The Augment row's implant sockets (jewellery overlay, a character with Cybernetics or an implant).
+            if (!isReadOnlyAdventurersInnView && context.characterScreenReadOnly().dollJewelryOverlayOpen
+                && pActiveCharacter != nullptr && pActiveCharacter->showsImplantSockets())
+            {
+                for (uint8_t socket = 0; socket < pActiveCharacter->implants.size(); ++socket)
+                {
+                    const std::string socketId = "CharacterDollImplant" + std::to_string(socket + 1) + "Slot";
+                    const UiLayoutManager::LayoutElement *pLayout = context.findHudLayoutElement(socketId);
+                    const std::optional<GameplayResolvedHudLayoutElement> resolved = pLayout != nullptr
+                        ? context.resolveHudLayoutElement(socketId, screenWidth, screenHeight, pLayout->width,
+                            pLayout->height)
+                        : std::nullopt;
+
+                    if (resolved && context.isPointerInsideResolvedElement(*resolved, pointerX, pointerY))
+                    {
+                        GameplayCharacterPointerTarget pointerTarget = {};
+                        pointerTarget.type = GameplayCharacterPointerTargetType::ImplantSocket;
+                        pointerTarget.page = context.characterScreenReadOnly().page;
+                        pointerTarget.implantSocket = socket;
+                        return pointerTarget;
+                    }
+                }
+            }
 
             for (const CharacterEquipmentSlotTarget &target : EquipmentSlotTargets)
             {
@@ -3569,6 +3599,52 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 activateBagOverviewTarget(
                     context, *pParty, memberIndex, target, resolveCharacterInventoryGrid(), activationX, activationY,
                     setHeldItem, clearHeldItem);
+                return;
+            }
+
+            // An implant socket: take its implant into the hand, or fit the held implant (the one it replaces into
+            // the hand).
+            if (target.type == GameplayCharacterPointerTargetType::ImplantSocket)
+            {
+                if (!selectedPartyMemberCanAct)
+                {
+                    context.setStatusBarEvent("Can't do that");
+                    return;
+                }
+
+                if (!context.heldInventoryItem().active)
+                {
+                    InventoryItem implant = {};
+
+                    if (pParty->takeImplant(memberIndex, target.implantSocket, implant))
+                    {
+                        setHeldItem(implant);
+                    }
+
+                    return;
+                }
+
+                std::optional<InventoryItem> replaced;
+
+                if (!pParty->fitImplant(memberIndex, target.implantSocket, context.heldInventoryItem().item, replaced))
+                {
+                    const ItemDefinition *pHeld =
+                        context.itemTable()->get(context.heldInventoryItem().item.objectDescriptionId);
+                    context.setStatusBarEvent(pHeld == nullptr || pHeld->equipStat != "Implant"
+                            ? "Only an implant fits there"
+                            : "Cybernetics has not opened that socket");
+                    return;
+                }
+
+                if (replaced)
+                {
+                    setHeldItem(*replaced);
+                }
+                else
+                {
+                    clearHeldItem();
+                }
+
                 return;
             }
 

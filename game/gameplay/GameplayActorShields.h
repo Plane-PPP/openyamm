@@ -38,6 +38,8 @@ struct GameplayActorShieldView
     // Grade colour (linear RGB) and strength.
     std::array<float, 3> color = {};
     float intensity = 1.0f;
+    // Strength while raised and untouched (the grade's rest_intensity); negative: the intensity.
+    float restIntensity = -1.0f;
     // Seconds since the shield broke or came back up, -1 when it has not this map visit (or long ago).
     float secondsSinceBreak = -1.0f;
     float secondsSinceRaise = -1.0f;
@@ -101,11 +103,15 @@ public:
     // One hit through the shield rules; pImpactPoint (world) places the ripple, defaulting to the shield's last
     // known centre.
     GameplayActorShieldHit applyHit(size_t actorIndex, int16_t monsterId, int damage, ShieldAttackTier tier,
-        const std::array<float, 3> *pImpactPoint = nullptr);
+        const std::array<float, 3> *pImpactPoint = nullptr, const ShieldHitModifiers &modifiers = {});
     // Cuts a raised shield to remainingFraction of what is left (Overload, the EMP grenade) with a ripple; false when
     // the actor has no raised shield.
     bool cutRaisedShield(size_t actorIndex, float remainingFraction,
         const std::array<float, 3> *pImpactPoint = nullptr);
+    // An actor script's self:suspendShield: the shield drops (a break, if it was up) and does not regenerate for the
+    // seconds (negative: until restore). False without a shield.
+    bool suspend(size_t actorIndex, int16_t monsterId, float seconds);
+    bool restore(size_t actorIndex);
     // Seconds since the shield broke while it is still down; -1 while it is up, without a shield, or long ago.
     float secondsDownSinceBreak(size_t actorIndex) const;
     // The actor's shield profile (null without one).
@@ -135,6 +141,8 @@ private:
         uint32_t hitSerial = 0;
         uint32_t breakSerial = 0;
         uint32_t raiseSerial = 0;
+        // Regeneration held by a script (suspend): seconds left, negative until restored, 0 not held.
+        float suspendedSeconds = 0.0f;
     };
 
     Entry *ensure(size_t actorIndex, int16_t monsterId);

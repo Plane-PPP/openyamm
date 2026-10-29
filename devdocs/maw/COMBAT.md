@@ -493,6 +493,8 @@ the pipeline applies ×0.25 to physical damage (`zzMaw-Stats.lua:690-717`). This
 - Strafing slowly keeps the lock; sprinting sideways breaks it, and once broken it never
   re-acquires.
 - The angle ignores Z, so flying up or down does not help.
+- Tested once a rendered frame, so the lock grows with the frame rate. OpenYAMM uses a frame-rate independent
+  rate instead, 300° a second, firm enough to hit a party strafing in flight (DEVIATIONS.md #181).
 - Cosmetic projectiles without a target (obelisk, lava fireballs) get pulled toward the party.
   This is a known issue noted in a code comment.
 

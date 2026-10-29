@@ -1374,12 +1374,15 @@ MawAttackDelay mawCharacterAttackDelay(
     MawAttackDelay delay = mawAttackDelay(inputs);
     delay.delay = int(mawRound(delay.delay * mawArtifactAttackDelayMultiplier(rules, character)));
 
-    // A dragon's bite slows with Fangs, its breath with Dragon Ability: x (1 + 0.015 s) (CL:805-818).
+    // A dragon's bite slows with Fangs, any ranged delay (its breath; the Shoot readouts ask for a bow's) with Dragon
+    // Ability: x (1 + 0.015 s) (CL:805-818).
     if (mode == CharacterAttackMode::Melee && mawIsDragon(character))
     {
         delay.delay = int(mawRound(delay.delay * (1 + 0.015 * skillLevel(character, "Unarmed"))));
     }
-    else if (mode == CharacterAttackMode::DragonBreath && mawIsDragon(character))
+    else if ((mode == CharacterAttackMode::DragonBreath || mode == CharacterAttackMode::Bow
+                 || mode == CharacterAttackMode::Wand)
+        && mawIsDragon(character))
     {
         delay.delay = int(mawRound(delay.delay * (1 + 0.015 * skillLevel(character, "DragonAbility"))));
     }
@@ -2049,14 +2052,25 @@ std::optional<SkillMastery> MawCombatRules::spellChainMastery(int spellId, Skill
     return SkillMastery(int(mastery) - 1);
 }
 
-int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast) const
+int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical) const
 {
+    bool critical = false;
+    const auto reportCritical = [pCritical, &critical](int damage)
+    {
+        if (pCritical != nullptr)
+        {
+            *pCritical = critical;
+        }
+
+        return damage;
+    };
     const SpellEntry &spell = *cast.pSpell;
     const MawClassSpell *pClassSpell = mawClassSpell(cast.pCaster->className, uint32_t(spell.id));
 
     if (pClassSpell != nullptr && pClassSpell->damage[0] > 0 && cast.pItemTable != nullptr)
     {
-        return classSpellDamage(cast, *pClassSpell);
+        const int damage = classSpellDamage(cast, *pClassSpell, critical);
+        return reportCritical(damage);
     }
 
     // A dragon's Flame Blast is its breath at 70 % (Novice and Expert), 85 % (Master) or all of it, with the breath's
@@ -2069,17 +2083,17 @@ int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast) const
         const CharacterCombatRows rows = mawCombatRows(m_rules, *cast.pCaster, *cast.pItemTable,
             {sheet.might.actual, sheet.accuracy.actual, sheet.luck.actual});
         static thread_local std::mt19937 rng(std::random_device{}());
-        bool critical = false;
-        return int(mawRound(dragonBreathDamage(m_rules, *cast.pCaster, sheet, rows.rangedMinimumDamage,
+        const int damage = int(mawRound(dragonBreathDamage(m_rules, *cast.pCaster, sheet, rows.rangedMinimumDamage,
             rows.rangedMaximumDamage, int(mawRound(m_rules.state().totalLevel())),
             Share[size_t(std::clamp(int(cast.mastery), 1, 4)) - 1], rng, critical)));
+        return reportCritical(damage);
     }
 
     const std::optional<MawSpellDice> casterDice = mawCasterSpellDice(m_rules, *cast.pCaster, spell);
 
     if (!casterDice)
     {
-        return CombatRules::rollSpellDamage(cast);
+        return CombatRules::rollSpellDamage(cast, pCritical);
     }
 
     const Character &caster = *cast.pCaster;
@@ -2125,7 +2139,9 @@ int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast) const
     addMapCritAffixes(m_rules, critInputs);
     critInputs.overcrit = mawWearsLegendaryAffix(caster, LegendaryOvercrit);
     const MawCrit crit = mawCrit(critInputs);
-    damage *= critFactor(crit, critInputs, std::uniform_real_distribution<double>(0.0, 1.0)(rng));
+    const double critDraw = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+    damage *= critFactor(crit, critInputs, critDraw);
+    critical = critDraw < crit.chance;
     const auto enchantCrit = [&]()
     {
         return mawWearsLegendaryAffix(caster, LegendaryEnchantCrits)
@@ -2155,10 +2171,10 @@ int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast) const
         }
     }
 
-    return std::max(0, int(mawRound(damage)));
+    return reportCritical(std::max(0, int(mawRound(damage))));
 }
 
-int MawCombatRules::classSpellDamage(const CharacterSpellCast &cast, const MawClassSpell &spell) const
+int MawCombatRules::classSpellDamage(const CharacterSpellCast &cast, const MawClassSpell &spell, bool &critical) const
 {
     // A weapon blow of the caster: its roll and crit plus both hands' Fire Aura and average enchantment damage, the
     // weapon's speed multiplier, halved when Weak, times the spell's share at its school's mastery; no Intellect or
@@ -2197,7 +2213,9 @@ int MawCombatRules::classSpellDamage(const CharacterSpellCast &cast, const MawCl
     addMapCritAffixes(m_rules, critInputs);
     critInputs.overcrit = mawWearsLegendaryAffix(caster, LegendaryOvercrit);
     const MawCrit crit = mawCrit(critInputs);
-    damage *= critFactor(crit, critInputs, std::uniform_real_distribution<double>(0.0, 1.0)(rng));
+    const double critDraw = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+    damage *= critFactor(crit, critInputs, critDraw);
+    critical = critDraw < crit.chance;
 
     for (const HeldWeapon &weapon : heldWeapons(caster, *cast.pItemTable, true, false))
     {
@@ -2308,8 +2326,12 @@ float MawCombatRules::partyMissileHomingTurnRate() const
     return m_rules.options().preferences.homingProjectiles ? HomingTurnRadiansPerSecond : 0.0f;
 }
 
-float MawCombatRules::monsterMissileHomingConeRadians(uint32_t spellId) const
+float MawCombatRules::monsterMissileHomingLockRate(uint32_t spellId) const
 {
+    // MAW re-aims while the missile points within 0.5° of the party, tested once a rendered frame, so its grip grows
+    // with the frame rate. Ours is the same at any frame rate and firmer, 300° a second (user, 2026-10-27): a party
+    // strafing on foot or flying (768 a second) is still hit, one flying fast straight across the flight escapes.
+    constexpr float LockRadiansPerSecond = 300.0f * 3.14159265f / 180.0f;
     constexpr std::array<uint32_t, 6> NeverHoming = {9, 15, 22, 24, 32, 93};
 
     if (std::find(NeverHoming.begin(), NeverHoming.end(), spellId) != NeverHoming.end())
@@ -2317,7 +2339,7 @@ float MawCombatRules::monsterMissileHomingConeRadians(uint32_t spellId) const
         return 0.0f;
     }
 
-    return m_rules.options().preferences.homingProjectiles ? 0.5f * 3.14159265f / 180.0f : 0.0f;
+    return m_rules.options().preferences.homingProjectiles ? LockRadiansPerSecond : 0.0f;
 }
 
 void MawCombatRules::applyRetaliation(CharacterAttackResult &attack, const CharacterAttackOnMonster &context) const

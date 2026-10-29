@@ -45,15 +45,18 @@ public:
     static int standardEnchantChance(int treasureLevel);
     static int specialEnchantChance(const ItemDefinition &itemDefinition, int treasureLevel);
     static bool isSpecialRarityAllowed(char rarityLevel, int treasureLevel);
+    // worldId: the world the item rolls in; a world's own enchantments roll only there.
     static std::optional<uint16_t> chooseStandardEnchantId(
         const ItemDefinition &itemDefinition,
         const StandardItemEnchantTable &table,
-        std::mt19937 &rng);
+        std::mt19937 &rng,
+        const std::string &worldId = {});
     static std::optional<uint16_t> chooseSpecialEnchantId(
         const ItemDefinition &itemDefinition,
         const SpecialItemEnchantTable &table,
         int treasureLevel,
-        std::mt19937 &rng);
+        std::mt19937 &rng,
+        const std::string &worldId = {});
     static int generateStandardEnchantPower(StandardItemEnchantKind kind, int treasureLevel, std::mt19937 &rng);
     static std::string displayName(
         const InventoryItem &item,

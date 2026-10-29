@@ -156,6 +156,8 @@ private:
     static bool ensureAlphaToCoveragePrograms(OutdoorGameView &view);
     static void applyOutdoorFxLightUniforms(OutdoorGameView &view, const bx::Vec3 &cameraPosition);
     static void destroyResolvedBModelDrawGroups(OutdoorGameView &view);
+    // Loads the textures events swap onto faces (evt.SetTexture) that no face of the map uses, as 2D textures.
+    static void ensureSwapTextures(OutdoorGameView &view, const EventRuntimeState *pEventRuntimeState);
     static void rebuildResolvedBModelDrawGroups(OutdoorGameView &view);
     static void destroyBModelWorldRenderChunks(OutdoorGameView &view);
     static bool buildBModelWorldRenderChunks(

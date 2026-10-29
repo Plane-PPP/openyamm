@@ -1,5 +1,6 @@
 #include "game/items/CraftingRuntime.h"
 
+#include "game/items/InventoryBags.h"
 #include "game/items/ItemEnchantRuntime.h"
 #include "game/items/ItemGenerator.h"
 #include "game/rules/CraftingRules.h"
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 
 namespace OpenYAMM::Game
 {
@@ -21,13 +23,36 @@ constexpr std::array<EquipmentSlot, 16> WornSlots = {
     EquipmentSlot::Ring6,
 };
 
-CraftItemRef packRef(size_t memberIndex, const InventoryItem &item)
+CraftItemRef packRef(size_t memberIndex, uint8_t bag, const InventoryItem &item)
 {
     CraftItemRef ref;
     ref.memberIndex = memberIndex;
     ref.gridX = item.gridX;
     ref.gridY = item.gridY;
+    ref.bag = bag;
     return ref;
+}
+
+int bagCountOf(const Party &party)
+{
+    return std::max(1, party.rules().items.bagCount(party));
+}
+
+// Every item in the members' bags, member by member and bag by bag, with its reference.
+void forEachPackItem(const Party &party, const std::function<void(const CraftItemRef &, const InventoryItem &)> &visit)
+{
+    const int bagCount = bagCountOf(party);
+
+    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+    {
+        for (int bag = 0; bag < bagCount; ++bag)
+        {
+            for (const InventoryItem &item : InventoryBags::itemsInBag(party.members()[memberIndex], uint8_t(bag)))
+            {
+                visit(packRef(memberIndex, uint8_t(bag), item), item);
+            }
+        }
+    }
 }
 
 CraftingContext craftingContext(const Party &party, const CraftItemRef &target, const CraftingTables &tables)
@@ -42,27 +67,23 @@ CraftingContext craftingContext(const Party &party, const CraftItemRef &target, 
     return context;
 }
 
-// The pack instances of a material, in pack order.
+// The bag instances of a material, in bag order.
 std::vector<CraftItemRef> materialRefs(const Party &party, const CraftMaterialKey &key)
 {
     std::vector<CraftItemRef> refs;
-
-    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
-    {
-        for (const InventoryItem &item : party.members()[memberIndex].inventory)
+    forEachPackItem(party,
+        [&refs, &key](const CraftItemRef &ref, const InventoryItem &item)
         {
             if (CraftingRuntime::materialKey(item) == key)
             {
-                refs.push_back(packRef(memberIndex, item));
+                refs.push_back(ref);
             }
-        }
-    }
-
+        });
     return refs;
 }
 
-// Whether an item of this size fits at a pack cell without covering another item (other than `ignored`).
-bool fitsAt(const Character &member, const InventoryItem &item, uint8_t gridX, uint8_t gridY)
+// Whether an item of this size fits at a cell of the bag without covering another item.
+bool fitsAt(const Character &member, uint8_t bag, const InventoryItem &item, uint8_t gridX, uint8_t gridY)
 {
     if (gridX + item.width > Character::InventoryWidth || gridY + item.height > Character::InventoryHeight)
     {
@@ -73,7 +94,7 @@ bool fitsAt(const Character &member, const InventoryItem &item, uint8_t gridX, u
     {
         for (uint8_t x = gridX; x < gridX + item.width; ++x)
         {
-            if (member.inventoryItemAt(x, y) != nullptr)
+            if (InventoryBags::itemInBagAt(member, bag, x, y) != nullptr)
             {
                 return false;
             }
@@ -83,20 +104,21 @@ bool fitsAt(const Character &member, const InventoryItem &item, uint8_t gridX, u
     return true;
 }
 
-// Puts an item back into the party: at the cell it came from when it fits, else in its owner's pack, else anyone's;
-// false when no pack has room.
-bool returnToParty(Party &party, size_t memberIndex, uint8_t gridX, uint8_t gridY, InventoryItem item)
+// Puts an item back into the party: at the cell it came from when it fits, else in its owner's bags, else anyone's;
+// false when no bag has room.
+bool returnToParty(Party &party, const CraftItemRef &from, const InventoryItem &item)
 {
-    const Character *pMember = party.member(memberIndex);
+    const Character *pMember = party.member(from.memberIndex);
     std::optional<InventoryItem> replaced;
 
-    if (pMember != nullptr && fitsAt(*pMember, item, gridX, gridY)
-        && party.tryPlaceItemInMemberInventoryCell(memberIndex, item, gridX, gridY, replaced))
+    if (pMember != nullptr && fitsAt(*pMember, from.bag, item, from.gridX, from.gridY)
+        && InventoryBags::placeInBag(
+            party, from.memberIndex, from.bag, bagCountOf(party), item, from.gridX, from.gridY, replaced))
     {
         return true;
     }
 
-    return party.tryAutoPlaceItemInMemberInventory(memberIndex, item) || party.tryGrantInventoryItem(item);
+    return party.tryGrantInventoryItemStartingAt(from.memberIndex, item);
 }
 }
 
@@ -107,7 +129,9 @@ std::optional<InventoryItem> CraftingRuntime::itemAt(const Party &party, const C
         return party.equippedItem(ref.memberIndex, ref.slot);
     }
 
-    const InventoryItem *pItem = party.memberInventoryItem(ref.memberIndex, ref.gridX, ref.gridY);
+    const Character *pMember = party.member(ref.memberIndex);
+    const InventoryItem *pItem =
+        pMember != nullptr ? InventoryBags::itemInBagAt(*pMember, ref.bag, ref.gridX, ref.gridY) : nullptr;
     return pItem != nullptr ? std::optional<InventoryItem>(*pItem) : std::nullopt;
 }
 
@@ -162,17 +186,14 @@ std::vector<CraftTargetEntry> CraftingRuntime::collectTargets(const Party &party
         }
     }
 
-    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
-    {
-        for (const InventoryItem &item : party.members()[memberIndex].inventory)
+    forEachPackItem(party,
+        [&targets, &isTarget](const CraftItemRef &ref, const InventoryItem &item)
         {
             if (isTarget(item))
             {
-                targets.push_back({packRef(memberIndex, item), item});
+                targets.push_back({ref, item});
             }
-        }
-    }
-
+        });
     return targets;
 }
 
@@ -180,13 +201,12 @@ std::vector<CraftMaterialEntry> CraftingRuntime::collectMaterials(const Party &p
 {
     std::vector<CraftMaterialEntry> materials;
 
-    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
-    {
-        for (const InventoryItem &item : party.members()[memberIndex].inventory)
+    forEachPackItem(party,
+        [&materials, &rules](const CraftItemRef &ref, const InventoryItem &item)
         {
             if (!rules.isMaterial(item))
             {
-                continue;
+                return;
             }
 
             const CraftMaterialKey key = materialKey(item);
@@ -200,14 +220,13 @@ std::vector<CraftMaterialEntry> CraftingRuntime::collectMaterials(const Party &p
 
             if (found != materials.end())
             {
-                found->refs.push_back(packRef(memberIndex, item));
+                found->refs.push_back(ref);
             }
             else
             {
-                materials.push_back({key, item, {packRef(memberIndex, item)}});
+                materials.push_back({key, item, {ref}});
             }
-        }
-    }
+        });
 
     // Gems first by tier, then the rest by item id.
     std::stable_sort(
@@ -366,10 +385,12 @@ bool CraftingRuntime::apply(
     // A material that stays (a charged orb, the Mirror's copy) goes back where it was.
     const CraftItemRef firstMaterial = applied.materialsUsed.front();
 
+    const int bagCount = bagCountOf(party);
+
     for (const CraftItemRef &ref : applied.materialsUsed)
     {
         InventoryItem removed;
-        party.takeItemFromMemberInventoryCell(ref.memberIndex, ref.gridX, ref.gridY, removed);
+        InventoryBags::takeFromBag(party, ref.memberIndex, ref.bag, bagCount, ref.gridX, ref.gridY, removed);
     }
 
     if (target.worn)
@@ -378,7 +399,9 @@ bool CraftingRuntime::apply(
     }
     else
     {
-        InventoryItem *pItem = party.memberInventoryItemMutable(target.memberIndex, target.gridX, target.gridY);
+        Character *pOwner = party.member(target.memberIndex);
+        InventoryItem *pItem =
+            pOwner != nullptr ? InventoryBags::itemInBagAt(*pOwner, target.bag, target.gridX, target.gridY) : nullptr;
         const bool sameSize = pItem != nullptr && pItem->width == applied.item.width
             && pItem->height == applied.item.height;
 
@@ -394,18 +417,17 @@ bool CraftingRuntime::apply(
         {
             // A new base item of another size (the Emerald) is placed again.
             InventoryItem old;
-            party.takeItemFromMemberInventoryCell(target.memberIndex, target.gridX, target.gridY, old);
+            InventoryBags::takeFromBag(
+                party, target.memberIndex, target.bag, bagCount, target.gridX, target.gridY, old);
 
-            if (!returnToParty(party, target.memberIndex, target.gridX, target.gridY, applied.item))
+            if (!returnToParty(party, target, applied.item))
             {
                 overflow = applied.item;
             }
         }
     }
 
-    if (applied.result.materialAfter
-        && !returnToParty(
-            party, firstMaterial.memberIndex, firstMaterial.gridX, firstMaterial.gridY, *applied.result.materialAfter))
+    if (applied.result.materialAfter && !returnToParty(party, firstMaterial, *applied.result.materialAfter))
     {
         overflow = *applied.result.materialAfter;
     }
@@ -428,7 +450,7 @@ GemCombinePlan CraftingRuntime::planCombine(
         return plan;
     }
 
-    // Gems in packs, plain (a stored state is not a plain gem).
+    // Gems in bags, plain (a stored state is not a plain gem).
     const auto gemsOf = [&party](uint32_t itemId)
     {
         return uint32_t(materialRefs(party, {itemId, 0, 0}).size());
@@ -481,7 +503,8 @@ bool CraftingRuntime::combine(
     }
 
     const uint32_t count = uint32_t(rules.gemCombineCount());
-    // Gems made by an earlier step are used before the party's own (they are not in a pack yet).
+    const int bagCount = bagCountOf(party);
+    // Gems made by an earlier step are used before the party's own (they are not in a bag yet).
     uint32_t made = 0;
     uint32_t madeItemId = 0;
     std::vector<InventoryItem> results;
@@ -501,7 +524,7 @@ bool CraftingRuntime::combine(
             }
 
             InventoryItem removed;
-            party.takeItemFromMemberInventoryCell(ref.memberIndex, ref.gridX, ref.gridY, removed);
+            InventoryBags::takeFromBag(party, ref.memberIndex, ref.bag, bagCount, ref.gridX, ref.gridY, removed);
             --needed;
         }
 

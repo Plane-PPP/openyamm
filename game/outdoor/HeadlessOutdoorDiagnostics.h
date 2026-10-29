@@ -39,6 +39,13 @@ public:
         const std::filesystem::path &basePath,
         const std::string &mapFileName
     ) const;
+    // Builds every actor model binding of the active world's actors.yml (or of every mounted world's with all) with the
+    // game's own loader and binding rules, prints each refusal and returns 1 when one fails: headless scenarios load no
+    // models, so a refused GLB passes them and breaks maps only on the desktop.
+    int runValidateActorModels(
+        const std::filesystem::path &basePath,
+        bool allWorlds
+    ) const;
     int runDumpOutdoorNavigation(
         const std::filesystem::path &basePath,
         const std::string &mapFileName

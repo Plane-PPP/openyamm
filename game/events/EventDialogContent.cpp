@@ -1071,6 +1071,22 @@ EventDialogContent buildEventDialogContent(
         {
             dialog.title = *context.titleOverride;
         }
+
+        // An event's choice box: one button per answer.
+        if (eventRuntimeState.pendingInputPrompt
+            && eventRuntimeState.pendingInputPrompt->kind == EventRuntimeState::PendingInputPrompt::Kind::Choice)
+        {
+            const std::vector<std::string> &answers = eventRuntimeState.pendingInputPrompt->answers;
+
+            for (size_t answerIndex = 0; answerIndex < answers.size(); ++answerIndex)
+            {
+                EventDialogAction choiceAction = {};
+                choiceAction.kind = EventDialogActionKind::EventChoice;
+                choiceAction.id = uint32_t(answerIndex);
+                choiceAction.label = answers[answerIndex];
+                dialog.actions.push_back(std::move(choiceAction));
+            }
+        }
     }
     else if (context.kind == DialogueContextKind::MapTransition)
     {

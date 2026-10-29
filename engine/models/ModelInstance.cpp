@@ -58,6 +58,7 @@ ModelInstanceHandle ModelInstanceSystem::create(
     slot.visible = true;
     slot.outlineColorAbgr = 0;
     slot.hitFlash = 0.0f;
+    slot.emissionMultiplier = 1.0f;
     slot.burn.reset();
     slot.materialVariant = 0;
     slot.nodeMarkersVisible = false;
@@ -255,6 +256,17 @@ bool ModelInstanceSystem::setHitFlash(ModelInstanceHandle handle, float amount)
     return true;
 }
 
+bool ModelInstanceSystem::setEmissionMultiplier(ModelInstanceHandle handle, float multiplier)
+{
+    Slot *pSlot = find(handle);
+    if (pSlot == nullptr)
+    {
+        return false;
+    }
+    pSlot->emissionMultiplier = std::clamp(multiplier, 0.0f, 16.0f);
+    return true;
+}
+
 bool ModelInstanceSystem::setBurn(ModelInstanceHandle handle, const ModelBurn *pBurn)
 {
     Slot *pSlot = find(handle);
@@ -387,6 +399,12 @@ float ModelInstanceSystem::hitFlash(ModelInstanceHandle handle) const
 {
     const Slot *pSlot = find(handle);
     return pSlot != nullptr ? pSlot->hitFlash : 0.0f;
+}
+
+float ModelInstanceSystem::emissionMultiplier(ModelInstanceHandle handle) const
+{
+    const Slot *pSlot = find(handle);
+    return pSlot != nullptr ? pSlot->emissionMultiplier : 1.0f;
 }
 
 const ModelBurn *ModelInstanceSystem::burn(ModelInstanceHandle handle) const

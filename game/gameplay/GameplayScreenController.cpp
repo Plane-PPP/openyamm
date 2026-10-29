@@ -440,14 +440,7 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
         return;
     }
 
-    uint64_t interactionKey = uint64_t(overlay.objectDescriptionId);
-    interactionKey ^= uint64_t(overlay.sourceMemberIndex + 1) << 16;
-    interactionKey ^= uint64_t(overlay.sourceGridX) << 24;
-    interactionKey ^= uint64_t(overlay.sourceGridY) << 32;
-    interactionKey ^= uint64_t(overlay.sourceEquipmentSlot) << 40;
-    interactionKey ^= uint64_t(overlay.sourceWorldItemIndex) << 44;
-    interactionKey ^= uint64_t(overlay.sourceLootItemIndex) << 48;
-    interactionKey ^= uint64_t(overlay.sourceType) << 56;
+    const uint64_t interactionKey = itemInspectInteractionKey(overlay);
 
     if (context.interactionState().itemInspectInteractionLatch
         && context.interactionState().itemInspectInteractionKey == interactionKey)
@@ -530,7 +523,8 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
                     return;
                 }
 
-                const InventoryItem *pItem = pSourceMember->inventoryItemAt(overlay.sourceGridX, overlay.sourceGridY);
+                const InventoryItem *pItem = InventoryBags::itemInBagAt(
+                    *pSourceMember, overlay.sourceBag, overlay.sourceGridX, overlay.sourceGridY);
 
                 if (pItem != nullptr)
                 {
@@ -656,6 +650,22 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
             playSingleReaction(SpeechId::RepairFail);
         }
     }
+}
+
+uint64_t GameplayScreenController::itemInspectInteractionKey(
+    const GameplayUiController::ItemInspectOverlayState &overlay)
+{
+    uint64_t interactionKey = uint64_t(overlay.objectDescriptionId);
+    interactionKey ^= uint64_t(overlay.sourceMemberIndex + 1) << 16;
+    interactionKey ^= uint64_t(overlay.sourceGridX) << 24;
+    interactionKey ^= uint64_t(overlay.sourceGridY) << 32;
+    interactionKey ^= uint64_t(overlay.sourceEquipmentSlot) << 40;
+    interactionKey ^= uint64_t(overlay.sourceWorldItemIndex) << 44;
+    interactionKey ^= uint64_t(overlay.sourceLootItemIndex) << 48;
+    interactionKey ^= uint64_t(overlay.sourceType) << 56;
+    // The same cell of another bag in MAW's bag overview is another item.
+    interactionKey ^= uint64_t(overlay.sourceBag) << 60;
+    return interactionKey;
 }
 
 void GameplayScreenController::updateRestOverlayProgress(
@@ -891,11 +901,13 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
 
         const bool shiftHeld =
             input.isScancodeHeld(SDL_SCANCODE_LSHIFT) || input.isScancodeHeld(SDL_SCANCODE_RSHIFT);
-        // The bag keys (by default 1-4) act on the inventory pages; there Shift and a number still select a member.
-        // A held bag key that acts there keeps its number from selecting a member on any frame of the press.
+        // The bag keys (by default 1-4) act on the inventory pages, with Shift or without it as the bag_number_keys
+        // setting says; the numbers otherwise select a member. A held bag key that acts there keeps its number from
+        // selecting a member on any frame of the press.
+        const bool bagKeysEnabled = shiftHeld == GameplayPartyOverlayInputController::bagKeysNeedShift(context);
         bool bagKeyTaken = false;
 
-        for (int bag = 0; bag < 4 && !shiftHeld; ++bag)
+        for (int bag = 0; bag < 4 && bagKeysEnabled; ++bag)
         {
             const GameplayButtonInputState &bagKey =
                 input.action(KeyboardAction(size_t(KeyboardAction::Bag1) + size_t(bag)));

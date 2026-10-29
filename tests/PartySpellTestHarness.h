@@ -93,6 +93,7 @@ public:
         float partyY = 0.0f;
         float partyZ = 0.0f;
         uint32_t sourcePartyMemberIndex = 0;
+        bool critical = false;
     };
 
     struct FriendlySummonRequest
@@ -141,14 +142,14 @@ public:
         m_pMapDeltaData = pMapDeltaData;
     }
 
-    void bindArenaDefinition(const Game::MapArenaDefinition *pArena)
+    void bindArenaMap(const Game::MapStatsEntry *pArenaMap)
     {
-        m_pArena = pArena;
+        m_pArenaMap = pArenaMap;
     }
 
-    const Game::MapArenaDefinition *arenaDefinition() const override
+    const Game::MapStatsEntry *arenaMap() const override
     {
-        return m_pArena;
+        return m_pArenaMap;
     }
 
     Game::MapDeltaData *mapDeltaData() override
@@ -749,7 +750,8 @@ public:
         float partyX,
         float partyY,
         float partyZ,
-        uint32_t sourcePartyMemberIndex) override
+        uint32_t sourcePartyMemberIndex,
+        bool critical) override
     {
         if (actorIndex >= m_actors.size() || m_actors[actorIndex].isDead || m_actors[actorIndex].isInvisible)
         {
@@ -766,6 +768,7 @@ public:
         request.partyY = partyY;
         request.partyZ = partyZ;
         request.sourcePartyMemberIndex = sourcePartyMemberIndex;
+        request.critical = critical;
         m_appliedSpellRequests.push_back(request);
         return true;
     }
@@ -939,12 +942,13 @@ public:
     }
 
     bool applyPartyAttackMeleeDamage(size_t actorIndex, int damage, const Game::GameplayWorldPoint &source,
-        Game::ShieldAttackTier shieldTier) override
+        Game::ShieldAttackTier shieldTier, const Game::ShieldHitModifiers &shieldModifiers = {}) override
     {
         (void)actorIndex;
         (void)damage;
         (void)source;
         (void)shieldTier;
+        (void)shieldModifiers;
         return false;
     }
 
@@ -1213,7 +1217,7 @@ private:
     Game::EventRuntimeState m_eventRuntimeState = {};
     Game::EventRuntimeState *m_pEventRuntimeState = nullptr;
     Game::MapDeltaData *m_pMapDeltaData = nullptr;
-    const Game::MapArenaDefinition *m_pArena = nullptr;
+    const Game::MapStatsEntry *m_pArenaMap = nullptr;
     const std::optional<Game::ScriptedEventProgram> *m_pGlobalEventProgram = nullptr;
     const Game::MonsterTable *m_pMonsterTable = nullptr;
     const Game::MergedBolsterMonsterTable *m_pBolsterMonsterTable = nullptr;

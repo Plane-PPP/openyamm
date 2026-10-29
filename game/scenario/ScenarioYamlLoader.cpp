@@ -62,7 +62,7 @@ const std::vector<NestedKeys> AssertBlockKeys = {
     {"item_set_bonus", {"member_index", "set_id", "active"}},
     {"actor_count", {"name", "monster_id", "boss", "shrunk", "hurt", "hostile", "min", "max"}},
     {"buff", {"spell_id", "present", "member_index"}},
-    {"charges", {"started", "hits", "misses", "min_started", "min_hits", "min_misses"}},
+    {"charges", {"started", "hits", "misses", "frenzies", "min_started", "min_hits", "min_misses", "min_frenzies"}},
     {"journal_map_note", {"map", "id", "text", "present"}},
     {"quick_item_ring", {"open", "member_index"}},
     {"dimension_door", {"pending", "without_quest"}},
@@ -73,7 +73,7 @@ const std::vector<NestedKeys> AssertBlockKeys = {
         "world", "party", "yaw", "pitch", "actor_pos"}},
     {"mechanism", MechanismKeys},
     {"runtime_event_variable", {"id", "value", "min", "max", "member_index"}},
-    {"combat_log", {"min_entries", "dealt_min", "taken_min", "with_stages_min", "loot_min"}},
+    {"combat_log", {"min_entries", "dealt_min", "taken_min", "with_stages_min", "loot_min", "critical_min"}},
     {"ruleset", {"id", "difficulty", "progression", "challenge_mode", "rolled_items_min", "report_items",
         "crafted_items_min", "potion_effects_min", "potion_effects_max", "member_classes", "dimension_run",
         "dimension_quest", "madness_pending", "madness_deaths", "map_cleared", "map_slain_min"}},
@@ -171,6 +171,7 @@ const std::vector<StepKeys> &stepKeyTable()
         {ScenarioStepKind::BlinkActor, {"actor_index"}},
         {ScenarioStepKind::ExecuteEvent, {"id"}},
         {ScenarioStepKind::ChargeActor, {"actor_index"}},
+        {ScenarioStepKind::FrenzyActor, {"actor_index"}},
         {ScenarioStepKind::SetupShortcut,
             {"kind", "id", "value", "item_id", "source_id", "name", "member_index", "slot", "strongest", "condition",
                 "health"}},
@@ -585,6 +586,12 @@ bool ScenarioYamlLoader::parseStepKind(const std::string &value, ScenarioStepKin
     if (value == "charge_actor")
     {
         kind = ScenarioStepKind::ChargeActor;
+        return true;
+    }
+
+    if (value == "frenzy_actor")
+    {
+        kind = ScenarioStepKind::FrenzyActor;
         return true;
     }
 

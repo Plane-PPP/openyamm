@@ -677,6 +677,29 @@ TEST_CASE("MMerge shop stealing integrates with stock and reputation")
     CHECK(serviceResult == HouseServiceRuntime::ShopItemServiceResult::Stolen);
     CHECK_EQ(party.inventoryItemCount(), initialInventoryCount + 1u);
     CHECK_EQ(worldRuntime.currentLocationReputation(), 1);
+
+    // The stolen item leaves the shelf, so the slot cannot be stolen from again.
+    const Party::HouseStockState *pStockState = party.houseStockState(pHouseEntry->id);
+    REQUIRE(pStockState != nullptr);
+    REQUIRE(slotIndex < pStockState->standardStock.size());
+    CHECK_EQ(pStockState->standardStock[slotIndex].objectDescriptionId, 0u);
+
+    CHECK_FALSE(HouseServiceRuntime::tryStealStockItem(
+        party,
+        worldRuntime,
+        gameData.itemTable,
+        gameData.standardItemEnchantTable,
+        gameData.specialItemEnchantTable,
+        *pHouseEntry,
+        worldRuntime.gameMinutes(),
+        HouseStockMode::ShopStandard,
+        slotIndex,
+        150u,
+        1000000u,
+        statusText,
+        &serviceResult));
+    CHECK(serviceResult == HouseServiceRuntime::ShopItemServiceResult::NoItem);
+    CHECK_EQ(party.inventoryItemCount(), initialInventoryCount + 1u);
 }
 
 TEST_CASE("MMerge caught shop stealing records a house ban")

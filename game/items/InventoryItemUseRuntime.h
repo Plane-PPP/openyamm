@@ -43,6 +43,11 @@ enum class InventoryItemUseAction : uint8_t
     UseShieldBurst,
     // throwEmpGrenade: consumed here; the caller applies it to the world (GameplayItemService).
     ThrowEmpGrenade,
+    // useStim: heals VarA % of the target's maximum health (30 without) and cures Weakness.
+    UseStim,
+    // placeBreachCharge: consumed here; the caller blasts the hostile actors around the party (GameplayItemService),
+    // VarA damage (300 without).
+    PlaceBreachCharge,
 };
 
 struct InventoryItemUseContext

@@ -129,6 +129,23 @@ float GameplayActorService::configuredPartyEngagementRange() const
     return m_partyEngagementRange;
 }
 
+void GameplayActorService::setMeleeVerticalReach(float share)
+{
+    m_meleeVerticalReach = share;
+}
+
+bool GameplayActorService::meleeReachesVertically(float share, float attackerFootZ, float attackerHeight,
+    float targetFootZ, float targetHeight)
+{
+    if (share <= 0.0f)
+    {
+        return true;
+    }
+
+    const float lowerHeight = targetFootZ >= attackerFootZ ? attackerHeight : targetHeight;
+    return std::abs(targetFootZ - attackerFootZ) <= std::max(MinimumMeleeVerticalReach, share * lowerHeight);
+}
+
 bool GameplayActorService::isBound() const
 {
     return m_pMonsterTable != nullptr && m_pSpellTable != nullptr;
@@ -883,6 +900,44 @@ bool GameplayActorService::hasPainReflection(const GameplayActorSpellEffectState
 }
 
 GameplayActorTargetPolicyResult GameplayActorService::resolveActorTargetPolicy(
+    const GameplayActorTargetPolicyState &actor,
+    const GameplayActorTargetPolicyState &target,
+    const std::unordered_map<uint32_t, int32_t> *pRelationOverrides) const
+{
+    GameplayActorTargetPolicyResult result = resolveFactionTargetPolicy(actor, target);
+
+    if (pRelationOverrides == nullptr || pRelationOverrides->empty())
+    {
+        return result;
+    }
+
+    const uint32_t actorRelationMonsterId =
+        uint32_t(actor.relationMonsterId > 0 ? actor.relationMonsterId : actor.monsterId);
+    const uint32_t targetRelationMonsterId =
+        uint32_t(target.relationMonsterId > 0 ? target.relationMonsterId : target.monsterId);
+    const auto overrideIterator =
+        pRelationOverrides->find(relationOverrideKey(actorRelationMonsterId, targetRelationMonsterId));
+
+    if (overrideIterator == pRelationOverrides->end())
+    {
+        return result;
+    }
+
+    if (!result.canTarget && overrideIterator->second > 0)
+    {
+        result.canTarget = true;
+        result.relationToTarget = overrideIterator->second;
+        result.engagementRange = hostilityRangeForRelation(overrideIterator->second);
+    }
+    else if (result.canTarget && overrideIterator->second <= 0)
+    {
+        result = {};
+    }
+
+    return result;
+}
+
+GameplayActorTargetPolicyResult GameplayActorService::resolveFactionTargetPolicy(
     const GameplayActorTargetPolicyState &actor,
     const GameplayActorTargetPolicyState &target) const
 {

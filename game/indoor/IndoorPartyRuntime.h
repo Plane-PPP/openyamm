@@ -62,6 +62,8 @@ public:
     Snapshot snapshot() const;
     void restoreSnapshot(const Snapshot &snapshot);
     void setMovementSpeedMultiplier(float multiplier);
+    // Per face: the speed share while the party stands on it (shallow liquids it wades through); empty: none.
+    void setFaceWadeSpeeds(std::vector<float> speeds);
     void setAlwaysRunEnabled(bool enabled);
     void setCollisionTraceEnabled(bool enabled, std::string mapName);
     bool alwaysRunEnabled() const;
@@ -76,6 +78,7 @@ private:
     Party m_party;
     IndoorMoveState m_movementState = {};
     float m_movementSpeedMultiplier = 1.0f;
+    std::vector<float> m_faceWadeSpeeds;
     bool m_alwaysRunEnabled = true;
     bool m_collisionTraceEnabled = false;
     std::string m_collisionTraceMapName;

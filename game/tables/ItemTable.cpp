@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <yaml-cpp/yaml.h>
+
 namespace OpenYAMM::Game
 {
 namespace
@@ -154,8 +156,36 @@ bool isSupportedContentEffectFlag(const std::string &flag)
         "WeeklyInsanityChance10",
         "WaterWalking",
         "DiseaseImmunity",
+        // Hesper: the melee floor 5 ticks lower (the Striking Lattice); spells cast at half power in null fields.
+        "MeleeAttackFloorMinus5",
+        "NullFieldCasting50",
     };
-    return SupportedFlags.contains(flag);
+    if (SupportedFlags.contains(flag))
+    {
+        return true;
+    }
+    // Hesper's numbered flags: a share of spell (Resonator) or ordinary weapon (Coupler) damage strikes raised
+    // shields as Kreegan energy; a melee floor of <ticks>; melee recovery <percent> faster; a Workshop mod's weapon
+    // damage to shields <percent> higher (ShieldDamage).
+    for (const char *pPrefix : {"Resonator", "Coupler", "MeleeAttackFloor", "MeleeRecovery", "ShieldDamage"})
+    {
+        const std::string prefix = pPrefix;
+        std::string number = flag.size() > prefix.size() && flag.rfind(prefix, 0) == 0 ? flag.substr(prefix.size())
+                                                                                      : std::string();
+        if (prefix == "MeleeRecovery" && number.size() > 3 && number.substr(number.size() - 3) == "Pct")
+        {
+            number.resize(number.size() - 3);
+        }
+        else if (prefix == "MeleeRecovery")
+        {
+            number.clear();
+        }
+        if (!number.empty() && std::all_of(number.begin(), number.end(), [](char c) { return c >= '0' && c <= '9'; }))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool parseContentEffect(
@@ -217,6 +247,14 @@ bool parseContentEffect(
     effect.flags = splitPipeSeparated(getCell(row, startColumn + 27));
     effect.energyResistance = parseInt(getCell(row, startColumn + 28));
     effect.personalShield = std::max(0, parseInt(getCell(row, startColumn + 29)));
+    effect.shieldRegenDelaySeconds = parseFloat(getCell(row, startColumn + 30));
+    effect.humPoints = parseInt(getCell(row, startColumn + 31));
+    effect.rangedDamagePercent = parseInt(getCell(row, startColumn + 32));
+    effect.meleeDamagePercent = parseInt(getCell(row, startColumn + 33));
+    effect.spellDamagePercent = parseInt(getCell(row, startColumn + 34));
+    effect.energyDamageTakenPercent = parseInt(getCell(row, startColumn + 35));
+    effect.gunRecoveryReductionTicks = parseInt(getCell(row, startColumn + 36));
+    effect.meleeRecoveryReductionTicks = parseInt(getCell(row, startColumn + 37));
 
     for (const std::string &flag : effect.flags)
     {
@@ -356,6 +394,7 @@ bool ItemTable::load(
     Engine::AssetPathLookupCache paths;
     std::unordered_map<std::string, std::optional<Engine::ImageDimensions>> dimensions;
     uint32_t maxItemId = 0;
+    m_worldLoot.clear();
 
     for (const std::vector<std::string> &row : itemRows)
     {
@@ -544,6 +583,134 @@ bool ItemDefinition::isGold() const
     return toLowerCopy(equipStat) == "gold";
 }
 
+const std::vector<WorldLootTable::Entry> *WorldLootTable::entriesForTreasureLevel(int treasureLevel) const
+{
+    const auto found = classes.find(classForTreasureLevel(treasureLevel));
+    return found != classes.end() ? &found->second : nullptr;
+}
+
+const std::string &WorldLootTable::classForTreasureLevel(int treasureLevel) const
+{
+    return classByTreasureLevel[static_cast<size_t>(std::clamp(treasureLevel, 1, 6) - 1)];
+}
+
+bool ItemTable::loadWorldLootYaml(const std::string &text, const std::string &worldId, std::string &errorMessage)
+{
+    const std::string where = "worlds/" + worldId + "/loot.yml: ";
+    WorldLootTable loot;
+
+    try
+    {
+        const YAML::Node root = YAML::Load(text);
+
+        if (!root.IsMap() || root["schema"].as<std::string>("") != "openyamm.worldLoot.v1")
+        {
+            errorMessage = where + "expected schema openyamm.worldLoot.v1";
+            return false;
+        }
+
+        const YAML::Node classes = root["classes"];
+
+        if (!classes || !classes.IsMap())
+        {
+            errorMessage = where + "expected a classes map";
+            return false;
+        }
+
+        for (const auto &classNode : classes)
+        {
+            const std::string className = classNode.first.as<std::string>();
+            std::vector<WorldLootTable::Entry> &entries = loot.classes[className];
+
+            for (const auto &itemNode : classNode.second)
+            {
+                const WorldLootTable::Entry entry = {itemNode.first.as<uint32_t>(), itemNode.second.as<int>()};
+                const ItemDefinition *pItem = get(entry.itemId);
+
+                if (pItem == nullptr || !pItem->availableInWorld(worldId))
+                {
+                    errorMessage = where + "class " + className + " lists item " + std::to_string(entry.itemId)
+                        + ", which the world does not have";
+                    return false;
+                }
+
+                if (entry.weight < 0)
+                {
+                    errorMessage = where + "class " + className + " gives item " + std::to_string(entry.itemId)
+                        + " a negative weight";
+                    return false;
+                }
+
+                if (entry.weight > 0)
+                {
+                    entries.push_back(entry);
+                    loot.listedItemIds.insert(entry.itemId);
+                }
+            }
+        }
+
+        if (const YAML::Node enchantments = root["enchantments"])
+        {
+            loot.curatesEnchantments = true;
+
+            for (const YAML::Node &name : enchantments["standard"])
+            {
+                loot.standardEnchantments.insert(toLowerCopy(name.as<std::string>()));
+            }
+
+            for (const auto &classNode : enchantments["special"])
+            {
+                std::unordered_set<std::string> &names =
+                    loot.specialEnchantmentsByClass[classNode.first.as<std::string>()];
+
+                for (const YAML::Node &name : classNode.second)
+                {
+                    names.insert(toLowerCopy(name.as<std::string>()));
+                }
+            }
+        }
+
+        const YAML::Node levels = root["treasure_levels"];
+
+        if (!levels || !levels.IsSequence() || levels.size() != loot.classByTreasureLevel.size())
+        {
+            errorMessage = where + "treasure_levels needs one class for each treasure level 1-6";
+            return false;
+        }
+
+        for (size_t level = 0; level < loot.classByTreasureLevel.size(); ++level)
+        {
+            loot.classByTreasureLevel[level] = levels[level].as<std::string>();
+
+            if (!loot.classes.contains(loot.classByTreasureLevel[level]))
+            {
+                errorMessage = where + "treasure level " + std::to_string(level + 1) + " names unknown class "
+                    + loot.classByTreasureLevel[level];
+                return false;
+            }
+        }
+    }
+    catch (const YAML::Exception &exception)
+    {
+        errorMessage = where + exception.what();
+        return false;
+    }
+
+    m_worldLoot[toLowerCopy(worldId)] = std::move(loot);
+    return true;
+}
+
+const WorldLootTable *ItemTable::worldLoot(const std::string &worldId) const
+{
+    if (m_worldLoot.empty())
+    {
+        return nullptr;
+    }
+
+    const auto found = m_worldLoot.find(toLowerCopy(worldId));
+    return found != m_worldLoot.end() ? &found->second : nullptr;
+}
+
 bool ItemTable::loadVisualRows(const std::vector<std::vector<std::string>> &rows, std::string &errorMessage)
 {
     // Validate a complete import before replacing any existing visual metadata.
@@ -716,6 +883,62 @@ bool ItemTable::loadContentEffectRows(
     }
 
     return true;
+}
+
+bool ItemTable::loadWorkshopModRows(const std::vector<std::vector<std::string>> &rows, std::string &errorMessage)
+{
+    m_workshopMods.clear();
+
+    for (const std::vector<std::string> &row : rows)
+    {
+        const std::string idCell = getCell(row, 0);
+
+        if (idCell.empty() || toLowerCopy(idCell) == "mod_id")
+        {
+            continue;
+        }
+
+        WorkshopModDefinition mod = {};
+        mod.id = static_cast<uint16_t>(parseInt(idCell));
+        mod.name = getCell(row, 1);
+        mod.fits = splitPipeSeparated(getCell(row, 2));
+
+        if (mod.id == 0 || mod.name.empty() || mod.fits.empty())
+        {
+            errorMessage = "workshop mod '" + idCell + "' needs an id, a name and what it fits";
+            return false;
+        }
+
+        if (!parseContentEffect(row, 3, mod.effect, errorMessage))
+        {
+            errorMessage = "workshop mod '" + mod.name + "': " + errorMessage;
+            return false;
+        }
+
+        if (!m_workshopMods.emplace(mod.id, std::move(mod)).second)
+        {
+            errorMessage = "duplicate workshop mod " + idCell;
+            return false;
+        }
+    }
+
+    return true;
+}
+
+const WorkshopModDefinition *ItemTable::workshopMod(uint16_t modId) const
+{
+    const auto found = m_workshopMods.find(modId);
+    return found != m_workshopMods.end() ? &found->second : nullptr;
+}
+
+bool ItemTable::workshopModFits(const WorkshopModDefinition &mod, const ItemDefinition &item) const
+{
+    return item.rarity != ItemRarity::Relic && !item.hasContentFlag("QuestItem")
+        && std::any_of(mod.fits.begin(), mod.fits.end(),
+            [&item](const std::string &equipStat)
+            {
+                return toLowerCopy(equipStat) == toLowerCopy(item.equipStat);
+            });
 }
 
 bool ItemTable::loadItemSetRows(

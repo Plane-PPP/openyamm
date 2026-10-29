@@ -36,6 +36,8 @@ namespace
 {
 // Seconds the shatter of a broken energy shield shows (fs_model_shield's break animation).
 constexpr float ShieldShellBreakSeconds = 0.75f;
+// Seconds a hit or the raise lifts a resting shell to its full strength, fading back to the rest strength.
+constexpr float ShieldShellFlareSeconds = 0.6f;
 
 // The energy shield shell over an actor's model (GameplayActorShieldView), none while its shield is down and done
 // shattering. Hits keep their world points: footZ and the body height place the rise sweep.
@@ -50,8 +52,20 @@ std::optional<Engine::ModelShieldShell> actorShieldShell(const GameplayActorShie
     Engine::ModelShieldShell shell;
     shell.color = shield.color;
     shell.fraction = shield.fraction;
-    // Steadier and brighter the fuller the pool; full brightness while it shatters.
-    shell.strength = shield.intensity * (shield.raised ? 0.55f + 0.45f * shield.fraction : 1.0f);
+    // At rest a raised shell shows its rest strength; a hit or the raise flares it to the full strength. Steadier
+    // and brighter the fuller the pool; full brightness while it shatters.
+    float flare = shield.secondsSinceRaise >= 0.0f && shield.secondsSinceRaise < ShieldShellFlareSeconds
+        ? 1.0f - shield.secondsSinceRaise / ShieldShellFlareSeconds : 0.0f;
+    for (const std::array<float, 4> &hit : shield.hits)
+    {
+        if (hit[3] >= 0.0f && hit[3] < ShieldShellFlareSeconds)
+        {
+            flare = std::max(flare, 1.0f - hit[3] / ShieldShellFlareSeconds);
+        }
+    }
+    const float rest = shield.restIntensity >= 0.0f ? shield.restIntensity : shield.intensity;
+    const float raisedStrength = rest + (shield.intensity - rest) * flare;
+    shell.strength = shield.raised ? raisedStrength * (0.55f + 0.45f * shield.fraction) : shield.intensity;
     shell.breakSeconds = shattering && !shield.raised ? shield.secondsSinceBreak : -1.0f;
     shell.raiseSeconds = shield.raised ? shield.secondsSinceRaise : -1.0f;
     shell.seconds = seconds;
@@ -99,14 +113,87 @@ constexpr float AuraMaxScale = 3.0f;
 // into the lower part of the view.
 constexpr float PartyAuraDistance = 150.0f;
 constexpr float PartyAuraDrop = 75.0f;
-// An impact on the party (within PartyHitReach of its body) plays this far in front of its eyes along the view, a
-// little lower and smaller, so a fireball bursting on the party shows in front of it instead of blinding it; its light
-// stays where it struck.
+// An impact on the party (within PartyHitReach of its body) plays this far in front of its eyes, smaller, so a fireball
+// bursting on the party shows in front of it instead of blinding it; its light stays where it struck. It plays where
+// the hit came from on screen, a little lower, held between the vertical limits and within PartyHitEdgeX of the side
+// edges (screen fractions from the centre). A hit from beside or behind flares at that side's edge, partly off screen,
+// lower and smaller the further round it came (fully so PartyHitEdgeBlend past the view), showing which way to turn.
+// Both worlds draw with a 60 degree vertical field of view.
 constexpr float PartyHitReach = 224.0f;
 constexpr float PartyHitBodyDrop = 80.0f;
 constexpr float PartyHitDistance = 160.0f;
-constexpr float PartyHitDrop = 40.0f;
+constexpr float PartyHitTanHalfVerticalFov = 0.57735f;
+constexpr float PartyHitDropY = 0.3f;
+constexpr float PartyHitMinY = -0.6f;
+constexpr float PartyHitMaxY = 0.3f;
+constexpr float PartyHitEdgeX = 0.9f;
+constexpr float PartyHitEdgeY = -0.45f;
+constexpr float PartyHitEdgeBlend = 0.5f;
 constexpr float PartyHitScale = 0.6f;
+constexpr float PartyHitEdgeScale = 0.45f;
+
+// Where an impact on the party plays (see PartyHitReach) and at what scale. fromBody runs from the party's body to the
+// struck point, the hit's direction when the impact does not know the projectile's flight.
+std::array<float, 3> partyHitShownPosition(
+    const IGameplayWorldRuntime &world,
+    const GameplayProjectileImpactPresentationState &impact,
+    const std::array<float, 3> &fromBody,
+    float &scale)
+{
+    std::array<float, 3> toSource = {-impact.flightDirectionX, -impact.flightDirectionY, -impact.flightDirectionZ};
+    if (toSource[0] == 0.0f && toSource[1] == 0.0f && toSource[2] == 0.0f)
+    {
+        toSource = fromBody;
+    }
+
+    // The camera's axes: forward along the view, right and up across the screen.
+    const float yaw = world.gameplayCameraYawRadians();
+    const float pitch = world.gameplayCameraPitchRadians();
+    const std::array<float, 3> forward = {
+        std::cos(yaw) * std::cos(pitch), std::sin(yaw) * std::cos(pitch), std::sin(pitch)};
+    const std::array<float, 3> right = {std::sin(yaw), -std::cos(yaw), 0.0f};
+    const std::array<float, 3> up = {
+        -std::cos(yaw) * std::sin(pitch), -std::sin(yaw) * std::sin(pitch), std::cos(pitch)};
+    const auto dot = [](const std::array<float, 3> &a, const std::array<float, 3> &b)
+    {
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    };
+    const float sourceForward = dot(toSource, forward);
+    const float sourceRight = dot(toSource, right);
+    const float sourceUp = dot(toSource, up);
+
+    // Screen position (fractions of the half-width and half-height from the centre) of where the hit came from.
+    const float tanHalfHorizontalFov = PartyHitTanHalfVerticalFov * std::max(world.gameplayViewAspectRatio(), 0.1f);
+    float screenX = 0.0f;
+    float screenY = -PartyHitDropY;
+    float edge = 0.0f;
+    const float sourceAcross = std::sqrt(sourceForward * sourceForward + sourceRight * sourceRight);
+    if (sourceAcross > 0.001f)
+    {
+        const float azimuth = std::atan2(sourceRight, sourceForward);
+        const float halfHorizontalFov = std::atan(tanHalfHorizontalFov);
+        const float side = sourceRight < 0.0f ? -1.0f : 1.0f;
+        screenX = std::abs(azimuth) < halfHorizontalFov
+            ? std::clamp(std::tan(azimuth) / tanHalfHorizontalFov, -PartyHitEdgeX, PartyHitEdgeX)
+            : side * PartyHitEdgeX;
+        edge = std::clamp((std::abs(azimuth) - halfHorizontalFov) / PartyHitEdgeBlend, 0.0f, 1.0f);
+        const float frontY = std::clamp(
+            sourceUp / sourceAcross / PartyHitTanHalfVerticalFov - PartyHitDropY, PartyHitMinY, PartyHitMaxY);
+        screenY = frontY + (PartyHitEdgeY - frontY) * edge;
+    }
+    scale = PartyHitScale + (PartyHitEdgeScale - PartyHitScale) * edge;
+
+    std::array<float, 3> shown = {};
+    for (size_t axis = 0; axis < 3; ++axis)
+    {
+        shown[axis] = forward[axis] + right[axis] * screenX * tanHalfHorizontalFov
+            + up[axis] * screenY * PartyHitTanHalfVerticalFov;
+    }
+    const float length = std::sqrt(dot(shown, shown));
+    return {world.partyX() + shown[0] / length * PartyHitDistance,
+        world.partyY() + shown[1] / length * PartyHitDistance,
+        world.partyEyeZ() + shown[2] / length * PartyHitDistance};
+}
 
 // value modulo a positive period, in [0, period): std::fmod compiles to a slow x87 loop, and every actor model runs
 // several of these each frame.
@@ -422,6 +509,7 @@ void WorldFxSystem::reset()
     m_particleSystem.reset();
     m_waterRipples = {};
     m_namedEffects.clear();
+    m_beams.clear();
     processNamedEffectAudio();
     for (const auto &[key, instanceId] : m_namedSoundInstances)
     {
@@ -1307,6 +1395,7 @@ void WorldFxSystem::syncActorModels(const IGameplayWorldRuntime &world, float wo
         instance->second.syncPass = syncPass;
         m_models.setOutlineColor(instance->second.handle, 0);
         m_models.setHitFlash(instance->second.handle, state.hitFlash);
+        m_models.setEmissionMultiplier(instance->second.handle, state.emissionMultiplier);
         const std::optional<Engine::ModelShieldShell> shieldShell = actorShieldShell(state.shield, state.preciseZ,
             float(state.bodyHeight > 0 ? state.bodyHeight : state.height), m_shieldDomeTimeSeconds, true);
         m_models.setShieldShell(instance->second.handle, shieldShell ? &*shieldShell : nullptr);
@@ -1884,6 +1973,77 @@ bool WorldFxSystem::configureCorpseSatchels(const Engine::AssetFileSystem &asset
         m_satchelAssets[tier] = loaded.asset;
     }
     return true;
+}
+
+void WorldFxSystem::syncBeams(IGameplayWorldRuntime &world, float deltaSeconds)
+{
+    EventRuntimeState *pState = world.eventRuntimeState();
+    const auto stopBeam = [this](const std::string &name)
+    {
+        for (auto beam = m_beams.begin(); beam != m_beams.end();)
+        {
+            if (beam->name == name)
+            {
+                m_namedEffects.stop(beam->handle, EffectStopMode::Drain);
+                beam = m_beams.erase(beam);
+            }
+            else
+            {
+                ++beam;
+            }
+        }
+    };
+    if (pState != nullptr)
+    {
+        for (const std::string &name : pState->beamStops)
+        {
+            stopBeam(name);
+        }
+        pState->beamStops.clear();
+        for (const EventRuntimeState::BeamRequest &request : pState->beamRequests)
+        {
+            // The same beam asked again moves (a turning gun's lock); another effect under its name replaces it.
+            const auto drawing = std::find_if(m_beams.begin(), m_beams.end(), [&request](const ActiveBeam &beam)
+            {
+                return beam.name == request.name && beam.effectId == request.effectId;
+            });
+            if (drawing != m_beams.end() && m_namedEffects.contains(drawing->handle))
+            {
+                m_namedEffects.setTransform(drawing->handle, request.from, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
+                drawing->to = request.to;
+                drawing->toParty = request.toParty;
+                drawing->timed = request.seconds > 0.0f;
+                drawing->remainingSeconds = request.seconds;
+                continue;
+            }
+            stopBeam(request.name);
+            EffectSpawnParams params;
+            params.position = request.from;
+            const EffectHandle handle = m_namedEffects.spawn(request.effectId, params);
+            if (!m_namedEffects.contains(handle))
+            {
+                std::cerr << "Scripted beam effect spawn failed: " << request.effectId << '\n';
+                continue;
+            }
+            m_beams.push_back({request.name, request.effectId, handle, request.to, request.toParty,
+                request.seconds > 0.0f, request.seconds});
+        }
+        pState->beamRequests.clear();
+    }
+    // The party's chest, where its shots come from.
+    const std::array<float, 3> party = {world.partyX(), world.partyY(), world.partyFootZ() + 96.0f};
+    for (auto beam = m_beams.begin(); beam != m_beams.end();)
+    {
+        beam->remainingSeconds -= deltaSeconds;
+        if (!m_namedEffects.contains(beam->handle) || (beam->timed && beam->remainingSeconds <= 0.0f))
+        {
+            m_namedEffects.stop(beam->handle, EffectStopMode::Drain);
+            beam = m_beams.erase(beam);
+            continue;
+        }
+        m_namedEffects.setBeamTarget(beam->handle, beam->toParty ? party : beam->to);
+        ++beam;
+    }
 }
 
 void WorldFxSystem::syncShieldDomes(const IGameplayWorldRuntime &world, float deltaSeconds)
@@ -4182,10 +4342,7 @@ void WorldFxSystem::syncProjectileImpacts(GameSession &session)
             const float dz = impact.z - (pWorld->partyEyeZ() - PartyHitBodyDrop);
             if (dx * dx + dy * dy + dz * dz <= PartyHitReach * PartyHitReach)
             {
-                const float yaw = pWorld->gameplayCameraYawRadians();
-                shownPosition = {pWorld->partyX() + std::cos(yaw) * PartyHitDistance,
-                    pWorld->partyY() + std::sin(yaw) * PartyHitDistance, pWorld->partyEyeZ() - PartyHitDrop};
-                shownScale = PartyHitScale;
+                shownPosition = partyHitShownPosition(*pWorld, impact, {dx, dy, dz}, shownScale);
             }
         }
 

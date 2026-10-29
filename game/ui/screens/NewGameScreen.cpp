@@ -19,6 +19,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -191,6 +192,23 @@ constexpr std::array<const char *, 40> OrderedSkillNames = {{
     "Alchemy",
     "Learning",
 }};
+
+// A Vampire, Dark Elf or Dragon by race starts with the race's ability whatever the class: no shop teaches it, so it
+// is a fixed starting skill and never takes one of the two choices.
+const char *racialAbilityForRace(uint32_t raceId)
+{
+    switch (raceId)
+    {
+    case 1:
+        return "VampireAbility";
+    case 2:
+        return "DarkElfAbility";
+    case 5:
+        return "DragonAbility";
+    default:
+        return nullptr;
+    }
+}
 
 std::string trimCopy(const std::string &value)
 {
@@ -1035,6 +1053,8 @@ void NewGameScreen::refreshSkillChoices(bool applyCandidateDefaults)
 
     if (m_pGameData != nullptr)
     {
+        const char *pRacialAbility = racialAbilityForRace(candidate.raceId);
+
         for (const char *pSkillName : OrderedSkillNames)
         {
             const StartingSkillAvailability availability =
@@ -1043,7 +1063,8 @@ void NewGameScreen::refreshSkillChoices(bool applyCandidateDefaults)
                     candidate.raceId,
                     pSkillName);
 
-            if (availability == StartingSkillAvailability::HasByDefault)
+            if (availability == StartingSkillAvailability::HasByDefault
+                || (pRacialAbility != nullptr && std::string_view(pSkillName) == pRacialAbility))
             {
                 m_state.defaultSkills.push_back(pSkillName);
             }
@@ -1468,6 +1489,7 @@ std::vector<std::string> NewGameScreen::wrapTextToWidth(
         paragraphStart = paragraphEnd + 1;
     }
 
+    GameplayHudCommon::carryTextColorsAcrossLines(lines);
     return lines;
 }
 

@@ -22,8 +22,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 132;
-constexpr uint32_t UpstreamSaveVersion = 131;
+constexpr uint32_t SaveVersion = 140;
+constexpr uint32_t UpstreamSaveVersion = 139;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -184,6 +184,27 @@ constexpr uint32_t SaveVersionSpellbookSchool = 130;
 // A guild of several schools keeps a spellbook shelf for each (HouseServiceRuntime::spellbookShelfSchools); older saves
 // kept one shelf of mixed schools.
 constexpr uint32_t SaveVersionGuildSchoolShelves = 131;
+// An outdoor monster the party hit beyond the full-AI range stays awake (OutdoorWorldRuntime provokedByParty).
+constexpr uint32_t SaveVersionOutdoorProvokedActors = 132;
+// ...and may shoot back from the distance of the hit (OutdoorWorldRuntime provokedAttackReach).
+constexpr uint32_t SaveVersionOutdoorProvokedAttackReach = 133;
+// A character's implant sockets (Character::implants, Hesper).
+constexpr uint32_t SaveVersionCharacterImplants = 134;
+constexpr uint32_t SaveVersionStoppedTimers = 135;
+constexpr uint32_t SaveVersionActorKeepsHeight = 135;
+constexpr uint32_t SaveVersionBehaviorSpeed = 135;
+constexpr uint32_t SaveVersionProjectileHoming = 135;
+constexpr uint32_t SaveVersionActorDormant = 135;
+constexpr uint32_t SaveVersionActorPatrol = 136;
+constexpr uint32_t SaveVersionWorkshopMods = 136;
+// A homing missile's lock is a rate in radians a second; before, a cone tested every 1/60 s step.
+constexpr uint32_t SaveVersionHomingLockRate = 137;
+// A monster remembers that the party made it hostile, so a hit on it still alerts its friendly faction
+// (angeredByParty indoors and outdoors).
+constexpr uint32_t SaveVersionActorAngeredByParty = 138;
+// Blood splats are saved without their triangles, which the map bakes again when it loads; they were most of a save's
+// size before.
+constexpr uint32_t SaveVersionBloodSplatsWithoutGeometry = 139;
 constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
 constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
@@ -203,12 +224,13 @@ int savePathDisplayPriority(const std::filesystem::path &path)
 {
     const std::string stem = toLowerCopy(path.stem().string());
 
-    if (stem == "autosave")
+    // Quicksave first, the save players load most (Discord request, 2026-10-28), then Autosave.
+    if (stem == "quicksave")
     {
         return 0;
     }
 
-    if (stem == "quicksave")
+    if (stem == "autosave")
     {
         return 1;
     }
@@ -257,6 +279,18 @@ public:
         }
 
         std::memcpy(pData, m_bytes.data() + m_offset, size);
+        m_offset += size;
+        return true;
+    }
+
+    bool skipBytes(size_t size)
+    {
+        if (size > remainingBytes())
+        {
+            m_failed = true;
+            return false;
+        }
+
         m_offset += size;
         return true;
     }
@@ -1069,6 +1103,7 @@ void writeValue(BinaryWriter &writer, const InventoryItem &value)
     writeValue(writer, value.temporaryBonusRemainingSeconds);
     writeValue(writer, value.hardened);
     writeValue(writer, value.rulesetFields);
+    writeValue(writer, value.workshopModId);
 }
 
 bool readValue(BinaryReader &reader, InventoryItem &value)
@@ -1091,7 +1126,8 @@ bool readValue(BinaryReader &reader, InventoryItem &value)
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.maxCharges))
         && readValue(reader, value.temporaryBonusRemainingSeconds)
         && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened))
-        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields));
+        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields))
+        && (reader.version() < SaveVersionWorkshopMods || readValue(reader, value.workshopModId));
 }
 
 void writeValue(BinaryWriter &writer, const LloydBeacon &value)
@@ -1259,6 +1295,7 @@ void writeValue(BinaryWriter &writer, const EquippedItemRuntimeState &value)
     writeValue(writer, value.temporaryBonusRemainingSeconds);
     writeValue(writer, value.hardened);
     writeValue(writer, value.rulesetFields);
+    writeValue(writer, value.workshopModId);
 }
 
 bool readValue(BinaryReader &reader, EquippedItemRuntimeState &value)
@@ -1275,7 +1312,8 @@ bool readValue(BinaryReader &reader, EquippedItemRuntimeState &value)
         && (reader.version() < SaveVersionWandCharges || readValue(reader, value.maxCharges))
         && readValue(reader, value.temporaryBonusRemainingSeconds)
         && (reader.version() < SaveVersionHardenedItems || readValue(reader, value.hardened))
-        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields));
+        && (reader.version() < SaveVersionItemRulesetFields || readValue(reader, value.rulesetFields))
+        && (reader.version() < SaveVersionWorkshopMods || readValue(reader, value.workshopModId));
 }
 
 void writeValue(BinaryWriter &writer, const CharacterEquipmentRuntimeState &value)
@@ -1396,6 +1434,7 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.extraQuickSpellNames);
     writeValue(writer, value.quickItemSlots);
     writeValue(writer, value.spellbookSchool);
+    writeValue(writer, value.implants);
 }
 
 // Saves before SaveVersionWideExperience hold a character's experience in 32 bits.
@@ -1485,7 +1524,8 @@ bool readValue(BinaryReader &reader, Character &value)
         && (reader.version() < SaveVersionCharacterRulesetState || readValue(reader, value.rulesetState))
         && (reader.version() < SaveVersionExtraQuickSpells || readValue(reader, value.extraQuickSpellNames))
         && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots))
-        && (reader.version() < SaveVersionSpellbookSchool || readValue(reader, value.spellbookSchool));
+        && (reader.version() < SaveVersionSpellbookSchool || readValue(reader, value.spellbookSchool))
+        && (reader.version() < SaveVersionCharacterImplants || readValue(reader, value.implants));
 }
 
 void writeValue(BinaryWriter &writer, const PartyBuffState &value)
@@ -1888,22 +1928,13 @@ bool readValue(BinaryReader &reader, GameplayActorSpellEffectState &value)
                 && readValue(reader, value.heroismPower)));
 }
 
-void writeValue(BinaryWriter &writer, const IndoorWorldRuntime::BloodSplatState::Vertex &value)
+// Older saves carry each splat's triangles: a count, then x, y, z, u and v floats per vertex.
+bool skipBloodSplatGeometry(BinaryReader &reader)
 {
-    writeValue(writer, value.x);
-    writeValue(writer, value.y);
-    writeValue(writer, value.z);
-    writeValue(writer, value.u);
-    writeValue(writer, value.v);
-}
-
-bool readValue(BinaryReader &reader, IndoorWorldRuntime::BloodSplatState::Vertex &value)
-{
-    return readValue(reader, value.x)
-        && readValue(reader, value.y)
-        && readValue(reader, value.z)
-        && readValue(reader, value.u)
-        && readValue(reader, value.v);
+    uint64_t count = 0;
+    return readValue(reader, count)
+        && count <= reader.remainingBytes() / (5 * sizeof(float))
+        && reader.skipBytes(size_t(count) * 5 * sizeof(float));
 }
 
 void writeValue(BinaryWriter &writer, const IndoorWorldRuntime::BloodSplatState &value)
@@ -1913,7 +1944,6 @@ void writeValue(BinaryWriter &writer, const IndoorWorldRuntime::BloodSplatState 
     writeValue(writer, value.y);
     writeValue(writer, value.z);
     writeValue(writer, value.radius);
-    writeValue(writer, value.vertices);
 }
 
 bool readValue(BinaryReader &reader, IndoorWorldRuntime::BloodSplatState &value)
@@ -1923,25 +1953,7 @@ bool readValue(BinaryReader &reader, IndoorWorldRuntime::BloodSplatState &value)
         && readValue(reader, value.y)
         && readValue(reader, value.z)
         && readValue(reader, value.radius)
-        && readValue(reader, value.vertices);
-}
-
-void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::BloodSplatState::Vertex &value)
-{
-    writeValue(writer, value.x);
-    writeValue(writer, value.y);
-    writeValue(writer, value.z);
-    writeValue(writer, value.u);
-    writeValue(writer, value.v);
-}
-
-bool readValue(BinaryReader &reader, OutdoorWorldRuntime::BloodSplatState::Vertex &value)
-{
-    return readValue(reader, value.x)
-        && readValue(reader, value.y)
-        && readValue(reader, value.z)
-        && readValue(reader, value.u)
-        && readValue(reader, value.v);
+        && (reader.version() >= SaveVersionBloodSplatsWithoutGeometry || skipBloodSplatGeometry(reader));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::BloodSplatState &value)
@@ -1951,7 +1963,6 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::BloodSplatState
     writeValue(writer, value.y);
     writeValue(writer, value.z);
     writeValue(writer, value.radius);
-    writeValue(writer, value.vertices);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::BloodSplatState &value)
@@ -1961,7 +1972,7 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::BloodSplatState &value
         && readValue(reader, value.y)
         && readValue(reader, value.z)
         && readValue(reader, value.radius)
-        && readValue(reader, value.vertices);
+        && (reader.version() >= SaveVersionBloodSplatsWithoutGeometry || skipBloodSplatGeometry(reader));
 }
 
 void writeValue(BinaryWriter &writer, const IndoorWorldRuntime::MapActorAiState &value)
@@ -2021,6 +2032,7 @@ void writeValue(BinaryWriter &writer, const IndoorWorldRuntime::MapActorAiState 
     writeValue(writer, value.crowdEscapeAttempts);
     writeValue(writer, value.crowdSideSign);
     writeValue(writer, value.suppressLowHealthFlee);
+    writeValue(writer, value.angeredByParty);
 }
 
 bool readValue(BinaryReader &reader, IndoorWorldRuntime::MapActorAiState &value)
@@ -2081,7 +2093,8 @@ bool readValue(BinaryReader &reader, IndoorWorldRuntime::MapActorAiState &value)
         && (reader.version() < SaveVersionIndoorSaveLoadParity || readValue(reader, value.crowdProbeElapsedSeconds))
         && (reader.version() < SaveVersionIndoorSaveLoadParity || readValue(reader, value.crowdEscapeAttempts))
         && (reader.version() < SaveVersionIndoorSaveLoadParity || readValue(reader, value.crowdSideSign))
-        && (reader.version() < SaveVersionOutdoorRuntimeSaveParity || readValue(reader, value.suppressLowHealthFlee));
+        && (reader.version() < SaveVersionOutdoorRuntimeSaveParity || readValue(reader, value.suppressLowHealthFlee))
+        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty));
 }
 
 void writeValue(BinaryWriter &writer, const ActorBehaviorSpell &value)
@@ -2193,6 +2206,42 @@ void writeValue(BinaryWriter &writer, const ActorBehaviorInstanceState &value)
     writeValue(writer, value.nextCast);
     writeValue(writer, value.aiTypeOverride);
     writeValue(writer, value.suppressFlee);
+    writeValue(writer, value.speedMultiplier);
+    writeValue(writer, value.invulnerable);
+    writeValue(writer, value.leashRadius);
+    writeValue(writer, value.rangedBand.has_value());
+    writeValue(writer, value.rangedBand.value_or(std::array<float, 2>{})[0]);
+    writeValue(writer, value.rangedBand.value_or(std::array<float, 2>{})[1]);
+    writeValue(writer, value.moveTarget.has_value());
+    writeValue(writer, value.moveTarget.value_or(GameplayWorldPoint{}).x);
+    writeValue(writer, value.moveTarget.value_or(GameplayWorldPoint{}).y);
+    writeValue(writer, value.moveTarget.value_or(GameplayWorldPoint{}).z);
+    writeValue(writer, value.armoredFront.has_value());
+    writeValue(writer, value.armoredFront.value_or(std::array<float, 2>{})[0]);
+    writeValue(writer, value.armoredFront.value_or(std::array<float, 2>{})[1]);
+}
+
+// Per-actor tactics and the armoured front a script set (save version 135).
+bool readBehaviorTactics(BinaryReader &reader, ActorBehaviorInstanceState &value)
+{
+    bool hasBand = false;
+    bool hasTarget = false;
+    bool hasFront = false;
+    std::array<float, 2> band = {};
+    GameplayWorldPoint target = {};
+    std::array<float, 2> front = {};
+    if (!readValue(reader, value.leashRadius)
+        || !readValue(reader, hasBand) || !readValue(reader, band[0]) || !readValue(reader, band[1])
+        || !readValue(reader, hasTarget) || !readValue(reader, target.x) || !readValue(reader, target.y)
+        || !readValue(reader, target.z)
+        || !readValue(reader, hasFront) || !readValue(reader, front[0]) || !readValue(reader, front[1]))
+    {
+        return false;
+    }
+    value.rangedBand = hasBand ? std::optional<std::array<float, 2>>(band) : std::nullopt;
+    value.moveTarget = hasTarget ? std::optional<GameplayWorldPoint>(target) : std::nullopt;
+    value.armoredFront = hasFront ? std::optional<std::array<float, 2>>(front) : std::nullopt;
+    return true;
 }
 
 bool readValue(BinaryReader &reader, ActorBehaviorInstanceState &value)
@@ -2215,7 +2264,10 @@ bool readValue(BinaryReader &reader, ActorBehaviorInstanceState &value)
         && readValue(reader, value.spellOverride)
         && readValue(reader, value.nextCast)
         && readValue(reader, value.aiTypeOverride)
-        && readValue(reader, value.suppressFlee);
+        && readValue(reader, value.suppressFlee)
+        && (reader.version() < SaveVersionBehaviorSpeed
+            || (readValue(reader, value.speedMultiplier) && readValue(reader, value.invulnerable)
+                && readBehaviorTactics(reader, value)));
     value.actorIndex = static_cast<size_t>(actorIndex);
     return loaded;
 }
@@ -3033,6 +3085,10 @@ void writeValue(BinaryWriter &writer, const MapDeltaActor &value)
     writeValue(writer, value.rulesetFacts);
     writeValue(writer, value.spawnedAfterFill);
     writeValue(writer, value.summonerMemberIndex);
+    writeValue(writer, value.keepsHeight);
+    writeValue(writer, value.leashRadius);
+    writeValue(writer, value.dormant);
+    writeValue(writer, value.patrolPoints);
 }
 
 bool readHitPoints(BinaryReader &reader, int32_t &value)
@@ -3123,7 +3179,11 @@ bool readValue(BinaryReader &reader, MapDeltaActor &value)
 
     return (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.rulesetFacts))
         && (reader.version() < SaveVersionActorSpawnedAfterFill || readValue(reader, value.spawnedAfterFill))
-        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex));
+        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex))
+        && (reader.version() < SaveVersionActorKeepsHeight
+            || (readValue(reader, value.keepsHeight) && readValue(reader, value.leashRadius)
+                && readValue(reader, value.dormant)))
+        && (reader.version() < SaveVersionActorPatrol || readValue(reader, value.patrolPoints));
 }
 
 void writeValue(BinaryWriter &writer, const MapDeltaSpriteObject &value)
@@ -3362,6 +3422,7 @@ void writeValue(BinaryWriter &writer, const ScriptedEventTimerState &value)
     writeValue(writer, value.initialCalendarFirePending);
     writeValue(writer, value.migratedFromLegacySave);
     writeValue(writer, value.migratedRemainingGameMinutes);
+    writeValue(writer, value.stopped);
 }
 
 bool readValue(BinaryReader &reader, ScriptedEventTimerState &value)
@@ -3372,7 +3433,8 @@ bool readValue(BinaryReader &reader, ScriptedEventTimerState &value)
         && readValue(reader, value.hasFired)
         && readValue(reader, value.initialCalendarFirePending)
         && readValue(reader, value.migratedFromLegacySave)
-        && readValue(reader, value.migratedRemainingGameMinutes);
+        && readValue(reader, value.migratedRemainingGameMinutes)
+        && (reader.version() < SaveVersionStoppedTimers || readValue(reader, value.stopped));
 }
 
 struct LegacyOutdoorTimerState
@@ -3648,6 +3710,10 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.proceduralDeathLoot);
     writeValue(writer, value.rulesetFacts);
     writeValue(writer, value.summonerMemberIndex);
+    writeValue(writer, value.provokedByParty);
+    writeValue(writer, value.provokedAttackReach);
+    writeValue(writer, value.dormant);
+    writeValue(writer, value.angeredByParty);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
@@ -3805,7 +3871,11 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && (reader.version() < SaveVersionActorProceduralDeathLoot
             || readValue(reader, value.proceduralDeathLoot))
         && (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.rulesetFacts))
-        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex));
+        && (reader.version() < SaveVersionActorSummoner || readValue(reader, value.summonerMemberIndex))
+        && (reader.version() < SaveVersionOutdoorProvokedActors || readValue(reader, value.provokedByParty))
+        && (reader.version() < SaveVersionOutdoorProvokedAttackReach || readValue(reader, value.provokedAttackReach))
+        && (reader.version() < SaveVersionActorDormant || readValue(reader, value.dormant))
+        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)
@@ -4014,6 +4084,73 @@ void writeValue(BinaryWriter &writer, const GameplayProjectileService::Projectil
     writeValue(writer, value.sectorId);
     writeValue(writer, value.isSettled);
     writeValue(writer, value.isExpired);
+    writeValue(writer, value.shieldTier);
+    writeValue(writer, value.explosionRadius);
+    writeValue(writer, value.eventMissile);
+    writeValue(writer, value.targetX);
+    writeValue(writer, value.targetY);
+    writeValue(writer, value.targetZ);
+    writeValue(writer, value.homing.has_value());
+    if (value.homing)
+    {
+        const GameplayProjectileService::ProjectileHoming &homing = *value.homing;
+        writeValue(writer, homing.targetKind);
+        writeValue(writer, static_cast<uint64_t>(homing.targetActorIndex));
+        writeValue(writer, homing.targetActorId);
+        writeValue(writer, homing.turnRadiansPerSecond);
+        writeValue(writer, homing.maxSeconds);
+        writeValue(writer, homing.expireAfter);
+        writeValue(writer, homing.speed);
+        writeValue(writer, homing.elapsedSeconds);
+        writeValue(writer, homing.lost);
+        writeValue(writer, homing.lockRadiansPerSecond);
+    }
+}
+
+// A homing missile keeps its target across a save (save version 135), with its shield tier, its explosion radius
+// and an event missile's burst point.
+bool readProjectileHoming(BinaryReader &reader, GameplayProjectileService::ProjectileState &value)
+{
+    bool hasHoming = false;
+    if (!readValue(reader, value.shieldTier)
+        || !readValue(reader, value.explosionRadius)
+        || !readValue(reader, value.eventMissile)
+        || !readValue(reader, value.targetX)
+        || !readValue(reader, value.targetY)
+        || !readValue(reader, value.targetZ)
+        || !readValue(reader, hasHoming))
+    {
+        return false;
+    }
+    if (!hasHoming)
+    {
+        return true;
+    }
+    GameplayProjectileService::ProjectileHoming homing = {};
+    uint64_t targetActorIndex = 0;
+    if (!readValue(reader, homing.targetKind)
+        || !readValue(reader, targetActorIndex)
+        || !readValue(reader, homing.targetActorId)
+        || !readValue(reader, homing.turnRadiansPerSecond)
+        || !readValue(reader, homing.maxSeconds)
+        || !readValue(reader, homing.expireAfter)
+        || !readValue(reader, homing.speed)
+        || !readValue(reader, homing.elapsedSeconds)
+        || !readValue(reader, homing.lost)
+        || !readValue(reader, homing.lockRadiansPerSecond))
+    {
+        return false;
+    }
+    homing.targetActorIndex = static_cast<size_t>(targetActorIndex);
+
+    // An older save holds the lock cone of one 1/60 s projectile step: the same lock as a rate.
+    if (reader.version() < SaveVersionHomingLockRate)
+    {
+        homing.lockRadiansPerSecond *= 60.0f;
+    }
+
+    value.homing = homing;
+    return true;
 }
 
 bool readValue(BinaryReader &reader, GameplayProjectileService::ProjectileState &value)
@@ -4058,7 +4195,8 @@ bool readValue(BinaryReader &reader, GameplayProjectileService::ProjectileState 
         && readValue(reader, value.lifetimeTicks)
         && (reader.version() < SaveVersionFullProjectileState || readValue(reader, value.sectorId))
         && (reader.version() < SaveVersionFullProjectileState || readValue(reader, value.isSettled))
-        && readValue(reader, value.isExpired);
+        && readValue(reader, value.isExpired)
+        && (reader.version() < SaveVersionProjectileHoming || readProjectileHoming(reader, value));
 }
 
 void writeValue(BinaryWriter &writer, const GameplayProjectileService::ProjectileImpactState &value)
@@ -4975,7 +5113,7 @@ void migrateLegacyMm6FaceTextureKeys(
 
         for (auto &[key, textureName] : state->textureOverrides)
         {
-            overrides[EventRuntime::indoorFaceTextureOverrideKey(key)] = std::move(textureName);
+            overrides[EventRuntime::indoorFaceReferenceKey(key)] = std::move(textureName);
         }
 
         state->textureOverrides = std::move(overrides);
@@ -5227,7 +5365,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
         error = "invalid save header";
         return std::nullopt;
     }
-    if ((modHeader && version != 89 && version != 94 && version != 95 && version != 130 && version != SaveVersion)
+    if ((modHeader && version != 89 && version != 94 && version != 95 && version != 130 && version != 132 && version != SaveVersion)
         || (legacyHeader && version > UpstreamSaveVersion))
     {
         error = SaveFromNewerVersionError;
@@ -5236,7 +5374,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
 
     // Mod versions carry a combat-level field beyond their corresponding upstream schema.
     const uint32_t sourceVersion = !modHeader ? version
-        : version == 89 ? 88 : version == 94 ? 93 : version == 95 ? 94 : version == 130 ? 129 : UpstreamSaveVersion;
+        : version == 89 ? 88 : version == 94 ? 93 : version == 95 ? 94 : version == 130 ? 129 : version == 132 ? 131 : UpstreamSaveVersion;
 
     // v0.4 used upstream's magic and v85 before upstream independently assigned v85
     // to the new weather layout. Decode both known layouts and require exact consumption;

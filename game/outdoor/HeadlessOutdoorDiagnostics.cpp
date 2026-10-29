@@ -823,6 +823,83 @@ struct GameApplicationTestAccess
 
 namespace
 {
+// The standing sprite scales actor models are sized from (actors.yml scale_reference): headless map loading omits
+// billboard data, so the authoritative scales are read without loading textures, for every monster family.
+bool loadModelSpriteFrames(const Engine::AssetFileSystem &assetFileSystem, SpriteFrameTable &frames,
+    std::string &failure)
+{
+    const std::optional<std::string> contents =
+        assetFileSystem.readTextFile("Data/rendering/sprite_frame_data_common.yml");
+    if (!contents)
+    {
+        failure = "could not load common sprite-frame data";
+        return false;
+    }
+    if (!frames.loadFromYaml(*contents, failure))
+    {
+        return false;
+    }
+    const std::string directory = "Data/rendering/sprite_frames/monsters";
+    for (const std::string &entry : assetFileSystem.enumerate(directory))
+    {
+        const std::string path = directory + "/" + entry;
+        const std::optional<std::string> family = assetFileSystem.readTextFile(path);
+        if (!family || !frames.loadFromYaml(*family, failure, true))
+        {
+            failure = path + ": " + (family ? failure : "could not load monster sprite-frame data");
+            return false;
+        }
+    }
+    return true;
+}
+
+// Builds the binding (model, clips, sockets, events, attachments) of every manifest descriptor that include accepts, as
+// the game builds it when the monster appears, and returns one "descriptor: error" per failure. One system per model,
+// so each model loads once; a failed model is rebuilt one descriptor at a time to name every failure.
+std::vector<std::string> buildActorModelBindings(const Engine::AssetFileSystem &assetFileSystem,
+    const std::shared_ptr<const ActorModelManifest> &pManifest, const MonsterTable &monsters,
+    const SpriteFrameTable &frames, const std::function<bool(const ActorModelManifest::Entry &)> &include,
+    size_t &descriptorCount, size_t &modelCount)
+{
+    std::map<std::string, std::vector<std::string>> descriptorsByModel;
+    descriptorCount = 0;
+    for (const auto &[descriptor, entry] : pManifest->entries())
+    {
+        if (include(entry))
+        {
+            descriptorsByModel[entry.node["model"].as<std::string>()].push_back(descriptor);
+            ++descriptorCount;
+        }
+    }
+    modelCount = descriptorsByModel.size();
+    std::vector<std::string> problems;
+    for (const auto &[model, descriptors] : descriptorsByModel)
+    {
+        // As in game, the named effects (ranged wind-ups, ambient effects) are loaded before the bindings.
+        const auto build = [&](std::span<const std::string> eager, std::string &error)
+        {
+            WorldFxSystem fx;
+            return fx.loadNamedEffectLibrary(assetFileSystem, "engine/effects/library.yml",
+                       "engine/effects/resource_bindings.yml", error)
+                && fx.configureActorModels(assetFileSystem, pManifest, monsters, &frames, eager, error);
+        };
+        std::string error;
+        if (build(descriptors, error))
+        {
+            continue;
+        }
+        for (const std::string &descriptor : descriptors)
+        {
+            std::string singleError;
+            if (!build(std::span<const std::string>(&descriptor, 1), singleError))
+            {
+                problems.push_back(descriptor + ": " + singleError);
+            }
+        }
+    }
+    return problems;
+}
+
 constexpr uint32_t AdventurersInnHouseId = 185;
 constexpr float HostilityCloseRange = 1024.0f;
 constexpr float HostilityShortRange = 2560.0f;
@@ -4207,6 +4284,68 @@ int HeadlessGameplayDiagnostics::runCaptureProjectileFx(
 
     std::cout << "Projectile FX capture manifest: " << (outputDirectory / "README.md").string() << '\n';
     return 0;
+}
+
+int HeadlessGameplayDiagnostics::runValidateActorModels(
+    const std::filesystem::path &basePath,
+    bool allWorlds
+) const
+{
+    Engine::AssetFileSystem assetFileSystem;
+
+    if (!assetFileSystem.initialize(
+            basePath,
+            m_config.assetRoot,
+            m_config.assetScaleTier,
+            m_config.assetScaleProfile,
+            m_config.activeWorldId))
+    {
+        std::cerr << "Actor model validation failed: could not initialize asset file system\n";
+        return 1;
+    }
+
+    GameDataLoader gameDataLoader;
+
+    if (!gameDataLoader.loadForHeadlessGameplay(assetFileSystem))
+    {
+        std::cerr << "Actor model validation failed: could not load base game data\n";
+        return 1;
+    }
+
+    // The manifests the game reads: every mounted world's actors.yml, the active world's last.
+    gameDataLoader.setActorModels(true, std::string());
+
+    if (!gameDataLoader.ensureActorModelManifest(assetFileSystem) || gameDataLoader.actorModelManifest() == nullptr)
+    {
+        std::cerr << "Actor model validation failed: the actor model manifest did not load\n";
+        return 1;
+    }
+
+    SpriteFrameTable frames;
+    std::string failure;
+
+    if (!loadModelSpriteFrames(assetFileSystem, frames, failure))
+    {
+        std::cerr << "Actor model validation failed: " << failure << '\n';
+        return 1;
+    }
+
+    const std::string activeManifest = "worlds/" + m_config.activeWorldId + "/models/actors.yml";
+    size_t descriptorCount = 0;
+    size_t modelCount = 0;
+    const std::vector<std::string> problems = buildActorModelBindings(assetFileSystem,
+        gameDataLoader.actorModelManifest(), gameDataLoader.getMonsterTable(), frames,
+        [&](const ActorModelManifest::Entry &entry) { return allWorlds || entry.manifestPath == activeManifest; },
+        descriptorCount, modelCount);
+    std::cout << "Actor models (" << (allWorlds ? std::string("every world") : activeManifest) << "): "
+              << descriptorCount << " descriptors on " << modelCount << " models, " << problems.size() << " refused\n";
+
+    for (const std::string &problem : problems)
+    {
+        std::cout << "  REFUSED " << problem << '\n';
+    }
+
+    return problems.empty() && descriptorCount > 0 ? 0 : 1;
 }
 
 int HeadlessGameplayDiagnostics::runProfileFullMapLoad(
@@ -7611,31 +7750,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
 
     const auto loadModelSpriteFrames = [&](SpriteFrameTable &frames, std::string &failure)
     {
-        // Headless map loading omits billboard data; read the authoritative scales without loading textures.
-        const std::optional<std::string> contents =
-            assetFileSystem.readTextFile("Data/rendering/sprite_frame_data_common.yml");
-        if (!contents)
-        {
-            failure = "could not load common sprite-frame data";
-            return false;
-        }
-        if (!frames.loadFromYaml(*contents, failure))
-        {
-            return false;
-        }
-        // Model scale references include monsters absent from the selected map.
-        const std::string directory = "Data/rendering/sprite_frames/monsters";
-        for (const std::string &entry : assetFileSystem.enumerate(directory))
-        {
-            const std::string path = directory + "/" + entry;
-            const std::optional<std::string> family = assetFileSystem.readTextFile(path);
-            if (!family || !frames.loadFromYaml(*family, failure, true))
-            {
-                failure = path + ": " + (family ? failure : "could not load monster sprite-frame data");
-                return false;
-            }
-        }
-        return true;
+        return OpenYAMM::Game::loadModelSpriteFrames(assetFileSystem, frames, failure);
     };
 
     runCase("mm6_mm7_mm8_actor_models_build_every_binding", [&](std::string &failure)
@@ -7655,39 +7770,13 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
         {
             return false;
         }
-        std::map<std::string, std::vector<std::string>> descriptorsByModel;
-        for (const auto &[descriptor, entry] : pManifest->entries())
-        {
-            descriptorsByModel[entry.node["model"].as<std::string>()].push_back(descriptor);
-        }
-        std::vector<std::string> problems;
-        for (const auto &[model, descriptors] : descriptorsByModel)
-        {
-            // As in game, the named effects (ranged wind-ups, ambient effects) are loaded before the bindings.
-            const auto build = [&](std::span<const std::string> eager, std::string &error)
-            {
-                WorldFxSystem fx;
-                return fx.loadNamedEffectLibrary(assetFileSystem, "engine/effects/library.yml",
-                           "engine/effects/resource_bindings.yml", error)
-                    && fx.configureActorModels(assetFileSystem, pManifest, gameDataLoader.getMonsterTable(), &frames,
-                        eager, error);
-            };
-            std::string error;
-            if (build(descriptors, error))
-            {
-                continue;
-            }
-            for (const std::string &descriptor : descriptors)
-            {
-                std::string singleError;
-                if (!build(std::span<const std::string>(&descriptor, 1), singleError))
-                {
-                    problems.push_back(descriptor + ": " + singleError);
-                }
-            }
-        }
-        std::cout << "  " << pManifest->entries().size() << " descriptors on " << descriptorsByModel.size()
-                  << " models, " << problems.size() << " failed\n";
+        size_t descriptorCount = 0;
+        size_t modelCount = 0;
+        const std::vector<std::string> problems = buildActorModelBindings(assetFileSystem, pManifest,
+            gameDataLoader.getMonsterTable(), frames, [](const ActorModelManifest::Entry &) { return true; },
+            descriptorCount, modelCount);
+        std::cout << "  " << descriptorCount << " descriptors on " << modelCount << " models, " << problems.size()
+                  << " failed\n";
         for (const std::string &problem : problems)
         {
             std::cout << "    " << problem << '\n';
@@ -21759,6 +21848,133 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 });
         }
 
+        // MM6/MM7 scripted lava floors converted to native lava by scene overlays, and an MM8 lava floor.
+        struct LavaFloorCase
+        {
+            const char *worldId;
+            const char *mapFile;
+            size_t lavaFace;
+        };
+        for (const LavaFloorCase &lavaCase : {
+                 LavaFloorCase{"mm6", "6d18.blv", 7},
+                 LavaFloorCase{"mm6", "6t6.blv", 2060},
+                 LavaFloorCase{"mm6", "6t7.blv", 3208},
+                 LavaFloorCase{"mm7", "7d07.blv", 2754},
+                 LavaFloorCase{"mm8", "d38.blv", 0}})
+        {
+            runCase(
+                std::string("indoor_levitate_lava_floor_") + lavaCase.mapFile,
+                [&](std::string &failure)
+                {
+                    const std::string previousWorldId = assetFileSystem.getActiveWorldId();
+                    struct WorldRestore
+                    {
+                        Engine::AssetFileSystem &assets;
+                        std::string worldId;
+                        ~WorldRestore()
+                        {
+                            assets.switchActiveWorld(worldId);
+                        }
+                    } worldRestore{assetFileSystem, previousWorldId};
+                    if (!assetFileSystem.switchActiveWorld(lavaCase.worldId)
+                        || !gameDataLoader.loadMapByFileNameForHeadlessGameplay(assetFileSystem, lavaCase.mapFile))
+                    {
+                        failure = "could not load lava map";
+                        return false;
+                    }
+                    const std::optional<MapAssetInfo> &loadedMap = gameDataLoader.getSelectedMap();
+                    if (!loadedMap || !loadedMap->indoorMapData || !loadedMap->indoorMapDeltaData
+                        || !loadedMap->eventRuntimeState || !loadedMap->localEventProgram)
+                    {
+                        failure = "lava map is missing runtime data";
+                        return false;
+                    }
+                    const IndoorMapData &mapData = *loadedMap->indoorMapData;
+                    const std::vector<uint32_t> &faceAttributes = loadedMap->indoorMapDeltaData->faceAttributes;
+                    size_t lavaFace = lavaCase.lavaFace;
+                    for (size_t index = 0; lavaFace == 0 && index < faceAttributes.size(); ++index)
+                    {
+                        if (mapData.faces[index].facetType == 3
+                            && hasFaceAttribute(faceAttributes[index], FaceAttribute::Lava))
+                        {
+                            lavaFace = index;
+                        }
+                    }
+                    if (lavaFace >= faceAttributes.size()
+                        || !hasFaceAttribute(faceAttributes[lavaFace], FaceAttribute::Lava)
+                        || hasFaceAttribute(faceAttributes[lavaFace], FaceAttribute::PressurePlate))
+                    {
+                        failure = "lava floor lacks the Lava flag or still has a step trigger";
+                        return false;
+                    }
+
+                    Party party;
+                    party.setItemTable(&gameDataLoader.getItemTable());
+                    party.setClassMultiplierTable(&gameDataLoader.getClassMultiplierTable());
+                    party.seed(createRegressionPartySeed());
+                    GameplayActorService actorService = buildBoundGameplayActorService(gameDataLoader);
+                    GameplayProjectileService projectileService;
+                    IndoorSceneRuntime runtime(
+                        loadedMap->map.fileName, loadedMap->map, mapData,
+                        gameDataLoader.getMonsterTable(), gameDataLoader.getMonsterProjectileTable(),
+                        gameDataLoader.getObjectTable(), gameDataLoader.getSpellTable(),
+                        gameDataLoader.getItemTable(), gameDataLoader.getChestTable(), party,
+                        loadedMap->indoorMapDeltaData, loadedMap->eventRuntimeState,
+                        loadedMap->localEventProgram, loadedMap->globalEventProgram,
+                        &actorService, &projectileService);
+                    // Movement resolves the support face from the position, so stand at the face's centre.
+                    float centreX = 0.0f;
+                    float centreY = 0.0f;
+                    float centreZ = 0.0f;
+                    for (uint16_t vertexIndex : mapData.faces[lavaFace].vertexIndices)
+                    {
+                        centreX += mapData.vertices[vertexIndex].x;
+                        centreY += mapData.vertices[vertexIndex].y;
+                        centreZ += mapData.vertices[vertexIndex].z;
+                    }
+                    const float vertexCount = float(mapData.faces[lavaFace].vertexIndices.size());
+                    const auto standOnLava = [&]()
+                    {
+                        party = runtime.party();
+                        IndoorSceneRuntime::Snapshot snapshot = runtime.snapshot();
+                        snapshot.partyRuntime.movementState.x = centreX / vertexCount;
+                        snapshot.partyRuntime.movementState.y = centreY / vertexCount;
+                        snapshot.partyRuntime.movementState.footZ = centreZ / vertexCount;
+                        snapshot.partyRuntime.movementState.verticalVelocity = 0.0f;
+                        snapshot.partyRuntime.movementState.grounded = true;
+                        snapshot.partyRuntime.movementState.supportFaceIndex = lavaFace;
+                        snapshot.partyRuntime.movementState.sectorId = mapData.faces[lavaFace].roomNumber;
+                        snapshot.partyRuntime.movementState.eyeSectorId = mapData.faces[lavaFace].roomNumber;
+                        snapshot.eventRuntimeState->lastPressurePlateTrigger.reset();
+                        runtime.restoreSnapshot(snapshot);
+                        runtime.advanceSimulation(1.0f);
+                        runtime.partyRuntime().update(0.0f, 0.0f, false, false, 1.5f);
+                    };
+                    runtime.party().applyPartyBuff(PartyBuffId::Levitate, 36000.0f, 0, 112, 1, SkillMastery::Expert, 0);
+                    standOnLava();
+                    if (runtime.party().burningDamageTicks() != 0
+                        || runtime.eventRuntimeState()->lastPressurePlateTrigger)
+                    {
+                        failure = "levitating party burned or triggered an event on the lava floor";
+                        return false;
+                    }
+
+                    runtime.party().clearPartyBuff(PartyBuffId::Levitate);
+                    standOnLava();
+                    if (runtime.party().burningDamageTicks() == 0)
+                    {
+                        failure = "lava floor did not burn the party";
+                        return false;
+                    }
+                    if (runtime.eventRuntimeState()->lastPressurePlateTrigger)
+                    {
+                        failure = "lava floor still fired its scripted step event";
+                        return false;
+                    }
+                    return true;
+                });
+        }
+
         runCase(
             "indoor_pressure_plate_tiled_region_triggers_once_per_event_entry",
             [&](std::string &failure)
@@ -22619,7 +22835,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                         0.0f,
                         0.0f,
                         0.0f,
-                        0))
+                        0,
+                        false))
                 {
                     failure = "direct indoor actor damage failed";
                     return false;
@@ -22815,7 +23032,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                         0.0f,
                         0.0f,
                         0.0f,
-                        0))
+                        0,
+                        false))
                 {
                     failure = "could not apply lethal indoor damage";
                     return false;
@@ -23003,7 +23221,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                         0.0f,
                         0.0f,
                         0.0f,
-                        0)
+                        0,
+                        false)
                     || scenario.mapDeltaData->actors[actorIndex].hp > 0)
                 {
                     failure = "could not kill the revealed actor";

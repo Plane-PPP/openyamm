@@ -193,6 +193,8 @@ public:
     void shutdown();
     float cameraYawRadians() const;
     float cameraPitchRadians() const;
+    // Width over height of the last drawn view; 4:3 before the first frame.
+    float viewAspectRatio() const;
     void setCameraAngles(float yawRadians, float pitchRadians);
     // Places the party on the map's named start decoration ("north start", ...); false when the map has none.
     bool movePartyToStartPoint(std::string_view startPointName);
@@ -820,6 +822,8 @@ private:
     uint32_t m_spawnMarkerVertexCount;
     std::vector<TexturedBModelBatch> m_texturedBModelBatches;
     std::vector<BModelTextureAnimationHandle> m_bmodelTextureAnimations;
+    // Textures an event swapped in (evt.SetTexture) that could not be loaded; not tried again.
+    std::unordered_set<std::string> m_missingSwapTextureNames;
     std::vector<BModelTextureArray> m_bmodelTextureArrays;
     std::vector<ResolvedBModelDrawGroup> m_resolvedBModelDrawGroups;
     uint64_t m_resolvedBModelDrawGroupRevision = std::numeric_limits<uint64_t>::max();

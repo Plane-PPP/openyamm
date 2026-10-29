@@ -98,6 +98,8 @@ enum class KeyboardAction : uint8_t
     QuickItem4,
     QuickItem5,
     QuickItem6,
+    QuickSave,
+    QuickLoad,
     Count
 };
 

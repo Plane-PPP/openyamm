@@ -107,7 +107,7 @@ bool mainHandAttackUsesBlasterRecovery(const Character &character, const ItemTab
 {
     const ItemDefinition *pMainHandItem = itemTable.get(character.equipment.mainHand);
     const std::string skillName = pMainHandItem != nullptr ? canonicalSkillName(pMainHandItem->skillGroup) : "";
-    return skillName == "Blaster" || skillName == "EnergyGuns";
+    return skillName == "Blaster";
 }
 
 std::string attackRecoveryInspectSupplement(
@@ -548,6 +548,7 @@ bool GameplayHudOverlaySupport::tryPopulateItemInspectOverlayFromRenderedHudItem
         overlay.sourceMemberIndex = it->sourceMemberIndex;
         overlay.sourceGridX = it->sourceGridX;
         overlay.sourceGridY = it->sourceGridY;
+        overlay.sourceBag = it->sourceBag;
         overlay.sourceEquipmentSlot = it->equipmentSlot;
         overlay.sourceLootItemIndex = it->sourceLootItemIndex;
         overlay.hasValueOverride = it->hasValueOverride;

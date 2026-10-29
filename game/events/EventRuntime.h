@@ -183,6 +183,8 @@ struct EventRuntimeState
         {
             InputString = 0,
             PressAnyKey,
+            // One dialog button per answer (AskChoiceWithAnswerSteps): a click continues at that answer's step.
+            Choice,
         };
 
         Kind kind = Kind::InputString;
@@ -311,6 +313,34 @@ struct EventRuntimeState
         std::array<float, 3> position = {};
         float scale = 1.0f;
         float yawRadians = 0.0f;
+    };
+
+    // evt.Beam / evt.BeamToParty: a named effect (its ribbons with `beam: true`) drawn from a point to a point, or to
+    // the party (following it), for seconds (0: until evt.StopBeam). A request whose name is drawing replaces it.
+    struct BeamRequest
+    {
+        std::string name;
+        std::string effectId;
+        std::array<float, 3> from = {};
+        std::array<float, 3> to = {};
+        bool toParty = false;
+        float seconds = 0.0f;
+    };
+
+    // evt.AimDecoration / evt.RecoilDecoration: a decoration model turned about its origin from its map facing
+    // (counter-clockwise, as facings run), slewing at radiansPerSecond (0: at once), and kicked back along its front
+    // (asset +z) for recoilSeconds. Keyed by cog as spriteOverrides; runtime only, advanced by advanceDecorationAims.
+    struct DecorationAim
+    {
+        float targetRadians = 0.0f;
+        float radiansPerSecond = 0.0f;
+        float currentRadians = 0.0f;
+        float recoilDistance = 0.0f;
+        float recoilSeconds = 0.0f;
+        float recoilElapsedSeconds = 0.0f;
+
+        // How far it is pulled back now: out in the first tenth of the recoil, then home again.
+        float back() const;
     };
 
     struct WorldModelRequest
@@ -481,11 +511,24 @@ struct EventRuntimeState
     std::unordered_map<uint32_t, RuntimeDestructibleState> destructibles;
     std::unordered_map<uint32_t, OutdoorModelMechanismDefinition> outdoorModelMechanisms;
     // evt.SetTexture swaps: keyed by a face cog number (MM7/MM8: every face of the cog), or by
-    // EventRuntime::indoorFaceTextureOverrideKey(face index) (a negative reference, MMerge's MM6 maps: that one face).
+    // EventRuntime::indoorFaceReferenceKey(face index) (a negative reference, MMerge's MM6 maps: that one face).
     std::unordered_map<uint32_t, std::string> textureOverrides;
     std::unordered_map<uint32_t, std::string> outdoorModelFacetTextureOverrides;
     std::unordered_map<uint32_t, SpriteOverride> spriteOverrides;
     std::unordered_map<uint32_t, bool> indoorLightsEnabled;
+    // evt.SetSectorAmbient: an indoor sector's ambient level (minAmbientLightLevel's 0-31 scale) instead of the map's.
+    // Runtime only, not saved: a map that dims or lights a room sets it again from its own map variables on load.
+    std::unordered_map<uint16_t, int16_t> sectorAmbientLevels;
+    std::unordered_map<uint32_t, DecorationAim> decorationAims;
+    // evt.StartTimer / evt.StopTimer, applied by the scene to its timers before it next runs them.
+    struct TimerControl
+    {
+        uint16_t eventId = 0;
+        bool start = false;
+        double delayGameMinutes = -1.0;
+    };
+    std::vector<TimerControl> timerControls;
+    // Bumped by every light switch and sector ambient change (the indoor lighting re-bakes).
     uint64_t indoorLightRevision = 0;
     std::optional<bool> snowEnabled;
     std::optional<bool> rainEnabled;
@@ -552,6 +595,9 @@ struct EventRuntimeState
     std::vector<PortraitFxRequest> portraitFxRequests;
     std::vector<SpellFxRequest> spellFxRequests;
     std::vector<WorldEffectRequest> worldEffectRequests;
+    std::vector<BeamRequest> beamRequests;
+    // evt.StopBeam: names of beams to end.
+    std::vector<std::string> beamStops;
     std::vector<WorldModelRequest> worldModelRequests;
     std::optional<PendingDialogueContext> pendingDialogueContext;
     std::optional<PendingMapMove> pendingMapMove;
@@ -596,6 +642,9 @@ void setActiveHistoryContinent(EventRuntimeState &runtimeState, uint32_t contine
 const std::unordered_map<uint32_t, int32_t> &historyEventTimesForActiveContinent(
     const EventRuntimeState &runtimeState);
 
+// Turns the aimed decorations toward their aims and plays their recoils on by deltaSeconds.
+void advanceDecorationAims(EventRuntimeState &state, float deltaSeconds);
+
 class EventRuntime
 {
 public:
@@ -615,7 +664,8 @@ public:
 
     static uint32_t outdoorModelFacetTextureOverrideKey(uint32_t modelIndex, uint32_t faceIndex);
     // The textureOverrides key of one indoor face named by its index (cog numbers are 16-bit, so never collide).
-    static uint32_t indoorFaceTextureOverrideKey(uint32_t faceIndex);
+    // One indoor face named by a negative event reference (MMerge's MM6 maps), apart from the cog numbers.
+    static uint32_t indoorFaceReferenceKey(uint32_t faceIndex);
     static uint32_t monsterRelationOverrideKey(uint32_t leftMonsterId, uint32_t rightMonsterId);
     static uint64_t transportRouteOverrideKey(uint32_t houseId, uint32_t routeIndex);
 

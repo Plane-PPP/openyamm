@@ -264,6 +264,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return settings.alwaysRun ? "true" : "false";
     }
+    if (id == "bag_number_keys")
+    {
+        return settings.bagNumberKeys;
+    }
     if (id == "flip_on_exit")
     {
         return settings.flipOnExit ? "true" : "false";
@@ -800,6 +804,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
         settings.alwaysRun = value == "true";
         return true;
     }
+    if (id == "bag_number_keys")
+    {
+        if (!validBagNumberKeysValue(value))
+        {
+            return false;
+        }
+        settings.bagNumberKeys = value;
+        return true;
+    }
     if (id == "flip_on_exit")
     {
         if (value != "true" && value != "false")
@@ -942,8 +955,7 @@ bool reservedMenuBinding(const InputBinding &binding, KeyboardAction action)
         return false;
     }
     const bool bagKey = action >= KeyboardAction::Bag1 && action <= KeyboardAction::Bag4;
-    return binding.scancode == SDL_SCANCODE_ESCAPE || binding.scancode == SDL_SCANCODE_F9 ||
-           binding.scancode == SDL_SCANCODE_F10 || binding.scancode == SDL_SCANCODE_GRAVE ||
+    return binding.scancode == SDL_SCANCODE_ESCAPE || binding.scancode == SDL_SCANCODE_GRAVE ||
            (!bagKey && binding.scancode >= SDL_SCANCODE_1 && binding.scancode <= SDL_SCANCODE_5);
 }
 } // namespace OpenYAMM::Game

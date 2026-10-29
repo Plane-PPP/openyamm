@@ -44,7 +44,8 @@ Properties the Workbench keeps:
 - **Preview is a dry run of the apply function.** `AlchemyBenchRuntime::preview` copies the target and calls the same
   `mixItems` that `mix` uses (`simulateMix`, :69 and :540). Crafting must follow the same rule; that is the fix for
   MAW's drift (CRAFTING.md §7.3).
-- Party-wide: ingredients are counted across all packs; the best conscious alchemist mixes.
+- Party-wide: ingredients are counted across all packs, every bag of each (DEVIATIONS 131); the best conscious
+  alchemist mixes.
 - Every visit starts with empty slots; filters and search persist.
 - No item is consumed by a plain drag; consuming actions are buttons.
 

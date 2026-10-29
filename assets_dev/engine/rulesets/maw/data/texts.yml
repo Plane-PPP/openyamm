@@ -713,7 +713,7 @@ classes:
 #   school_cut                the share of hits a Death Knight's Blood or Unholy (or a Shaman's Air) takes off
 #   school_damage             a class's flat melee damage from the school
 #   elemental_progress        an Elementalist's progress to the next spell of the school, in percent
-#   dragon_leech              a dragon's bite leech from Regeneration (a sentence; empty for other races)
+#   dragon_leech              a dragon's bite leech from Regeneration (its own paragraph; empty for other races)
 #   armor_items               the worn armour's Armor Class and the skill's bonuses (a paragraph; empty without it)
 skills:
   Staff:
@@ -838,8 +838,8 @@ skills:
       Hit points also grow by 0.5 %, 1 %, 1.5 % or 2 % per point, by mastery.
   Regeneration:
     append: >-
-      Current regeneration: <good>{regen_now:1}</> hit points per second (<good>{regen_next:1}</> with one more point); twice that 20
-      seconds after the last hit taken, four times more again with no enemy near. {dragon_leech}
+      Current regeneration: <good>{regen_now:1}</> hit points per second (<good>{regen_next:1}</> with one more
+      point).{dragon_leech}
     normal: "Regains hit points over time"
     expert: "Half again as much"
     master: "Twice as much"
@@ -961,8 +961,8 @@ class_skills:
     Unarmed:
       description: >-
         Dragons use their fangs to deal atrocious damage to enemies. Damage is 30 + 2 per level (up to level
-        {dragon_level_cap}); the Fangs skill raises it by a percentage of mastery and skill level, and each point also
-        makes the bite 1.5 % slower.
+        {dragon_level_cap}); the Fangs skill raises it by a percentage of mastery and skill level. Each point also
+        makes the bite 1.5 % slower and 1.5 % stronger, so fewer, heavier bites deal the same damage over time.
       normal: "Attack +2, damage +4 % per point"
       expert: "Attack +3, damage +6 % per point"
       master: "Attack +4, damage +8 % per point"

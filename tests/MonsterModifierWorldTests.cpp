@@ -16,6 +16,8 @@
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <set>
+#include <utility>
 
 using namespace OpenYAMM::Game;
 
@@ -440,12 +442,43 @@ struct IndoorChargeFixture
     std::optional<MapDeltaData> delta;
     Party party;
     GameplayActorService actorService;
+    GameplayProjectileService projectiles;
     GameplayCombatController combat;
     std::optional<IndoorSceneRuntime> scene;
     int16_t monsterId = 0;
 
-    // The Hive with one walker charger at (712, 7147) and the party at partyX, partyY.
-    bool start(float partyX, float partyY)
+    // The Hive with one walker charger at (712, 7147) and the party at partyX, partyY; with frenzy, a frenzy below
+    // half health (a 0.5 s roar, 3 s at double speed and glow 3, a 1 s spent hold) instead of the charge.
+    bool start(float partyX, float partyY, bool frenzy = false)
+    {
+        if (!loadHive())
+        {
+            return false;
+        }
+
+        MonsterModifierSet charger = {};
+        charger.monsterId = rangedMonsterId(monsters, false);
+        if (frenzy)
+        {
+            charger.frenzy = FrenzyModifier{};
+            charger.frenzy->healthBelow = 0.5f;
+            charger.frenzy->windupSeconds = 0.5f;
+            charger.frenzy->seconds = 3.0f;
+            charger.frenzy->speedMultiplier = 2.0f;
+            charger.frenzy->spentSeconds = 1.0f;
+            charger.frenzy->glowMultiplier = 3.0f;
+        }
+        else
+        {
+            charger.charge = ChargeModifier{};
+            charger.charge->windupSeconds = 0.3f;
+            charger.charge->speed = 1600.0f;
+            charger.charge->knockback = 0.0f;
+        }
+        return startWith(charger.monsterId, &charger, partyX, partyY);
+    }
+
+    bool loadHive()
     {
         const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
         if (!assets.initialize(sourceRoot, sourceRoot / "assets_dev", OpenYAMM::Engine::AssetScaleTier::X1, "mm6")
@@ -454,20 +487,25 @@ struct IndoorChargeFixture
             return false;
         }
 
+        monsters = data.getMonsterTable();
+        return true;
+    }
+
+    // After loadHive: one walker of the monster (with pModifiers, or none listed) at (712, 7147), the party of one
+    // member with partyHealth at partyX, partyY; walkerAttributes as its EvtActorAttribute bits.
+    bool startWith(int16_t walkerMonsterId, const MonsterModifierSet *pModifiers, float partyX, float partyY,
+        int partyHealth = 500, uint32_t walkerAttributes = 0)
+    {
         const MapAssetInfo &loaded = *data.getSelectedMap();
         map = *loaded.indoorMapData;
         map->spawns.clear();
         delta = loaded.indoorMapDeltaData;
         delta->actors.clear();
-        monsters = data.getMonsterTable();
-        monsterId = rangedMonsterId(monsters, false);
-        MonsterModifierSet charger = {};
-        charger.monsterId = monsterId;
-        charger.charge = ChargeModifier{};
-        charger.charge->windupSeconds = 0.3f;
-        charger.charge->speed = 1600.0f;
-        charger.charge->knockback = 0.0f;
-        monsters.modifiers().set(charger);
+        monsterId = walkerMonsterId;
+        if (pModifiers != nullptr)
+        {
+            monsters.modifiers().set(*pModifiers);
+        }
         const MonsterTable::MonsterStatsEntry *pStats = monsters.findStatsById(monsterId);
 
         if (pStats == nullptr)
@@ -484,18 +522,19 @@ struct IndoorChargeFixture
         walker.radius = 40;
         walker.height = 160;
         walker.hostilityType = 0;
+        walker.attributes = walkerAttributes;
         delta->actors.push_back(walker);
         party.setItemTable(&data.getItemTable());
         PartySeed seed = {};
         Character member = {};
         member.name = "Charged";
-        member.maxHealth = member.health = 500;
+        member.maxHealth = member.health = partyHealth;
         seed.members.push_back(member);
         party.seed(seed);
         actorService.bindTables(&monsters, &data.getSpellTable());
         scene.emplace(loaded.map.fileName, loaded.map, *map, monsters, data.getMonsterProjectileTable(),
             data.getObjectTable(), data.getSpellTable(), data.getItemTable(), data.getChestTable(), party, delta,
-            loaded.eventRuntimeState, loaded.localEventProgram, std::nullopt, &actorService, nullptr, &combat);
+            loaded.eventRuntimeState, loaded.localEventProgram, std::nullopt, &actorService, &projectiles, &combat);
         scene->partyRuntime().teleportPartyPosition(partyX, partyY, 0);
         scene->advanceSimulation(1000.0f / 128);
         return scene->worldRuntime().mapActorCount() == 1;
@@ -540,6 +579,56 @@ TEST_CASE("an indoor charge dashes along the floor onto the party and hits it")
     CHECK(events[0].type == GameplayCombatController::CombatEventType::MonsterMeleeImpact);
     CHECK(events[0].sourceId == state.actorId);
     CHECK(events[0].damage >= 1);
+}
+
+TEST_CASE("a monster's melee blow lands on a party that steps back during the swing")
+{
+    // An aggressive walker with only a melee blow (no missiles, no spells), the party 200 south of it.
+    IndoorChargeFixture fixture;
+    REQUIRE(fixture.loadHive());
+    int16_t meleeMonsterId = 0;
+
+    for (const auto &[id, stats] : fixture.monsters.statsEntries())
+    {
+        if (!stats.attack1HasMissile && !stats.attack2HasMissile && !stats.hasSpell1 && !stats.hasSpell2
+            && !stats.canFly && stats.aiType == MonsterTable::MonsterAiType::Aggressive
+            && (meleeMonsterId == 0 || id < meleeMonsterId))
+        {
+            meleeMonsterId = int16_t(id);
+        }
+    }
+
+    REQUIRE(meleeMonsterId != 0);
+    const uint32_t hostile = uint32_t(EvtActorAttribute::Hostile) | uint32_t(EvtActorAttribute::Aggressor)
+        | uint32_t(EvtActorAttribute::Active) | uint32_t(EvtActorAttribute::FullAi);
+    REQUIRE(fixture.startWith(meleeMonsterId, nullptr, 712.0f, 6950.0f, 500, hostile));
+    IndoorWorldRuntime &world = fixture.scene->worldRuntime();
+    const IndoorWorldRuntime::MapActorAiState &state = *world.mapActorAiState(0);
+
+    for (float elapsed = 0.0f; elapsed < 5.0f && state.motionState != ActorAiMotionState::Attacking;
+         elapsed += 1.0f / 64.0f)
+    {
+        fixture.run(1.0f / 64.0f);
+    }
+
+    REQUIRE(state.motionState == ActorAiMotionState::Attacking);
+    REQUIRE(fixture.combat.pendingCombatEvents().empty());
+
+    // Mid-swing the party is 450 away, well beyond the 307 the monster needs to start a blow, still in sight
+    // (the floor between is clear). As in MM8 the blow still lands when the swing ends.
+    fixture.scene->partyRuntime().teleportPartyPosition(712.0f, 6700.0f, 0.0f);
+
+    for (float elapsed = 0.0f; elapsed < 3.0f && state.motionState == ActorAiMotionState::Attacking;
+         elapsed += 1.0f / 64.0f)
+    {
+        fixture.run(1.0f / 64.0f);
+    }
+
+    CHECK(state.motionState != ActorAiMotionState::Attacking);
+    const std::vector<GameplayCombatController::CombatEvent> &events = fixture.combat.pendingCombatEvents();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].type == GameplayCombatController::CombatEventType::MonsterMeleeImpact);
+    CHECK(events[0].sourceId == state.actorId);
 }
 
 TEST_CASE("an indoor charge stops at a wall and stumbles")
@@ -588,4 +677,118 @@ TEST_CASE("an indoor charge stops at a wall and stumbles")
     CHECK(travelled < wallDistance + 1.0f);
     CHECK_FALSE(findIndoorWallContact(*fixture.map, vertices, {state.preciseX, state.preciseY, state.preciseZ + 80.0f},
         float(state.collisionRadius) - 1.0f));
+}
+
+TEST_CASE("an indoor frenzy roars, plays its clips, glows and speeds the actor up")
+{
+    // The party down the hall so the actor pursues it.
+    IndoorChargeFixture fixture;
+    REQUIRE(fixture.start(712.0f, 6700.0f, true));
+    IndoorWorldRuntime &world = fixture.scene->worldRuntime();
+    const IndoorWorldRuntime::MapActorAiState &state = *world.mapActorAiState(0);
+    const auto view = [&world]()
+    {
+        GameplayRuntimeActorState actorView = {};
+        REQUIRE(world.actorRuntimeState(0, actorView));
+        return actorView;
+    };
+
+    // Its own pursuit first.
+    const auto travelOver = [&](float seconds)
+    {
+        const float fromX = state.preciseX;
+        const float fromY = state.preciseY;
+        fixture.run(seconds);
+        return std::hypot(state.preciseX - fromX, state.preciseY - fromY);
+    };
+    fixture.run(0.3f);
+    const float plainTravel = travelOver(0.4f);
+    CHECK(plainTravel > 20.0f);
+
+    CHECK_FALSE(world.chargeActor(0));
+    REQUIRE(world.frenzyActor(0));
+    CHECK_FALSE(world.frenzyActor(0));
+    const float roarX = state.preciseX;
+    const float roarY = state.preciseY;
+    fixture.run(0.3f);
+
+    // The roar: it holds where it stood and plays the frenzy clip.
+    CHECK(view().scriptedClip == "frenzy");
+    CHECK(view().emissionMultiplier == doctest::Approx(1.0f));
+    CHECK(std::hypot(state.preciseX - roarX, state.preciseY - roarY) < 1.0f);
+
+    // The frenzy: the glow, and (once its pursuit resumes after the hold) double speed.
+    fixture.run(0.4f);
+    CHECK(view().scriptedClip.empty());
+    CHECK(view().emissionMultiplier == doctest::Approx(3.0f));
+    fixture.run(0.4f);
+    const float frenzyTravel = travelOver(0.4f);
+    CHECK(frenzyTravel == doctest::Approx(plainTravel * 2.0f).epsilon(0.1));
+
+    // Spent: it holds again with the spent clip.
+    fixture.run(2.1f);
+    CHECK(view().scriptedClip == "spent");
+    CHECK(view().emissionMultiplier == doctest::Approx(1.0f));
+    REQUIRE(world.chargeCounts());
+    CHECK(world.chargeCounts()->frenzies == 1);
+}
+
+TEST_CASE("an indoor frenzy starts by itself when the actor falls below its health share")
+{
+    IndoorChargeFixture fixture;
+    REQUIRE(fixture.start(712.0f, 6700.0f, true));
+    IndoorWorldRuntime &world = fixture.scene->worldRuntime();
+    fixture.run(1.0f);
+    REQUIRE(world.chargeCounts());
+    CHECK(world.chargeCounts()->frenzies == 0);
+    MapDeltaActor &actor = fixture.scene->worldRuntime().mapDeltaData()->actors[0];
+    GameplayRuntimeActorState view = {};
+    REQUIRE(world.actorRuntimeState(0, view));
+    REQUIRE(view.maxHp > 2);
+    actor.hp = int16_t(view.maxHp / 3);
+    fixture.run(0.5f);
+    CHECK(world.chargeCounts()->frenzies == 1);
+}
+
+TEST_CASE("indoors a monster casts Meteor Shower only with the indoor_meteor_shower modifier")
+{
+    // A Hive Devil Warrior (Spell2 Meteor Shower, 15 %), the party down the hall in sight. The original game drops a
+    // monster's Meteor Shower indoors: without the modifier it never picks it, and fights on with its other attacks.
+    constexpr int16_t DevilWarrior = 221;
+    const auto meteorsAndShots = [](bool indoorMeteorShower)
+    {
+        IndoorChargeFixture fixture;
+        REQUIRE(fixture.loadHive());
+        const MonsterTable::MonsterStatsEntry *pStats = fixture.monsters.findStatsById(DevilWarrior);
+        REQUIRE(pStats != nullptr);
+        REQUIRE(pStats->hasSpell2);
+        REQUIRE(pStats->spell2Name == "meteor shower");
+        MonsterModifierSet modifiers = {};
+        modifiers.monsterId = DevilWarrior;
+        modifiers.indoorMeteorShower = true;
+        modifiers.names = {"indoor_meteor_shower"};
+        REQUIRE(fixture.startWith(DevilWarrior, indoorMeteorShower ? &modifiers : nullptr, 712.0f, 6700.0f, 30000));
+        const GameplayProjectileService *pProjectiles = fixture.scene->worldRuntime().projectileServiceView();
+        REQUIRE(pProjectiles != nullptr);
+        std::set<uint32_t> meteors;
+        std::set<uint32_t> shots;
+
+        for (int second = 0; second < 60; ++second)
+        {
+            fixture.run(1.0f);
+            for (const GameplayProjectileService::ProjectileState &projectile : pProjectiles->projectiles())
+            {
+                (isSpellId(uint32_t(std::max(projectile.spellId, 0)), SpellId::MeteorShower) ? meteors : shots)
+                    .insert(projectile.projectileId);
+            }
+        }
+
+        return std::pair<size_t, size_t>(meteors.size(), shots.size());
+    };
+
+    const std::pair<size_t, size_t> without = meteorsAndShots(false);
+    CHECK(without.first == 0);
+    CHECK(without.second > 0);
+    const std::pair<size_t, size_t> with = meteorsAndShots(true);
+    CHECK(with.first > 0);
 }

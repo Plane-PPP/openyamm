@@ -53,6 +53,49 @@ void setEnvironmentVariable(const char *pName, const char *pValue)
 #endif
 }
 
+void printUsage(std::ostream &stream, const char *pProgram)
+{
+    stream << "Usage: " << pProgram << " [options] [--headless-<command> <arguments>...]\n"
+           << "Without a headless command the game starts.\n"
+           << "\n"
+           << "Options:\n"
+           << "  -h, --help                       Show this help and exit\n"
+           << "  --world <world-id>               Start world (mm6, mm7, mm8, ...)\n"
+           << "  --map <map-file>                 Start on this map\n"
+           << "  --ruleset <id>[:<option>...]     Ruleset of a new game, such as maw:hell:horizontal\n"
+           << "  --asset-root <directory>         Content root\n"
+           << "  --asset-scale <1|2|4|x1|x2|x4>   Asset scale tier\n"
+           << "  --user-data <directory>          Folder of settings.ini, saves and the log\n"
+           << "  --load-unique-actor <index>      Load only this actor of the map\n"
+           << "  --gameplay-trace <trace-file>    Write a gameplay trace\n"
+           << "  --gameplay-trace-append          Append to the gameplay trace\n"
+           << "\n"
+           << "Headless commands:\n"
+           << "  --headless-run-scenario <scenario.yml> [--scenario-dry-run] [--scenario-quiet] "
+              "[--scenario-no-color]\n"
+           << "  --headless-validate-scenario <scenario.yml> [scenario flags]\n"
+           << "  --headless-update [channel-url]\n"
+           << "  --headless-open-event <map> <event-id> [advance-seconds]\n"
+           << "  --headless-open-actor <map> <actor-index>\n"
+           << "  --headless-run-dialog-sequence <map> <event-id> <action-index>...\n"
+           << "  --headless-run-regression-suite <suite>\n"
+           << "  --headless-validate-actor-models [--all-worlds]\n"
+           << "  --headless-profile-map-load-full <map>\n"
+           << "  --headless-dump-outdoor-navigation <map>\n"
+           << "  --headless-export-decoration-models <map> <output-directory>\n"
+           << "  --headless-verify-outdoor-world-item-floor <map>\n"
+           << "  --headless-verify-outdoor-save-roundtrip <map> <chest-event-id> <mechanism-event-id>\n"
+           << "  --headless-verify-outdoor-mechanism-passage <map> <mechanism-id>\n"
+           << "  --headless-verify-mm9-positioned-transition <map> <source-object-index>\n"
+           << "  --headless-capture-projectile-fx <output>\n"
+           << "  --headless-simulate-actor <map> <actor-index> <steps> <delta-seconds> [party-offset-x] "
+              "[pre-event-id]\n"
+           << "  --headless-trace-actor-ai <map> <actor-index> <steps> <delta-seconds> [party-offset-x]\n"
+           << "  --headless-inspect-actor-preview <map> <actor-index>\n"
+           << "  --headless-dump-actor-support <map> <actor-index>\n"
+           << "  --headless-dump-actor-preview-texture <map> <actor-index> <output>\n";
+}
+
 bool parseCommonArguments(
     int argc,
     char **argv,
@@ -379,6 +422,23 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
         return 2;
     }
 
+    for (const std::string &argument : arguments)
+    {
+        if (argument == "--help" || argument == "-h")
+        {
+            printUsage(std::cout, argv[0]);
+            return 0;
+        }
+    }
+
+    // Anything left that is not a headless command is a mistake; the game does not start with it.
+    if (!arguments.empty() && arguments[0].rfind("--headless-", 0) != 0)
+    {
+        std::cerr << "Unknown argument: " << arguments[0] << '\n';
+        printUsage(std::cerr, argv[0]);
+        return 2;
+    }
+
     const std::filesystem::path executableFolder = executableDirectory();
     const std::filesystem::path installRoot = OpenYAMM::Engine::installationRoot(executableFolder);
 
@@ -427,6 +487,8 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
     if (headlessCommand)
     {
         setEnvironmentVariable("OPENYAMM_DISABLE_LOADING_OVERLAY", "1");
+        // Monster path plans land in simulated time (ActorPathRuntime::setWorkerCount).
+        setEnvironmentVariable("OPENYAMM_SYNCHRONOUS_PATH_PLANS", "1");
     }
 
     if (arguments.size() >= 2 && arguments[0] == "--headless-validate-scenario")
@@ -533,6 +595,13 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
     {
         OpenYAMM::Game::HeadlessGameplayDiagnostics diagnostics(config);
         return diagnostics.runRegressionSuite(argv[0], arguments[1]);
+    }
+
+    if ((arguments.size() == 1 || (arguments.size() == 2 && arguments[1] == "--all-worlds"))
+        && arguments[0] == "--headless-validate-actor-models")
+    {
+        OpenYAMM::Game::HeadlessGameplayDiagnostics diagnostics(config);
+        return diagnostics.runValidateActorModels(argv[0], arguments.size() == 2);
     }
 
     if (arguments.size() == 2 && arguments[0] == "--headless-profile-map-load-full")
@@ -711,6 +780,14 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
             mapFileName,
             static_cast<size_t>(parsedActorIndex),
             arguments[3]);
+    }
+
+    // A headless command none of the above takes (unknown, or the wrong number of arguments).
+    if (!arguments.empty())
+    {
+        std::cerr << "Unknown headless command or wrong arguments: " << arguments[0] << '\n';
+        printUsage(std::cerr, argv[0]);
+        return 2;
     }
 
 #if !defined(__ANDROID__)

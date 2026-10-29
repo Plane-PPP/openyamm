@@ -26,6 +26,8 @@ constexpr float CrowdProbeEdgeDistanceThreshold = 12.0f;
 constexpr float CrowdReangleEngageRange = 1024.0f;
 constexpr float ContactFleeFallbackSeconds = 0.25f;
 constexpr float ActorMeleeRange = 307.2f;
+// Monsters shoot and cast only at targets nearer than this; farther ones they close in on.
+constexpr float MaximumRangedAttackDistance = 5120.0f;
 constexpr float HostilityLongRange = GameplayActorService::MaximumPartyEngagementRange;
 constexpr float IdleStandSeconds = 1.5f;
 constexpr float IdleBoredSeconds = 2.0f;
@@ -259,6 +261,7 @@ struct RangedAbilityCommitInput
     bool movementAllowed = false;
     bool targetIsActor = false;
     float targetEdgeDistance = 0.0f;
+    float rangedAttackReach = MaximumRangedAttackDistance;
 };
 
 struct CombatAbilityChoiceInput
@@ -276,6 +279,8 @@ struct CombatAbilityChoiceInput
     bool movementAllowed = false;
     bool targetIsActor = false;
     float targetEdgeDistance = 0.0f;
+    // The farthest target it shoots or casts at.
+    float rangedAttackReach = MaximumRangedAttackDistance;
     bool inMeleeRange = false;
     bool chooseRandomAbility = true;
     bool applyAbilityConstraints = true;
@@ -1103,7 +1108,7 @@ bool shouldCommitToRangedAbility(const RangedAbilityCommitInput &input)
         return false;
     }
 
-    if (input.targetEdgeDistance >= 5120.0f)
+    if (input.targetEdgeDistance >= input.rangedAttackReach)
     {
         return false;
     }
@@ -1201,10 +1206,13 @@ CombatAbilityChoiceResult chooseCombatAbility(const CombatAbilityChoiceInput &in
         }
     }
 
+    // Out of reach blocks a ranged ability outright: a monster with no blow to fall back on (a Great Wyrm) would
+    // otherwise keep its missile and shoot from as far as it senses the party.
     const bool hardRangedAbilityBlocked =
         input.constraintState.darkGraspActive
         || input.constraintState.blindActive
-        || !input.constraintState.rangedCommitAllowed;
+        || !input.constraintState.rangedCommitAllowed
+        || (!input.forceRangedCommit && input.targetEdgeDistance >= input.rangedAttackReach);
 
     if (attackAbilityIsRanged(chosenAbility, constraintState))
     {
@@ -1216,6 +1224,7 @@ CombatAbilityChoiceResult chooseCombatAbility(const CombatAbilityChoiceInput &in
         rangedCommitInput.movementAllowed = input.movementAllowed;
         rangedCommitInput.targetIsActor = input.targetIsActor;
         rangedCommitInput.targetEdgeDistance = input.targetEdgeDistance;
+        rangedCommitInput.rangedAttackReach = input.rangedAttackReach;
 
         if (!input.forceRangedCommit && !shouldCommitToRangedAbility(rangedCommitInput))
         {
@@ -1366,7 +1375,9 @@ ActorEngagementState resolveActorEngagement(
     result.shouldEngageTarget = result.hasCombatTarget && combatTarget.canSense && !invisiblePartyTarget;
     result.inMeleeRange =
         combatTarget.edgeDistance <= meleeRangeForCombatTarget(result.targetIsActor)
-        && combatTarget.attackLineOfSight;
+        && combatTarget.attackLineOfSight
+        && (!result.targetIsParty || GameplayActorService::meleeReachesVertically(frame.meleeVerticalReach,
+            actor.movement.position.z, float(actor.stats.height), frame.party.position.z, frame.party.collisionHeight));
 
     if (result.targetIsActor)
     {
@@ -1922,7 +1933,8 @@ ActorFrameTimerAging ageActorFrameTimers(const ActorAiFacts &actor, const ActorA
     const bool attacking = actor.runtime.motionState == ActorAiMotionState::Attacking;
 
     result.idleDecisionSeconds = std::max(0.0f, actor.runtime.idleDecisionSeconds - deltaSeconds);
-    result.attackCooldownSeconds = std::max(0.0f, actor.runtime.attackCooldownSeconds - recoveryStepSeconds);
+    result.attackCooldownSeconds = std::max(0.0f,
+        actor.runtime.attackCooldownSeconds - recoveryStepSeconds * actor.behavior.attackRateMultiplier);
     result.actionSeconds = std::max(
         0.0f,
         actor.runtime.actionSeconds - (attacking ? recoveryStepSeconds : deltaSeconds));
@@ -2497,7 +2509,8 @@ void applyActiveMovementCommit(
 
     if (actor.stats.canFly)
     {
-        const float verticalTargetDelta = movementTargetPosition.z - actor.world.targetZ;
+        const float verticalTargetDelta =
+            movementTargetPosition.z + actor.status.climbAboveTarget - actor.world.targetZ;
         const float horizontalDistance =
             std::sqrt(
                 (movementTargetPosition.x - actor.movement.position.x)
@@ -3692,10 +3705,15 @@ bool AI_AttackOrPursue(ActorAiCommandContext &ai)
     abilityInput.movementAllowed = actor.movement.movementAllowed;
     abilityInput.targetIsActor = engagement.targetIsActor;
     abilityInput.targetEdgeDistance = actor.target.currentEdgeDistance;
+    abilityInput.rangedAttackReach = engagement.targetIsParty
+        ? std::max(MaximumRangedAttackDistance, actor.target.partyAttackReach)
+        : MaximumRangedAttackDistance;
     abilityInput.inMeleeRange = engagement.inMeleeRange;
     abilityInput.chooseRandomAbility = true;
     abilityInput.applyAbilityConstraints = true;
-    abilityInput.forceRangedCommit = actor.tactics.keepsRangedBand();
+    // A ranged band shoots from anywhere inside it, and closes in from beyond it like any other monster.
+    abilityInput.forceRangedCommit =
+        actor.tactics.keepsRangedBand() && actor.target.currentEdgeDistance <= actor.tactics.rangedMaxDistance;
     const CombatAbilityChoiceResult abilityChoice = chooseCombatAbility(abilityInput);
 
     CombatEngagePlanInput engageInput = {};
@@ -4339,7 +4357,8 @@ ActorAiUpdate AI_ScriptedHold(
         ai.setAnimationTimeTicks(0.0f);
     }
 
-    if (actor.target.currentKind != ActorAiTargetKind::None && actor.target.currentCanSense)
+    if (!actor.behavior.holdKeepsFacing && actor.target.currentKind != ActorAiTargetKind::None
+        && actor.target.currentCanSense)
     {
         const float dx = actor.target.currentPosition.x - actor.movement.position.x;
         const float dy = actor.target.currentPosition.y - actor.movement.position.y;

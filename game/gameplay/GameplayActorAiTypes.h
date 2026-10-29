@@ -5,6 +5,8 @@
 #include "game/party/SkillData.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -173,6 +175,37 @@ struct ActorRuntimeFacts
 
 // Action time left when an attack applies at its contact time (seconds from the attack's start); 0 applies it when
 // the action ends. The action lasts the attack sprite's animation (startAttack: at least 0.1 s).
+// A telegraphed attack (MonsterModifierSet::telegraphedAttack): the hit comes telegraphSeconds into the attack and the
+// action runs on afterwards as long as it did after the sprite's contact frame (at least a fifth of a second).
+inline void applyAttackTelegraph(float telegraphSeconds, float &attackAnimationSeconds, float &impactSeconds)
+{
+    if (telegraphSeconds <= 0.0f)
+    {
+        return;
+    }
+
+    const float originalImpact = impactSeconds > 0.0f ? impactSeconds : attackAnimationSeconds;
+    const float followThrough = std::max(0.2f, attackAnimationSeconds - originalImpact);
+    impactSeconds = telegraphSeconds;
+    attackAnimationSeconds = telegraphSeconds + followThrough;
+}
+
+// The waypoint a patrol (MapDeltaActor::patrolPoints) heads for from (x, y): the current one, or the next once the
+// actor is within arrival of it; index keeps its place in the round.
+inline GameplayWorldPoint nextPatrolWaypoint(
+    const std::vector<std::array<int32_t, 3>> &points, size_t &index, float x, float y)
+{
+    constexpr float PatrolArrivalRadius = 96.0f;
+    index %= points.size();
+
+    if (std::hypot(float(points[index][0]) - x, float(points[index][1]) - y) <= PatrolArrivalRadius)
+    {
+        index = (index + 1) % points.size();
+    }
+
+    return {float(points[index][0]), float(points[index][1]), float(points[index][2])};
+}
+
 inline float actorAttackImpactLeadSeconds(float attackAnimationSeconds, float impactSeconds)
 {
     const float actionSeconds = std::max(0.1f, attackAnimationSeconds);
@@ -190,6 +223,8 @@ struct ActorStatusFacts
     bool defaultHostileToParty = false;
     bool suppressLowHealthFlee = false;
     bool forceFleeFromParty = false;
+    // A flyer keeps this far above its target's height while it moves (a shield-break climb); 0: none.
+    float climbAboveTarget = 0.0f;
     // Seconds since the actor's energy shield broke while it stays down (GameplayActorShields); -1 otherwise.
     float shieldDownSinceBreakSeconds = -1.0f;
 };
@@ -225,6 +260,9 @@ struct ActorTargetFacts
     bool currentHasAttackLineOfSight = true;
     bool hasCurrentMovementPosition = false;
     bool partyCanSenseActor = false;
+    // How far it may shoot or cast at the party: beyond the native reach when the party hit it from farther away
+    // (outdoors), 0 for the native reach.
+    float partyAttackReach = 0.0f;
     std::vector<ActorTargetCandidateFacts> candidates;
 };
 
@@ -255,6 +293,12 @@ struct ActorMovementFacts
     // The map placed the actor `immobile` (a post) and faces it homeYawRadians. Only tactics read these
     // (ActorTacticsFacts::holdPost); spawned actors have no home facing.
     bool placedImmobile = false;
+    // The placement's own leash (MapDeltaActor::leashRadius), 0 without one.
+    float placedLeashRadius = 0.0f;
+    // Resting (MapDeltaActor::dormant): it stands still and does not fight until hurt or woken.
+    bool dormant = false;
+    // The waypoint of its patrol (MapDeltaActor::patrolPoints) it walks to while it has nothing to fight.
+    std::optional<GameplayWorldPoint> patrolTarget;
     bool hasHomeYaw = false;
     float homeYawRadians = 0.0f;
 };
@@ -265,6 +309,11 @@ enum class ActorShieldBreakReaction : uint8_t
     None,
     // Flees its target (the native flee) while the shield stays down, up to ActorTacticsFacts::shieldBreakSeconds.
     FallBack,
+    // Staggers: holds its hit pose, neither moving nor attacking, for shieldBreakSeconds after the break.
+    Stagger,
+    // Falls back as FallBack, and a flyer climbs ActorStatusFacts::climbAboveTarget above its target meanwhile (out of
+    // melee reach).
+    Climb,
 };
 
 // Optional combat tactics from world data (worlds/<id>/behaviors.yml `tactics`, keyed by monster id and applied by
@@ -326,6 +375,10 @@ struct ActorBehaviorFacts
     bool holdActive = false;
     bool holdRestartAnimation = false;
     ActorAiAnimationState holdAnimation = ActorAiAnimationState::Standing;
+    // The hold keeps its facing (a dormant monster) instead of turning to its target.
+    bool holdKeepsFacing = false;
+    // Its attack recovery runs down this many times faster (a frenzy, GameplayActorModifiers).
+    float attackRateMultiplier = 1.0f;
 };
 
 struct ActorAiFacts
@@ -486,6 +539,8 @@ struct ActorAiFrameFacts
     float fixedStepSeconds = 0.0f;
     ActorPartyFacts party = {};
     ActorTurnBasedFrameFacts turnBased = {};
+    // The world's melee vertical reach (GameplayActorService::meleeVerticalReach; 0: melee ignores height).
+    float meleeVerticalReach = 0.0f;
     std::vector<ActorAiFacts> backgroundActors;
     std::vector<ActorAiFacts> activeActors;
 };

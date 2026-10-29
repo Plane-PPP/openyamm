@@ -181,6 +181,11 @@ struct EffectRibbonDefinition
     // Sideways displacement of each sample in world units, re-randomised jitter_rate times per second (lightning).
     float jitter = 0.0f;
     float jitterRate = 0.0f;
+    // A beam: instead of trailing, the strip runs straight from the effect's position to its beam target
+    // (EffectSystem::setBeamTarget), sampled every sample_distance, while the component lasts. Its width keys run along
+    // it, start (0) to target (1), so a beam aimed at the viewer can taper to nothing at the eye; its colour is the
+    // keys' value at phase 0; jitter displaces every sample but the two ends.
+    bool beam = false;
     std::vector<EffectScalarKey> widthKeys;
     std::vector<EffectColorKey> colorKeys;
 };

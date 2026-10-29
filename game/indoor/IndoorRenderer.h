@@ -165,6 +165,8 @@ public:
     uint64_t indoorMapRevealRevision() const;
     float cameraYawRadians() const;
     float cameraPitchRadians() const;
+    // Width over height of the last drawn view; 4:3 before the first frame.
+    float viewAspectRatio() const;
     bool canActivateGameplayWorldHit(const GameplayWorldHit &hit) const;
     bool activateGameplayWorldHit(const GameplayWorldHit &hit);
     void setWorldPostProcessing(CinematicGrading *pPostProcessing) { m_pPostProcessing = pPostProcessing; }
@@ -545,6 +547,8 @@ private:
 
     // Recomputes m_bakedStaticLightReach for the map's lights and decoration billboards.
     void rebuildBakedStaticLightReach();
+    // Every sector's ambient level now: an event's override, else the map's.
+    std::vector<int16_t> bakedSectorAmbientLevels() const;
     bool refreshBakedStaticLighting(
         bool refreshAllVertices,
         size_t &refreshedVertexCount,
@@ -775,6 +779,8 @@ private:
     uint64_t m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
     uint64_t m_bakedStaticLightRevision = std::numeric_limits<uint64_t>::max();
     std::vector<uint8_t> m_bakedStaticLightEnabledStates;
+    // Every sector's ambient level the vertices were baked with (evt.SetSectorAmbient changes it).
+    std::vector<int16_t> m_bakedSectorAmbientLevels;
     // Per baked source (BakedStaticLightSource::sourceId): the sectors it reaches through portals, at its larger toggle
     // radius. Faces bake only the lights that reach their sectors.
     std::vector<IndoorLightReachList> m_bakedStaticLightReach;
@@ -815,10 +821,6 @@ private:
     bool m_gameplayMouseLookEnabled = false;
     bool m_gameplayCursorMode = false;
     bool m_jumpHeld;
-    bool m_indoorGeometryRenderingDisabled = false;
-    bool m_indoorGeometryRenderingToggleHeld = false;
-    bool m_indoorGeometryTranslucent = false;
-    bool m_indoorGeometryTranslucentToggleHeld = false;
     InspectHit m_cachedInspectHit = {};
     bool m_cachedInspectHitValid = false;
     float m_cachedInspectMouseX = 0.0f;

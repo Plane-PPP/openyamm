@@ -30,6 +30,8 @@ struct WeatherDrawFrame
     // How snow and ash flakes look and fall (weather.yml flakes).
     WeatherFlakeLook snowLook = {};
     WeatherFlakeLook ashLook = {};
+    // The rain's colour before the light (weather.yml rain_color).
+    std::array<float, 3> rainColor = DefaultRainColor;
     float windX = 0.0f;
     float windY = 0.0f;
     // Light on rain and snow (day/night, sky tint, lightning flash), multiplying their own colours.

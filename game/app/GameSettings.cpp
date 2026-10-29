@@ -947,6 +947,14 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "controls", "bag_number_keys"))
+    {
+        if (validBagNumberKeysValue(*value))
+        {
+            settings.bagNumberKeys = *value;
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "controls", "flip_on_exit"))
     {
         bool parsed = settings.flipOnExit;
@@ -1078,6 +1086,11 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "enemy_health_bar_damage_trail"))
     {
         parseBoolValue(*value, settings.enemyHealthBarDamageTrail);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "save_list_order"))
+    {
+        settings.saveListNewestFirst = *value == "newest";
     }
 
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "quest_markers"))
@@ -2301,6 +2314,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("walksound", boolValue(settings.walksound));
     serializer.add("show_hits", boolValue(settings.showHits));
     serializer.add("always_run", boolValue(settings.alwaysRun));
+    serializer.add("bag_number_keys", settings.bagNumberKeys);
     serializer.add("flip_on_exit", boolValue(settings.flipOnExit));
     serializer.add("mouse_sensitivity", std::clamp(settings.mouseSensitivity, 0, 100));
     serializer.add("invert_mouse_y", boolValue(settings.invertMouseY));
@@ -2313,6 +2327,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("enemy_health_bar_values", settings.enemyHealthBarValues);
     serializer.add("enemy_health_bar_damage_trail", boolValue(settings.enemyHealthBarDamageTrail));
     serializer.add("quest_markers", boolValue(settings.questMarkers));
+    serializer.add("save_list_order", settings.saveListNewestFirst ? "newest" : "name");
     serializer.add("party_frame", boolValue(settings.partyFrame));
     serializer.add("potion_buttons", boolValue(settings.potionButtons));
     serializer.add("melee_hit_blood_effects", boolValue(settings.meleeHitBloodEffects));

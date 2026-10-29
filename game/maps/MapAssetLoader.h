@@ -245,6 +245,9 @@ struct MapAssetInfo
     AuthoredCompanionSource authoredCompanionSource = AuthoredCompanionSource::None;
     std::optional<OutdoorMapData> outdoorMapData;
     std::optional<IndoorMapData> indoorMapData;
+    // Per indoor face: the party's speed share while it wades on it (a shallow liquid's wade_speed); empty when the
+    // map has no such face.
+    std::vector<float> indoorFaceWadeSpeeds;
     std::optional<MapDeltaData> outdoorMapDeltaData;
     std::optional<MapDeltaData> indoorMapDeltaData;
     std::optional<MapItemSourceData> itemSourceData;

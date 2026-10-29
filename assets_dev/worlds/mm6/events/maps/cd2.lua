@@ -223,8 +223,8 @@ RegisterEvent(33, nil, function()
     end
     if not IsAtLeast(MapVar(3), 2) then
         AddValue(MapVar(3), 1)
-        evt.SetFacetBit(4522, FacetBits.Untouchable, 1)
-        evt.SetFacetBit(4575, FacetBits.Untouchable, 1)
+        evt.SetFacetBit(-4522, FacetBits.Untouchable, 1)
+        evt.SetFacetBit(-4575, FacetBits.Untouchable, 1)
         evt.StatusText("The way has been cleared")
         return
     end
@@ -249,8 +249,8 @@ RegisterEvent(35, nil, function()
     end
     if IsAtLeast(MapVar(3), 2) then return end
     AddValue(MapVar(3), 1)
-    evt.SetFacetBit(4522, FacetBits.Untouchable, 1)
-    evt.SetFacetBit(4575, FacetBits.Untouchable, 1)
+    evt.SetFacetBit(-4522, FacetBits.Untouchable, 1)
+    evt.SetFacetBit(-4575, FacetBits.Untouchable, 1)
     evt.StatusText("The way has been cleared")
 end)
 
@@ -262,8 +262,8 @@ RegisterEvent(36, nil, function()
     end
     if IsAtLeast(MapVar(3), 2) then return end
     AddValue(MapVar(3), 1)
-    evt.SetFacetBit(4522, FacetBits.Untouchable, 1)
-    evt.SetFacetBit(4575, FacetBits.Untouchable, 1)
+    evt.SetFacetBit(-4522, FacetBits.Untouchable, 1)
+    evt.SetFacetBit(-4575, FacetBits.Untouchable, 1)
     evt.StatusText("The way has been cleared")
 end)
 
@@ -274,8 +274,8 @@ RegisterEvent(37, nil, function()
     end
     if not IsAtLeast(MapVar(3), 2) then
         AddValue(MapVar(3), 1)
-        evt.SetFacetBit(4522, FacetBits.Untouchable, 1)
-        evt.SetFacetBit(4575, FacetBits.Untouchable, 1)
+        evt.SetFacetBit(-4522, FacetBits.Untouchable, 1)
+        evt.SetFacetBit(-4575, FacetBits.Untouchable, 1)
         evt.StatusText("The way has been cleared")
         return
     end
@@ -337,11 +337,11 @@ RegisterEvent(45, "Sign", function(continueStep)
         evt.SetTexture(-4300, "lavatyl")
         evt.SetTexture(-4301, "lavatyl")
         evt.SetTexture(-4302, "lavatyl")
-        evt.SetFacetBit(4298, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4299, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4300, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4301, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4302, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4298, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4299, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4300, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4301, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4302, FacetBits.Fluid, 1)
         return
     end
     if continueStep ~= nil then return end
@@ -422,11 +422,11 @@ RegisterEvent(54, "Lever", function()
         evt.SetTexture(-4221, "lavatyl")
         evt.SetTexture(-4222, "lavatyl")
         evt.SetTexture(-4223, "lavatyl")
-        evt.SetFacetBit(4219, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4220, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4221, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4222, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4223, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4219, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4220, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4221, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4222, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4223, FacetBits.Fluid, 1)
         return
     end
     evt.SetDoorState(14, DoorAction.Trigger)
@@ -456,11 +456,11 @@ RegisterEvent(56, "Sign", function()
         evt.SetTexture(-4267, "lavatyl")
         evt.SetTexture(-4268, "lavatyl")
         evt.SetTexture(-4269, "lavatyl")
-        evt.SetFacetBit(4265, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4266, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4267, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4268, FacetBits.Fluid, 1)
-        evt.SetFacetBit(4269, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4265, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4266, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4267, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4268, FacetBits.Fluid, 1)
+        evt.SetFacetBit(-4269, FacetBits.Fluid, 1)
         return
     end
     evt.SetDoorState(14, DoorAction.Trigger)
@@ -517,8 +517,8 @@ RegisterEvent(58, nil, function()
         evt.SetTexture(-4560, "deskside")
     end
     if IsAtLeast(MapVar(3), 1) then
-        evt.SetFacetBit(4522, FacetBits.Untouchable, 1)
-        evt.SetFacetBit(4575, FacetBits.Untouchable, 1)
+        evt.SetFacetBit(-4522, FacetBits.Untouchable, 1)
+        evt.SetFacetBit(-4575, FacetBits.Untouchable, 1)
     end
 end)
 

@@ -1818,7 +1818,7 @@ std::string resolveFaceTextureName(
     // evt.SetTexture swaps one face named by its index (MMerge's MM6 maps), or every face of a cog number, as MM7's
     // and MM8's SetTexture (the face extra's sCogNumber); cog 0 names no face.
     const uint32_t keys[2] = {
-        faceIndex < 0x80000000u ? EventRuntime::indoorFaceTextureOverrideKey(static_cast<uint32_t>(faceIndex)) : 0,
+        faceIndex < 0x80000000u ? EventRuntime::indoorFaceReferenceKey(static_cast<uint32_t>(faceIndex)) : 0,
         face.cogNumber};
 
     for (uint32_t key : keys)
@@ -3770,30 +3770,6 @@ void IndoorRenderer::render(
         ++m_indoorPerformanceDiagnostics.renderFrames;
     }
 
-    const bool geometryToggleHeld = input.isScancodeHeld(SDL_SCANCODE_F8);
-
-    if (geometryToggleHeld && !m_indoorGeometryRenderingToggleHeld)
-    {
-        m_indoorGeometryRenderingDisabled = !m_indoorGeometryRenderingDisabled;
-        std::cout << "Indoor geometry rendering "
-                  << (m_indoorGeometryRenderingDisabled ? "disabled" : "enabled")
-                  << " by F8\n";
-    }
-
-    m_indoorGeometryRenderingToggleHeld = geometryToggleHeld;
-
-    const bool geometryTranslucentToggleHeld = input.isScancodeHeld(SDL_SCANCODE_F12);
-
-    if (geometryTranslucentToggleHeld && !m_indoorGeometryTranslucentToggleHeld)
-    {
-        m_indoorGeometryTranslucent = !m_indoorGeometryTranslucent;
-        std::cout << "Indoor geometry translucent debug rendering "
-                  << (m_indoorGeometryTranslucent ? "enabled" : "disabled")
-                  << " by F12\n";
-    }
-
-    m_indoorGeometryTranslucentToggleHeld = geometryTranslucentToggleHeld;
-
     const float deltaMilliseconds = deltaSeconds * 1000.0f;
     m_elapsedTime += std::max(deltaSeconds, 0.0f);
 
@@ -4016,7 +3992,7 @@ void IndoorRenderer::render(
     {
         updateWaterGeometry();
     }
-    const bool enhancedWater = m_waterRenderer.isReady() && !m_indoorGeometryRenderingDisabled && !m_indoorGeometryTranslucent;
+    const bool enhancedWater = m_waterRenderer.isReady();
 
     const uint64_t visibilityBeginTickCount = collectRenderDiagnostics ? SDL_GetTicksNS() : 0;
     const std::vector<uint8_t> renderVisibleSectorMask = buildVisibleSectorMask(eye);
@@ -4209,8 +4185,7 @@ void IndoorRenderer::render(
     uint64_t submittedTexturedBatchCount = 0;
     uint64_t culledTexturedBatchCount = 0;
 
-    if (!m_indoorGeometryRenderingDisabled
-        && bgfx::isValid(m_indoorLitProgramHandle)
+    if (bgfx::isValid(m_indoorLitProgramHandle)
         && bgfx::isValid(m_textureSamplerHandle)
         && bgfx::isValid(m_indoorLightPositionsUniformHandle)
         && bgfx::isValid(m_indoorLightColorsUniformHandle)
@@ -4266,7 +4241,7 @@ void IndoorRenderer::render(
 
     const uint64_t bloodSplatsBeginTickCount = collectRenderDiagnostics ? SDL_GetTicksNS() : 0;
 
-    if (!m_indoorGeometryRenderingDisabled && settings.bloodSplats)
+    if (settings.bloodSplats)
     {
         renderBloodSplats(
             transparentView,
@@ -6404,6 +6379,13 @@ float IndoorRenderer::cameraPitchRadians() const
     return m_cameraPitchRadians;
 }
 
+float IndoorRenderer::viewAspectRatio() const
+{
+    return m_lastRenderWidth > 0 && m_lastRenderHeight > 0
+        ? static_cast<float>(m_lastRenderWidth) / static_cast<float>(m_lastRenderHeight)
+        : 4.0f / 3.0f;
+}
+
 float IndoorRenderer::viewYawRadians() const
 {
     return m_pSceneRuntime != nullptr
@@ -6630,8 +6612,6 @@ void IndoorRenderer::shutdown()
     m_houseTable.reset();
     m_mechanismBindings.clear();
     m_lastVisibilityDiagnosticsLogTick = 0;
-    m_indoorGeometryRenderingDisabled = false;
-    m_indoorGeometryRenderingToggleHeld = false;
     clearPortalVisibilityCaches();
     m_worldFxSystem.reset();
 
@@ -6675,6 +6655,7 @@ void IndoorRenderer::shutdown()
         m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
         m_bakedStaticLightRevision = std::numeric_limits<uint64_t>::max();
         m_bakedStaticLightEnabledStates.clear();
+        m_bakedSectorAmbientLevels.clear();
         m_elapsedTime = 0.0f;
         m_framesPerSecond = 0.0f;
         m_wireframeVertexCount = 0;
@@ -7525,6 +7506,20 @@ void IndoorRenderer::updateDecorationModels(const std::vector<uint8_t> &visibleS
         return sprite;
     });
     m_decorationModels.animate(float(SDL_GetTicks()) * 0.001f);
+    if (eventRuntimeState && !eventRuntimeState->decorationAims.empty())
+    {
+        m_decorationModels.poseAimed(billboards, [&eventRuntimeState](uint32_t key, float &yawRadians, float &back)
+        {
+            const auto aim = eventRuntimeState->decorationAims.find(key);
+            if (aim == eventRuntimeState->decorationAims.end())
+            {
+                return false;
+            }
+            yawRadians = aim->second.currentRadians;
+            back = aim->second.back();
+            return true;
+        });
+    }
     const GameplayWorldHit *pContextActionHit = selectedContextActionWorldHit(pContextActionState);
     std::vector<Engine::ModelStaticGroup> &groups = m_decorationModels.groups();
     for (size_t group = 0; group < groups.size(); ++group)
@@ -10491,23 +10486,11 @@ bool IndoorRenderer::submitTexturedBatch(const TexturedBatch &batch, uint16_t vi
         IndoorSkyProjectionPitchOffsetRadians
     };
     bgfx::setUniform(m_indoorSkyProjectionParamsUniformHandle, indoorSkyProjectionParams.data());
-    if (viewId == MainViewId && m_indoorGeometryTranslucent)
-    {
-        bgfx::setState(
-            BGFX_STATE_WRITE_RGB
-            | BGFX_STATE_WRITE_A
-            | BGFX_STATE_DEPTH_TEST_LEQUAL
-            | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_FACTOR, BGFX_STATE_BLEND_INV_FACTOR) | BGFX_STATE_MSAA,
-            0x80808080u);
-    }
-    else
-    {
-        bgfx::setState(
-            BGFX_STATE_WRITE_RGB
-            | BGFX_STATE_WRITE_A
-            | BGFX_STATE_WRITE_Z
-            | BGFX_STATE_DEPTH_TEST_LEQUAL | BGFX_STATE_MSAA);
-    }
+    bgfx::setState(
+        BGFX_STATE_WRITE_RGB
+        | BGFX_STATE_WRITE_A
+        | BGFX_STATE_WRITE_Z
+        | BGFX_STATE_DEPTH_TEST_LEQUAL | BGFX_STATE_MSAA);
 
     bgfx::submit(viewId, m_indoorLitProgramHandle);
     return true;
@@ -10574,6 +10557,7 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
                 ? bakedStaticLightEnabledStates(*m_pIndoorMapData, runtimeEventRuntimeState(),
                     m_indoorDecorationBillboardSet ? &*m_indoorDecorationBillboardSet : nullptr)
                 : std::vector<uint8_t>();
+        m_bakedSectorAmbientLevels = bakedSectorAmbientLevels();
         return true;
     }
 
@@ -10876,7 +10860,19 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
     m_bakedStaticLightEnabledStates =
         bakedStaticLightEnabledStates(*m_pIndoorMapData, runtimeEventRuntimeState(),
             m_indoorDecorationBillboardSet ? &*m_indoorDecorationBillboardSet : nullptr);
+    m_bakedSectorAmbientLevels = bakedSectorAmbientLevels();
     return true;
+}
+
+std::vector<int16_t> IndoorRenderer::bakedSectorAmbientLevels() const
+{
+    std::vector<int16_t> levels(m_pIndoorMapData ? m_pIndoorMapData->sectors.size() : 0);
+    for (size_t sectorId = 0; sectorId < levels.size(); ++sectorId)
+    {
+        levels[sectorId] =
+            int16_t(IndoorLightingRuntime::sectorAmbientLevel(*m_pIndoorMapData, runtimeEventRuntimeState(), sectorId));
+    }
+    return levels;
 }
 
 void IndoorRenderer::rebuildBakedStaticLightReach()
@@ -10931,6 +10927,15 @@ bool IndoorRenderer::refreshBakedStaticLighting(
         bakedStaticLightEnabledStates(*m_pIndoorMapData, pEventRuntimeState,
             m_indoorDecorationBillboardSet ? &*m_indoorDecorationBillboardSet : nullptr);
     std::vector<BakedStaticLightSource> changedLightSources;
+    // Rooms whose ambient an event changed (evt.SetSectorAmbient) re-bake every vertex.
+    std::vector<int16_t> sectorAmbientLevels = bakedSectorAmbientLevels();
+    const bool ambientChanged = sectorAmbientLevels != m_bakedSectorAmbientLevels;
+    const auto batchAmbientChanged = [&](const TexturedBatch &batch)
+    {
+        return ambientChanged && batch.sectorId >= 0 && size_t(batch.sectorId) < sectorAmbientLevels.size()
+            && (size_t(batch.sectorId) >= m_bakedSectorAmbientLevels.size()
+                || sectorAmbientLevels[size_t(batch.sectorId)] != m_bakedSectorAmbientLevels[size_t(batch.sectorId)]);
+    };
 
     if (enabledStates.size() != m_bakedStaticLightEnabledStates.size())
     {
@@ -10965,7 +10970,7 @@ bool IndoorRenderer::refreshBakedStaticLighting(
         }
     }
 
-    if (!refreshAllVertices && changedLightSources.empty())
+    if (!refreshAllVertices && changedLightSources.empty() && !ambientChanged)
     {
         m_bakedStaticLightEnabledStates = std::move(enabledStates);
         m_bakedStaticLightRevision = currentBakedStaticLightRevision();
@@ -10990,11 +10995,11 @@ bool IndoorRenderer::refreshBakedStaticLighting(
     };
     for (TexturedBatch &batch : m_texturedBatches)
     {
-        const float ambient = batch.sectorId >= 0 && size_t(batch.sectorId) < m_pIndoorMapData->sectors.size()
-            ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(
-                int(m_pIndoorMapData->sectors[size_t(batch.sectorId)].minAmbientLightLevel))
+        const float ambient = batch.sectorId >= 0 && size_t(batch.sectorId) < sectorAmbientLevels.size()
+            ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(sectorAmbientLevels[size_t(batch.sectorId)])
             : IndoorLightingRuntime::ambientFromMinAmbientLightLevel(0);
-        if (!refreshAllVertices && batch.hasBounds)
+        const bool refreshBatchVertices = refreshAllVertices || batchAmbientChanged(batch);
+        if (!refreshBatchVertices && batch.hasBounds)
         {
             bool batchAffectedByChangedLight = false;
 
@@ -11048,7 +11053,7 @@ bool IndoorRenderer::refreshBakedStaticLighting(
 
         for (TexturedVertex &vertex : batch.vertices)
         {
-            if (!refreshAllVertices)
+            if (!refreshBatchVertices)
             {
                 const bx::Vec3 position = {vertex.x, vertex.y, vertex.z};
                 bool affectedByChangedLight = false;
@@ -11103,6 +11108,7 @@ bool IndoorRenderer::refreshBakedStaticLighting(
     }
 
     m_bakedStaticLightEnabledStates = std::move(enabledStates);
+    m_bakedSectorAmbientLevels = std::move(sectorAmbientLevels);
     m_bakedStaticLightRevision = currentBakedStaticLightRevision();
     return true;
 }
@@ -11386,6 +11392,7 @@ void IndoorRenderer::destroyDerivedGeometryResources()
     m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
     m_bakedStaticLightRevision = std::numeric_limits<uint64_t>::max();
     m_bakedStaticLightEnabledStates.clear();
+    m_bakedSectorAmbientLevels.clear();
 }
 
 void IndoorRenderer::destroyIndoorTextureHandles()
@@ -11922,8 +11929,8 @@ IndoorRenderer::TexturedFaceMesh IndoorRenderer::buildFaceTexturedMesh(
     const int16_t faceBackSector =
         face.roomBehindNumber < indoorMapData.sectors.size() ? int16_t(face.roomBehindNumber) : int16_t(-1);
     const float faceAmbient = faceSector >= 0
-        ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(
-            int(indoorMapData.sectors[size_t(faceSector)].minAmbientLightLevel))
+        ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(IndoorLightingRuntime::sectorAmbientLevel(
+            indoorMapData, eventRuntimeState ? &*eventRuntimeState : nullptr, size_t(faceSector)))
         : IndoorLightingRuntime::ambientFromMinAmbientLightLevel(0);
     const auto sourcesForFace = [&](const std::vector<BakedStaticLightSource> &sources,
         const bx::Vec3 &minBounds, const bx::Vec3 &maxBounds)

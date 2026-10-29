@@ -41,6 +41,8 @@ public:
         bool affectsAllParty = false;
         bool hit = false;
         bool killed = false;
+        // A party missile's or spell's damage was a critical hit.
+        bool critical = false;
     };
 
     struct PendingCombatEventContext
@@ -133,7 +135,8 @@ public:
         int damage,
         int spellId,
         bool hit,
-        bool killed);
+        bool killed,
+        bool critical = false);
     const std::vector<CombatEvent> &pendingCombatEvents() const;
     void clearPendingCombatEvents();
     void handleAndClearPendingCombatEvents(PendingCombatEventContext &context);
@@ -164,7 +167,8 @@ private:
         int damage,
         int spellId,
         bool hit,
-        bool killed);
+        bool killed,
+        bool critical = false);
     static void handlePendingCombatEvents(
         PendingCombatEventContext &context,
         const std::vector<CombatEvent> &events);

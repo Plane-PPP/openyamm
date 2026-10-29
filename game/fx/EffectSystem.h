@@ -171,6 +171,8 @@ public:
         const std::array<float, 4> &rotation,
         float scale);
     bool stop(EffectHandle handle, EffectStopMode mode);
+    // Where the effect's beam ribbons (EffectRibbonDefinition::beam) end; they start at its position.
+    bool setBeamTarget(EffectHandle handle, const std::array<float, 3> &target);
     bool pause(EffectHandle handle, bool paused);
     bool restart(EffectHandle handle);
     bool seek(EffectHandle handle, float timeSeconds);
@@ -239,6 +241,8 @@ private:
         // Unit direction of the effect's last movement (setTransform); velocity-aligned fixed sprites follow it.
         std::array<float, 3> travelDirection = {1.0f, 0.0f, 0.0f};
         std::vector<bool> ribbonsStarted;
+        std::array<float, 3> beamTarget = {};
+        bool hasBeamTarget = false;
         std::shared_ptr<const EffectDefinition> definition;
         Random random;
         std::vector<EmitterState> emitters;
@@ -269,6 +273,7 @@ private:
     void updateModels(Slot &slot);
     void updateFixedSprites(uint32_t slotIndex, Slot &slot);
     void updateRibbons(uint32_t slotIndex, Slot &slot, float stepSeconds);
+    void updateBeam(EffectRibbon &ribbon, const Slot &slot, const std::array<float, 3> &start) const;
     bool hasRibbons(EffectHandle owner) const;
     std::optional<std::array<float, 3>> linkedPosition(
         const Slot &slot,

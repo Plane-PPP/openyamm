@@ -112,7 +112,9 @@ public:
         Obelisk,
         Seer,
         Misc,
-        Trainer
+        Trainer,
+        // Every Arcomage tavern and whether the party has beaten it (not autonotes).
+        Arcomage
     };
 
     enum class HouseBankInputMode : uint8_t
@@ -157,6 +159,8 @@ public:
         size_t sourceMemberIndex = 0;
         uint8_t sourceGridX = 0;
         uint8_t sourceGridY = 0;
+        // The bag an inventory item lies in (MAW's multibag): its operations run with that bag open.
+        uint8_t sourceBag = 0;
         EquipmentSlot sourceEquipmentSlot = EquipmentSlot::MainHand;
         size_t sourceWorldItemIndex = 0;
         size_t sourceLootItemIndex = 0;

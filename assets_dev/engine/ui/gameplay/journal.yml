@@ -945,6 +945,47 @@ elements:
     notes: 'APPROVED DESIGN DRAFT: preserve action. Shared renderer must draw plate, live label and icon children;
       use semantic state colours and disabled plate from design/button_states.yml. No legacy animated texture-name
       override.'
+  - id: JournalNotesArcomageButton
+    anchor: top_left
+    offset_x: 489.066667
+    offset_y: 422.4
+    width: 60.266667
+    height: 43.733333
+    z_index: 30
+    interactive: true
+    asset:
+      default: obsidian_journal_category_normal
+      highlighted: obsidian_journal_category_hover
+      pressed: obsidian_journal_category_pressed
+      selected: obsidian_journal_category_selected
+      disabled: obsidian_journal_category_disabled
+    children:
+    - id: JournalNotesArcomageButtonIcon
+      anchor: top_left
+      offset_y: 1.908333
+      width: 28.266667
+      height: 28.266667
+      asset:
+        default: obsidian_journal_icon_arcomage
+      offset_x: 16
+      z_index: 31
+    - id: JournalNotesArcomageButtonLabel
+      anchor: top_left
+      offset_y: 30.175
+      width: 52.2667
+      height: 11.65
+      text:
+        value: Arcomage
+        font: Fondamento
+        scale: 0.31666666666666665
+        color: '#e8d1a4'
+        align_x: center
+        align_y: middle
+      offset_x: 4
+      z_index: 31
+    notes: 'APPROVED DESIGN DRAFT: preserve action. Shared renderer must draw plate, live label and icon children;
+      use semantic state colours and disabled plate from design/button_states.yml. No legacy animated texture-name
+      override.'
   - id: JournalCloseButton
     anchor: top_left
     offset_x: 560

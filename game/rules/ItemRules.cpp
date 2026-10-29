@@ -60,7 +60,7 @@ void ItemRules::rollEnchantments(
         if (specialChance > 0 && std::uniform_int_distribution<int>(0, 99)(rng) < specialChance)
         {
             const std::optional<uint16_t> specialEnchantId = ItemEnchantRuntime::chooseSpecialEnchantId(
-                itemDefinition, tables.specialEnchants, clampedTreasureLevel, rng);
+                itemDefinition, tables.specialEnchants, clampedTreasureLevel, rng, request.worldId);
 
             if (specialEnchantId)
             {
@@ -81,7 +81,7 @@ void ItemRules::rollEnchantments(
     if (roll < standardChance)
     {
         const std::optional<uint16_t> standardEnchantId =
-            ItemEnchantRuntime::chooseStandardEnchantId(itemDefinition, tables.standardEnchants, rng);
+            ItemEnchantRuntime::chooseStandardEnchantId(itemDefinition, tables.standardEnchants, rng, request.worldId);
 
         if (standardEnchantId)
         {
@@ -100,7 +100,7 @@ void ItemRules::rollEnchantments(
     if (roll < standardChance + specialChance)
     {
         const std::optional<uint16_t> specialEnchantId = ItemEnchantRuntime::chooseSpecialEnchantId(
-            itemDefinition, tables.specialEnchants, clampedTreasureLevel, rng);
+            itemDefinition, tables.specialEnchants, clampedTreasureLevel, rng, request.worldId);
 
         if (specialEnchantId)
         {

@@ -732,7 +732,7 @@ bool GameplaySpellService::isQuickCastable(const PartySpellDescriptor &descripto
 
     if (descriptor.targetKind == PartySpellCastTargetKind::Character)
     {
-        return isSpellId(descriptor.spellId, SpellId::Heal);
+        return PartySpellSystem::hasQuickCastCharacterTarget(descriptor.spellId);
     }
 
     if (descriptor.targetKind == PartySpellCastTargetKind::Actor)

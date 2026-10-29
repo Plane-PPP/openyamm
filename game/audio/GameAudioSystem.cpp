@@ -1029,10 +1029,33 @@ void GameAudioSystem::stopAllPlayback()
     m_activeMusicTrack = 0;
     m_pendingMusicTrack = 0;
     m_activeMusicInstanceId = 0;
+    m_ambienceInstanceId = 0;
     m_activeMusicVolume = 0.0f;
     m_musicFadeVelocity = 0.0f;
     m_backgroundMusicPaused = false;
     evictUnusedMusicClips();
+}
+
+void GameAudioSystem::setAmbience(const std::string &soundName, float volume)
+{
+    if (m_ambienceInstanceId != 0)
+    {
+        stopSoundInstance(m_ambienceInstanceId);
+        m_ambienceInstanceId = 0;
+    }
+
+    if (soundName.empty())
+    {
+        return;
+    }
+
+    m_ambienceInstanceId = playSoundInstanceByName(soundName, PlaybackGroup::World, SoundScope::World, std::nullopt,
+        true);
+
+    if (m_ambienceInstanceId != 0)
+    {
+        setSoundInstanceVolume(m_ambienceInstanceId, PlaybackGroup::World, std::clamp(volume, 0.0f, 1.0f));
+    }
 }
 
 std::optional<uint32_t> GameAudioSystem::resolveCharacterVoiceId(const Character &character) const

@@ -1487,6 +1487,59 @@ void EffectSystem::updateFixedSprites(uint32_t slotIndex, Slot &slot)
     }
 }
 
+void EffectSystem::updateBeam(EffectRibbon &ribbon, const Slot &slot, const std::array<float, 3> &start) const
+{
+    // A beam has no trail: while it lasts, samples every sample_distance from its start to the beam target (the start
+    // itself without one); when it ends it is gone.
+    ribbon.points.clear();
+    if (!ribbon.emitting)
+    {
+        return;
+    }
+    const EffectRibbonDefinition &definition = ribbon.settings();
+    const std::array<float, 3> end = slot.hasBeamTarget ? slot.beamTarget : start;
+    const std::array<float, 3> span = add(end, multiply(start, -1.0f));
+    const float beamLength = length(span);
+    const size_t segments = std::clamp<size_t>(
+        size_t(std::ceil(beamLength / std::max(1.0f, definition.sampleDistance * slot.transform.scale))), 1u, 512u);
+    const uint32_t jitterStep = static_cast<uint32_t>(ribbon.elapsedSeconds * definition.jitterRate);
+    const float width = definition.width * slot.transform.scale;
+    const std::array<float, 4> color = sampleColorTrack(definition.colorKeys, 0.0f, definition.lifetimeSeconds,
+        slot.definition->timingProfile);
+    for (size_t index = 0; index <= segments; ++index)
+    {
+        const float along = float(index) / float(segments);
+        EffectRibbonPoint point;
+        point.position = add(start, multiply(span, along));
+        point.distance = beamLength * along;
+        point.serial = uint32_t(index);
+        point.width = width * sampleScalarTrack(definition.widthKeys, along, 1.0f);
+        point.color = color;
+        if (definition.jitter > 0.0f && index != 0 && index != segments)
+        {
+            uint32_t hash = (point.serial + 1u) * 2654435761u ^ (jitterStep + 7u) * 2246822519u;
+            hash ^= hash >> 15;
+            hash *= 2246822519u;
+            hash ^= hash >> 13;
+            const float random = static_cast<float>(hash & 0xffffu) / 32767.5f - 1.0f;
+            point.jitterOffset = random * definition.jitter * slot.transform.scale;
+        }
+        ribbon.points.push_back(point);
+    }
+}
+
+bool EffectSystem::setBeamTarget(EffectHandle handle, const std::array<float, 3> &target)
+{
+    Slot *pSlot = find(handle);
+    if (pSlot == nullptr)
+    {
+        return false;
+    }
+    pSlot->beamTarget = target;
+    pSlot->hasBeamTarget = true;
+    return true;
+}
+
 void EffectSystem::updateRibbons(uint32_t slotIndex, Slot &slot, float stepSeconds)
 {
     const EffectHandle owner = {slotIndex, slot.generation};
@@ -1525,6 +1578,11 @@ void EffectSystem::updateRibbons(uint32_t slotIndex, Slot &slot, float stepSecon
         ribbon.elapsedSeconds += stepSeconds;
         ribbon.scale = slot.transform.scale;
         ribbon.emitting = !slot.draining && slot.elapsedSeconds < definition.endSeconds;
+        if (definition.beam)
+        {
+            updateBeam(ribbon, slot, headPosition(definition));
+            continue;
+        }
         for (EffectRibbonPoint &point : ribbon.points)
         {
             point.ageSeconds += stepSeconds;

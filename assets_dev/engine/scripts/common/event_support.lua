@@ -196,6 +196,7 @@ support.varTag = support.varTag or {
     EnergyBladesSkill = 0x0141,
     ShieldTechSkill = 0x0142,
     HackingSkill = 0x0143,
+    CyberneticsSkill = 0x0144,
 }
 
 support.houseId = support.houseId or {
@@ -448,6 +449,7 @@ support.skills = support.skills or {
     EnergyBlades = 0x0141,
     ShieldTech = 0x0142,
     Hacking = 0x0143,
+    Cybernetics = 0x0144,
 }
 
 support.skillCheck = support.skillCheck or {
@@ -1009,6 +1011,11 @@ end
 
 function support.askQuestionWithAnswerSteps(eventId, fallbackStep, question, choices)
     evt.AskQuestionWithAnswerSteps(eventId, fallbackStep, question, choices)
+end
+
+-- The same answers as dialog buttons: a click continues the event at that answer's step.
+function support.askChoiceWithAnswerSteps(eventId, fallbackStep, question, choices)
+    evt.AskChoiceWithAnswerSteps(eventId, fallbackStep, question, choices)
 end
 
 function support.setMapMetadata(metadata)
@@ -1639,6 +1646,7 @@ ClearTransportRouteOverride = support.clearTransportRouteOverride
 CastSpellFromTo = support.castSpellFromTo
 PickRandomOption = support.pickRandomOption
 AskQuestionWithAnswerSteps = support.askQuestionWithAnswerSteps
+AskChoiceWithAnswerSteps = support.askChoiceWithAnswerSteps
 SetMapMetadata = support.setMapMetadata
 SetMapContextAction = support.setMapContextAction
 AppendMapOnLoadEvent = support.appendMapOnLoadEvent

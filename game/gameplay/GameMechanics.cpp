@@ -41,8 +41,16 @@ constexpr const char *ScatterBlasterContentFlag = "ScatterBlaster";
 constexpr uint8_t ScatterBlasterProjectileCount = 7;
 constexpr float ScatterBlasterSpreadArcRadians = 3.14159265358979323846f / 3.0f;
 constexpr int ScatterBlasterExtraRecoveryTicks = 20;
-// Hesper's Kreegan melee weapons: their classic weapon skill as usual, plus Energy Blades on top, like Armsmaster.
+// Hesper's Kreegan weapons: their classic weapon skill as usual (Blaster for the guns, Sword, Axe... for the blades),
+// plus Energy Guns or Energy Blades on top, like Armsmaster: a share of the weapon's own damage per rank by mastery.
 constexpr const char *EnergyBladeContentFlag = "EnergyBlade";
+constexpr const char *EnergyGunContentFlag = "EnergyGun";
+constexpr std::array<int, 4> EnergyGunsPercentPerRank = {1, 4, 7, 10};
+constexpr std::array<int, 4> EnergyBladesPercentPerRank = {2, 6, 10, 15};
+// An energy gun's own base recovery (content flag Recovery<ticks>, e.g. Recovery90), else the blaster's 30; it recovers
+// at most this fast, whatever the setting for classic blasters (blaster_min_recovery).
+constexpr const char *RecoveryContentFlagPrefix = "Recovery";
+constexpr int EnergyGunMinimumRecoveryTicks = 15;
 
 constexpr int ParameterBonusThresholds[29] = {
     500, 400, 350, 300, 275, 250, 225, 200, 175, 150, 125, 100, 75, 50, 40,
@@ -471,7 +479,7 @@ int baseRecoveryTicksForSkillName(const std::string &skillName)
         return 100;
     }
 
-    if (skillName == "Blaster" || skillName == "EnergyGuns")
+    if (skillName == "Blaster")
     {
         return 30;
     }
@@ -778,16 +786,89 @@ bool isWetsuitItem(const ItemDefinition &itemDefinition)
     return itemDefinition.itemId == Mm7WetsuitItemId;
 }
 
-// Classic blasters (Blaster skill) and Hesper's energy guns (Energy Guns skill) fire the same blaster bolt.
+// Classic blasters and Hesper's energy guns (Blaster items flagged EnergyGun) fire the same blaster bolt.
 bool isBlasterItem(const ItemDefinition &itemDefinition)
 {
-    const std::string skillName = canonicalSkillName(itemDefinition.skillGroup);
-    return skillName == "Blaster" || skillName == "EnergyGuns";
+    return canonicalSkillName(itemDefinition.skillGroup) == "Blaster";
 }
 
 bool isEnergyGunItem(const ItemDefinition &itemDefinition)
 {
-    return canonicalSkillName(itemDefinition.skillGroup) == "EnergyGuns";
+    return isBlasterItem(itemDefinition) && itemDefinition.hasContentFlag(EnergyGunContentFlag);
+}
+
+// The share of a Kreegan weapon's own damage its tech skill adds, in per cent: rank times the mastery's rate.
+int techWeaponDamagePercent(const Character &character, const char *pSkillName, const std::array<int, 4> &rates)
+{
+    const int level = std::max(0, skillLevel(character, pSkillName));
+    const SkillMastery mastery = skillMastery(character, pSkillName);
+    const int rate = mastery >= SkillMastery::Grandmaster ? rates[3] : mastery >= SkillMastery::Master ? rates[2]
+        : mastery >= SkillMastery::Expert ? rates[1] : rates[0];
+    return level * rate;
+}
+
+// The largest <percent> of the character's equipped item flags named <prefix><percent> (Coupler30), 0 without one:
+// two implants of a family do not add up.
+int equippedFlagPercent(const Character &character, std::string_view prefix)
+{
+    int best = 0;
+    for (const std::string &flag : character.equippedItemEffectFlags)
+    {
+        if (flag.size() > prefix.size() && flag.rfind(prefix, 0) == 0
+            && std::all_of(flag.begin() + prefix.size(), flag.end(), [](char c) { return c >= '0' && c <= '9'; }))
+        {
+            best = std::max(best, std::stoi(flag.substr(prefix.size())));
+        }
+    }
+    return best;
+}
+
+// The sum of a list's ShieldDamage<percent> flags.
+int shieldDamageFlagPercent(const std::vector<std::string> &flags)
+{
+    int percent = 0;
+    for (const std::string &flag : flags)
+    {
+        constexpr std::string_view Prefix = "ShieldDamage";
+        if (flag.size() > Prefix.size() && flag.rfind(Prefix, 0) == 0
+            && std::all_of(flag.begin() + Prefix.size(), flag.end(), [](char c) { return c >= '0' && c <= '9'; }))
+        {
+            percent += std::stoi(flag.substr(Prefix.size()));
+        }
+    }
+    return percent;
+}
+
+// A weapon's Workshop mod's ShieldDamage<percent> (the Shieldbreaker), 0 without one.
+int workshopModShieldPercent(const EquippedItemRuntimeState &runtimeState, const ItemTable *pItemTable)
+{
+    const WorkshopModDefinition *pMod = pItemTable != nullptr && runtimeState.workshopModId != 0
+        ? pItemTable->workshopMod(runtimeState.workshopModId) : nullptr;
+    return pMod != nullptr ? shieldDamageFlagPercent(pMod->effect.flags) : 0;
+}
+
+// A Kreegan weapon's damage to raised shields: +25 % from Expert in its tech skill, its ShieldDamage<percent> flag and
+// its Workshop mod's; together at most +100 % (ITEMS, "Stacking").
+float techWeaponShieldDamageMultiplier(const ItemDefinition &weapon, SkillMastery mastery, int modPercent)
+{
+    const int percent = (mastery >= SkillMastery::Expert ? 25 : 0) + shieldDamageFlagPercent(weapon.contentFlags)
+        + modPercent;
+    return 1.0f + float(std::min(percent, 100)) / 100.0f;
+}
+
+std::optional<int> recoveryTicksContentFlag(const ItemDefinition &itemDefinition)
+{
+    for (const std::string &flag : itemDefinition.contentFlags)
+    {
+        if (flag.size() > std::char_traits<char>::length(RecoveryContentFlagPrefix)
+            && flag.rfind(RecoveryContentFlagPrefix, 0) == 0
+            && std::all_of(flag.begin() + std::char_traits<char>::length(RecoveryContentFlagPrefix), flag.end(),
+                [](char character) { return character >= '0' && character <= '9'; }))
+        {
+            return std::stoi(flag.substr(std::char_traits<char>::length(RecoveryContentFlagPrefix)));
+        }
+    }
+    return std::nullopt;
 }
 
 bool isWeaponItem(const ItemDefinition &itemDefinition)
@@ -952,21 +1033,20 @@ int resolveArmsmasterDamageBonus(const Character &character)
     return multiplier * level;
 }
 
-// Energy Guns: +1 damage per rank at every mastery (its shield and exposed-body bonuses come with shields).
-int resolveEnergyGunDamageSkillBonus(const Character &character)
+// Energy Blades with an energy blade in the main hand, on top of its classic weapon skill: a share of the blade's own
+// damage (its minimum or maximum).
+int resolveEnergyBladeDamageBonus(const Character &character, const EquippedItems &equippedItems, bool maximum)
 {
-    return std::max(0, skillLevel(character, "EnergyGuns"));
-}
+    const ItemDefinition *pWeapon = equippedItems.pMainHand;
 
-// Energy Blades: +1 damage per rank with an energy blade, on top of the blade's classic weapon skill.
-int resolveEnergyBladeDamageBonus(const Character &character, const ItemDefinition *pWeapon)
-{
     if (pWeapon == nullptr || !pWeapon->hasContentFlag(EnergyBladeContentFlag))
     {
         return 0;
     }
 
-    return std::max(0, skillLevel(character, "EnergyBlades"));
+    const int weaponDamage = maximum ? equippedMaxDamage(equippedItems, MainHandItemIndex, *pWeapon)
+                                     : equippedMinDamage(equippedItems, MainHandItemIndex, *pWeapon);
+    return weaponDamage * techWeaponDamagePercent(character, "EnergyBlades", EnergyBladesPercentPerRank) / 100;
 }
 
 int resolveBlasterDamageSkillBonus(const Character &character, CharacterAttackTuning attackTuning)
@@ -991,15 +1071,15 @@ std::pair<int, int> resolveBlasterDamageRange(
     const ItemDefinition *pBlasterItem,
     CharacterAttackTuning attackTuning)
 {
-    const int skillDamageBonus = pBlasterItem != nullptr && isEnergyGunItem(*pBlasterItem)
-        ? resolveEnergyGunDamageSkillBonus(character)
-        : resolveBlasterDamageSkillBonus(character, attackTuning);
-    const int minimumDamage = std::max(
-        0,
-        (pBlasterItem != nullptr ? weaponMinDamage(*pBlasterItem) : 0) + skillDamageBonus);
-    const int maximumDamage = std::max(
-        minimumDamage,
-        (pBlasterItem != nullptr ? weaponMaxDamage(*pBlasterItem) : 0) + skillDamageBonus);
+    const int skillDamageBonus = resolveBlasterDamageSkillBonus(character, attackTuning);
+    // An energy gun adds Energy Guns' share of its own damage.
+    const int energyPercent = pBlasterItem != nullptr && isEnergyGunItem(*pBlasterItem)
+        ? techWeaponDamagePercent(character, "EnergyGuns", EnergyGunsPercentPerRank) : 0;
+    const int weaponMinimum = pBlasterItem != nullptr ? weaponMinDamage(*pBlasterItem) : 0;
+    const int weaponMaximum = pBlasterItem != nullptr ? weaponMaxDamage(*pBlasterItem) : 0;
+    const int minimumDamage = std::max(0, weaponMinimum + weaponMinimum * energyPercent / 100 + skillDamageBonus);
+    const int maximumDamage =
+        std::max(minimumDamage, weaponMaximum + weaponMaximum * energyPercent / 100 + skillDamageBonus);
     return {minimumDamage, maximumDamage};
 }
 
@@ -1023,11 +1103,6 @@ int resolveMeleeAttackSkillBonus(const Character &character, const EquippedItems
         {
             const int multiplier = masteryMultiplier(skillMastery(character, "Blaster"), 1, 2, 3, 5);
             return multiplier * level;
-        }
-
-        if (skillName == "EnergyGuns")
-        {
-            return level;
         }
 
         if (skillName == "Staff" && skillMastery(character, "Staff") == SkillMastery::Grandmaster)
@@ -1102,21 +1177,17 @@ int resolveClassicMeleeDamageSkillBonus(
         return resolveBlasterDamageSkillBonus(character, attackTuning);
     }
 
-    if (skillName == "EnergyGuns")
-    {
-        return resolveEnergyGunDamageSkillBonus(character);
-    }
-
     return armsmasterBonus;
 }
 
 int resolveMeleeDamageSkillBonus(
     const Character &character,
     const EquippedItems &equippedItems,
-    CharacterAttackTuning attackTuning)
+    CharacterAttackTuning attackTuning,
+    bool maximum)
 {
     return resolveClassicMeleeDamageSkillBonus(character, equippedItems, attackTuning)
-        + resolveEnergyBladeDamageBonus(character, equippedItems.pMainHand);
+        + resolveEnergyBladeDamageBonus(character, equippedItems, maximum);
 }
 
 int resolveRangedAttackSkillBonus(const Character &character, const EquippedItems &equippedItems)
@@ -1797,6 +1868,13 @@ float resolveAttackRecoverySeconds(
         weaponRecoveryTicks += ScatterBlasterExtraRecoveryTicks;
     }
 
+    const bool energyGun = usesBlaster && pWeapon != nullptr && isEnergyGunItem(*pWeapon);
+
+    if (energyGun)
+    {
+        weaponRecoveryTicks = recoveryTicksContentFlag(*pWeapon).value_or(weaponRecoveryTicks);
+    }
+
     int shieldRecoveryTicks = 0;
 
     if (equippedItems.pOffHand != nullptr)
@@ -1876,7 +1954,38 @@ float resolveAttackRecoverySeconds(
     }
     int minimumRecoveryTicks = OeMinimumMeleeRecoveryTicks;
 
-    if (mode == CharacterAttackMode::Blaster)
+    // Hesper's items: ticks off an energy gun's or a melee strike's recovery (item_effects), a melee recovery share
+    // (MeleeRecovery<percent>Pct) and floor (MeleeAttackFloor<ticks>, MeleeAttackFloorMinus5).
+    if (mode == CharacterAttackMode::Melee)
+    {
+        recoveryTicks -= character.meleeRecoveryReductionTicks;
+        for (const std::string &flag : character.equippedItemEffectFlags)
+        {
+            if (flag == "MeleeAttackFloorMinus5")
+            {
+                continue;
+            }
+            if (flag.rfind("MeleeRecovery", 0) == 0 && flag.size() > 16 && flag.substr(flag.size() - 3) == "Pct")
+            {
+                recoveryTicks = recoveryTicks * (100 - std::stoi(flag.substr(13, flag.size() - 16))) / 100;
+            }
+            else if (flag.rfind("MeleeAttackFloor", 0) == 0)
+            {
+                minimumRecoveryTicks = std::min(minimumRecoveryTicks, std::stoi(flag.substr(16)));
+            }
+        }
+        if (character.equippedItemEffectFlags.contains("MeleeAttackFloorMinus5"))
+        {
+            minimumRecoveryTicks -= 5;
+        }
+    }
+
+    if (energyGun)
+    {
+        recoveryTicks -= character.gunRecoveryReductionTicks;
+        minimumRecoveryTicks = EnergyGunMinimumRecoveryTicks;
+    }
+    else if (mode == CharacterAttackMode::Blaster)
     {
         minimumRecoveryTicks = std::clamp(attackTuning.blasterMinimumRecoveryTicks, 0, 300);
     }
@@ -2426,7 +2535,8 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     summary.fireResistance = makeResistanceValue(
         fireBase,
         fireActual,
-        character.permanentImmunities.fire || character.magicalImmunities.fire);
+        character.permanentImmunities.fire || character.magicalImmunities.fire
+            || character.equippedItemEffectFlags.contains("FireImmune"));
     summary.airResistance = makeResistanceValue(
         airBase,
         airActual,
@@ -2479,7 +2589,7 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
         1,
         meleeMightBonus
             + resolveMeleeMinDamageItemBonus(equippedItems)
-            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning)
+            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, false)
             + character.weaponEnchantmentDamageBonus
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
@@ -2487,7 +2597,7 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
         1,
         meleeMightBonus
             + resolveMeleeMaxDamageItemBonus(equippedItems)
-            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning)
+            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, true)
             + character.weaponEnchantmentDamageBonus
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
@@ -2589,6 +2699,61 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
     const SpellTable *pSpellTable,
     CharacterAttackTuning attackTuning)
 {
+    CharacterAttackProfile profile = buildBaseCharacterAttackProfile(character, pItemTable, pSpellTable, attackTuning);
+
+    // Hesper's item effects: per-cent melee damage, and ranged damage with bows, blasters and guns.
+    const auto scale = [](int &damage, int percent)
+    {
+        damage = std::max(0, damage + damage * percent / 100);
+    };
+    if (character.meleeDamagePercent != 0)
+    {
+        scale(profile.meleeMinDamage, character.meleeDamagePercent);
+        scale(profile.meleeMaxDamage, character.meleeDamagePercent);
+    }
+    if (character.rangedDamagePercent != 0 && !profile.hasWand && !profile.hasDragonBreath)
+    {
+        scale(profile.rangedMinDamage, character.rangedDamagePercent);
+        scale(profile.rangedMaxDamage, character.rangedDamagePercent);
+    }
+
+    // A world's own weapon enchantments (Hesper's): more to shields (with the rest at most +100 %) and to bodies
+    // without one, the overload chance, and the added Energy damage on the weapon's range.
+    const auto applyWorldEnchant = [](const WorldEnchantEffect &effect, ShieldHitModifiers &modifiers, int &minimum,
+                                       int &maximum)
+    {
+        modifiers.shieldDamageMultiplier =
+            std::min(2.0f, modifiers.shieldDamageMultiplier + float(effect.shieldDamagePercent) / 100.0f);
+        modifiers.exposedMultiplier *= 1.0f + float(effect.exposedDamagePercent) / 100.0f;
+        minimum += effect.energyDamageMinimum;
+        maximum += effect.energyDamageMaximum;
+    };
+    applyWorldEnchant(character.meleeWeaponEnchant, profile.meleeShieldModifiers, profile.meleeMinDamage,
+        profile.meleeMaxDamage);
+    profile.meleeShieldOverloadChance = float(character.meleeWeaponEnchant.overloadChancePercent) / 100.0f;
+
+    if (profile.hasBow || profile.hasBlaster)
+    {
+        applyWorldEnchant(character.rangedWeaponEnchant, profile.rangedShieldModifiers, profile.rangedMinDamage,
+            profile.rangedMaxDamage);
+    }
+
+    return profile;
+}
+
+ShieldHitModifiers GameMechanics::spellShieldModifiers(const Character &character)
+{
+    ShieldHitModifiers modifiers;
+    modifiers.energyShare = float(equippedFlagPercent(character, "Resonator")) / 100.0f;
+    return modifiers;
+}
+
+CharacterAttackProfile GameMechanics::buildBaseCharacterAttackProfile(
+    const Character &character,
+    const ItemTable *pItemTable,
+    const SpellTable *pSpellTable,
+    CharacterAttackTuning attackTuning)
+{
     CharacterAttackProfile profile = {};
     const EquippedItems equippedItems = resolveEquippedItems(character, pItemTable);
     const CharacterSheetSummary summary = buildCharacterSheetSummary(
@@ -2623,6 +2788,22 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         equippedItems.pMainHand != nullptr && equippedItems.pMainHand->hasContentFlag(EnergyBladeContentFlag);
     profile.meleeShieldTier = energyBlade ? ShieldAttackTier::KreeganEnergy : ShieldAttackTier::Physical;
     profile.meleeShieldOverload = energyBlade && skillMastery(character, "EnergyBlades") == SkillMastery::Grandmaster;
+    // The Arc Coupler: a share of an ordinary weapon's hit strikes raised shields as Kreegan energy.
+    const float couplerShare = float(equippedFlagPercent(character, "Coupler")) / 100.0f;
+    const int meleeModPercent = workshopModShieldPercent(character.equipmentRuntime.mainHand, pItemTable);
+    if (!energyBlade)
+    {
+        profile.meleeShieldModifiers.energyShare = couplerShare;
+        profile.meleeShieldModifiers.shieldDamageMultiplier = 1.0f + float(std::min(meleeModPercent, 100)) / 100.0f;
+    }
+    if (energyBlade)
+    {
+        // Expert: +25 % to shields; Master: shield cleave.
+        const SkillMastery bladesMastery = skillMastery(character, "EnergyBlades");
+        profile.meleeShieldModifiers.shieldDamageMultiplier =
+            techWeaponShieldDamageMultiplier(*equippedItems.pMainHand, bladesMastery, meleeModPercent);
+        profile.meleeShieldModifiers.cleave = bladesMastery >= SkillMastery::Master;
+    }
     CharacterAttackMode rangedRecoveryMode = CharacterAttackMode::Bow;
 
     if (profile.hasDragonBreath)
@@ -2670,7 +2851,7 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         1,
         meleeMightBonus
             + resolveMeleeMinDamageItemBonus(equippedItems)
-            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning)
+            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, false)
             + character.weaponEnchantmentDamageBonus
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
@@ -2678,14 +2859,14 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         1,
         meleeMightBonus
             + resolveMeleeMaxDamageItemBonus(equippedItems)
-            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning)
+            + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, true)
             + character.weaponEnchantmentDamageBonus
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
 
     profile.axe.mightBonus = meleeMightBonus;
     profile.axe.armsmasterBonus = resolveArmsmasterDamageBonus(character);
-    profile.axe.weaponSkillBonus = resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning)
+    profile.axe.weaponSkillBonus = resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, false)
         - profile.axe.armsmasterBonus;
     profile.axe.enchantmentBonus = character.weaponEnchantmentDamageBonus;
     profile.axe.flatBonus = character.permanentBonuses.meleeDamage + character.magicalBonuses.meleeDamage;
@@ -2706,6 +2887,26 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
         const ItemDefinition *pBlasterItem = mainHandIsBlaster ? equippedItems.pMainHand : equippedItems.pBow;
         profile.rangedShieldTier = pBlasterItem != nullptr && isEnergyGunItem(*pBlasterItem)
             ? ShieldAttackTier::KreeganEnergy : ShieldAttackTier::ClassicBlaster;
+
+        const int rangedModPercent = workshopModShieldPercent(
+            mainHandIsBlaster ? character.equipmentRuntime.mainHand : character.equipmentRuntime.bow, pItemTable);
+        if (pBlasterItem == nullptr || !isEnergyGunItem(*pBlasterItem))
+        {
+            profile.rangedShieldModifiers.energyShare = float(equippedFlagPercent(character, "Coupler")) / 100.0f;
+            profile.rangedShieldModifiers.shieldDamageMultiplier =
+                1.0f + float(std::min(rangedModPercent, 100)) / 100.0f;
+        }
+        if (pBlasterItem != nullptr && isEnergyGunItem(*pBlasterItem))
+        {
+            // Expert: +25 % to shields; Master: +20 % on exposed bodies; Grandmaster: homing shots (not a scatter gun).
+            const SkillMastery gunsMastery = skillMastery(character, "EnergyGuns");
+            profile.rangedShieldModifiers.shieldDamageMultiplier =
+                techWeaponShieldDamageMultiplier(*pBlasterItem, gunsMastery, rangedModPercent);
+            profile.rangedShieldModifiers.exposedMultiplier = gunsMastery >= SkillMastery::Master ? 1.2f : 1.0f;
+            profile.rangedHoming = gunsMastery >= SkillMastery::Grandmaster
+                && std::none_of(pBlasterItem->contentFlags.begin(), pBlasterItem->contentFlags.end(),
+                    [](const std::string &flag) { return flag.rfind("Scatter", 0) == 0; });
+        }
     }
 
     if (profile.hasDragonBreath && pDragonAbility != nullptr)
@@ -2762,6 +2963,7 @@ CharacterAttackProfile GameMechanics::buildCharacterAttackProfile(
     }
     else if (summary.combat.shoot.has_value())
     {
+        profile.rangedShieldModifiers.energyShare = float(equippedFlagPercent(character, "Coupler")) / 100.0f;
         profile.rangedAttackBonus = summary.combat.shoot;
         const std::string rangedSkillName = canonicalSkillName(
             equippedItems.pBow != nullptr ? equippedItems.pBow->skillGroup : std::string());
@@ -2893,6 +3095,11 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
     result.voiceHook = "attack";
     result.shieldTier = result.mode == CharacterAttackMode::Melee ? profile.meleeShieldTier : profile.rangedShieldTier;
     result.shieldOverload = result.mode == CharacterAttackMode::Melee && profile.meleeShieldOverload;
+    result.shieldOverloadChance =
+        result.mode == CharacterAttackMode::Melee ? profile.meleeShieldOverloadChance : 0.0f;
+    result.shieldModifiers =
+        result.mode == CharacterAttackMode::Melee ? profile.meleeShieldModifiers : profile.rangedShieldModifiers;
+    result.homing = result.mode == CharacterAttackMode::Blaster && profile.rangedHoming;
 
     if (!result.canAttack)
     {
@@ -3509,6 +3716,12 @@ int GameMechanics::resolveCharacterIncomingDamage(
         {
             pObservation->afterPassive = resolvedDamage;
         }
+    }
+
+    // Hesper's Damping Weave (item_effects energy_damage_taken_pct).
+    if (damageType == CombatDamageType::Energy && character.energyDamageTakenPercent != 0)
+    {
+        resolvedDamage = resolvedDamage * std::max(0, 100 + character.energyDamageTakenPercent) / 100;
     }
 
     return std::max(0, resolvedDamage);

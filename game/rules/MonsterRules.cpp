@@ -144,6 +144,12 @@ size_t MonsterRules::arenaMinimumTypes() const
     return 0;
 }
 
+int MonsterRules::arenaDrawLevel(
+    const MonsterTable::MonsterStatsEntry &stats, const MonsterTable &, const MapStatsEntry &) const
+{
+    return stats.level;
+}
+
 int16_t MonsterRules::arenaWaveMonster(int, const MonsterTable &) const
 {
     return 0;

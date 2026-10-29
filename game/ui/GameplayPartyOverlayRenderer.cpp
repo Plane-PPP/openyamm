@@ -12,6 +12,7 @@
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/AwardRuntime.h"
 #include "game/gameplay/GameplayInputFrame.h"
+#include "game/gameplay/JournalArcomageRuntime.h"
 #include "game/gameplay/JournalQuestRuntime.h"
 #include "game/events/EvtEnums.h"
 #include "game/gameplay/StoryTextFormatter.h"
@@ -917,6 +918,8 @@ std::string journalNotesCategoryTitle(GameplayUiController::JournalNotesCategory
             return "Miscellaneous";
         case GameplayUiController::JournalNotesCategory::Trainer:
             return "Teacher Locations";
+        case GameplayUiController::JournalNotesCategory::Arcomage:
+            return "Arcomage";
     }
 
     return "Notes";
@@ -2141,7 +2144,7 @@ std::string skillPageMasteryDisplayName(SkillMastery mastery)
 }
 
 using BagOverviewItemsRenderer =
-    std::function<void(const std::vector<InventoryItem> &, const InventoryBagOverview::Slot &, float, bool)>;
+    std::function<void(const std::vector<InventoryItem> &, const InventoryBagOverview::Slot &, float, uint8_t)>;
 
 // The size of the overview's bag under the point against the full-size grid, or 1 elsewhere.
 float bagOverviewFractionAt(GameplayScreenRuntime &context, int width, int height, float x, float y)
@@ -2270,7 +2273,6 @@ void renderBagOverview(
     constexpr float GridTop = 8.0f;
     constexpr float GridWidth = 448.0f;
     constexpr float GridHeight = 288.0f;
-    const int open = character.rulesetState.currentBag;
     const float line = std::max(1.0f, std::round(scale));
 
     for (int bag = 0; bag < InventoryBagOverview::Bags; ++bag)
@@ -2292,7 +2294,7 @@ void renderBagOverview(
             context.submitHudTexturedQuad(*edge, slot.x + slot.width, slot.y, line, slot.height);
         }
 
-        renderItems(InventoryBags::itemsInBag(character, uint8_t(bag)), slot, scale, bag == open);
+        renderItems(InventoryBags::itemsInBag(character, uint8_t(bag)), slot, scale, uint8_t(bag));
         // The bag's tags in its bottom right corner, the place a bag fills last.
         const float tagSize = std::round(16.0f * scale);
         const float tagInset = std::round(2.0f * scale);
@@ -4492,7 +4494,8 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
                 || (tab == "Story" && journalScreen.view == GameplayUiController::JournalView::Story)
                 || (tab == "Notes" && journalScreen.view == GameplayUiController::JournalView::Notes)
                 || (tab == "Progress" && journalScreen.view == GameplayUiController::JournalView::Progress);
-            const std::array<const char *, 6> categories = {"Potion", "Fountain", "Obelisk", "Seer", "Misc", "Trainer"};
+            const std::array<const char *, 7> categories = {
+                "Potion", "Fountain", "Obelisk", "Seer", "Misc", "Trainer", "Arcomage"};
             for (size_t i = 0; i < categories.size(); ++i)
             {
                 selected |= id == std::string("JournalNotes") + categories[i] + "Button"
@@ -4971,6 +4974,7 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
             renderInteractiveTextureLayout("JournalNotesSeerButton");
             renderInteractiveTextureLayout("JournalNotesMiscButton");
             renderInteractiveTextureLayout("JournalNotesTrainerButton");
+            renderInteractiveTextureLayout("JournalNotesArcomageButton");
 
             const GameplayScreenRuntime::HudLayoutElement *pSearchLayout =
                 context.findHudLayoutElement("JournalNotesSearch");
@@ -5012,6 +5016,18 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
                     if (categoryMatches && (search.empty() || toLowerCopy(entry.text).find(search) != std::string::npos))
                     {
                         noteTexts.push_back(entry.text);
+                    }
+                }
+            }
+
+            if (pParty != nullptr && context.houseTable() != nullptr
+                && journalScreen.notesCategory == GameplayUiController::JournalNotesCategory::Arcomage)
+            {
+                for (const std::string &text : buildArcomageTavernTexts(*context.houseTable(), context.mapStats(), *pParty))
+                {
+                    if (search.empty() || toLowerCopy(text).find(search) != std::string::npos)
+                    {
+                        noteTexts.push_back(text);
                     }
                 }
             }
@@ -6345,6 +6361,13 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
         if (!setDescription.empty())
         {
             itemSpecialDetail += (itemSpecialDetail.empty() ? std::string {} : "\n") + setDescription;
+        }
+
+        // A Workshop mod fitted to it.
+        if (const WorkshopModDefinition *pMod = resolvedItemState.workshopModId != 0
+                ? context.itemTable()->workshopMod(resolvedItemState.workshopModId) : nullptr)
+        {
+            itemSpecialDetail += (itemSpecialDetail.empty() ? std::string {} : "\n") + "Mod: " + pMod->name;
         }
 
         rulesetLines = itemRules.inspectLines(
@@ -9913,6 +9936,50 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                     context.submitHudTexturedQuad(*slotFill, slot->x, slot->y, slot->width, slot->height);
                 }
             }
+            // The Augment row: Cybernetics opens the sockets left to right; the implants' icons fit their sockets.
+            if (pCharacter != nullptr && pCharacter->showsImplantSockets() && slotBorder && slotFill)
+            {
+                const std::optional<GameplayHudTextureHandle> closedFill =
+                    context.gameplayUiRuntime().ensureSolidHudTextureLoaded("__obsidian_implant_closed__", 0xff0a0d0bu);
+                for (size_t socket = 0; socket < pCharacter->implants.size(); ++socket)
+                {
+                    const std::string socketId = "CharacterDollImplant" + std::to_string(socket + 1) + "Slot";
+                    const std::optional<GameplayResolvedHudLayoutElement> slot =
+                        context.resolveHudLayoutElement(socketId, width, height, 0, 0);
+                    if (!slot)
+                    {
+                        continue;
+                    }
+                    const bool open = socket < pCharacter->implantSocketCount();
+                    context.submitHudTexturedQuad(*slotBorder, slot->x - slot->scale, slot->y - slot->scale,
+                        slot->width + 2 * slot->scale, slot->height + 2 * slot->scale);
+                    context.submitHudTexturedQuad(open || !closedFill ? *slotFill : *closedFill,
+                        slot->x, slot->y, slot->width, slot->height);
+                    const ItemDefinition *pImplant = pCharacter->implants[socket] != 0 && context.itemTable() != nullptr
+                        ? context.itemTable()->get(pCharacter->implants[socket]) : nullptr;
+                    const std::optional<GameplayHudTextureHandle> icon = pImplant != nullptr
+                        ? context.gameplayUiRuntime().ensureItemIconTextureLoaded(pImplant->iconName) : std::nullopt;
+                    if (icon && icon->width > 0 && icon->height > 0)
+                    {
+                        const float fit = std::min(slot->width / float(icon->width), slot->height / float(icon->height));
+                        const float iconWidth = float(icon->width) * fit;
+                        const float iconHeight = float(icon->height) * fit;
+                        const float iconX = slot->x + (slot->width - iconWidth) * 0.5f;
+                        const float iconY = slot->y + (slot->height - iconHeight) * 0.5f;
+                        context.submitHudTexturedQuad(*icon, iconX, iconY, iconWidth, iconHeight);
+                        // Right-click inspects it like any item.
+                        GameplayRenderedInspectableHudItem inspectable = {};
+                        inspectable.objectDescriptionId = pImplant->itemId;
+                        inspectable.textureName = icon->textureName;
+                        inspectable.textureUsesItemIconTransparency = true;
+                        inspectable.x = iconX;
+                        inspectable.y = iconY;
+                        inspectable.width = iconWidth;
+                        inspectable.height = iconHeight;
+                        context.addRenderedInspectableHudItem(inspectable);
+                    }
+                }
+            }
             continue;
         }
         if (normalizedLayoutId == "charactermagnifybutton")
@@ -10478,13 +10545,12 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                     pInventoryGridLayout->width,
                     pInventoryGridLayout->height);
 
-            // One bag's items on its grid; the open bag's are the inventory's (inspected with its actions), another
-            // bag's in the compact view are only looked at.
+            // One bag's items on its grid, each inspected with its actions in the bag it lies in.
             const auto renderBagItems =
                 [&context, characterSourceIndex, inspectedCharacterCanAct](
                     const std::vector<InventoryItem> &items,
                     const InventoryGridMetrics &gridMetrics,
-                    bool openBag)
+                    uint8_t bag)
                 {
                     for (const InventoryItem &item : items)
                     {
@@ -10532,12 +10598,13 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                             inspectableItem.hasItemState = true;
                             inspectableItem.itemState = item;
                             inspectableItem.sourceType =
-                                context.isAdventurersInnCharacterSourceActive() || !openBag
+                                context.isAdventurersInnCharacterSourceActive()
                                     ? GameplayUiController::ItemInspectSourceType::None
                                     : GameplayUiController::ItemInspectSourceType::Inventory;
                             inspectableItem.sourceMemberIndex = characterSourceIndex;
                             inspectableItem.sourceGridX = item.gridX;
                             inspectableItem.sourceGridY = item.gridY;
+                            inspectableItem.sourceBag = bag;
                             inspectableItem.textureName = pItemDefinition->iconName;
                             inspectableItem.textureUsesItemIconTransparency = true;
                             inspectableItem.x = itemRect.x;
@@ -10552,12 +10619,13 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
             if (resolvedInventoryGrid.has_value() && GameplayHudOverlaySupport::bagOverviewActive(context))
             {
                 renderBagOverview(context, *resolvedInventoryGrid, *pCharacter, characterMouseX, characterMouseY,
-                    [&renderBagItems](const std::vector<InventoryItem> &items, const InventoryBagOverview::Slot &bag,
-                        float gridScale, bool openBag)
+                    [&renderBagItems](const std::vector<InventoryItem> &items, const InventoryBagOverview::Slot &slot,
+                        float gridScale, uint8_t bag)
                     {
                         renderBagItems(items,
-                            computeInventoryGridMetrics(bag.x, bag.y, bag.width, bag.height, gridScale * bag.fraction),
-                            openBag);
+                            computeInventoryGridMetrics(slot.x, slot.y, slot.width, slot.height,
+                                gridScale * slot.fraction),
+                            bag);
                     });
             }
             else if (resolvedInventoryGrid.has_value())
@@ -10568,7 +10636,7 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                     resolvedInventoryGrid->width,
                     resolvedInventoryGrid->height,
                     resolvedInventoryGrid->scale);
-                renderBagItems(pCharacter->inventory, gridMetrics, true);
+                renderBagItems(pCharacter->inventory, gridMetrics, pCharacter->rulesetState.currentBag);
             }
         }
     }
@@ -10595,8 +10663,11 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                 continue;
             }
 
-            if (it->sourceType != GameplayUiController::ItemInspectSourceType::Inventory
-                && it->sourceType != GameplayUiController::ItemInspectSourceType::Equipment)
+            // A spell takes a worn item or one of the open bag, not of another bag in the overview.
+            if ((it->sourceType != GameplayUiController::ItemInspectSourceType::Inventory
+                    && it->sourceType != GameplayUiController::ItemInspectSourceType::Equipment)
+                || (it->sourceType == GameplayUiController::ItemInspectSourceType::Inventory
+                    && it->sourceBag != pCharacter->rulesetState.currentBag))
             {
                 continue;
             }

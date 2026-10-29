@@ -21,11 +21,9 @@ double PotionRules::estimatedPool(PotionPool, int) const
 
 uint32_t PotionRules::mixingAlchemyLevel(const Character &alchemist) const
 {
+    // The effective level, as the original brews: items and hired Herbalists or Apothecaries add to the trained level.
     const CharacterSkill *pSkill = alchemist.findSkill("Alchemy");
-    return pSkill != nullptr
-        ? uint32_t(std::clamp<int64_t>(int64_t(pSkill->level) + alchemist.skillBonus("Alchemy"),
-            0, std::numeric_limits<uint32_t>::max()))
-        : 0;
+    return pSkill != nullptr ? uint32_t(std::max(0, int(pSkill->level) + alchemist.skillBonus("Alchemy"))) : 0;
 }
 
 int PotionRules::catalystMixPower(int targetPower, int heldPower, bool bothCatalysts, SkillMastery, uint32_t) const

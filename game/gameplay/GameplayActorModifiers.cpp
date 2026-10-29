@@ -64,12 +64,15 @@ void GameplayActorModifiers::bind(const MonsterModifierTable *pTable)
     m_pTable = pTable;
     m_entries.clear();
     m_charges.clear();
+    m_frenzies.clear();
 }
 
 void GameplayActorModifiers::clear()
 {
+    m_staggers.clear();
     m_entries.clear();
     m_charges.clear();
+    m_frenzies.clear();
 }
 
 GameplayActorModifiers::Entry *GameplayActorModifiers::ensure(size_t actorIndex, int16_t monsterId, uint32_t actorId)
@@ -105,9 +108,98 @@ GameplayActorModifiers::Entry *GameplayActorModifiers::ensure(size_t actorIndex,
     return &entry;
 }
 
+GameplayActorModifiers::StaggerEntry *GameplayActorModifiers::staggerEntry(size_t actorIndex, int16_t monsterId,
+    uint32_t actorId, const StaggerModifier *&pStagger)
+{
+    const MonsterModifierSet *pModifiers =
+        m_pTable != nullptr && m_pTable->hasStagger() ? m_pTable->find(monsterId) : nullptr;
+    pStagger = pModifiers != nullptr && pModifiers->stagger ? &*pModifiers->stagger : nullptr;
+
+    if (pStagger == nullptr)
+    {
+        return nullptr;
+    }
+
+    if (actorIndex >= m_staggers.size())
+    {
+        m_staggers.resize(actorIndex + 1);
+    }
+
+    StaggerEntry &entry = m_staggers[actorIndex];
+
+    if (entry.actorId != actorId || entry.monsterId != monsterId)
+    {
+        entry = {};
+        entry.actorId = actorId;
+        entry.monsterId = monsterId;
+    }
+
+    return &entry;
+}
+
+void GameplayActorModifiers::recordDamage(size_t actorIndex, int16_t monsterId, uint32_t actorId, int damage)
+{
+    const StaggerModifier *pStagger = nullptr;
+    StaggerEntry *pEntry = damage > 0 ? staggerEntry(actorIndex, monsterId, actorId, pStagger) : nullptr;
+
+    if (pEntry != nullptr)
+    {
+        pEntry->damage.emplace_back(m_staggerClockSeconds, damage);
+    }
+}
+
+void GameplayActorModifiers::tickStagger(float deltaSeconds)
+{
+    m_staggerClockSeconds += std::max(0.0f, deltaSeconds);
+}
+
+bool GameplayActorModifiers::allowsStagger(size_t actorIndex, int16_t monsterId, uint32_t actorId, int maxHp)
+{
+    const StaggerModifier *pStagger = nullptr;
+    StaggerEntry *pEntry = staggerEntry(actorIndex, monsterId, actorId, pStagger);
+
+    if (pEntry == nullptr)
+    {
+        return true;
+    }
+
+    const float since = m_staggerClockSeconds - pStagger->windowSeconds;
+    std::erase_if(pEntry->damage, [since](const std::pair<float, int> &hit) { return hit.first < since; });
+
+    if (m_staggerClockSeconds < pEntry->cooldownUntilSeconds)
+    {
+        return false;
+    }
+
+    int windowDamage = 0;
+
+    for (const auto &[time, damage] : pEntry->damage)
+    {
+        windowDamage += damage;
+    }
+
+    if (float(windowDamage) * 100.0f < pStagger->thresholdPercent * float(std::max(1, maxHp)))
+    {
+        return false;
+    }
+
+    pEntry->cooldownUntilSeconds = m_staggerClockSeconds + pStagger->cooldownSeconds;
+    return true;
+}
+
 void GameplayActorModifiers::observeHit(size_t actorIndex, int16_t monsterId, uint32_t actorId,
     const std::array<float, 3> &source, bool damaged, bool shieldBroke)
 {
+    if (shieldBroke)
+    {
+        FrenzyEntry *pFrenzy = ensureFrenzy(actorIndex, monsterId, actorId);
+
+        if (pFrenzy != nullptr && pFrenzy->pFrenzy->onShieldBreak)
+        {
+            pFrenzy->shieldPendingSeconds = PendingSeconds;
+        }
+    }
+
     Entry *pEntry = ensure(actorIndex, monsterId, actorId);
 
     if (pEntry == nullptr || (!damaged && !shieldBroke))
@@ -371,7 +463,8 @@ void GameplayActorModifiers::endDash(ChargeEntry &entry, size_t actorIndex, bool
 {
     entry.phase = ChargePhase::Recover;
     entry.stumbling = !hit;
-    entry.timerSeconds = hit ? ChargeHitRecoverSeconds : entry.pCharge->stumbleSeconds;
+    entry.timerSeconds = !hit ? entry.pCharge->stumbleSeconds
+        : entry.pCharge->strikeSeconds > 0.0f ? entry.pCharge->strikeSeconds : ChargeHitRecoverSeconds;
     ++(hit ? m_chargeHitCount : m_chargeMissCount);
 
     if (world.handle)
@@ -379,6 +472,18 @@ void GameplayActorModifiers::endDash(ChargeEntry &entry, size_t actorIndex, bool
         world.handle(ChargeEvent{hit ? ChargeEventKind::Hit : ChargeEventKind::Missed, actorIndex, entry.pCharge,
             entry.directionX, entry.directionY});
     }
+}
+
+bool GameplayActorModifiers::beyondLeash(const ChargeActorFacts &facts, float x, float y)
+{
+    if (facts.leashRadius <= 0.0f)
+    {
+        return false;
+    }
+
+    const float fromHomeX = x - facts.homePosition[0];
+    const float fromHomeY = y - facts.homePosition[1];
+    return fromHomeX * fromHomeX + fromHomeY * fromHomeY > facts.leashRadius * facts.leashRadius;
 }
 
 void GameplayActorModifiers::updateCharges(float deltaSeconds, size_t actorCount,
@@ -417,8 +522,10 @@ void GameplayActorModifiers::updateCharges(float deltaSeconds, size_t actorCount
                 entry.cooldownSeconds = std::max(0.0f, entry.cooldownSeconds - deltaSeconds);
 
                 if (facts.canAct && facts.engagesParty && entry.cooldownSeconds <= 0.0f
+                    && !frenzyHolds(actorIndex, facts.actorId)
                     && facts.partyEdgeDistance >= charge.triggerMinDistance
                     && facts.partyEdgeDistance <= charge.triggerMaxDistance
+                    && !beyondLeash(facts, facts.partyPosition[0], facts.partyPosition[1])
                     && (!world.hasLineOfSightToParty || world.hasLineOfSightToParty(actorIndex)))
                 {
                     beginWindup(entry, actorIndex, facts.position, facts.partyPosition, world);
@@ -448,9 +555,10 @@ void GameplayActorModifiers::updateCharges(float deltaSeconds, size_t actorCount
                     const float stepLength = std::min(remaining, ChargeStepLength);
                     const float nextX = entry.x + entry.directionX * stepLength;
                     const float nextY = entry.y + entry.directionY * stepLength;
-                    const ChargeStepResult result = world.step
-                        ? world.step(actorIndex, nextX, nextY, ChargeStepHeightChange, yaw)
-                        : ChargeStepResult::Blocked;
+                    // A post's leash stops the dash like a wall.
+                    const ChargeStepResult result = beyondLeash(facts, nextX, nextY) ? ChargeStepResult::Blocked
+                        : world.step ? world.step(actorIndex, nextX, nextY, ChargeStepHeightChange, yaw)
+                                     : ChargeStepResult::Blocked;
 
                     if (result == ChargeStepResult::Contact)
                     {
@@ -531,6 +639,25 @@ void GameplayActorModifiers::applyChargeHolds(ActorAiFrameFacts &facts) const
     }
 }
 
+bool GameplayActorModifiers::chargeStrikeClip(size_t actorIndex, uint32_t actorId, float &clipSeconds) const
+{
+    if (actorIndex >= m_charges.size())
+    {
+        return false;
+    }
+
+    const ChargeEntry &entry = m_charges[actorIndex];
+
+    if (!entry.used || entry.actorId != actorId || entry.phase != ChargePhase::Recover || entry.stumbling
+        || entry.pCharge->strikeSeconds <= 0.0f)
+    {
+        return false;
+    }
+
+    clipSeconds = entry.pCharge->strikeImpactSeconds + entry.pCharge->strikeSeconds - entry.timerSeconds;
+    return true;
+}
+
 GameplayActorModifiers::ChargePhase GameplayActorModifiers::chargePhase(size_t actorIndex) const
 {
     return actorIndex < m_charges.size() && m_charges[actorIndex].used ? m_charges[actorIndex].phase
@@ -542,13 +669,304 @@ bool GameplayActorModifiers::startCharge(size_t actorIndex, int16_t monsterId, u
 {
     ChargeEntry *pEntry = ensureCharge(actorIndex, monsterId, actorId);
 
-    if (pEntry == nullptr || pEntry->phase != ChargePhase::Ready)
+    if (pEntry == nullptr || pEntry->phase != ChargePhase::Ready || frenzyHolds(actorIndex, actorId))
     {
         return false;
     }
 
     beginWindup(*pEntry, actorIndex, position, partyPosition, world);
     return true;
+}
+
+bool GameplayActorModifiers::scriptedClip(size_t actorIndex, uint32_t actorId, const char *&pRole,
+    float &clipSeconds) const
+{
+    const FrenzyEntry *pFrenzy = frenzyEntry(actorIndex, actorId);
+
+    if (pFrenzy != nullptr && pFrenzy->phase == FrenzyPhase::Roar)
+    {
+        pRole = "frenzy";
+        clipSeconds = pFrenzy->pFrenzy->windupSeconds - pFrenzy->timerSeconds;
+        return true;
+    }
+
+    if (pFrenzy != nullptr && pFrenzy->phase == FrenzyPhase::Spent)
+    {
+        pRole = "spent";
+        clipSeconds = pFrenzy->pFrenzy->spentSeconds - pFrenzy->timerSeconds;
+        return true;
+    }
+
+    if (chargeStrikeClip(actorIndex, actorId, clipSeconds))
+    {
+        pRole = "charge_strike";
+        return true;
+    }
+
+    return false;
+}
+
+GameplayActorModifiers::FrenzyEntry *GameplayActorModifiers::ensureFrenzy(size_t actorIndex, int16_t monsterId,
+    uint32_t actorId)
+{
+    if (!frenzyActive())
+    {
+        return nullptr;
+    }
+
+    const MonsterModifierSet *pModifiers = m_pTable->find(monsterId);
+
+    if (pModifiers == nullptr || !pModifiers->frenzy)
+    {
+        return nullptr;
+    }
+
+    if (actorIndex >= m_frenzies.size())
+    {
+        m_frenzies.resize(actorIndex + 1);
+    }
+
+    FrenzyEntry &entry = m_frenzies[actorIndex];
+
+    if (!entry.used || entry.actorId != actorId || entry.monsterId != monsterId)
+    {
+        entry = {};
+        entry.used = true;
+        entry.actorId = actorId;
+        entry.monsterId = monsterId;
+        entry.pFrenzy = &*pModifiers->frenzy;
+    }
+
+    return &entry;
+}
+
+const GameplayActorModifiers::FrenzyEntry *GameplayActorModifiers::frenzyEntry(size_t actorIndex,
+    uint32_t actorId) const
+{
+    if (actorIndex >= m_frenzies.size() || !m_frenzies[actorIndex].used || m_frenzies[actorIndex].actorId != actorId)
+    {
+        return nullptr;
+    }
+
+    return &m_frenzies[actorIndex];
+}
+
+bool GameplayActorModifiers::frenzyHolds(size_t actorIndex, uint32_t actorId) const
+{
+    const FrenzyEntry *pEntry = frenzyEntry(actorIndex, actorId);
+    return pEntry != nullptr && (pEntry->phase == FrenzyPhase::Roar || pEntry->phase == FrenzyPhase::Spent);
+}
+
+void GameplayActorModifiers::beginRoar(FrenzyEntry &entry, size_t actorIndex, const ChargeWorld &world)
+{
+    entry.phase = FrenzyPhase::Roar;
+    entry.timerSeconds = entry.pFrenzy->windupSeconds;
+    // The roar starts the next period.
+    entry.sincePeriodicSeconds = 0.0f;
+    entry.healthPending = false;
+    entry.shieldPendingSeconds = 0.0f;
+    ++m_frenzyCount;
+
+    if (world.frenzyRoared)
+    {
+        world.frenzyRoared(actorIndex, *entry.pFrenzy);
+    }
+}
+
+void GameplayActorModifiers::updateFrenzies(float deltaSeconds, size_t actorCount,
+    const std::function<ChargeActorFacts(size_t)> &actorFacts, const ChargeWorld &world)
+{
+    if (!frenzyActive() || deltaSeconds <= 0.0f)
+    {
+        return;
+    }
+
+    for (size_t actorIndex = 0; actorIndex < actorCount; ++actorIndex)
+    {
+        const ChargeActorFacts facts = actorFacts(actorIndex);
+        FrenzyEntry *pEntry = ensureFrenzy(actorIndex, facts.monsterId, facts.actorId);
+
+        if (pEntry == nullptr)
+        {
+            continue;
+        }
+
+        FrenzyEntry &entry = *pEntry;
+        const FrenzyModifier &frenzy = *entry.pFrenzy;
+
+        if (!facts.alive)
+        {
+            entry.phase = FrenzyPhase::Ready;
+            continue;
+        }
+
+        const bool belowHealth = frenzy.healthBelow > 0.0f && facts.healthShare < frenzy.healthBelow;
+
+        // The period runs from one roar to the next while it fights, and only below the health share when it has one.
+        if (frenzy.everySeconds > 0.0f && facts.engagesParty && (frenzy.healthBelow <= 0.0f || belowHealth))
+        {
+            entry.sincePeriodicSeconds += deltaSeconds;
+        }
+
+        switch (entry.phase)
+        {
+            case FrenzyPhase::Ready:
+            {
+                entry.cooldownSeconds = std::max(0.0f, entry.cooldownSeconds - deltaSeconds);
+                entry.shieldPendingSeconds = std::max(0.0f, entry.shieldPendingSeconds - deltaSeconds);
+
+                if (belowHealth && !entry.healthTriggerUsed)
+                {
+                    entry.healthTriggerUsed = true;
+                    entry.healthPending = true;
+                }
+
+                const bool triggered = entry.healthPending || entry.shieldPendingSeconds > 0.0f
+                    || (frenzy.everySeconds > 0.0f && entry.sincePeriodicSeconds >= frenzy.everySeconds);
+
+                // A health or shield trigger needs only a hostile actor (a hit may land before it saw the party).
+                if (triggered && facts.canAct && facts.hostileToParty && entry.cooldownSeconds <= 0.0f
+                    && chargePhase(actorIndex) == ChargePhase::Ready)
+                {
+                    beginRoar(entry, actorIndex, world);
+                }
+                break;
+            }
+            case FrenzyPhase::Roar:
+            {
+                // A stun or paralysis in the roar cancels the frenzy; its trigger is used.
+                if (!facts.canAct)
+                {
+                    entry.phase = FrenzyPhase::Ready;
+                    entry.cooldownSeconds = frenzy.cooldownSeconds;
+                    break;
+                }
+
+                entry.timerSeconds -= deltaSeconds;
+
+                if (entry.timerSeconds <= 0.0f)
+                {
+                    entry.phase = FrenzyPhase::Active;
+                    entry.timerSeconds = frenzy.seconds;
+                }
+                break;
+            }
+            case FrenzyPhase::Active:
+            {
+                entry.timerSeconds -= deltaSeconds;
+
+                if (entry.timerSeconds <= 0.0f)
+                {
+                    entry.phase = frenzy.spentSeconds > 0.0f ? FrenzyPhase::Spent : FrenzyPhase::Ready;
+                    entry.timerSeconds = frenzy.spentSeconds;
+                    entry.cooldownSeconds = frenzy.cooldownSeconds;
+                }
+                break;
+            }
+            case FrenzyPhase::Spent:
+            {
+                entry.timerSeconds -= deltaSeconds;
+
+                if (entry.timerSeconds <= 0.0f)
+                {
+                    entry.phase = FrenzyPhase::Ready;
+                    entry.cooldownSeconds = frenzy.cooldownSeconds;
+                }
+                break;
+            }
+        }
+    }
+}
+
+void GameplayActorModifiers::applyFrenzies(ActorAiFrameFacts &facts) const
+{
+    if (m_frenzies.empty())
+    {
+        return;
+    }
+
+    const auto applyToActor = [this](ActorAiFacts &actor)
+    {
+        const FrenzyEntry *pEntry = frenzyEntry(actor.actorIndex, actor.actorId);
+
+        if (pEntry == nullptr || pEntry->phase == FrenzyPhase::Ready)
+        {
+            return;
+        }
+
+        if (pEntry->phase == FrenzyPhase::Active)
+        {
+            actor.movement.effectiveMoveSpeed *= pEntry->pFrenzy->speedMultiplier;
+            actor.behavior.attackRateMultiplier = pEntry->pFrenzy->attackRateMultiplier;
+            return;
+        }
+
+        actor.behavior.holdActive = true;
+        actor.behavior.holdAnimation = ActorAiAnimationState::Standing;
+    };
+
+    for (ActorAiFacts &actor : facts.activeActors)
+    {
+        applyToActor(actor);
+    }
+
+    for (ActorAiFacts &actor : facts.backgroundActors)
+    {
+        applyToActor(actor);
+    }
+}
+
+GameplayActorModifiers::FrenzyPhase GameplayActorModifiers::frenzyPhase(size_t actorIndex) const
+{
+    return actorIndex < m_frenzies.size() && m_frenzies[actorIndex].used ? m_frenzies[actorIndex].phase
+                                                                           : FrenzyPhase::Ready;
+}
+
+bool GameplayActorModifiers::startFrenzy(size_t actorIndex, int16_t monsterId, uint32_t actorId,
+    const ChargeWorld &world)
+{
+    FrenzyEntry *pEntry = ensureFrenzy(actorIndex, monsterId, actorId);
+
+    if (pEntry == nullptr || pEntry->phase != FrenzyPhase::Ready || chargePhase(actorIndex) != ChargePhase::Ready)
+    {
+        return false;
+    }
+
+    beginRoar(*pEntry, actorIndex, world);
+    return true;
+}
+
+float GameplayActorModifiers::moveSpeedMultiplier(size_t actorIndex, uint32_t actorId) const
+{
+    const FrenzyEntry *pEntry = frenzyEntry(actorIndex, actorId);
+    return pEntry != nullptr && pEntry->phase == FrenzyPhase::Active ? pEntry->pFrenzy->speedMultiplier : 1.0f;
+}
+
+float GameplayActorModifiers::emissionMultiplier(size_t actorIndex, uint32_t actorId) const
+{
+    const FrenzyEntry *pEntry = frenzyEntry(actorIndex, actorId);
+    return pEntry != nullptr && pEntry->phase == FrenzyPhase::Active ? pEntry->pFrenzy->glowMultiplier : 1.0f;
+}
+
+void GameplayActorModifiers::queueFrenzyPresentation(EventRuntimeState &eventRuntimeState,
+    const FrenzyModifier &frenzy, const std::array<float, 3> &center)
+{
+    EventRuntimeState::WorldEffectRequest effect = {};
+    effect.id = frenzy.effect;
+    effect.position = {center[0], center[1], center[2]};
+    effect.scale = 1.0f;
+    eventRuntimeState.worldEffectRequests.push_back(std::move(effect));
+
+    EventRuntimeState::PendingSound sound = {};
+    sound.soundScope = SoundScope::World;
+    sound.soundName = frenzy.sound;
+    sound.fallbackSoundName = frenzy.fallbackSound;
+    sound.x = int32_t(std::lround(center[0]));
+    sound.y = int32_t(std::lround(center[1]));
+    sound.z = int32_t(std::lround(center[2]));
+    sound.positional = true;
+    sound.hasExplicitZ = true;
+    eventRuntimeState.pendingSounds.push_back(std::move(sound));
 }
 
 GameplayActorModifiers::ChargeHit GameplayActorModifiers::chargeHit(const ChargeModifier &charge,

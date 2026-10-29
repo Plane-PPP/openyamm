@@ -73,7 +73,8 @@ bool parseTurretScan(const YAML::Node &node, TurretScanSettings &scan, std::stri
 }
 
 // One `tactics` entry: traverse_degrees_per_second, fire_within_degrees, lead_seconds, scan: {...},
-// ranged_band: [min, max], post: {leash} and shield_break: {react: fall_back, max_seconds}.
+// ranged_band: [min, max], post: {leash} and shield_break: {react: fall_back | stagger | climb, max_seconds} (a blink
+// on the break is the blink modifier's on_shield_break).
 bool parseTactics(const YAML::Node &node, ActorTacticsFacts &tactics, std::string &error)
 {
     if (!node.IsMap())
@@ -172,14 +173,16 @@ bool parseTactics(const YAML::Node &node, ActorTacticsFacts &tactics, std::strin
     {
         const std::string react = shieldBreak.IsMap() ? shieldBreak["react"].as<std::string>("") : "";
 
-        if (!shieldBreak.IsMap() || react != "fall_back"
+        if (!shieldBreak.IsMap() || (react != "fall_back" && react != "stagger" && react != "climb")
             || (shieldBreak.size() > 1 && (shieldBreak.size() != 2 || !shieldBreak["max_seconds"])))
         {
-            error = "shield_break takes react: fall_back and max_seconds";
+            error = "shield_break takes react: fall_back, stagger or climb, and max_seconds";
             return false;
         }
 
-        tactics.shieldBreakReaction = ActorShieldBreakReaction::FallBack;
+        tactics.shieldBreakReaction = react == "stagger" ? ActorShieldBreakReaction::Stagger
+            : react == "climb" ? ActorShieldBreakReaction::Climb
+            : ActorShieldBreakReaction::FallBack;
         tactics.shieldBreakSeconds = shieldBreak["max_seconds"].as<float>(8.0f);
 
         if (!finiteIn(tactics.shieldBreakSeconds, 0.1f, 120.0f))

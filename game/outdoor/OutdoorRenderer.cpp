@@ -1134,6 +1134,7 @@ void OutdoorRenderer::updateWeather(OutdoorGameView &view, const OutdoorWorldRun
     target.windX = atmosphere.windX;
     target.windY = atmosphere.windY;
     target.storm = atmosphere.storm;
+    target.dryLightning = atmosphere.dryLightning;
     target.wetness = atmosphere.wetness;
     view.m_weatherPresentation.update(view.m_pOutdoorWorldRuntime->weatherRules(), target, deltaSeconds);
     const float rainLevel = view.m_weatherPresentation.rainLevel();
@@ -1216,8 +1217,11 @@ void OutdoorRenderer::renderWeather(OutdoorGameView &view, uint16_t viewId,
 
     if (view.m_pOutdoorWorldRuntime != nullptr)
     {
-        frame.snowLook = view.m_pOutdoorWorldRuntime->weatherRules().snowFlakes;
-        frame.ashLook = view.m_pOutdoorWorldRuntime->weatherRules().ashFlakes;
+        const WeatherRules &rules = view.m_pOutdoorWorldRuntime->weatherRules();
+        const WeatherMapSettings settings = view.m_pOutdoorWorldRuntime->weatherMapSettings();
+        frame.snowLook = rules.snowFlakes;
+        frame.ashLook = settings.ashLook.value_or(rules.ashFlakes);
+        frame.rainColor = settings.rainColor;
     }
 
     frame.windX = weather.windX();
@@ -1519,9 +1523,69 @@ void OutdoorRenderer::destroyResolvedBModelDrawGroups(OutdoorGameView &view)
     view.m_resolvedBModelDrawGroupRevision = std::numeric_limits<uint64_t>::max();
 }
 
+void OutdoorRenderer::ensureSwapTextures(OutdoorGameView &view, const EventRuntimeState *pEventRuntimeState)
+{
+    if (pEventRuntimeState == nullptr || view.m_pAssetFileSystem == nullptr)
+    {
+        return;
+    }
+
+    const auto ensure = [&view](const std::string &textureName)
+    {
+        const std::string normalizedName = toLowerCopy(textureName);
+
+        if (normalizedName.empty() || view.m_missingSwapTextureNames.contains(normalizedName)
+            || std::any_of(view.m_bmodelTextureAnimations.begin(), view.m_bmodelTextureAnimations.end(),
+                [&normalizedName](const OutdoorGameView::BModelTextureAnimationHandle &animation)
+                {
+                    return animation.textureName == normalizedName;
+                }))
+        {
+            return;
+        }
+
+        const std::optional<OutdoorBitmapTexture> texture =
+            loadSurfaceTexture(*view.m_pAssetFileSystem, normalizedName);
+        const bgfx::TextureHandle handle = texture
+            ? createSurfaceTexture2D(uint16_t(texture->physicalWidth), uint16_t(texture->physicalHeight),
+                texture->pixels, texture->cookedTexture.get(), TextureFilterProfile::BModel)
+            : bgfx::TextureHandle(BGFX_INVALID_HANDLE);
+
+        if (!bgfx::isValid(handle))
+        {
+            std::cerr << "OutdoorRenderer: swapped-in texture " << normalizedName << " not found\n";
+            view.m_missingSwapTextureNames.insert(normalizedName);
+            return;
+        }
+
+        OutdoorGameView::BModelTextureAnimationHandle animation = {};
+        animation.textureName = normalizedName;
+        animation.liquid = texture->liquid;
+        animation.waterColorAbgr = texture->waterColorAbgr;
+        animation.width = uint16_t(texture->physicalWidth);
+        animation.height = uint16_t(texture->physicalHeight);
+        animation.frameTextureHandles.push_back(handle);
+        animation.frameLengthTicks.push_back(0);
+        animation.frameHasPartialAlphaPixels.push_back(texture->hasPartialAlphaPixels);
+        view.m_bmodelTextureAnimations.push_back(std::move(animation));
+    };
+
+    for (const auto &[key, textureName] : pEventRuntimeState->textureOverrides)
+    {
+        ensure(textureName);
+    }
+
+    for (const auto &[key, textureName] : pEventRuntimeState->outdoorModelFacetTextureOverrides)
+    {
+        ensure(textureName);
+    }
+}
+
 void OutdoorRenderer::rebuildResolvedBModelDrawGroups(OutdoorGameView &view)
 {
     destroyResolvedBModelDrawGroups(view);
+    ensureSwapTextures(view,
+        view.m_pOutdoorWorldRuntime != nullptr ? view.m_pOutdoorWorldRuntime->eventRuntimeState() : nullptr);
 
     if (view.m_texturedBModelBatches.empty() || view.m_bmodelTextureAnimations.empty())
     {
@@ -1813,6 +1877,8 @@ void OutdoorRenderer::refreshBModelWorldRenderChunks(OutdoorGameView &view)
     {
         return;
     }
+
+    ensureSwapTextures(view, pEventRuntimeState);
 
     const auto effectiveAttributesForFace = [&](const OutdoorGameView::BModelWorldRenderFace &face)
     {
@@ -3229,6 +3295,22 @@ void OutdoorRenderer::updateDecorationModels(OutdoorGameView &view, const Outdoo
         state = OutdoorInteractionController::interactiveDecorationState(view, billboard.entityIndex);
         return sprite;
     });
+    const EventRuntimeState *pEvents =
+        view.m_pOutdoorWorldRuntime != nullptr ? view.m_pOutdoorWorldRuntime->eventRuntimeState() : nullptr;
+    if (pEvents != nullptr && !pEvents->decorationAims.empty())
+    {
+        models.poseAimed(billboards, [pEvents](uint32_t key, float &yawRadians, float &back)
+        {
+            const auto aim = pEvents->decorationAims.find(key);
+            if (aim == pEvents->decorationAims.end())
+            {
+                return false;
+            }
+            yawRadians = aim->second.currentRadians;
+            back = aim->second.back();
+            return true;
+        });
+    }
     const bool baked = pBakedLighting != nullptr && pBakedLighting->hasBakedSources() && pAtmosphereState != nullptr;
     if (view.m_pDecorationModelProbeSource != pBakedLighting || view.m_decorationModelProbes.size() != billboards.size())
     {

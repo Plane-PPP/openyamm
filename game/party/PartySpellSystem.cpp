@@ -475,7 +475,8 @@ void applySpellSplash(
             sourceX,
             sourceY,
             footZ,
-            uint32_t(request.casterMemberIndex));
+            uint32_t(request.casterMemberIndex),
+            false);
     }
 }
 
@@ -1158,7 +1159,9 @@ float resolveCharacterBuffDurationSeconds(uint32_t spellId, uint32_t skillLevel,
                 ? secondsFromHours(24.0f * 365.0f)
                 : secondsFromHours(static_cast<float>(std::max<uint32_t>(1, skillLevel)));
         case SpellId::Glamour:
-            return mastery == SkillMastery::Master
+            return mastery == SkillMastery::Grandmaster
+                ? secondsFromHours(static_cast<float>(2 * std::max<uint32_t>(1, skillLevel)))
+                : mastery == SkillMastery::Master
                 ? secondsFromHours(static_cast<float>(std::max<uint32_t>(1, skillLevel)))
                 : secondsFromMinutes(static_cast<float>(5 * std::max<uint32_t>(1, skillLevel)));
         case SpellId::PainReflection:
@@ -1212,9 +1215,8 @@ int resolveCharacterBuffPower(uint32_t spellId, uint32_t skillLevel, SkillMaster
                 ? 50
                 : 33;
         case SpellId::Glamour:
-            return mastery == SkillMastery::Grandmaster
-                ? static_cast<int>(3 * skillLevel)
-                : static_cast<int>(skillLevel);
+            // MM8 casts (skill + 5) / 2 at every mastery (MM8-Rel.exe 0x42d544).
+            return (static_cast<int>(skillLevel) + 5) / 2;
         case SpellId::Mistform:
             return 1;
         default:
@@ -1337,6 +1339,17 @@ PartySpellCastResult PartySpellSystem::castSpell(
             SpellFailedText);
     }
 
+    // A null field (the world's Hum at 0 here): no spell is cast without a Null Damper II.
+    if (party.castingBlockedFor(*pCaster))
+    {
+        return makeFailure(
+            request.spellId,
+            PartySpellCastStatus::Unsupported,
+            PartySpellCastTargetKind::None,
+            PartySpellCastEffectKind::Unsupported,
+            "Your magic scatters in the null field");
+    }
+
     // The monster the request names, for rules that read it (MAW's class spells): its level and the crowd around it.
     int targetLevel = 0;
     int monstersNearTarget = 0;
@@ -1371,10 +1384,18 @@ PartySpellCastResult PartySpellSystem::castSpell(
         cast.partyCount = int(std::max<size_t>(1, party.members().size()));
         return cast;
     };
+    // `critical` learns whether the roll was a critical hit.
     const auto rollSpellDamage =
-        [&party, &castAtLevel](const SpellEntry &spellEntry, SkillMastery mastery, uint32_t level)
+        [&party, &castAtLevel](const SpellEntry &spellEntry, SkillMastery mastery, uint32_t level, bool &critical)
     {
-        return party.rules().combat.rollSpellDamage(castAtLevel(spellEntry, mastery, level));
+        const CharacterSpellCast cast = castAtLevel(spellEntry, mastery, level);
+        int damage = party.rules().combat.rollSpellDamage(cast, &critical);
+        // Hesper's item effects: per-cent spell damage (item_effects spell_damage_pct).
+        const int percent = cast.pCaster != nullptr ? cast.pCaster->spellDamagePercent : 0;
+        damage = percent != 0 ? std::max(0, damage + damage * percent / 100) : damage;
+        // The world's Hum (Party::spellDamagePercentFor): 100 without one.
+        const int humPercent = cast.pCaster != nullptr ? party.spellDamagePercentFor(*cast.pCaster) : 100;
+        return humPercent < 100 ? damage * humPercent / 100 : damage;
     };
 
     if (party.hasPartyBuff(PartyBuffId::Invisibility))
@@ -1929,7 +1950,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     sourceX,
                     sourceY,
                     footZ,
-                    static_cast<uint32_t>(request.casterMemberIndex));
+                    static_cast<uint32_t>(request.casterMemberIndex),
+                    false);
             }
         }
         else if (spellId == SpellId::Preservation)
@@ -2559,7 +2581,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
         worldRequest.spellId = request.spellId;
         worldRequest.skillLevel = skillLevel;
         worldRequest.skillMastery = skillMastery;
-        worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+        worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, worldRequest.critical);
         worldRequest.damageType = party.rules().combat.partySpellDamageType(
             request.spellId, GameMechanics::spellCombatDamageType(request.spellId, &spellTable));
         worldRequest.turnBasedPendingAction = request.turnBasedPendingAction;
@@ -2597,7 +2619,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             worldRequest.spellId = request.spellId;
             worldRequest.skillLevel = skillLevel;
             worldRequest.skillMastery = skillMastery;
-            worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+            worldRequest.damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, worldRequest.critical);
             worldRequest.damageType = party.rules().combat.partySpellDamageType(
                 request.spellId, GameMechanics::spellCombatDamageType(request.spellId, &spellTable));
             worldRequest.turnBasedPendingAction = request.turnBasedPendingAction;
@@ -2645,7 +2667,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
             const bool hasTarget = worldRuntime.actorInspectState(*request.targetActorIndex, 0, targetBefore);
             const bool hasDrainTarget =
                 spellId == SpellId::Lifedrain && hasTarget && party.rules().combat.lifedrainHealsCasterThird();
-            int damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+            bool critical = false;
+            int damage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, critical);
 
             // A share of the target's hit points replaces the roll under rules that have one (MAW's Mass Distortion).
             if (hasTarget)
@@ -2671,7 +2694,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 sourceX,
                 sourceY,
                 footZ,
-                static_cast<uint32_t>(request.casterMemberIndex));
+                static_cast<uint32_t>(request.casterMemberIndex),
+                critical);
 
             if (castSucceeded && hasDrainTarget)
             {
@@ -2718,7 +2742,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         sourceX,
                         sourceY,
                         footZ,
-                        static_cast<uint32_t>(request.casterMemberIndex));
+                        static_cast<uint32_t>(request.casterMemberIndex),
+                        false);
                 }
             }
 
@@ -2937,7 +2962,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     }
                 }
 
-                const int spellDamage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel);
+                bool critical = false;
+                const int spellDamage = rollSpellDamage(*pSpellEntry, skillMastery, skillLevel, critical);
                 const bool applied = worldRuntime.applyPartySpellToActor(
                     actorIndex,
                     request.spellId,
@@ -2947,7 +2973,8 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     sourceX,
                     sourceY,
                     footZ,
-                    static_cast<uint32_t>(request.casterMemberIndex));
+                    static_cast<uint32_t>(request.casterMemberIndex),
+                    critical);
                 castSucceeded = applied || castSucceeded;
 
                 if (spellId == SpellId::SoulDrinker && applied)
@@ -3263,6 +3290,27 @@ std::optional<size_t> PartySpellSystem::quickCastActorTarget(
     return target;
 }
 
+bool PartySpellSystem::hasQuickCastCharacterTarget(uint32_t spellId)
+{
+    switch (spellIdFromValue(spellId))
+    {
+        case SpellId::Heal:
+        case SpellId::CureDisease:
+        case SpellId::RemoveCurse:
+        case SpellId::RemoveFear:
+        case SpellId::CureParalysis:
+        case SpellId::CureInsanity:
+        case SpellId::CureWeakness:
+        case SpellId::CurePoison:
+        case SpellId::RaiseDead:
+        case SpellId::Resurrection:
+        case SpellId::StoneToFlesh:
+            return true;
+        default:
+            return false;
+    }
+}
+
 std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
     const Party &party,
     size_t casterIndex,
@@ -3356,7 +3404,12 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
             }
         }
 
-        return endangered ? endangered : bestGain;
+        if (endangered || bestGain)
+        {
+            return endangered ? endangered : bestGain;
+        }
+
+        // Nobody wounded: a heal that also cures (MAW's Greater Heal, Remove Curse) goes to the condition below.
     }
 
     switch (spellIdFromValue(spellId))

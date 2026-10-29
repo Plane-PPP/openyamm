@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <utility>
 
 namespace OpenYAMM::Game
@@ -132,6 +133,16 @@ bool applyLootOperation(
     }
 
     return false;
+}
+
+// An inspected inventory item's operation, with the item's bag open: MAW's bag overview shows every bag.
+bool withInspectedBagOpen(
+    Party &party,
+    const GameplayUiController::ItemInspectOverlayState &overlay,
+    const std::function<bool()> &operation)
+{
+    return InventoryBags::withBagOpen(
+        party, overlay.sourceMemberIndex, overlay.sourceBag, gameRulesFor(&party).items.bagCount(party), operation);
 }
 
 Party *activeParty(GameSession &session)
@@ -486,6 +497,53 @@ void applyEmpGrenade(GameplayScreenRuntime &runtime)
         }
     }
 }
+// The Breach Charge (use action placeBreachCharge): a shaped charge set off at the party's feet; every hostile actor
+// within the blast takes the charge's VarA (300 without) as a heavy physical blow.
+void applyBreachCharge(GameplayScreenRuntime &runtime, const ItemDefinition &item)
+{
+    constexpr float BlastRadius = 384.0f;
+    IGameplayWorldRuntime *pWorldRuntime = runtime.worldRuntime();
+
+    if (pWorldRuntime == nullptr)
+    {
+        return;
+    }
+
+    const int damage = item.varA > 0 ? item.varA : 300;
+    const float partyX = pWorldRuntime->partyX();
+    const float partyY = pWorldRuntime->partyY();
+    const float partyZ = pWorldRuntime->partyFootZ();
+
+    for (const size_t actorIndex : pWorldRuntime->collectMapActorIndicesWithinRadius(
+             partyX, partyY, partyZ, BlastRadius, false, partyX, partyY, partyZ))
+    {
+        GameplayRuntimeActorState state;
+
+        if (pWorldRuntime->actorRuntimeState(actorIndex, state) && !state.isDead && state.hostileToParty)
+        {
+            pWorldRuntime->applyPartyAttackMeleeDamage(actorIndex, damage, {partyX, partyY, partyZ + 64.0f},
+                ShieldAttackTier::Physical);
+        }
+    }
+
+    if (EventRuntimeState *pEvents = pWorldRuntime->eventRuntimeState())
+    {
+        EventRuntimeState::PendingSound sound = {};
+        sound.soundScope = SoundScope::World;
+        sound.soundName = "breach_charge_blast";
+        sound.fallbackSoundName = "fire04";
+        sound.x = static_cast<int32_t>(std::lround(partyX));
+        sound.y = static_cast<int32_t>(std::lround(partyY));
+        sound.z = static_cast<int32_t>(std::lround(partyZ));
+        sound.positional = true;
+        sound.hasExplicitZ = true;
+        pEvents->pendingSounds.push_back(std::move(sound));
+        EventRuntimeState::WorldEffectRequest effect = {};
+        effect.id = "openyamm:fx/impact/fireball";
+        effect.position = {partyX, partyY, partyZ + 32.0f};
+        pEvents->worldEffectRequests.push_back(std::move(effect));
+    }
+}
 }
 
 GameplayItemService::GameplayItemService(GameSession &session)
@@ -532,6 +590,8 @@ bool GameplayItemService::tryUseHeldItemOnPartyMember(
         return true;
     }
 
+    // Before the use consumes the held item.
+    const ItemDefinition *heldItemDefinition = pItemTable->get(heldItem.item.objectDescriptionId);
     const InventoryItemUseResult useResult =
         InventoryItemUseRuntime::useItemOnMember(
             *pParty,
@@ -694,7 +754,17 @@ bool GameplayItemService::tryUseHeldItemOnPartyMember(
             runtime.playSpeechReaction(memberIndex, *useResult.speechId, true);
         }
 
-        if (useResult.soundId.has_value() && runtime.audioSystem() != nullptr)
+        // Hesper's item actions play their own sounds by name (AUDIO.md) in place of the native one, which stays for a
+        // world without them.
+        const char *pActionSoundName = useResult.action == InventoryItemUseAction::ThrowEmpGrenade ? "emp_grenade"
+            : useResult.action == InventoryItemUseAction::UseShieldCell
+                || useResult.action == InventoryItemUseAction::UseShieldBurst ? "shield_cell_use"
+            : nullptr;
+        const bool actionSoundPlayed = pActionSoundName != nullptr && useResult.consumed
+            && runtime.audioSystem() != nullptr
+            && runtime.audioSystem()->playSoundByName(pActionSoundName, GameAudioSystem::PlaybackGroup::Ui);
+
+        if (useResult.soundId.has_value() && !actionSoundPlayed && runtime.audioSystem() != nullptr)
         {
             runtime.audioSystem()->playCommonSound(*useResult.soundId, GameAudioSystem::PlaybackGroup::Ui);
         }
@@ -702,6 +772,12 @@ bool GameplayItemService::tryUseHeldItemOnPartyMember(
         if (useResult.action == InventoryItemUseAction::ThrowEmpGrenade && useResult.consumed)
         {
             applyEmpGrenade(runtime);
+        }
+
+        if (useResult.action == InventoryItemUseAction::PlaceBreachCharge && useResult.consumed
+            && heldItemDefinition != nullptr)
+        {
+            applyBreachCharge(runtime, *heldItemDefinition);
         }
 
         if (useResult.action == InventoryItemUseAction::UseTempleInABottle
@@ -725,7 +801,8 @@ bool GameplayItemService::tryUseHeldItemOnPartyMember(
         !keepCharacterScreenOpen
         || (useResult.action == InventoryItemUseAction::CastScroll && useResult.consumed)
         || useResult.action == InventoryItemUseAction::UseTempleInABottle
-        || (useResult.action == InventoryItemUseAction::ThrowEmpGrenade && useResult.consumed);
+        || (useResult.action == InventoryItemUseAction::ThrowEmpGrenade && useResult.consumed)
+        || (useResult.action == InventoryItemUseAction::PlaceBreachCharge && useResult.consumed);
 
     if (closeCharacterScreen)
     {
@@ -842,6 +919,7 @@ bool GameplayItemService::tryUseHeldItemOnInventoryItem(
     craftTarget.memberIndex = memberIndex;
     craftTarget.gridX = targetGridX;
     craftTarget.gridY = targetGridY;
+    craftTarget.bag = pParty->member(memberIndex) != nullptr ? pParty->member(memberIndex)->rulesetState.currentBag : 0;
 
     if (openWorkbenchForHeldMaterial(runtime, craftTarget))
     {
@@ -1530,11 +1608,12 @@ bool GameplayItemService::identifyInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        return pParty->identifyMemberInventoryItem(
-            overlay.sourceMemberIndex,
-            overlay.sourceGridX,
-            overlay.sourceGridY,
-            statusText);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                return pParty->identifyMemberInventoryItem(
+                    overlay.sourceMemberIndex, overlay.sourceGridX, overlay.sourceGridY, statusText);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment)
@@ -1630,12 +1709,12 @@ bool GameplayItemService::tryIdentifyInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        return pParty->tryIdentifyMemberInventoryItem(
-            overlay.sourceMemberIndex,
-            overlay.sourceGridX,
-            overlay.sourceGridY,
-            inspectorMemberIndex,
-            statusText);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                return pParty->tryIdentifyMemberInventoryItem(overlay.sourceMemberIndex, overlay.sourceGridX,
+                    overlay.sourceGridY, inspectorMemberIndex, statusText);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment)
@@ -1735,9 +1814,13 @@ bool GameplayItemService::tryOpenInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        InventoryItem *pItem =
-            pParty->memberInventoryItemMutable(overlay.sourceMemberIndex, overlay.sourceGridX, overlay.sourceGridY);
-        return pItem != nullptr && itemRules.openSealedItem(*pItem, *pInspector);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                InventoryItem *pItem = pParty->memberInventoryItemMutable(
+                    overlay.sourceMemberIndex, overlay.sourceGridX, overlay.sourceGridY);
+                return pItem != nullptr && itemRules.openSealedItem(*pItem, *pInspector);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Chest && pWorldRuntime != nullptr)
@@ -1796,12 +1879,12 @@ bool GameplayItemService::tryRepairInspectedItem(
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Inventory)
     {
-        return pParty->tryRepairMemberInventoryItem(
-            overlay.sourceMemberIndex,
-            overlay.sourceGridX,
-            overlay.sourceGridY,
-            inspectorMemberIndex,
-            statusText);
+        return withInspectedBagOpen(*pParty, overlay,
+            [&]()
+            {
+                return pParty->tryRepairMemberInventoryItem(overlay.sourceMemberIndex, overlay.sourceGridX,
+                    overlay.sourceGridY, inspectorMemberIndex, statusText);
+            });
     }
 
     if (overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment)
