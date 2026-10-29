@@ -60,6 +60,7 @@ add_executable(openyamm_unit_tests
     AlchemyBenchRegressionTests.cpp
     ReagentStackTests.cpp
     InspectSupplementTests.cpp
+    ItemNamingHotfixTests.cpp
     GameplayRuleRegressionTests.cpp
     LethalStrikeTests.cpp
     AxeRebalanceTests.cpp

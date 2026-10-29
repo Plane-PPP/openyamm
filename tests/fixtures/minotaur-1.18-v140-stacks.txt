@@ -1,0 +1,5 @@
+Captured from unchanged pre-hotfix OpenYAMM1.18 Minotaur unit binary, built from c0ccf0a game code.
+Original OYMINO1/v140 writer, upstream139 schema. 11066bytes.
+SHA256 1e6b1c8787e63f9364d889b96c807d8c7ce7a8f94356509cd392082eb1f73ebc.
+125 reagents in50/50/25 plus named skills from the frozen production1.14 fixture.
+Protected capture:20261029T142224Z-bb4901df5a. No user save was modified.

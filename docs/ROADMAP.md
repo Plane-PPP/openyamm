@@ -1,3 +1,10 @@
+## UI & inventory hotfix — names fixed / implementation ongoing
+
+Confirmed upstream raw-identification title mismatch from2026-03-29, independent of recent stacks/merge.
+Known-by-rules zero-difficulty reagents/potions now use their own names; irrelevant raw flags no longer split
+otherwise identical reagent stacks. Genuine unidentified items remain protected.14 cases /1406 assertions passed.
+[Investigation and remaining work](research/ui-inventory-hotfix.md). Geometry, bottles and UI next; no ZIP yet.
+
 ## Expanded inspection — Implemented / automatically tested / Windows ZIP packaged
 
 Real Standard attribute bonuses/thresholds and armor/weapon Recovery now supplement original descriptions.

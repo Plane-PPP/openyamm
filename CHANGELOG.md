@@ -1,3 +1,9 @@
+# UI & inventory hotfix — in progress
+
+Implemented / locally tested, not packaged: zero-difficulty item names follow the existing identification rule;
+otherwise equal reagent stacks ignore only irrelevant identification flags. Genuine unknowns stay unknown.
+No potion effects, prices, recipe difficulties or save fields changed. [Investigation](docs/research/ui-inventory-hotfix.md).
+
 # Minotaur on OpenYAMM 1.18 — Windows ZIP packaged (2026-10-29)
 
 Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual gameplay pending:

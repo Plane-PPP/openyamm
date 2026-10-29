@@ -1,4 +1,5 @@
 #include "game/items/ReagentStacks.h"
+#include "game/items/ItemRuntime.h"
 
 #include <algorithm>
 
@@ -27,6 +28,12 @@ bool compatible(const InventoryItem &left, const InventoryItem &right, const Ite
     }
     InventoryItem a = left;
     InventoryItem b = right;
+    // A zero-difficulty item is already known by the rules, regardless of its historical raw flag.
+    // Keep meaningful unknown/known states distinct for items that really require identification.
+    if (!ItemRuntime::requiresIdentification(*pTable->get(left.objectDescriptionId)))
+    {
+        a.identified = b.identified = true;
+    }
     a.quantity = b.quantity = 1;
     a.gridX = b.gridX = a.gridY = b.gridY = 0;
     a.width = b.width = a.height = b.height = 1;

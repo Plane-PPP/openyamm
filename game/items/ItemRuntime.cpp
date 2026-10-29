@@ -310,7 +310,7 @@ std::string ItemRuntime::displayName(
     const StandardItemEnchantTable *pStandardEnchantTable,
     const SpecialItemEnchantTable *pSpecialEnchantTable)
 {
-    if (!item.identified && hasMeaningfulUnidentifiedName(itemDefinition))
+    if (!item.identified && requiresIdentification(itemDefinition))
     {
         return itemDefinition.unidentifiedName;
     }
