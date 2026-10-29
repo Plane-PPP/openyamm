@@ -126,9 +126,11 @@ SkillTooltipText SkillRules::skillTooltip(
     return table;
 }
 
-std::string SkillRules::statTooltip(const Party &, const Character &, const std::string &, const std::string &table) const
+std::string SkillRules::statTooltip(const Party &party, const Character &character,
+    const std::string &statName, const std::string &table, bool russian) const
 {
-    return table;
+    const std::string supplement = GameMechanics::buildPrimaryStatInspectSupplement(party, character, statName, russian);
+    return supplement.empty() ? table : table + "\n\n" + supplement;
 }
 
 std::string SkillRules::teacherSpeech(

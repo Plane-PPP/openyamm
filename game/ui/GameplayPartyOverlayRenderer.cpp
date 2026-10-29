@@ -1,5 +1,6 @@
 #include "game/ui/GameplayPartyOverlayRenderer.h"
 #include "game/items/InventoryBags.h"
+#include "game/items/ReagentStacks.h"
 #include "game/ui/InventoryBagOverview.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
 #include "game/ui/GameplayClock.h"
@@ -6239,8 +6240,6 @@ void GameplayPartyOverlayRenderer::renderHeldInventoryItem(GameplayScreenRuntime
         static_cast<float>(texture->height) * scale * fraction * pItemDefinition->inventoryDrawScale;
 
     context.submitHudTexturedQuad(*texture, itemX, itemY, itemWidth, itemHeight);
-    GameplayHudOverlaySupport::renderReagentQuantity(context, heldItem.item,
-        itemX, itemY, itemWidth, itemHeight, scale * fraction);
     submitItemTintOverlay(
         context,
         *texture,
@@ -6250,6 +6249,8 @@ void GameplayPartyOverlayRenderer::renderHeldInventoryItem(GameplayScreenRuntime
         itemHeight,
         false,
         itemTintColorAbgr(&heldItem.item, pItemDefinition, ItemTintContext::Held));
+    GameplayHudOverlaySupport::renderReagentQuantity(context, heldItem.item,
+        itemX, itemY, itemWidth, itemHeight, scale * fraction);
 }
 
 void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntime &context, int width, int height)
@@ -6389,10 +6390,22 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
     std::string itemDescription = showBrokenOnly || showUnidentifiedOnly
         ? std::string {}
         : itemRules.itemDescription(resolvedItemState, pViewer).value_or(pItemDefinition->notes);
-    if (resolvedItemState.quantity > 1 && pItemDefinition->equipStat == "Reagent")
+    if (resolvedItemState.quantity > 1 && ReagentStacks::eligible(resolvedItemState, context.itemTable()))
     {
-        itemDescription += "\n\nQuantity: " + std::to_string(resolvedItemState.quantity)
-            + " / 50. Shift-click: one; Ctrl-click: half; drag: all.";
+        itemDescription += std::string(context.settingsSnapshot().minotaurRussianText ? "\n\nКоличество: " : "\n\nQuantity: ")
+            + std::to_string(resolvedItemState.quantity)
+            + (context.settingsSnapshot().minotaurRussianText
+                ? " / 50. Shift: один; Ctrl: половина; перетаскивание: весь стак."
+                : " / 50. Shift-click: one; Ctrl-click: half; drag: all.");
+    }
+    if (!showBrokenOnly && !showUnidentifiedOnly && pViewer != nullptr)
+    {
+        const std::string recovery = GameMechanics::buildItemRecoveryInspectSupplement(*pViewerParty,
+            overlay.sourceMemberIndex, resolvedItemState,
+            overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment,
+            context.spellTable(), characterAttackTuningFromSettings(context.settingsSnapshot()),
+            context.settingsSnapshot().minotaurRussianText);
+        if (!recovery.empty()) itemDescription += "\n\n" + recovery;
     }
     const std::string itemStatusText =
         showBrokenOnly ? "Broken item" : (showUnidentifiedOnly ? "Not identified" : std::string {});
@@ -6957,11 +6970,15 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
         {
             interaction.itemInspectScrollItem = overlay.objectDescriptionId;
             interaction.itemInspectScrollLines = 0;
+            interaction.itemInspectDragging = false;
         }
         const GameplayInputFrame *pInput = context.currentGameplayInputFrame();
         if (pInput != nullptr)
         {
             interaction.itemInspectScrollLines -= static_cast<int>(pInput->mouseWheelDelta * 3);
+            GameplayHudCommon::dragInspectText(pInput->mobileTouchDragActive, pInput->pointerY, bodyLineHeight,
+                interaction.itemInspectDragY, interaction.itemInspectDragRemainder,
+                interaction.itemInspectDragging, interaction.itemInspectScrollLines);
         }
         const int visible = std::max(1, static_cast<int>(clip.height / bodyLineHeight));
         interaction.itemInspectScrollLines = std::clamp(interaction.itemInspectScrollLines, 0,
@@ -6989,7 +7006,9 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
             context.renderLayoutLabel(*pValueLayout, durationRect, durationText);
         }
 
-        const std::string valueText = "Value: " + itemValue;
+        const std::string valueText = std::string(resolvedItemState.quantity > 1
+            && ReagentStacks::eligible(resolvedItemState, context.itemTable()) && !overlay.hasValueOverride
+            ? "Value (each): " : "Value: ") + itemValue;
         context.renderLayoutLabel(*pValueLayout, valueRect, valueText);
 
         if ((showStolen || showHardened) && valueFont)
@@ -7077,7 +7096,7 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
         pBodyFont != nullptr
             ? context.wrapHudTextToWidth(*pBodyFont, overlay.body, bodyWidth)
             : std::vector<std::string>{overlay.body};
-    const float bodyHeight = bodyLines.empty() ? bodyLineHeight : bodyLineHeight * static_cast<float>(bodyLines.size());
+    float bodyHeight = bodyLines.empty() ? bodyLineHeight : bodyLineHeight * static_cast<float>(bodyLines.size());
     const bool showNormal = overlay.normal.visible && !overlay.normal.text.empty();
     const bool showExpert = overlay.expert.visible && !overlay.expert.text.empty();
     const bool showMaster = overlay.master.visible && !overlay.master.text.empty();
@@ -7159,6 +7178,12 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
         hasAnyMasteryRows = true;
     }
 
+    const float fixedHeight = bodyRectForSizing.y
+        + (hasAnyMasteryRows ? CharacterInspectBodyToRowsGap * popupScale + masteryHeight : 0.0f)
+        + CharacterInspectBottomPadding * popupScale;
+    const int visibleBodyLines = GameplayHudCommon::fitInspectBodyLines(
+        uiViewport.height - 4 * popupScale, fixedHeight, bodyLineHeight, int(bodyLines.size()));
+    bodyHeight = visibleBodyLines * bodyLineHeight;
     const float rootWidth = provisionalRoot.width;
     const float rootHeight =
         bodyRectForSizing.y
@@ -7322,10 +7347,31 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
         float textX = std::round(bodyBaseRect->x + pBodyLayout->textPadX * popupScale);
         float textY = std::round(bodyBaseRect->y + pBodyLayout->textPadY * popupScale);
 
-        for (const std::string &line : bodyLines)
+        GameplayOverlayInteractionState &interaction = context.interactionState();
+        if (interaction.characterInspectScrollTitle != overlay.title)
         {
-            context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle, line, textX, textY, popupScale);
-            context.renderHudFontLayer(*pBodyFont, coloredMainLayer, line, textX, textY, popupScale);
+            interaction.characterInspectScrollTitle = overlay.title;
+            interaction.characterInspectScrollLines = 0;
+            interaction.characterInspectDragging = false;
+        }
+        const GameplayInputFrame *pInput = context.currentGameplayInputFrame();
+        if (pInput != nullptr)
+        {
+            interaction.characterInspectScrollLines -= int(pInput->mouseWheelDelta * 3);
+            GameplayHudCommon::dragInspectText(pInput->mobileTouchDragActive, pInput->pointerY, bodyLineHeight,
+                interaction.characterInspectDragY, interaction.characterInspectDragRemainder,
+                interaction.characterInspectDragging, interaction.characterInspectScrollLines);
+        }
+        interaction.characterInspectScrollLines = std::clamp(interaction.characterInspectScrollLines,
+            0, std::max(0, int(bodyLines.size()) - visibleBodyLines));
+        const GameplayResolvedHudLayoutElement clip = {bodyBaseRect->x, bodyBaseRect->y,
+            bodyBaseRect->width, bodyHeight, popupScale};
+        for (int row = 0; row < visibleBodyLines; ++row)
+        {
+            const std::string &line = bodyLines[size_t(row + interaction.characterInspectScrollLines)];
+            context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle,
+                line, textX, textY, popupScale, &clip);
+            context.renderHudFontLayer(*pBodyFont, coloredMainLayer, line, textX, textY, popupScale, &clip);
             textY += bodyLineHeight;
         }
 

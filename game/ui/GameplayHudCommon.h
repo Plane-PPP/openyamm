@@ -140,6 +140,28 @@ public:
 class GameplayHudCommon
 {
 public:
+    static int fitInspectBodyLines(float viewportHeight, float fixedHeight, float lineHeight, int lines)
+    {
+        return std::clamp(int(std::max(0.0f, viewportHeight - fixedHeight) / std::max(1.0f, lineHeight)),
+            0, std::max(0, lines));
+    }
+
+    // A touch drag scrolls the same clipped text as the desktop wheel, retaining sub-line motion.
+    static void dragInspectText(bool dragging, float pointerY, float lineHeight,
+        float &previousY, float &remainder, bool &wasDragging, int &scrollLines)
+    {
+        if (dragging && wasDragging)
+        {
+            remainder += previousY - pointerY;
+            const int rows = int(remainder / std::max(1.0f, lineHeight));
+            scrollLines += rows;
+            remainder -= rows * std::max(1.0f, lineHeight);
+        }
+        else remainder = 0;
+        previousY = pointerY;
+        wasDragging = dragging;
+    }
+
     // Shared logical viewport for portrait rendering and pointer hit tests.
     static constexpr float PartyPortraitNativeWidth = 60.0f;
     static constexpr float PartyPortraitNativeHeight = 80.0f;

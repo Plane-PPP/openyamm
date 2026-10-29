@@ -59,6 +59,7 @@ add_executable(openyamm_unit_tests
     GameplaySaveLoadUiSupportTests.cpp
     AlchemyBenchRegressionTests.cpp
     ReagentStackTests.cpp
+    InspectSupplementTests.cpp
     GameplayRuleRegressionTests.cpp
     LethalStrikeTests.cpp
     AxeRebalanceTests.cpp

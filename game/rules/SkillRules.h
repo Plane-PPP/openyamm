@@ -155,7 +155,7 @@ public:
         const Party &party,
         const Character &character,
         const std::string &statName,
-        const std::string &table) const;
+        const std::string &table, bool russian = false) const;
     // A stats page row's label and value when the rules show something else there (MAW: Melee Power in the Condition
     // row, Ranged Power in the Quick Spell row), or for the two rows they may add ("SpellPower" and "Vitality": MAW's
     // Spell Power and Vitality). Standard: none.

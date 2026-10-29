@@ -5,7 +5,10 @@ Implemented / selected Linux checks passed; Windows packaging/manual testing pen
 - Preserve Minotaur balance, named skills and old saves; Lethal Strike49 coexists with Cybernetics48.
 - Stack ordinary compatible reagents to50; Shift takes1, Ctrl takes half upward.
 - Brewing consumes one unit; sort, transactional grants, split-sale pricing and saved quantities covered.
-See [implementation status](docs/minotaur-1.18.md). Extended tooltips are still Pending.
+- Preserve original RMB descriptions and append real primary-stat bonuses and engine thresholds.
+- Show isolated armor Recovery penalties and final weapon Recovery, including read-only equip previews.
+- Bound long descriptions to the viewport with wheel/touch scrolling; keep MAW-specific formulas.
+See [implementation status](docs/minotaur-1.18.md). Windows packaging/manual tests remain pending.
 
 # Windows gameplay fixes patch (2026-10-27)
 

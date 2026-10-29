@@ -1883,9 +1883,7 @@ float resolveAttackRecoverySeconds(
 
         if (isShieldItem(*equippedItems.pOffHand))
         {
-            shieldRecoveryTicks = static_cast<int>(std::lround(
-                static_cast<float>(baseRecoveryTicksForSkillName(offHandSkillName))
-                * armorRecoveryMultiplier(character, "Shield")));
+            shieldRecoveryTicks = GameMechanics::armorRecoveryPenaltyTicks(character, *equippedItems.pOffHand);
         }
         else if (baseRecoveryTicksForSkillName(offHandSkillName) > weaponRecoveryTicks)
         {
@@ -1898,10 +1896,7 @@ float resolveAttackRecoverySeconds(
 
     if (equippedItems.pArmor != nullptr)
     {
-        const std::string armorSkillName = canonicalSkillName(equippedItems.pArmor->skillGroup);
-        armorRecoveryTicks = static_cast<int>(std::lround(
-            static_cast<float>(baseRecoveryTicksForSkillName(armorSkillName))
-            * armorRecoveryMultiplier(character, armorSkillName)));
+        armorRecoveryTicks = GameMechanics::armorRecoveryPenaltyTicks(character, *equippedItems.pArmor);
     }
 
     const int actualSpeed = static_cast<int>(character.speed)
@@ -4423,5 +4418,160 @@ std::optional<CharacterEquipPlan> GameMechanics::resolveCharacterEquipPlan(
     }
 
     return std::nullopt;
+}
+
+int GameMechanics::armorRecoveryPenaltyTicks(const Character &character, const ItemDefinition &item)
+{
+    if (item.equipStat != "Armor" && item.equipStat != "Shield") return 0;
+    const std::string skill = canonicalSkillName(item.skillGroup);
+    return int(std::lround(float(baseRecoveryTicksForSkillName(skill)) * armorRecoveryMultiplier(character, skill)));
+}
+
+int GameMechanics::attackRecoveryTicks(const Party &party, const Character &character,
+    CharacterAttackMode mode, const SpellTable *spells, CharacterAttackTuning tuning)
+{
+    if (party.itemTable() == nullptr) return 0;
+    const auto override = gameRulesFor(&party).combat.characterAttackRecoveryTicks(character, mode,
+        *party.itemTable(), party.standardItemEnchantTable(), party.specialItemEnchantTable());
+    if (override) return *override;
+    const auto profile = buildCharacterAttackProfile(character, party.itemTable(), spells, tuning);
+    const float seconds = mode == CharacterAttackMode::Melee ? profile.meleeRecoverySeconds : profile.rangedRecoverySeconds;
+    return std::max(0, int(std::lround(seconds / ticksToRecoverySeconds(1))));
+}
+
+std::string GameMechanics::buildItemRecoveryInspectSupplement(const Party &party, size_t memberIndex,
+    const InventoryItem &item, bool equipped, const SpellTable *spells, CharacterAttackTuning tuning, bool russian)
+{
+    const Character *viewer = party.member(memberIndex);
+    const ItemDefinition *definition = party.itemTable() ? party.itemTable()->get(item.objectDescriptionId) : nullptr;
+    if (!viewer || !definition) return {};
+    const bool armor = definition->equipStat == "Armor" || definition->equipStat == "Shield";
+    const bool weapon = definition->equipStat == "Weapon" || definition->equipStat == "Weapon2"
+        || definition->equipStat == "Weapon1or2" || definition->equipStat == "Missile";
+    if (!armor && !weapon) return {};
+    const std::string skill = canonicalSkillName(definition->skillGroup);
+    const CharacterAttackMode mode = definition->equipStat == "Missile" ? CharacterAttackMode::Bow
+        : skill == "Blaster" ? CharacterAttackMode::Blaster
+        : isWandWeapon(*definition) ? CharacterAttackMode::Wand : CharacterAttackMode::Melee;
+    // MAW's armor impairment is multiplicative, not the Standard additive penalty.
+    const bool alternateRecovery = gameRulesFor(&party).combat.characterAttackRecoveryTicks(*viewer, mode,
+        *party.itemTable(), party.standardItemEnchantTable(), party.specialItemEnchantTable()).has_value();
+    if (armor)
+    {
+        if (alternateRecovery) return {}; // Its existing ruleset inspection explains armor impairment.
+        return std::string(russian ? "Штраф Recovery" : "Recovery penalty")
+            + (equipped ? "" : russian ? " (при надевании)" : " (if equipped)") + ": +"
+            + std::to_string(armorRecoveryPenaltyTicks(*viewer, *definition)) + (russian ? " тиков" : " ticks");
+    }
+    if (equipped)
+        return std::string(russian ? "Recovery атаки (текущий комплект): " : "Attack Recovery (current equipment): ")
+            + std::to_string(attackRecoveryTicks(party, *viewer, mode, spells, tuning)) + (russian ? " тиков" : " ticks");
+    Party trial = party;
+    const auto plan = resolveCharacterEquipPlan(*viewer, *definition, party.itemTable(), nullptr, std::nullopt, false);
+    std::optional<InventoryItem> displaced;
+    if (plan && trial.tryEquipItemOnMember(memberIndex, plan->targetSlot, item,
+            plan->displacedSlot, plan->autoStoreDisplacedItem, displaced))
+        return std::string(russian ? "Recovery атаки (предпросмотр надевания): " : "Attack Recovery (equip preview): ")
+            + std::to_string(attackRecoveryTicks(trial, *trial.member(memberIndex), mode, spells, tuning))
+            + (russian ? " тиков" : " ticks");
+    return std::string(russian ? "Базовое Recovery оружия: " : "Base weapon Recovery: ")
+        + std::to_string(baseRecoveryTicksForSkillName(skill))
+        + (russian ? " тиков; итоговое значение доступно после экипировки." : " ticks; final recovery available after equipping.");
+}
+
+int GameMechanics::primaryStatModifier(int value)
+{
+    return parameterBonus(value);
+}
+
+std::vector<std::pair<int, int>> GameMechanics::primaryStatThresholds()
+{
+    std::vector<std::pair<int, int>> result;
+    for (size_t i = std::size(ParameterBonusThresholds); i > 0; --i)
+    {
+        result.emplace_back(ParameterBonusThresholds[i - 1], ParameterBonusValues[i - 1]);
+    }
+    return result;
+}
+
+std::string GameMechanics::buildPrimaryStatInspectSupplement(
+    const Party &party, const Character &character, const std::string &statName, bool russian)
+{
+    static constexpr std::array<std::string_view, 7> Names = {
+        "Might", "Intellect", "Personality", "Endurance", "Accuracy", "Speed", "Luck"};
+    static constexpr std::array<uint32_t Character::*, 7> Fields = {
+        &Character::might, &Character::intellect, &Character::personality, &Character::endurance,
+        &Character::accuracy, &Character::speed, &Character::luck};
+    const auto found = std::find(Names.begin(), Names.end(), statName);
+    if (found == Names.end())
+    {
+        return {};
+    }
+    const size_t index = size_t(found - Names.begin());
+    static constexpr std::array<uint32_t, 7> ActualIds = {0x27, 0x28, 0x29, 0x2A, 0x2C, 0x2B, 0x2D};
+    const int actual = resolveCharacterDisplayedActualPrimaryStat(character, ActualIds[index],
+        party.itemTable(), party.standardItemEnchantTable(), party.specialItemEnchantTable());
+    const auto total = [](uint32_t base, int permanent, int magical)
+    {
+        return uint32_t(std::clamp<int64_t>(int64_t(base) + permanent + magical, 0, std::numeric_limits<int>::max()));
+    };
+    Character formula = character;
+    formula.intellect = total(character.intellect, character.permanentBonuses.intellect, character.magicalBonuses.intellect);
+    formula.personality = total(character.personality, character.permanentBonuses.personality,
+        character.magicalBonuses.personality);
+    formula.endurance = total(character.endurance, character.permanentBonuses.endurance, character.magicalBonuses.endurance);
+    int input = actual;
+    if (index >= 1 && index <= 3) input = int(formula.*Fields[index]);
+    if (index == 5) input = int(total(character.speed, character.permanentBonuses.speed, character.magicalBonuses.speed));
+    if (index == 6) input = int(total(character.luck, character.permanentBonuses.luck, character.magicalBonuses.luck));
+    const auto thresholds = primaryStatThresholds();
+    const auto zero = std::find_if(thresholds.begin(), thresholds.end(),
+        [](const auto &tier) { return tier.second == 0; });
+    Character neutral = formula;
+    neutral.*Fields[index] = uint32_t(zero->first);
+    const int baseline = index == 3 ? calculateBaseCharacterMaxHealth(neutral, party.classMultiplierTable())
+        : (index == 1 || index == 2) ? calculateBaseCharacterMaxSpellPoints(neutral, party.classMultiplierTable()) : 0;
+    const auto effect = [&](int value)
+    {
+        formula.*Fields[index] = uint32_t(std::max(0, value));
+        if (index == 3) return calculateBaseCharacterMaxHealth(formula, party.classMultiplierTable()) - baseline;
+        if (index == 1 || index == 2)
+            return calculateBaseCharacterMaxSpellPoints(formula, party.classMultiplierTable()) - baseline;
+        return index == 5 ? -primaryStatModifier(value) : primaryStatModifier(value);
+    };
+    const auto signedNumber = [](int value) { return (value >= 0 ? "+" : "") + std::to_string(value); };
+    static constexpr std::array<const char *, 7> Effects = {
+        "Ordinary melee damage modifier", "Base SP contribution vs zero modifier", "Base SP contribution vs zero modifier",
+        "Base HP contribution vs zero modifier", "Ordinary weapon attack modifier", "Recovery adjustment (ticks)",
+        "Resistance-roll modifier (not a flat damage reduction %)"};
+    static constexpr std::array<const char *, 7> RussianEffects = {
+        "Бонус обычного рукопашного урона", "Вклад в базовые SP относительно нулевого бонуса", "Вклад в базовые SP относительно нулевого бонуса",
+        "Вклад в базовые HP относительно нулевого бонуса", "Бонус попадания обычным оружием", "Изменение Recovery (тики)",
+        "Бонус проверки сопротивления (не процент снижения урона)"};
+    std::ostringstream text;
+    text << (russian ? "Текущее значение: " : "Current value: ") << actual;
+    if (input != actual) text << (russian ? "\nЗначение в формуле: " : "\nFormula input: ") << input;
+    text << '\n' << (russian ? RussianEffects[index] : Effects[index]) << ": " << signedNumber(effect(input));
+    if (index == 5)
+        text << (russian ? "\nБонус Armor Class: " : "\nArmor Class modifier: ") << signedNumber(primaryStatModifier(actual));
+    if (index == 6 && character.findSkill("LethalStrike") && character.findSkill("LethalStrike")->level > 0)
+        text << (russian ? "\nБонус шанса Lethal Strike: +" : "\nLethal Strike chance bonus: +")
+             << std::fixed << std::setprecision(2) << lethalStrikeLuckBonus(character) << "%";
+    const auto next = std::find_if(thresholds.begin(), thresholds.end(),
+        [input](const auto &tier) { return tier.first > input; });
+    if (next != thresholds.end())
+        text << (russian ? "\nСледующий порог: " : "\nNext threshold: ") << next->first
+             << " -> " << signedNumber(effect(next->first));
+    else text << (russian ? "\nДостигнут верхний порог." : "\nHighest threshold reached.");
+    text << (russian ? "\n\nПороги: значение -> эффект; > текущая ступень\n"
+                     : "\n\nThresholds: value -> effect; > current tier\n");
+    size_t current = 0;
+    for (size_t i = 0; i < thresholds.size(); ++i) if (thresholds[i].first <= input) current = i;
+    for (size_t i = 0; i < thresholds.size(); ++i)
+    {
+        text << (i == current ? ">" : " ") << thresholds[i].first << ":" << signedNumber(effect(thresholds[i].first));
+        if (i + 1 < thresholds.size()) text << ((i + 1) % 3 == 0 ? "\n" : " | ");
+    }
+    return text.str();
 }
 }

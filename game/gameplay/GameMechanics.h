@@ -9,6 +9,8 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace OpenYAMM::Game
 {
@@ -308,6 +310,16 @@ public:
         Character &character,
         bool restoreCurrentToMaximum = false,
         const ClassMultiplierTable *pClassMultiplierTable = nullptr);
+    // Read-only inspection uses the same recovery profile and ruleset override as combat.
+    static int armorRecoveryPenaltyTicks(const Character &, const ItemDefinition &);
+    static int attackRecoveryTicks(const Party &, const Character &, CharacterAttackMode,
+        const SpellTable *, CharacterAttackTuning = {});
+    static std::string buildItemRecoveryInspectSupplement(const Party &, size_t memberIndex,
+        const InventoryItem &, bool equipped, const SpellTable *, CharacterAttackTuning = {}, bool russian = false);
+    static int primaryStatModifier(int value);
+    static std::vector<std::pair<int, int>> primaryStatThresholds();
+    static std::string buildPrimaryStatInspectSupplement(const Party &party, const Character &character,
+        const std::string &statName, bool russian = false);
     static std::string buildExperienceInspectSupplement(
         const Character &character,
         const ExperienceRules &experienceRules = standardExperienceRules());

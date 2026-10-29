@@ -664,7 +664,7 @@ std::string MawSkillRules::statTooltip(
     const Party &party,
     const Character &character,
     const std::string &statName,
-    const std::string &table) const
+    const std::string &table, bool) const
 {
     // The rows statRowText relabels or adds (Melee, Ranged and Spell Power, Vitality) explain their own numbers; MAW
     // leaves Condition's and Quick Spell's popups on them (zzMaw-Stats.lua:269-291, 425-456, 1189-1340).

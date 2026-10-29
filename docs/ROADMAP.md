@@ -1,9 +1,17 @@
+## Expanded inspection — Implemented / final checks in progress
+
+Real Standard attribute bonuses/thresholds and armor/weapon Recovery now supplement original descriptions.
+Read-only equip previews, ruleset Recovery overrides and bounded wheel/touch scrolling included.
+152 selected cases /35,969 assertions and three native Lethal Strike cases /58 assertions passed.
+Full native game compiled; Windows ZIP pending.
+[Current 1.18 notes](minotaur-1.18.md).
+
 ## Reagent stacks — Implemented / selected Linux tests passed
 
 Up to50 ordinary same-property reagents per cell; atomic pickup, manual merge/remainder, split controls,
 sorting, single-unit brewing, sale/buy pricing and quantity persistence added.
 21 selected cases /1187 assertions passed. [Current 1.18 notes](minotaur-1.18.md).
-Expanded tooltips and final native/UI/Windows validation remain Pending. No new Windows ZIP yet.
+Expanded tooltips implemented below; final runtime/Windows validation pending. No new Windows ZIP yet.
 
 ## OpenYAMM v1.18 integration — Implemented / selected Linux tests passed
 
@@ -15,10 +23,10 @@ Adapted Lethal Strike death handling to ShieldHitModifiers without changing bala
 Cybernetics keeps upstream ID48; Lethal Strike moves to49, named saved skills and teachers preserved.
 Mod save140 maps to upstream139; production mod132 maps explicitly to131; older mappings retained.
 Original 1.14 binary generated a frozen v132 fixture; 85 selected cases /32,239 assertions passed.
-Reagent stacks, expanded tooltips, full integration/UI checks and Windows packaging are still Pending.
+Reagent stacks and expanded tooltips implemented in following stages; final Windows packaging is pending.
 No new Windows artifact is claimed at this stage.
 
-## Подготовка будущего обновления upstream — исследование завершено
+## История: подготовка обновления upstream — заменено интеграцией v1.18 выше
 
 Проверены наши Alchemy/Mind Resistance/Levitate против upstream `fc4e117` (2026-10-28).
 [План объединения и проверки](research/upstream-fc4e117-fix-integration.md).

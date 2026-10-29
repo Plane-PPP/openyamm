@@ -730,6 +730,12 @@ struct GameplayOverlayInteractionState
     int dialogueBodyScrollLines = 0;
     std::string dialogueBodyText;
     std::string dialogueStatusHint;
+    float characterInspectDragY = 0, characterInspectDragRemainder = 0;
+    bool characterInspectDragging = false;
+    int characterInspectScrollLines = 0;
+    std::string characterInspectScrollTitle;
+    float itemInspectDragY = 0, itemInspectDragRemainder = 0;
+    bool itemInspectDragging = false;
     int itemInspectScrollLines = 0;
     uint32_t itemInspectScrollItem = 0;
     bool closeOverlayLatch = false;

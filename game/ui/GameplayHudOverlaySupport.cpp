@@ -34,7 +34,6 @@ constexpr float HudReferenceWidth = 640.0f;
 constexpr float HudReferenceHeight = 480.0f;
 constexpr float MaxUiScale = 8.0f;
 constexpr uint16_t HudViewId = 2;
-constexpr float OeRealtimeRecoveryScale = 2.133333333333333f;
 
 uint32_t packHudColorAbgr(uint8_t red, uint8_t green, uint8_t blue)
 {
@@ -101,7 +100,7 @@ int recoveryTicksFromSeconds(float recoverySeconds)
 {
     return std::max(
         0,
-        int(std::lround(std::max(0.0f, recoverySeconds) / OeRealtimeRecoveryScale * 128.0f)));
+        int(std::lround(std::max(0.0f, recoverySeconds) / ticksToRecoverySeconds(1))));
 }
 
 bool mainHandAttackUsesBlasterRecovery(const Character &character, const ItemTable &itemTable)
@@ -722,7 +721,8 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
             if (pStatParty != nullptr)
             {
                 overlay.body =
-                    gameRulesFor(pStatParty).skills.statTooltip(*pStatParty, *pCharacter, row.pStatName, overlay.body);
+                    gameRulesFor(pStatParty).skills.statTooltip(*pStatParty, *pCharacter, row.pStatName, overlay.body,
+                        context.settingsSnapshot().minotaurRussianText);
             }
 
             if (std::string_view(row.pStatName) == "DamageResistance" && context.settingsSnapshot().minotaurRussianText)

@@ -73,7 +73,7 @@ public:
         const Party &party,
         const Character &character,
         const std::string &statName,
-        const std::string &table) const override;
+        const std::string &table, bool russian = false) const override;
     // The stats page's M/R/S powers and Vitality, in four rows where Condition and Quick Spell were.
     std::optional<CharacterStatRowText> statRowText(
         const Party &party,
