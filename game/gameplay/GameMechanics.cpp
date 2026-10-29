@@ -4431,10 +4431,14 @@ int GameMechanics::attackRecoveryTicks(const Party &party, const Character &char
     CharacterAttackMode mode, const SpellTable *spells, CharacterAttackTuning tuning)
 {
     if (party.itemTable() == nullptr) return 0;
+    const auto profile = buildCharacterAttackProfile(character, party.itemTable(), spells, tuning);
+    // Like an ordinary attack, a usable main-hand blaster or wand takes precedence at either range.
+    // In particular, inspecting the other hand must not select a fictitious separate melee attack.
+    if (profile.hasBlaster && profile.rangedAttackBonus) mode = CharacterAttackMode::Blaster;
+    else if (profile.hasWand && profile.rangedAttackBonus) mode = CharacterAttackMode::Wand;
     const auto override = gameRulesFor(&party).combat.characterAttackRecoveryTicks(character, mode,
         *party.itemTable(), party.standardItemEnchantTable(), party.specialItemEnchantTable());
     if (override) return *override;
-    const auto profile = buildCharacterAttackProfile(character, party.itemTable(), spells, tuning);
     const float seconds = mode == CharacterAttackMode::Melee ? profile.meleeRecoverySeconds : profile.rangedRecoverySeconds;
     return std::max(0, int(std::lround(seconds / ticksToRecoverySeconds(1))));
 }
@@ -4510,9 +4514,13 @@ std::string GameMechanics::buildPrimaryStatInspectSupplement(
         return {};
     }
     const size_t index = size_t(found - Names.begin());
-    static constexpr std::array<uint32_t, 7> ActualIds = {0x27, 0x28, 0x29, 0x2A, 0x2C, 0x2B, 0x2D};
-    const int actual = resolveCharacterDisplayedActualPrimaryStat(character, ActualIds[index],
-        party.itemTable(), party.standardItemEnchantTable(), party.specialItemEnchantTable());
+    // The sheet already reconciles equipped bonuses with magicalBonuses; the legacy raw-stat
+    // query adds equipment separately and must not be used here (it would count worn items twice).
+    const CharacterSheetSummary sheet = buildCharacterSheetSummary(character, party.itemTable(),
+        party.standardItemEnchantTable(), party.specialItemEnchantTable());
+    const std::array<int, 7> actualValues = {sheet.might.actual, sheet.intellect.actual, sheet.personality.actual,
+        sheet.endurance.actual, sheet.accuracy.actual, sheet.speed.actual, sheet.luck.actual};
+    const int actual = actualValues[index];
     const auto total = [](uint32_t base, int permanent, int magical)
     {
         return uint32_t(std::clamp<int64_t>(int64_t(base) + permanent + magical, 0, std::numeric_limits<int>::max()));

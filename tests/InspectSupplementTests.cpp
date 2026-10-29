@@ -233,3 +233,45 @@ TEST_CASE("Inspect previews obey doll weapon restrictions and identify wand reco
     }
     FAIL("missing wand fixture");
 }
+
+TEST_CASE("Inspect primary stats do not count worn bonuses twice")
+{
+    Party party = inspectionParty();
+    party.setItemEnchantTables(&data().standardItemEnchantTable, &data().specialItemEnchantTable);
+    auto *c = party.member(0);
+    c->might = 20;
+    c->equipment.mainHand = 501; // Existing character-sheet regression fixture: +40 Might.
+    for (int magical : {40, 47})
+    {
+        c->magicalBonuses.might = magical;
+        const auto sheet = GameMechanics::buildCharacterSheetSummary(*c, &data().itemTable,
+            &data().standardItemEnchantTable, &data().specialItemEnchantTable);
+        CHECK(sheet.might.actual == 20 + magical);
+        const auto text = GameMechanics::buildPrimaryStatInspectSupplement(party, *c, "Might");
+        CHECK(text.find("Current value: " + std::to_string(sheet.might.actual)) != std::string::npos);
+        CHECK(text.find("damage modifier: +" + std::to_string(GameMechanics::primaryStatModifier(sheet.might.actual)))
+            != std::string::npos);
+    }
+}
+
+TEST_CASE("Inspect other hand uses the same active blaster recovery as the completed attack")
+{
+    Party party = inspectionParty();
+    auto *c = party.member(0);
+    for (const auto &entry : data().itemTable.entries())
+    {
+        if (canonicalSkillName(entry.skillGroup) != "Blaster" || entry.equipStat != "Weapon") continue;
+        c->equipment.mainHand = entry.itemId;
+        c->equipment.offHand = item("Axe", "Weapon");
+        const auto profile = GameMechanics::buildCharacterAttackProfile(*c, &data().itemTable, &data().spellTable);
+        REQUIRE(profile.hasBlaster);
+        REQUIRE(profile.rangedAttackBonus);
+        const int expected = int(std::lround(profile.rangedRecoverySeconds / ticksToRecoverySeconds(1)));
+        CHECK(GameMechanics::attackRecoveryTicks(party, *c, CharacterAttackMode::Melee, &data().spellTable) == expected);
+        InventoryItem axe; axe.objectDescriptionId = c->equipment.offHand;
+        CHECK(GameMechanics::buildItemRecoveryInspectSupplement(party, 0, axe, true, &data().spellTable)
+            .find(": " + std::to_string(expected) + " ticks") != std::string::npos);
+        return;
+    }
+    FAIL("missing blaster fixture");
+}

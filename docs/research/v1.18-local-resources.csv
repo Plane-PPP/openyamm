@@ -11,3 +11,7 @@ run,label,exit,seconds,peak_MiB,swap_MiB,mean_VM_CPU_percent,max_memory_PSI_some
 20261029T101758Z-2d52f384b0,v118-compact-save-test-build,0,10.14,679.87,0.0,6.81,0.0,0.0,0,0
 20261029T101831Z-7143bfa7b4,v118-release-regressions,0,5.14,40.36,0.0,3.73,0.0,0.0,0,0
 20261029T101852Z-b59069787a,v118-release-native-regressions,0,5.16,39.41,0.0,0.28,0.0,0.0,0,0
+20261029T104515Z-3aed84eb8f,v118-sheet-bonus-inspect-build,0,10.14,994.6,0.0,13.37,0.0,0.0,0,0
+20261029T110246Z-acba09a34c,v118-final-inspect-audit-build,0,10.14,996.93,0.0,14.06,0.0,0.0,0,0
+20261029T110319Z-eac91c9a51,v118-audited-release-regressions,0,5.14,40.36,0.0,3.69,0.0,0.0,0,0
+20261029T110414Z-820349cfae,v118-audited-native-regressions,0,5.14,39.74,0.0,0.27,0.0,0.0,0,0

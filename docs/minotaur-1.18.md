@@ -36,7 +36,8 @@ No reagent bags, potion/bottle/weapon/armour auto-stacking or balance changes in
 
 Implemented; original descriptions/enchantments retained. Standard's seven primary-stat descriptions append
 current effective value, actual effect, next tier and every meaningful threshold (29 entries in three columns).
-The threshold API reads the combat engine's original parameter table. HP/SP contributions call the same class
+The threshold API reads the combat engine's original parameter table. Current values come from the actual
+CharacterSheetSummary, avoiding the legacy raw-stat API that would double-count worn bonuses. HP/SP contributions call the same class
 resource functions on copies, relative to the zero-modifier tier, respecting the class's mana mode.
 Speed shows its Recovery adjustment and AC modifier. Luck explains the resistance roll (not flat mitigation)
 and, where learned, the existing Lethal Strike Luck contribution. No combat formula changed.
@@ -44,6 +45,7 @@ and, where learned, the existing Lethal Strike Luck contribution. No combat form
 Armor/Shield show their isolated additive Standard Recovery penalty with current mastery, including zero.
 The helper is also used by the real attack calculation; Speed, Haste and other equipment do not contaminate it.
 Equipped weapons show actual final Recovery for the whole attack, so both dual-wielded weapons agree.
+A usable main-hand blaster/wand keeps its normal attack priority, including when inspecting the other hand.
 Unequipped weapons use the normal equip plan on a Party copy; the label identifies an equip preview.
 If equip validation fails (including space/restrictions), show explicitly labeled base weapon Recovery instead.
 The preview applies the inspecting character’s doll/type equipment restrictions and includes wands’ spell Recovery.
@@ -58,7 +60,7 @@ are untouched. Actual 4:3/16:9/ultrawide/Android visual validation remains manua
 
 ## Validation in progress
 
-154 selected gameplay cases /35,992 assertions passed, including ten inspection cases and MAW bags/potions.
+156 selected gameplay cases /36,020 assertions passed, including twelve inspection cases and MAW bags/potions.
 Full native executable compiled successfully (protected run 20261029T083305Z-2419c36760, peak4343MiB).
 Final native/runtime/unit build passed. Three genuine indoor/outdoor/new-game Lethal Strike cases /58 assertions passed.
 Windows ZIP packaging: Pending.
