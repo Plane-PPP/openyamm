@@ -875,5 +875,7 @@ struct GameplayRenderedInspectableHudItem
     float width = 0.0f;
     float height = 0.0f;
     bool rotatedCounterClockwise = false;
+    // The whole rectangle answers, not only the texture's opaque pixels (a list row: icon and name).
+    bool wholeAreaHits = false;
 };
 } // namespace OpenYAMM::Game

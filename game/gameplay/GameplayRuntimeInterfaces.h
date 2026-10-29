@@ -20,6 +20,10 @@
 
 namespace OpenYAMM::Game
 {
+// How far ahead of the party MAW's gather key tries to put what it brings, the nearer ones when a wall or a drop is in
+// the way of the farther; at the party's feet when none will do.
+inline constexpr std::array<float, 3> LootGatherDistances = {192.0f, 128.0f, 64.0f};
+
 class ActorBehaviorRuntime;
 class GameplayActorHitFeedback;
 class GameplayProjectileService;
@@ -1078,18 +1082,30 @@ public:
         (void)height;
         return false;
     }
-    // Moves at most `maxCount` lootable corpses to the party's feet (MAW's gather key); returns how many moved.
+    // Moves at most `maxCount` lootable corpses in front of the party (MAW's gather key, LootGatherDistances); returns
+    // how many moved.
     virtual size_t gatherCorpsesToParty(size_t maxCount)
     {
         (void)maxCount;
         return 0;
     }
-    // Moves at most `maxCount` ground items that `gathers` accepts to the party's feet; returns how many moved.
+    // Moves at most `maxCount` ground items that `gathers` accepts in front of the party; returns how many moved.
     virtual size_t gatherWorldItemsToParty(size_t maxCount, const std::function<bool(const InventoryItem &)> &gathers)
     {
         (void)maxCount;
         (void)gathers;
         return 0;
+    }
+    // The dead actors whose satchels can still be looted (MAW's gather key on a completed map loots them all).
+    virtual std::vector<size_t> lootableCorpseActorIndices() const
+    {
+        return {};
+    }
+    // Opens an actor's satchel as the active corpse view, as clicking it does; false when it holds nothing.
+    virtual bool openActorCorpseView(size_t actorIndex)
+    {
+        (void)actorIndex;
+        return false;
     }
     // Launches the party as the event Jump does: a heading and horizontal and vertical speeds in the event's units
     // (MAW's Puller bosses).

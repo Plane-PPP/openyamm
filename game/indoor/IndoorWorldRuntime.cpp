@@ -12367,42 +12367,101 @@ void IndoorWorldRuntime::wakeIndoorActorNeighbours(size_t actorIndex)
     }
 }
 
-size_t IndoorWorldRuntime::gatherCorpsesToParty(size_t maxCount)
+std::vector<size_t> IndoorWorldRuntime::lootableCorpseActorIndices() const
 {
-    MapDeltaData *pMapDeltaData = mapDeltaData();
+    std::vector<size_t> actorIndices;
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
 
-    if (pMapDeltaData == nullptr || m_pPartyRuntime == nullptr || m_pIndoorMapData == nullptr
-        || m_pMonsterTable == nullptr)
+    if (pMapDeltaData == nullptr || m_pMonsterTable == nullptr)
     {
-        return 0;
+        return actorIndices;
     }
 
-    const float x = partyX();
-    const float y = partyY();
-    const float z = partyFootZ();
-    RuntimeGeometryCache &geometry = runtimeGeometryCache();
-    size_t moved = 0;
-
     for (size_t actorIndex = 0;
-         actorIndex < pMapDeltaData->actors.size() && actorIndex < m_mapActorAiStates.size() && moved < maxCount;
+         actorIndex < pMapDeltaData->actors.size() && actorIndex < m_mapActorAiStates.size();
          ++actorIndex)
     {
         const MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
         const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
 
-        if (actor.hp > 0
-            || (aiState.motionState != ActorAiMotionState::Dying && aiState.motionState != ActorAiMotionState::Dead)
-            || !actorShouldLeaveCorpse(m_pMonsterTable, actor)
-            || (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) != 0
-            || indoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex))
+        if (actor.hp <= 0
+            && (aiState.motionState == ActorAiMotionState::Dying || aiState.motionState == ActorAiMotionState::Dead)
+            && actorShouldLeaveCorpse(m_pMonsterTable, actor)
+            && (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) == 0
+            && !indoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex))
+        {
+            actorIndices.push_back(actorIndex);
+        }
+    }
+
+    return actorIndices;
+}
+
+bool IndoorWorldRuntime::openActorCorpseView(size_t actorIndex)
+{
+    return openMapActorCorpseView(actorIndex);
+}
+
+// On the floor a little ahead of the party and in its sight (LootGatherDistances), else at its feet.
+IndoorWorldRuntime::LootGatherSpot IndoorWorldRuntime::lootGatherSpot() const
+{
+    constexpr float SightHeight = 48.0f;
+    constexpr float MaxRise = 48.0f;
+    constexpr float MaxDrop = 192.0f;
+    const IndoorMoveState &party = m_pPartyRuntime->movementState();
+    const int16_t partySectorId = party.sectorId >= 0 ? party.sectorId : party.eyeSectorId;
+    RuntimeGeometryCache &geometry = runtimeGeometryCache();
+    const float yaw = gameplayCameraYawRadians();
+    const GameplayWorldPoint eye = {party.x, party.y, party.footZ + SightHeight};
+
+    for (const float distance : LootGatherDistances)
+    {
+        const float x = party.x + std::cos(yaw) * distance;
+        const float y = party.y + std::sin(yaw) * distance;
+        const IndoorFloorSample floor = sampleIndoorFloor(*m_pIndoorMapData, geometry.vertices, x, y,
+            party.footZ + 1.0f, MaxRise, MaxDrop, std::nullopt, nullptr, &geometry.geometryCache);
+
+        if (!floor.hasFloor)
         {
             continue;
         }
 
-        const std::optional<int16_t> sectorId = findIndoorSectorForPoint(*m_pIndoorMapData, geometry.vertices,
-            {x, y, z + float(aiState.collisionHeight) * 0.5f}, &geometry.geometryCache, false);
+        const std::optional<int16_t> sectorId = findIndoorSectorForPoint(
+            *m_pIndoorMapData, geometry.vertices, {x, y, floor.height + 16.0f}, &geometry.geometryCache, false);
 
-        if (sectorId && placeMapActorAt(actorIndex, x, y, z, *sectorId))
+        if (sectorId
+            && hasIndoorCombatLineOfSight(eye, partySectorId, {x, y, floor.height + SightHeight}, *sectorId))
+        {
+            return {x, y, floor.height, *sectorId};
+        }
+    }
+
+    return {party.x, party.y, party.footZ, partySectorId};
+}
+
+size_t IndoorWorldRuntime::gatherCorpsesToParty(size_t maxCount)
+{
+    if (m_pPartyRuntime == nullptr || m_pIndoorMapData == nullptr)
+    {
+        return 0;
+    }
+
+    const LootGatherSpot spot = lootGatherSpot();
+    RuntimeGeometryCache &geometry = runtimeGeometryCache();
+    size_t moved = 0;
+
+    for (size_t actorIndex : lootableCorpseActorIndices())
+    {
+        if (moved >= maxCount)
+        {
+            break;
+        }
+
+        const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+        const std::optional<int16_t> sectorId = findIndoorSectorForPoint(*m_pIndoorMapData, geometry.vertices,
+            {spot.x, spot.y, spot.footZ + float(aiState.collisionHeight) * 0.5f}, &geometry.geometryCache, false);
+
+        if (sectorId && placeMapActorAt(actorIndex, spot.x, spot.y, spot.footZ, *sectorId))
         {
             ++moved;
         }
@@ -12422,14 +12481,9 @@ size_t IndoorWorldRuntime::gatherWorldItemsToParty(
         return 0;
     }
 
-    const float x = partyX();
-    const float y = partyY();
-    const float z = partyFootZ();
-    RuntimeGeometryCache &geometry = runtimeGeometryCache();
-    const std::optional<int16_t> sectorId = findIndoorSectorForPoint(
-        *m_pIndoorMapData, geometry.vertices, {x, y, z + 16.0f}, &geometry.geometryCache, false);
+    const LootGatherSpot spot = lootGatherSpot();
 
-    if (!sectorId)
+    if (spot.sectorId < 0)
     {
         return 0;
     }
@@ -12453,13 +12507,13 @@ size_t IndoorWorldRuntime::gatherWorldItemsToParty(
             continue;
         }
 
-        spriteObject.x = int(std::lround(x));
-        spriteObject.y = int(std::lround(y));
-        spriteObject.z = int(std::lround(z));
+        spriteObject.x = int(std::lround(spot.x));
+        spriteObject.y = int(std::lround(spot.y));
+        spriteObject.z = int(std::lround(spot.footZ));
         spriteObject.velocityX = 0;
         spriteObject.velocityY = 0;
         spriteObject.velocityZ = 0;
-        spriteObject.sectorId = *sectorId;
+        spriteObject.sectorId = spot.sectorId;
         ++moved;
     }
 

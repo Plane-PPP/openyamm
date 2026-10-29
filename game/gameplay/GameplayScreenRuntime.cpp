@@ -1046,6 +1046,11 @@ GameplayUiController::ReadableScrollOverlayState &GameplayScreenRuntime::readabl
     return uiController().readableScrollOverlay();
 }
 
+GameplayUiController::LootSummaryOverlayState &GameplayScreenRuntime::lootSummaryOverlay() const
+{
+    return uiController().lootSummaryOverlay();
+}
+
 GameplayUiController::SpellbookState &GameplayScreenRuntime::spellbook() const
 {
     return m_session.gameplayScreenState().spellbook();
@@ -1159,6 +1164,11 @@ const GameplayUiController::SpellInspectOverlayState &GameplayScreenRuntime::spe
 const GameplayUiController::ReadableScrollOverlayState &GameplayScreenRuntime::readableScrollOverlayReadOnly() const
 {
     return uiController().readableScrollOverlay();
+}
+
+const GameplayUiController::LootSummaryOverlayState &GameplayScreenRuntime::lootSummaryOverlayReadOnly() const
+{
+    return uiController().lootSummaryOverlay();
 }
 
 const GameplayUiController::SpellbookState &GameplayScreenRuntime::spellbookReadOnly() const

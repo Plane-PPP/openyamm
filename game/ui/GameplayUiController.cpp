@@ -37,7 +37,8 @@ const std::vector<std::string> GameplayLayoutFiles = {
     "Data/ui/gameplay/buff_inspect.yml",
     "Data/ui/gameplay/character_detail.yml",
     "Data/ui/gameplay/actor_inspect.yml",
-    "Data/ui/gameplay/spell_inspect.yml"
+    "Data/ui/gameplay/spell_inspect.yml",
+    "Data/ui/gameplay/loot_summary.yml"
 };
 }
 
@@ -236,6 +237,16 @@ GameplayUiController::ReadableScrollOverlayState &GameplayUiController::readable
 const GameplayUiController::ReadableScrollOverlayState &GameplayUiController::readableScrollOverlay() const
 {
     return resolvedState().readableScrollOverlay;
+}
+
+GameplayUiController::LootSummaryOverlayState &GameplayUiController::lootSummaryOverlay()
+{
+    return resolvedState().lootSummaryOverlay;
+}
+
+const GameplayUiController::LootSummaryOverlayState &GameplayUiController::lootSummaryOverlay() const
+{
+    return resolvedState().lootSummaryOverlay;
 }
 
 GameplayUiController::SpellbookState &GameplayUiController::spellbook()

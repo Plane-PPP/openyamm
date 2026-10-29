@@ -502,6 +502,8 @@ public:
     bool dashParty(float directionX, float directionY, float distance) override;
     size_t gatherCorpsesToParty(size_t maxCount) override;
     size_t gatherWorldItemsToParty(size_t maxCount, const std::function<bool(const InventoryItem &)> &gathers) override;
+    std::vector<size_t> lootableCorpseActorIndices() const override;
+    bool openActorCorpseView(size_t actorIndex) override;
     const GameplayProjectileService *projectileServiceView() const override
     {
         return m_pGameplayProjectileService;
@@ -792,6 +794,14 @@ private:
     void materializeInitialMonsterSpawns();
     void syncMapActorAiStates();
     RuntimeGeometryCache &runtimeGeometryCache() const;
+    struct LootGatherSpot
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float footZ = 0.0f;
+        int16_t sectorId = -1;
+    };
+    LootGatherSpot lootGatherSpot() const;
     float flyingFootZUnderCeiling(float x, float y, float aimZ, float footZ, float collisionHeight) const;
     void carryRestingObjectsOnMovedFloors(const std::vector<std::pair<const MapDeltaDoor *, float>> &floorMoves);
     std::shared_ptr<const PathMap> indoorPathMap() const;

@@ -6,6 +6,7 @@
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/GameplayScreenState.h"
 #include "game/gameplay/GameplaySpellActionController.h"
+#include "game/ui/GameplayUiController.h"
 
 #include <cstdint>
 #include <optional>
@@ -172,8 +173,15 @@ public:
         Party &party,
         IGameplayWorldRuntime &worldRuntime,
         std::optional<size_t> targetActorIndex);
-    // The gather key (MAW's K): brings the corpses and ground items the party's rules name to the party's feet and
-    // says how many came; nothing in rules without it.
-    static std::optional<std::string> gatherLoot(const Party &party, IGameplayWorldRuntime &worldRuntime);
+    struct GatherLootResult
+    {
+        std::optional<std::string> statusText;
+        // Set (active) when the map was complete and its satchels were looted outright.
+        GameplayUiController::LootSummaryOverlayState summary;
+    };
+
+    // The gather key (MAW's K): brings the corpses and ground items the party's rules name in front of the party and
+    // says how many came; on a completed map it first loots every satchel into the bags. Nothing in rules without it.
+    static GatherLootResult gatherLoot(Party &party, IGameplayWorldRuntime &worldRuntime);
 };
 } // namespace OpenYAMM::Game

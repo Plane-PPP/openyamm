@@ -1,4 +1,5 @@
 #include "game/gameplay/GameplayScreenController.h"
+#include "game/ui/GameplayLootSummaryRenderer.h"
 
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameMechanics.h"
@@ -304,6 +305,7 @@ bool GameplayScreenController::canUpdateStandardWorldInspectOverlayFromMouse(
         || config.hasHeldItem
         || config.hasPendingSpellTarget
         || config.hasActiveLootView
+        || context.lootSummaryOverlayReadOnly().active
         || context.activeEventDialog().isActive
         || context.characterScreenReadOnly().open
         || context.spellbookReadOnly().active
@@ -365,8 +367,8 @@ bool GameplayScreenController::canEnableGameplayMouseLook(
         return false;
     }
 
-    // The quick item ring needs the cursor.
-    if (GameplayQuickItems::ringOpen(context))
+    // The quick item ring and the loot summary need the cursor.
+    if (GameplayQuickItems::ringOpen(context) || context.lootSummaryOverlayReadOnly().active)
     {
         return false;
     }
@@ -995,6 +997,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !houseBankInputActive
         && !context.inventoryNestedOverlay().active
         && !context.readableScrollOverlayReadOnly().active
+        && !context.lootSummaryOverlayReadOnly().active
         && !context.utilitySpellOverlayReadOnly().active
         && !context.pendingSpellTargetActive();
 
@@ -1077,6 +1080,17 @@ GameplayStandardWorldInputGateResult GameplayScreenController::gateStandardWorld
     GameplayScreenRuntime &context,
     const GameplayStandardWorldInputGateConfig &config)
 {
+    if (context.lootSummaryOverlayReadOnly().active)
+    {
+        if (config.pInputFrame != nullptr)
+        {
+            GameplayLootSummaryRenderer::handleInput(
+                context, *config.pInputFrame, config.pInputFrame->screenWidth, config.pInputFrame->screenHeight);
+        }
+
+        return {.blocked = true};
+    }
+
     if (config.blockOnDialogue && context.activeEventDialog().isActive)
     {
         return {.blocked = true};

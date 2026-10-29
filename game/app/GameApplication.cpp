@@ -12521,6 +12521,7 @@ void GameApplication::closeTransientGameplayUiForMapMove()
     screenRuntime.closeInventoryNestedOverlay();
     screenRuntime.closeActiveDialogForMapMove();
     screenRuntime.resetLootOverlayInteractionState();
+    screenRuntime.lootSummaryOverlay() = {};
 }
 
 bool GameApplication::processPendingArcomageGame()

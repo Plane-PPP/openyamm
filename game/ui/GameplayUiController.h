@@ -276,6 +276,31 @@ public:
         std::string body;
     };
 
+    // Where a looted item went in the bags, so the summary inspects (identifies, repairs) the item itself.
+    struct LootedItemPlace
+    {
+        size_t memberIndex = 0;
+        uint8_t bag = 0;
+        uint8_t gridX = 0;
+        uint8_t gridY = 0;
+    };
+
+    // What MAW's gather key looted on a completed map (lootAllCorpses), until dismissed.
+    struct LootSummaryOverlayState
+    {
+        bool active = false;
+        size_t satchelCount = 0;
+        int goldAmount = 0;
+        // Part of goldAmount the party's followers took.
+        int followerGoldShare = 0;
+        std::vector<InventoryItem> takenItems;
+        // takenItems' places, one each.
+        std::vector<LootedItemPlace> takenItemPlaces;
+        // Items the bags had no room for: left in their satchels, which are gathered in front of the party.
+        std::vector<InventoryItem> leftItems;
+        float scrollOffset = 0.0f;
+    };
+
     struct SpellbookState
     {
         bool active = false;
@@ -620,6 +645,7 @@ public:
         ActorInspectOverlayState actorInspectOverlay = {};
         SpellInspectOverlayState spellInspectOverlay = {};
         ReadableScrollOverlayState readableScrollOverlay = {};
+        LootSummaryOverlayState lootSummaryOverlay = {};
         SpellbookState spellbook = {};
         RestScreenState restScreen = {};
         MenuScreenState menuScreen = {};
@@ -676,6 +702,9 @@ public:
 
     ReadableScrollOverlayState &readableScrollOverlay();
     const ReadableScrollOverlayState &readableScrollOverlay() const;
+
+    LootSummaryOverlayState &lootSummaryOverlay();
+    const LootSummaryOverlayState &lootSummaryOverlay() const;
 
     SpellbookState &spellbook();
     const SpellbookState &spellbook() const;

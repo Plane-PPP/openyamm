@@ -319,6 +319,7 @@ add_library(openyamm_game STATIC
     gameplay/GameplayScreenRuntime.cpp
     ui/GameplayAlchemyBenchRenderer.cpp
     ui/GameplayAlchemyBenchView.cpp
+    ui/GameplayLootSummaryRenderer.cpp
     ui/GameplayCraftingBenchRenderer.cpp
     ui/GameplayCraftingBenchView.cpp
     ui/GameplayJournalAuras.cpp

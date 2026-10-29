@@ -7327,6 +7327,56 @@ void OutdoorWorldRuntime::placeMapActor(size_t actorIndex, float x, float y, flo
     }
 }
 
+std::vector<size_t> OutdoorWorldRuntime::lootableCorpseActorIndices() const
+{
+    std::vector<size_t> actorIndices;
+
+    for (size_t actorIndex = 0; actorIndex < m_mapActors.size(); ++actorIndex)
+    {
+        const MapActorState &actor = m_mapActors[actorIndex];
+
+        if (actor.isDead && !actor.isInvisible && actorShouldLeaveCorpse(m_pMonsterTable, actor)
+            && !outdoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex))
+        {
+            actorIndices.push_back(actorIndex);
+        }
+    }
+
+    return actorIndices;
+}
+
+bool OutdoorWorldRuntime::openActorCorpseView(size_t actorIndex)
+{
+    return openMapActorCorpseView(actorIndex);
+}
+
+bx::Vec3 OutdoorWorldRuntime::lootGatherSpot() const
+{
+    constexpr float SightHeight = 48.0f;
+    constexpr float MaxRise = 64.0f;
+    constexpr float MaxDrop = 256.0f;
+    const float partyFoot = partyFootZ();
+    const float yaw = gameplayCameraYawRadians();
+
+    if (m_pOutdoorMapData != nullptr)
+    {
+        for (const float distance : LootGatherDistances)
+        {
+            const float x = partyX() + std::cos(yaw) * distance;
+            const float y = partyY() + std::sin(yaw) * distance;
+            const float z = sampleOutdoorActorPlacementFloorHeight(*m_pOutdoorMapData, x, y, partyFoot + MaxRise, 0.0f);
+
+            if (z <= partyFoot + MaxRise && z >= partyFoot - MaxDrop
+                && hasLineOfSight(partyX(), partyY(), partyFoot + SightHeight, x, y, z + SightHeight))
+            {
+                return {x, y, z};
+            }
+        }
+    }
+
+    return {partyX(), partyY(), partyFoot};
+}
+
 size_t OutdoorWorldRuntime::gatherCorpsesToParty(size_t maxCount)
 {
     if (m_pPartyRuntime == nullptr)
@@ -7334,19 +7384,17 @@ size_t OutdoorWorldRuntime::gatherCorpsesToParty(size_t maxCount)
         return 0;
     }
 
+    const bx::Vec3 spot = lootGatherSpot();
     size_t moved = 0;
 
-    for (size_t actorIndex = 0; actorIndex < m_mapActors.size() && moved < maxCount; ++actorIndex)
+    for (size_t actorIndex : lootableCorpseActorIndices())
     {
-        const MapActorState &actor = m_mapActors[actorIndex];
-
-        if (!actor.isDead || actor.isInvisible || !actorShouldLeaveCorpse(m_pMonsterTable, actor)
-            || outdoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex))
+        if (moved >= maxCount)
         {
-            continue;
+            break;
         }
 
-        placeMapActor(actorIndex, partyX(), partyY(), partyFootZ());
+        placeMapActor(actorIndex, spot.x, spot.y, spot.z);
         ++moved;
     }
 
@@ -7362,6 +7410,7 @@ size_t OutdoorWorldRuntime::gatherWorldItemsToParty(
         return 0;
     }
 
+    const bx::Vec3 spot = lootGatherSpot();
     size_t moved = 0;
 
     for (WorldItemState &worldItem : m_worldItems)
@@ -7376,9 +7425,9 @@ size_t OutdoorWorldRuntime::gatherWorldItemsToParty(
             continue;
         }
 
-        worldItem.x = partyX();
-        worldItem.y = partyY();
-        worldItem.z = partyFootZ();
+        worldItem.x = spot.x;
+        worldItem.y = spot.y;
+        worldItem.z = spot.z;
         worldItem.velocityX = 0.0f;
         worldItem.velocityY = 0.0f;
         worldItem.velocityZ = 0.0f;

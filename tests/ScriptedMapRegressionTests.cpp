@@ -8,6 +8,7 @@
 #include "game/events/ISceneEventContext.h"
 #include "game/FaceEnums.h"
 #include "game/gameplay/CorpseLootRuntime.h"
+#include "game/items/InventoryBags.h"
 #include "game/gameplay/GameplayActorHitFeedback.h"
 #include "game/gameplay/GameplayActorService.h"
 #include "game/gameplay/JournalArcomageRuntime.h"
@@ -946,14 +947,52 @@ public:
     {
     }
 
+    // Satchels the loot tests add, one an actor index; a satchel emptied is gone, as a consumed corpse.
+    void addSatchel(OpenYAMM::Game::GameplayCorpseViewState satchel)
+    {
+        satchel.sourceIndex = uint32_t(m_satchels.size());
+        m_satchels.push_back(std::move(satchel));
+    }
+
+    const std::vector<OpenYAMM::Game::GameplayCorpseViewState> &satchels() const
+    {
+        return m_satchels;
+    }
+
+    std::vector<size_t> lootableCorpseActorIndices() const override
+    {
+        std::vector<size_t> actorIndices;
+
+        for (size_t index = 0; index < m_satchels.size(); ++index)
+        {
+            if (!m_satchels[index].items.empty())
+            {
+                actorIndices.push_back(index);
+            }
+        }
+
+        return actorIndices;
+    }
+
+    bool openActorCorpseView(size_t actorIndex) override
+    {
+        if (actorIndex >= m_satchels.size() || m_satchels[actorIndex].items.empty())
+        {
+            return false;
+        }
+
+        m_activeCorpseView = m_satchels[actorIndex];
+        return true;
+    }
+
     OpenYAMM::Game::GameplayCorpseViewState *activeCorpseView() override
     {
-        return nullptr;
+        return m_activeCorpseView ? &*m_activeCorpseView : nullptr;
     }
 
     const OpenYAMM::Game::GameplayCorpseViewState *activeCorpseView() const override
     {
-        return nullptr;
+        return m_activeCorpseView ? &*m_activeCorpseView : nullptr;
     }
 
     void commitActiveCorpseView() override
@@ -962,16 +1001,31 @@ public:
 
     bool takeActiveCorpseItem(size_t itemIndex, OpenYAMM::Game::GameplayChestItemState &item) override
     {
-        (void)itemIndex;
-        (void)item;
-        return false;
+        if (!m_activeCorpseView || itemIndex >= m_activeCorpseView->items.size())
+        {
+            return false;
+        }
+
+        item = m_activeCorpseView->items[itemIndex];
+        m_activeCorpseView->items.erase(m_activeCorpseView->items.begin() + std::ptrdiff_t(itemIndex));
+        m_satchels[m_activeCorpseView->sourceIndex] = *m_activeCorpseView;
+
+        if (m_activeCorpseView->items.empty())
+        {
+            m_activeCorpseView.reset();
+        }
+
+        return true;
     }
 
     void closeActiveCorpseView() override
     {
+        m_activeCorpseView.reset();
     }
 
 private:
+    std::vector<OpenYAMM::Game::GameplayCorpseViewState> m_satchels;
+    std::optional<OpenYAMM::Game::GameplayCorpseViewState> m_activeCorpseView;
     OpenYAMM::Game::GameplayActorHitFeedback m_actorHitFeedback;
     std::string m_mapName = "out01.odm";
     OpenYAMM::Game::Party m_party = {};
@@ -5725,6 +5779,66 @@ TEST_CASE("mm7 lincoln mmmerge exit requires each active member to have a wetsui
     CHECK_EQ(allowedState.pendingDialogueContext->transitionMapMove->z, 225);
     REQUIRE(allowedState.pendingDialogueContext->transitionMapMove->mapName.has_value());
     CHECK_EQ(*allowedState.pendingDialogueContext->transitionMapMove->mapName, "7out15.odm");
+}
+
+TEST_CASE("looting every satchel takes all the gold and each item that fits, and leaves the rest")
+{
+    // Bags with room for one more item.
+    RecordingGameplayWorldContext world;
+    *world.party() = makeScriptedRegressionParty();
+
+    while (world.party()->tryGrantInventoryItemStartingAt(0, makeScriptedInventoryItem(1406)))
+    {
+    }
+
+    world.party()->member(0)->inventory.pop_back();
+    const auto gold = [](uint32_t amount)
+    {
+        OpenYAMM::Game::GameplayChestItemState item = {};
+        item.isGold = true;
+        item.goldAmount = amount;
+        return item;
+    };
+    const auto lootItem = [](uint32_t itemId)
+    {
+        OpenYAMM::Game::GameplayChestItemState item = {};
+        item.itemId = itemId;
+        item.quantity = 1;
+        return item;
+    };
+    OpenYAMM::Game::GameplayCorpseViewState first = {};
+    first.items = {gold(100), lootItem(1406)};
+    OpenYAMM::Game::GameplayCorpseViewState second = {};
+    second.items = {lootItem(1407), gold(50)};
+    world.addSatchel(first);
+    world.addSatchel(second);
+    const int goldBefore = world.party()->gold();
+
+    const OpenYAMM::Game::GameplayUiController::LootSummaryOverlayState summary =
+        OpenYAMM::Game::lootAllCorpses(world, *world.party());
+
+    CHECK(summary.active);
+    CHECK_EQ(summary.satchelCount, 2u);
+    CHECK_EQ(summary.goldAmount, 150);
+    CHECK_EQ(world.party()->gold() - goldBefore, 150);
+    REQUIRE_EQ(summary.takenItems.size(), 1u);
+    CHECK_EQ(summary.takenItems[0].objectDescriptionId, 1406u);
+    // Where it went, for the summary to inspect (identify, repair) the item itself.
+    REQUIRE_EQ(summary.takenItemPlaces.size(), 1u);
+    const OpenYAMM::Game::GameplayUiController::LootedItemPlace &place = summary.takenItemPlaces[0];
+    const OpenYAMM::Game::Character *pRecipient = world.party()->member(place.memberIndex);
+    REQUIRE(pRecipient != nullptr);
+    const OpenYAMM::Game::InventoryItem *pPlaced =
+        OpenYAMM::Game::InventoryBags::itemInBagAt(*pRecipient, place.bag, place.gridX, place.gridY);
+    REQUIRE(pPlaced != nullptr);
+    CHECK_EQ(pPlaced->objectDescriptionId, 1406u);
+    REQUIRE_EQ(summary.leftItems.size(), 1u);
+    CHECK_EQ(summary.leftItems[0].objectDescriptionId, 1407u);
+    // The first satchel is empty and gone; the second keeps the item that did not fit.
+    CHECK(world.satchels()[0].items.empty());
+    REQUIRE_EQ(world.satchels()[1].items.size(), 1u);
+    CHECK_EQ(world.satchels()[1].items[0].itemId, 1407u);
+    CHECK_EQ(world.lootableCorpseActorIndices(), std::vector<size_t>{1});
 }
 
 TEST_CASE("mm7 shoals let a dragon in with a carried wetsuit and still want the others worn")

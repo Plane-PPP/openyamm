@@ -288,3 +288,28 @@ TEST_CASE("evt.SpendAction gives the active character the console's recovery")
     REQUIRE(party.activeMember() != nullptr);
     CHECK_EQ(party.activeMember()->recoverySecondsRemaining, doctest::Approx(2.5f));
 }
+
+TEST_CASE("AdvanceGameMinutes runs out the party's buffs with the clock")
+{
+    const std::string source = eventSupportText() + "\n"
+        "RegisterGlobalEvent(9013, \"Cast Off\", function() AdvanceGameMinutes(14 * 24 * 60) end)\n";
+    std::string error;
+    const std::optional<ScriptedEventProgram> program =
+        ScriptedEventProgram::loadFromLuaText(source, "@advance_test.lua", ScriptedEventScope::Global, error);
+    REQUIRE_MESSAGE(program.has_value(), error.c_str());
+    EventRuntime eventRuntime = {};
+    EventRuntimeState runtimeState = {};
+    Party party = {};
+    PartySeed seed = {};
+    Character member = {};
+    member.name = "Ada";
+    member.maxHealth = 10;
+    member.health = 10;
+    seed.members = {member};
+    party.seed(seed);
+    party.applyPartyBuff(PartyBuffId::DayOfGods, 50.0f * 3600.0f, 30, 83, 10, SkillMastery::Grandmaster, 0);
+    REQUIRE(party.hasPartyBuff(PartyBuffId::DayOfGods));
+
+    REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9013, runtimeState, &party));
+    CHECK_FALSE(party.hasPartyBuff(PartyBuffId::DayOfGods));
+}

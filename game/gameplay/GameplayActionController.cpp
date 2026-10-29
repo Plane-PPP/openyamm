@@ -1,6 +1,7 @@
 #include "game/gameplay/GameplayActionController.h"
 
 #include "game/audio/GameAudioSystem.h"
+#include "game/gameplay/CorpseLootRuntime.h"
 #include "game/gameplay/GameplayActorHitFeedback.h"
 #include "game/gameplay/GameplayFxService.h"
 #include "game/gameplay/GameplayProjectileService.h"
@@ -1582,16 +1583,26 @@ std::optional<std::string> GameplayActionController::tryPartyCharge(
     return party.rules().classes.partyCharge(party, worldRuntime, targetActorIndex);
 }
 
-std::optional<std::string> GameplayActionController::gatherLoot(
-    const Party &party,
+GameplayActionController::GatherLootResult GameplayActionController::gatherLoot(
+    Party &party,
     IGameplayWorldRuntime &worldRuntime)
 {
     const ItemRules &items = party.rules().items;
     const std::optional<LootGathering> gathering = items.lootGathering();
+    GatherLootResult result = {};
 
     if (!gathering)
     {
-        return std::nullopt;
+        return result;
+    }
+
+    // A completed map has nothing left to fight for its loot: the satchels empty straight into the bags, and only
+    // what did not fit is gathered.
+    const std::optional<RulesetMapProgress> progress = party.rules().monsters.mapProgress(worldRuntime);
+
+    if (progress && progress->complete && progress->kind != RulesetMapProgress::Kind::Arena)
+    {
+        result.summary = lootAllCorpses(worldRuntime, party);
     }
 
     const size_t corpses = worldRuntime.gatherCorpsesToParty(gathering->corpses);
@@ -1602,6 +1613,8 @@ std::optional<std::string> GameplayActionController::gatherLoot(
         });
     const std::string corpseText = std::to_string(corpses) + " monsters";
     const std::string itemText = std::to_string(gathered) + " crafting items";
-    return "Teleported " + (gathered == 0 ? corpseText : corpses == 0 ? itemText : corpseText + " and " + itemText);
+    result.statusText =
+        "Teleported " + (gathered == 0 ? corpseText : corpses == 0 ? itemText : corpseText + " and " + itemText);
+    return result;
 }
 } // namespace OpenYAMM::Game

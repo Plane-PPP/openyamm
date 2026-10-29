@@ -1,4 +1,5 @@
 #include "game/ui/GameplayUiOverlayOrchestrator.h"
+#include "game/ui/GameplayLootSummaryRenderer.h"
 
 #include "game/gameplay/GameplayFxService.h"
 #include "game/gameplay/GameplayInputFrame.h"
@@ -236,6 +237,8 @@ void GameplayUiOverlayOrchestrator::renderStandardOverlays(
         recordStage(&GameplayUiOverlayFramePerformanceDiagnostics::quickReferenceNanoseconds);
         GameplayPartyOverlayRenderer::renderSpellbookOverlay(overlayContext, width, height);
         recordStage(&GameplayUiOverlayFramePerformanceDiagnostics::spellbookNanoseconds);
+        // Under the held item and the item popup, so its items can be inspected.
+        GameplayLootSummaryRenderer::render(overlayContext, width, height);
         GameplayPartyOverlayRenderer::renderHeldInventoryItem(overlayContext, width, height);
         GameplayUiRenderer::renderMobileInspectButton(overlayContext, width, height);
         recordStage(&GameplayUiOverlayFramePerformanceDiagnostics::heldItemNanoseconds);

@@ -537,7 +537,7 @@ bool GameplayHudOverlaySupport::tryPopulateItemInspectOverlayFromRenderedHudItem
             continue;
         }
 
-        if (requireOpaqueHitTest && !context.isOpaqueHudPixelAtPoint(*it, mouseX, mouseY))
+        if (requireOpaqueHitTest && !it->wholeAreaHits && !context.isOpaqueHudPixelAtPoint(*it, mouseX, mouseY))
         {
             continue;
         }

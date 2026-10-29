@@ -2226,7 +2226,8 @@ void IndoorGameView::updateItemInspectOverlayState(int width, int height, const 
     IndoorWorldRuntime *pWorldRuntime =
         m_pIndoorSceneRuntime != nullptr ? &m_pIndoorSceneRuntime->worldRuntime() : nullptr;
 
-    if (pWorldRuntime == nullptr)
+    // The loot summary covers the world.
+    if (pWorldRuntime == nullptr || screenRuntime.lootSummaryOverlayReadOnly().active)
     {
         return;
     }

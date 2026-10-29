@@ -926,6 +926,8 @@ public:
     bool openMapActorCorpseView(size_t actorIndex);
     bool takeActiveCorpseItem(size_t itemIndex, ChestItemState &item) override;
     void closeActiveCorpseView() override;
+    // On the ground a little ahead of the party and in its sight (LootGatherDistances), else at its feet.
+    bx::Vec3 lootGatherSpot() const;
     const std::vector<AudioEvent> &pendingAudioEvents() const;
     void clearPendingAudioEvents();
     const std::vector<CombatEvent> &pendingCombatEvents() const;
@@ -1156,6 +1158,8 @@ public:
     bool dashParty(float directionX, float directionY, float distance) override;
     size_t gatherCorpsesToParty(size_t maxCount) override;
     size_t gatherWorldItemsToParty(size_t maxCount, const std::function<bool(const InventoryItem &)> &gathers) override;
+    std::vector<size_t> lootableCorpseActorIndices() const override;
+    bool openActorCorpseView(size_t actorIndex) override;
     const GameplayProjectileService *projectileServiceView() const override
     {
         return &projectileService();

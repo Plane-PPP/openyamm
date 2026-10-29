@@ -57,7 +57,8 @@ struct GameplaySharedInputFrameConfig
     bool hasReadyMember = false;
     bool canBeginQuickCast = false;
     bool isUtilitySpellModalActive = false;
-    bool isReadableScrollOverlayActive = false;
+    // A reading overlay is open (a readable scroll, the loot summary): it takes the mouse from the HUD and world.
+    bool isModalOverlayActive = false;
     bool processStandardUiInput = true;
     bool processSharedGameplayHotkeys = true;
     bool processQuickCast = true;

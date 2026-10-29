@@ -7518,6 +7518,13 @@ int luaAdvanceGameMinutes(lua_State *pLuaState)
         pWorldRuntime->advanceGameMinutes(minutes);
     }
 
+    // The original engines store buff expiry as an absolute game time, so a script jumping the clock (the two-week
+    // MMerge cast-off to Harmondale) also runs out the party's buffs; ours count down, so age them with the clock.
+    if (Party *pParty = writableParty(pLuaState))
+    {
+        pParty->advanceTimedStates(minutes * 60.0f);
+    }
+
     return 0;
 }
 

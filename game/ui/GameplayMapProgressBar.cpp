@@ -1,5 +1,6 @@
 #include "game/ui/GameplayMapProgressBar.h"
 
+#include "game/app/KeyboardBindings.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/party/Party.h"
 #include "game/rules/GameRules.h"
@@ -144,6 +145,25 @@ std::optional<Tab> fitTab(GameplayScreenRuntime &context, const Layout &layout, 
     return std::nullopt;
 }
 
+// On a cleared map with satchels left, the gather key loots them all (GameplayActionController::gatherLoot): "G: loot
+// all" with the key it is bound to; empty otherwise.
+std::string lootAllHint(GameplayScreenRuntime &context, const RulesetMapProgress &progress)
+{
+    const Party *pParty = context.partyReadOnly();
+    const IGameplayWorldRuntime *pWorldRuntime = context.worldRuntime();
+
+    if (!progress.complete || progress.kind == RulesetMapProgress::Kind::Arena || pParty == nullptr
+        || pWorldRuntime == nullptr || !pParty->rules().items.lootGathering()
+        || pWorldRuntime->lootableCorpseActorIndices().empty())
+    {
+        return {};
+    }
+
+    const InputBinding &binding =
+        context.settingsSnapshot().keyboard.bindings[keyboardActionIndex(KeyboardAction::GatherLoot)];
+    return binding.kind == InputBindingKind::None ? std::string() : inputBindingDisplayName(binding) + ": loot all";
+}
+
 std::optional<Layout> resolveLayout(GameplayScreenRuntime &context, int width, int height,
     const RulesetMapProgress &progress)
 {
@@ -162,6 +182,11 @@ std::optional<Layout> resolveLayout(GameplayScreenRuntime &context, int width, i
     const float u = layout.unit;
     const uint32_t colour = progress.complete && progress.kind != RulesetMapProgress::Kind::Arena ? GoldText : Ivory;
     std::vector<std::string> texts = {GameplayMapProgressBar::tabText(progress, false)};
+
+    if (const std::string hint = lootAllHint(context, progress); !hint.empty())
+    {
+        texts.insert(texts.begin(), texts.front() + " \xB7 " + hint);
+    }
 
     // The Arena keeps its level on a narrower tab ("Arena L5 \xB7 60 %"), as the study's short form.
     if (progress.kind == RulesetMapProgress::Kind::Arena)

@@ -145,6 +145,7 @@ public:
     GameplayUiController::ActorInspectOverlayState &actorInspectOverlay() const;
     GameplayUiController::SpellInspectOverlayState &spellInspectOverlay() const;
     GameplayUiController::ReadableScrollOverlayState &readableScrollOverlay() const;
+    GameplayUiController::LootSummaryOverlayState &lootSummaryOverlay() const;
     GameplayUiController::SpellbookState &spellbook() const;
     GameplayUiController::UtilitySpellOverlayState &utilitySpellOverlay() const;
     GameplayUiController::InventoryNestedOverlayState &inventoryNestedOverlay() const;
@@ -168,6 +169,7 @@ public:
     const GameplayUiController::ActorInspectOverlayState &actorInspectOverlayReadOnly() const;
     const GameplayUiController::SpellInspectOverlayState &spellInspectOverlayReadOnly() const;
     const GameplayUiController::ReadableScrollOverlayState &readableScrollOverlayReadOnly() const;
+    const GameplayUiController::LootSummaryOverlayState &lootSummaryOverlayReadOnly() const;
     const GameplayUiController::SpellbookState &spellbookReadOnly() const;
     const GameplayUiController::UtilitySpellOverlayState &utilitySpellOverlayReadOnly() const;
     const GameplayUiController::JournalScreenState &journalScreenStateReadOnly() const;

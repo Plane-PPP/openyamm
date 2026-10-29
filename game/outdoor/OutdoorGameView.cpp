@@ -3747,6 +3747,7 @@ void OutdoorGameView::shutdown()
     screenRuntime.actorInspectOverlay() = {};
     screenRuntime.spellInspectOverlay() = {};
     screenRuntime.readableScrollOverlay() = {};
+    screenRuntime.lootSummaryOverlay() = {};
     screenRuntime.spellbook() = {};
     utilitySpellOverlay() = {};
     pendingSpellCast = {};

@@ -748,11 +748,13 @@ size_t ActorPathRuntime::advanceReachedWaypoints(
                     ? RecoveryBestReachDistance
                     : request.waypointReachDistance)))
     {
+        // The step to the next waypoint is a short trace outside the frame's reachability budget: waiting for the
+        // budget held an actor jittering on a reached waypoint, so crowded indoor monsters crawled along their routes.
         if (state.waypointIndex + 1 < state.waypoints.size()
-            && (!consumeReachabilityCheck(request.actorIndex) || !pathMap.canReachDirectly(
+            && !pathMap.canReachDirectly(
                 request.source,
                 state.waypoints[state.waypointIndex + 1],
-                request.object)))
+                request.object))
         {
             break;
         }
