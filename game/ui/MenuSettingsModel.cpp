@@ -38,7 +38,8 @@ constexpr GraphicsQualityOption GraphicsQualityOptions[] = {
     {"view_distance", {"default", "default", "default"}},
 };
 constexpr std::array<int, 3> GraphicsQualityTerrainSubdivisions = {2, 4, 4};
-constexpr std::array<bool, 3> GraphicsQualityTerrainAntiTiling = {false, true, true};
+// Anti-tiling costs about 0.1 ms of GPU time at ground level (Harmondale, 1600x900), so only High keeps it.
+constexpr std::array<bool, 3> GraphicsQualityTerrainAntiTiling = {false, false, true};
 constexpr std::array<float, 3> GraphicsQualitySkyResolutionScales = {0.5f, 1.0f, 1.0f};
 }
 

@@ -3242,16 +3242,14 @@ float indoorActorCollisionRadius(const MapDeltaActor &actor)
     return IndoorActorContactProbeRadius;
 }
 
+// The actor's own height, even below its width: robots, oozes and rats are wider than they are tall, and raising
+// their height to twice the radius made a Sentinel Droid 402 units tall, too tall for the Lincoln's ceilings, with
+// blows aimed above its head. The collision spheres keep their radius either way.
 float indoorActorCollisionHeight(
     const MapDeltaActor &actor,
     float collisionRadius)
 {
-    if (actor.height > 0)
-    {
-        return std::max(static_cast<float>(actor.height), collisionRadius * 2.0f + 2.0f);
-    }
-
-    return collisionRadius * 2.0f + 2.0f;
+    return actor.height > 0 ? static_cast<float>(actor.height) : collisionRadius * 2.0f + 2.0f;
 }
 
 IndoorWorldRuntime::MapActorAiState buildIndoorMapActorAiState(
@@ -3287,8 +3285,8 @@ IndoorWorldRuntime::MapActorAiState buildIndoorMapActorAiState(
     state.collisionRadius = actor.radius != 0
         ? actor.radius
         : pMonsterEntry != nullptr ? pMonsterEntry->radius : uint16_t(32);
-    const float fallbackCollisionHeight = pMonsterEntry != nullptr
-        ? std::max(static_cast<float>(pMonsterEntry->height), static_cast<float>(state.collisionRadius) * 2.0f + 2.0f)
+    const float fallbackCollisionHeight = pMonsterEntry != nullptr && pMonsterEntry->height > 0
+        ? static_cast<float>(pMonsterEntry->height)
         : indoorActorCollisionHeight(actor, static_cast<float>(state.collisionRadius));
     state.collisionHeight = static_cast<uint16_t>(std::max(
         2.0f,
@@ -3348,6 +3346,16 @@ IndoorWorldRuntime::MapActorAiState buildIndoorMapActorAiState(
         actorAnimationSeconds(pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::Dying, 0.6f);
     state.attackAnimationSeconds =
         std::max(state.meleeAttackAnimationSeconds, state.rangedAttackAnimationSeconds);
+    state.meleeAttackImpactSeconds =
+        actorAttackImpactSeconds(pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackMelee);
+    state.rangedAttackImpactSeconds =
+        actorAttackImpactSeconds(pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackRanged);
+    state.meleeAttackSoundDelaySeconds =
+        actorAttackSoundDelaySeconds(pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackMelee);
+    state.rangedAttackSoundDelaySeconds =
+        actorAttackSoundDelaySeconds(pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackRanged);
+    state.boredAnimationSeconds =
+        actorAnimationSeconds(pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::Bored, 2.0f);
     state.attackCooldownSeconds =
         pActorService->initialAttackCooldownSeconds(state.actorId, state.recoverySeconds);
     state.idleDecisionSeconds = pActorService->initialIdleDecisionSeconds(state.actorId);
@@ -3395,6 +3403,11 @@ void refreshIndoorMapActorAiStaticFields(
     state.meleeAttackAnimationSeconds = defaults.meleeAttackAnimationSeconds;
     state.rangedAttackAnimationSeconds = defaults.rangedAttackAnimationSeconds;
     state.dyingAnimationSeconds = defaults.dyingAnimationSeconds;
+    state.meleeAttackImpactSeconds = defaults.meleeAttackImpactSeconds;
+    state.rangedAttackImpactSeconds = defaults.rangedAttackImpactSeconds;
+    state.meleeAttackSoundDelaySeconds = defaults.meleeAttackSoundDelaySeconds;
+    state.rangedAttackSoundDelaySeconds = defaults.rangedAttackSoundDelaySeconds;
+    state.boredAnimationSeconds = defaults.boredAnimationSeconds;
 }
 
 void fixIndoorInitialActorPlacement(
@@ -4668,6 +4681,33 @@ bool IndoorWorldRuntime::indoorActorPathfindingEnabled() const
     return m_pGameplayView != nullptr && m_pGameplayView->settingsSnapshot().indoorPathfinding;
 }
 
+// A flyer's feet at footZ below a target it aims at (aimZ), lowered to fit its body under the ceiling there: aimed at a
+// party's head in a low corridor, its back would have to pass above the ceiling, so no route reached the party.
+float IndoorWorldRuntime::flyingFootZUnderCeiling(
+    float x, float y, float aimZ, float footZ, float collisionHeight) const
+{
+    RuntimeGeometryCache &geometry = runtimeGeometryCache();
+
+    if (m_pIndoorMapData == nullptr || geometry.vertices.empty())
+    {
+        return footZ;
+    }
+
+    const IndoorFloorSample floor = sampleIndoorFloor(*m_pIndoorMapData, geometry.vertices, x, y, aimZ, 0.0f, 1024.0f,
+        std::nullopt, nullptr, &geometry.geometryCache);
+
+    if (!floor.hasFloor)
+    {
+        return footZ;
+    }
+
+    const IndoorCeilingSample ceiling = sampleIndoorCeiling(*m_pIndoorMapData, geometry.vertices, x, y,
+        floor.height + 1.0f, floor.sectorId >= 0 ? std::optional<int16_t>(floor.sectorId) : std::nullopt, nullptr,
+        &geometry.geometryCache);
+    const float highestFootZ = ceiling.hasCeiling ? ceiling.height - collisionHeight - 8.0f : footZ;
+    return std::max(floor.height, std::min(footZ, highestFootZ));
+}
+
 bool IndoorWorldRuntime::logIndoorPathfindingEnabled() const
 {
     return m_pGameplayView != nullptr && m_pGameplayView->settingsSnapshot().logIndoorPathfinding;
@@ -5426,7 +5466,7 @@ ActorAiFrameFacts IndoorWorldRuntime::collectIndoorActorAiFrameFacts(
 
         const bool active = actorIndex < activeActorMask.size() && activeActorMask[actorIndex];
         const uint64_t actorFactBeginTickCount = pDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
-        const std::optional<ActorAiFacts> actorFacts =
+        std::optional<ActorAiFacts> actorFacts =
             collectIndoorActorAiFacts(
                 actorIndex,
                 active,
@@ -5452,11 +5492,11 @@ ActorAiFrameFacts IndoorWorldRuntime::collectIndoorActorAiFrameFacts(
 
         if (active)
         {
-            facts.activeActors.push_back(*actorFacts);
+            facts.activeActors.push_back(std::move(*actorFacts));
         }
         else
         {
-            facts.backgroundActors.push_back(*actorFacts);
+            facts.backgroundActors.push_back(std::move(*actorFacts));
         }
     }
 
@@ -8998,15 +9038,22 @@ void IndoorWorldRuntime::applyIndoorActorMovementIntegration(
             ActorPathResolveRequest pathRequest = {};
             pathRequest.actorIndex = actorIndex;
             pathRequest.source = {oldX, oldY, oldZ};
+            // A flyer's target is where the AI steers its chest, but its path plans its feet.
+            const float flyingAimFootZ = movementIntent.targetPosition.z
+                - std::max(24.0f, collisionHeight * ActorDirectionHeightFactor);
             pathRequest.target = {
                 movementIntent.targetPosition.x,
                 movementIntent.targetPosition.y,
-                movementIntent.targetPosition.z
+                actorCanFly
+                    ? flyingFootZUnderCeiling(movementIntent.targetPosition.x, movementIntent.targetPosition.y,
+                        movementIntent.targetPosition.z, flyingAimFootZ, collisionHeight)
+                    : movementIntent.targetPosition.z
             };
             pathRequest.object = pathObject;
-            // A large actor may approach a party position it cannot occupy.
+            // A large actor may approach a party position it cannot occupy (a flyer too: a Blood Sucker reached a
+            // party in a narrow corridor no closer than 64 and, with no route at all, hovered at the door).
             // Keep the route through doorways to the closest reachable point.
-            pathRequest.allowPartialPath = !actorCanFly;
+            pathRequest.allowPartialPath = true;
             pathRequest.preferredSourceFacetSourceId =
                 !actorCanFly
                     && aiState.grounded
@@ -9268,6 +9315,21 @@ void IndoorWorldRuntime::applyIndoorActorMovementIntegration(
                     aiState.yawRadians = movementIntent.yawRadians;
                 }
             }
+            // A flyer whose target sits under a ceiling too low for the AI's aim flies its clear way at the height that
+            // way was checked at, not up into the ceiling or the wall above a door on the way.
+            if (actorCanFly && pathResult.directReachable && !crowdOverrideActive
+                && pathRequest.target.z < flyingAimFootZ - 1.0f)
+            {
+                const float targetDeltaX = pathRequest.target.x - oldX;
+                const float targetDeltaY = pathRequest.target.y - oldY;
+                const float targetDeltaZ = pathRequest.target.z - oldZ;
+                const float targetDistance =
+                    std::sqrt(targetDeltaX * targetDeltaX + targetDeltaY * targetDeltaY + targetDeltaZ * targetDeltaZ);
+                movementIntent.desiredMoveZ = std::abs(targetDeltaZ) > 8.0f && targetDistance > 0.001f
+                    ? std::clamp(targetDeltaZ / targetDistance, -1.0f, 1.0f)
+                    : 0.0f;
+            }
+
             const bool stoppedByPath = pathResult.failed || pathResult.cooldown || pathResult.discarded;
             const bool directFallbackAfterPlannerStopped =
                 pathResult.cooldown
@@ -9406,12 +9468,14 @@ void IndoorWorldRuntime::applyIndoorActorMovementIntegration(
         if (pathMap != nullptr)
         {
             constexpr float FlyingVoidBoundaryProbeHeight = 40.0f;
-            constexpr float FlyingVoidCeilingSlack = 32.0f;
+            // An upper floor this close above a flyer's head counts as a ceiling it would rise into. The body's own
+            // height, not its height plus its radius and 32 more: that kept a 109-tall Blood Sucker out of the room
+            // beneath a ledge at 288 (Goblinwatch) and on its route to the party (PathMap::traceFlyingBody).
+            constexpr float FlyingVoidCeilingSlack = 8.0f;
             const auto flyingPathVolumeValid =
                 [
                     &pathMap,
                     collisionHeight,
-                    collisionRadius,
                     FlyingVoidBoundaryProbeHeight,
                     FlyingVoidCeilingSlack
                 ](const IndoorMoveState &state, const char **ppReason) -> bool
@@ -9434,7 +9498,7 @@ void IndoorWorldRuntime::applyIndoorActorMovementIntegration(
                     return false;
                 }
 
-                const float verticalLimit = state.footZ + collisionHeight + collisionRadius + FlyingVoidCeilingSlack;
+                const float verticalLimit = state.footZ + collisionHeight + FlyingVoidCeilingSlack;
                 const auto voidCeilingIntrudes =
                     [state, verticalLimit](const PathFloorQueryDebug &query) -> bool
                 {
@@ -9966,7 +10030,6 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
         return std::nullopt;
     }
 
-    const MonsterEntry *pMonsterEntry = resolveRuntimeMonsterEntry(*m_pMonsterTable, actor);
     const GameplayMonsterBolsterResult &bolster = *aiState.bolster;
     const bool actorInvisible = (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) != 0;
     const bool defaultHostile = defaultActorHostileToParty(actor, m_pMonsterTable);
@@ -10097,14 +10160,10 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
     facts.runtime.attackAnimationSeconds = aiState.attackAnimationSeconds;
     facts.runtime.meleeAttackAnimationSeconds = aiState.meleeAttackAnimationSeconds;
     facts.runtime.rangedAttackAnimationSeconds = aiState.rangedAttackAnimationSeconds;
-    facts.runtime.meleeAttackImpactSeconds =
-        actorAttackImpactSeconds(m_pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackMelee);
-    facts.runtime.rangedAttackImpactSeconds =
-        actorAttackImpactSeconds(m_pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackRanged);
-    facts.runtime.meleeAttackSoundDelaySeconds =
-        actorAttackSoundDelaySeconds(m_pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackMelee);
-    facts.runtime.rangedAttackSoundDelaySeconds =
-        actorAttackSoundDelaySeconds(m_pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::AttackRanged);
+    facts.runtime.meleeAttackImpactSeconds = aiState.meleeAttackImpactSeconds;
+    facts.runtime.rangedAttackImpactSeconds = aiState.rangedAttackImpactSeconds;
+    facts.runtime.meleeAttackSoundDelaySeconds = aiState.meleeAttackSoundDelaySeconds;
+    facts.runtime.rangedAttackSoundDelaySeconds = aiState.rangedAttackSoundDelaySeconds;
 
     // A telegraphed attack's long wind-up (MonsterModifierSet::telegraphedAttack).
     if (const MonsterModifierSet *pTelegraph =
@@ -10116,8 +10175,7 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
         applyAttackTelegraph(pTelegraph->telegraphedAttack->rangedSeconds, facts.runtime.rangedAttackAnimationSeconds,
             facts.runtime.rangedAttackImpactSeconds);
     }
-    facts.runtime.boredAnimationSeconds = actorAnimationSeconds(
-        m_pActorSpriteFrameTable, pMonsterEntry, ActorAiAnimationState::Bored, 2.0f);
+    facts.runtime.boredAnimationSeconds = aiState.boredAnimationSeconds;
     facts.runtime.attackCooldownSeconds = aiState.attackCooldownSeconds;
     facts.runtime.idleDecisionSeconds = aiState.idleDecisionSeconds;
     facts.runtime.actionSeconds = aiState.actionSeconds;
@@ -20668,7 +20726,7 @@ void IndoorWorldRuntime::materializeInitialMonsterSpawns()
 
             const float radius = pMonsterEntry->radius > 0
                 ? float(pMonsterEntry->radius) : IndoorActorContactProbeRadius;
-            const float height = std::max(float(pMonsterEntry->height), radius * 2.0f + 2.0f);
+            const float height = pMonsterEntry->height > 0 ? float(pMonsterEntry->height) : radius * 2.0f + 2.0f;
             const IndoorInitialActorPlacement spawnPosition =
                 resolveIndoorEncounterPlacement(
                     *m_pIndoorMapData,

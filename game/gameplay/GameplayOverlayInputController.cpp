@@ -8,11 +8,13 @@
 #include "game/gameplay/HouseServiceRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
+#include "game/items/InventoryBags.h"
 #include "game/rules/GameRules.h"
 #include "game/rules/RulesetProgress.h"
 #include "game/StringUtils.h"
 #include "game/tables/ItemTable.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/ui/GameplayHudOverlaySupport.h"
 #include "game/ui/GameplayJournalAuras.h"
 #include "game/ui/GameplayJournalProgress.h"
 #include "game/ui/KeyboardScreenLayout.h"
@@ -3519,84 +3521,76 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
         && pDialogueHouseEntry != nullptr
         && view.party() != nullptr)
     {
-        const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedInventoryGrid =
-            view.resolveInventoryNestedOverlayGridArea(screenWidth, screenHeight);
+        // The cell on the open bag's grid, or on any bag of the overview: the service runs with that bag open.
+        const std::optional<GameplayHudOverlaySupport::InventoryCell> cell =
+            GameplayHudOverlaySupport::nestedInventoryCellAt(view, screenWidth, screenHeight, dialogMouseX,
+                dialogMouseY);
 
-        if (resolvedInventoryGrid
-            && isLeftMousePressed
-            && !view.interactionState().inventoryNestedOverlayItemClickLatch
-            && dialogMouseX >= resolvedInventoryGrid->x
-            && dialogMouseX < resolvedInventoryGrid->x + resolvedInventoryGrid->width
-            && dialogMouseY >= resolvedInventoryGrid->y
-            && dialogMouseY < resolvedInventoryGrid->y + resolvedInventoryGrid->height)
+        if (cell && isLeftMousePressed && !view.interactionState().inventoryNestedOverlayItemClickLatch)
         {
-            const InventoryGridMetrics gridMetrics = computeInventoryGridMetrics(
-                resolvedInventoryGrid->x,
-                resolvedInventoryGrid->y,
-                resolvedInventoryGrid->width,
-                resolvedInventoryGrid->height,
-                resolvedInventoryGrid->scale);
-            const uint8_t gridX = static_cast<uint8_t>(std::clamp(
-                static_cast<int>((dialogMouseX - resolvedInventoryGrid->x) / gridMetrics.cellWidth),
-                0,
-                Character::InventoryWidth - 1));
-            const uint8_t gridY = static_cast<uint8_t>(std::clamp(
-                static_cast<int>((dialogMouseY - resolvedInventoryGrid->y) / gridMetrics.cellHeight),
-                0,
-                Character::InventoryHeight - 1));
+            const uint8_t gridX = cell->gridX;
+            const uint8_t gridY = cell->gridY;
             std::string statusText;
             HouseServiceRuntime::ShopItemServiceResult serviceResult =
                 HouseServiceRuntime::ShopItemServiceResult::None;
+            Party &party = *view.party();
+            const int bagCount = gameRulesFor(&party).items.bagCount(party);
+            InventoryBags::withBagOpen(party, party.activeMemberIndex(), cell->bag, bagCount,
+                [&]()
+                {
+                    if (view.inventoryNestedOverlay().mode
+                        == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
+                    {
+                        HouseServiceRuntime::trySellInventoryItem(
+                            *view.party(),
+                            *view.itemTable(),
+                            *view.standardItemEnchantTable(),
+                            *view.specialItemEnchantTable(),
+                            *pDialogueHouseEntry,
+                            view.partyReadOnly()->activeMemberIndex(),
+                            gridX,
+                            gridY,
+                            statusText,
+                            &serviceResult,
+                            effectiveReputationForView(view));
+                    }
+                    else if (view.inventoryNestedOverlay().mode
+                        == GameplayUiController::InventoryNestedOverlayMode::ShopIdentify)
+                    {
+                        HouseServiceRuntime::tryIdentifyInventoryItem(
+                            *view.party(),
+                            *view.itemTable(),
+                            *view.standardItemEnchantTable(),
+                            *view.specialItemEnchantTable(),
+                            *pDialogueHouseEntry,
+                            view.partyReadOnly()->activeMemberIndex(),
+                            gridX,
+                            gridY,
+                            statusText,
+                            &serviceResult,
+                            effectiveReputationForView(view),
+                            view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
+                    }
+                    else if (view.inventoryNestedOverlay().mode
+                        == GameplayUiController::InventoryNestedOverlayMode::ShopRepair)
+                    {
+                        HouseServiceRuntime::tryRepairInventoryItem(
+                            *view.party(),
+                            *view.itemTable(),
+                            *view.standardItemEnchantTable(),
+                            *view.specialItemEnchantTable(),
+                            *pDialogueHouseEntry,
+                            view.partyReadOnly()->activeMemberIndex(),
+                            gridX,
+                            gridY,
+                            statusText,
+                            &serviceResult,
+                            effectiveReputationForView(view),
+                            view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
+                    }
 
-            if (view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
-            {
-                HouseServiceRuntime::trySellInventoryItem(
-                    *view.party(),
-                    *view.itemTable(),
-                    *view.standardItemEnchantTable(),
-                    *view.specialItemEnchantTable(),
-                    *pDialogueHouseEntry,
-                    view.partyReadOnly()->activeMemberIndex(),
-                    gridX,
-                    gridY,
-                    statusText,
-                    &serviceResult,
-                    effectiveReputationForView(view));
-            }
-            else if (view.inventoryNestedOverlay().mode
-                == GameplayUiController::InventoryNestedOverlayMode::ShopIdentify)
-            {
-                HouseServiceRuntime::tryIdentifyInventoryItem(
-                    *view.party(),
-                    *view.itemTable(),
-                    *view.standardItemEnchantTable(),
-                    *view.specialItemEnchantTable(),
-                    *pDialogueHouseEntry,
-                    view.partyReadOnly()->activeMemberIndex(),
-                    gridX,
-                    gridY,
-                    statusText,
-                    &serviceResult,
-                    effectiveReputationForView(view),
-                    view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
-            }
-            else if (view.inventoryNestedOverlay().mode
-                == GameplayUiController::InventoryNestedOverlayMode::ShopRepair)
-            {
-                HouseServiceRuntime::tryRepairInventoryItem(
-                    *view.party(),
-                    *view.itemTable(),
-                    *view.standardItemEnchantTable(),
-                    *view.specialItemEnchantTable(),
-                    *pDialogueHouseEntry,
-                    view.partyReadOnly()->activeMemberIndex(),
-                    gridX,
-                    gridY,
-                    statusText,
-                    &serviceResult,
-                    effectiveReputationForView(view),
-                    view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
-            }
+                    return true;
+                });
 
             const size_t activeMemberIndex = view.partyReadOnly()->activeMemberIndex();
 

@@ -6048,6 +6048,15 @@ int luaPartyMemberHasEquippedItem(lua_State *pLuaState)
     return 1;
 }
 
+// evt.PartyMemberCanWearArmor(player): false for a member whose paperdoll cannot wear body armour (dragons).
+int luaPartyMemberCanWearArmor(lua_State *pLuaState)
+{
+    const Party *pParty = readableParty(pLuaState);
+    const size_t memberIndex = static_cast<size_t>(std::max<lua_Integer>(0, luaL_checkinteger(pLuaState, 1)));
+    lua_pushboolean(pLuaState, pParty == nullptr || pParty->memberCanWearArmor(memberIndex));
+    return 1;
+}
+
 int luaGetHookContext(lua_State *pLuaState)
 {
     const EventRuntimeState *pRuntimeState = readableRuntimeState(pLuaState);
@@ -9161,6 +9170,7 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "SkillResetCost", luaSkillResetCost);
     registerLuaFunction(pLuaState, "ResetSkills", luaResetSkills);
     registerLuaFunction(pLuaState, "PartyMemberHasEquippedItem", luaPartyMemberHasEquippedItem);
+    registerLuaFunction(pLuaState, "PartyMemberCanWearArmor", luaPartyMemberCanWearArmor);
     registerLuaFunction(pLuaState, "CanFitWorkshopMod", luaCanFitWorkshopMod);
     registerLuaFunction(pLuaState, "FitWorkshopMod", luaFitWorkshopMod);
     registerLuaFunction(pLuaState, "GetHookContext", luaGetHookContext);

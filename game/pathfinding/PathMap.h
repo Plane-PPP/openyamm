@@ -120,7 +120,8 @@ private:
         float radius,
         bool checkBody,
         TraceCandidateCache *pCache,
-        float riserHeight = 0.0f) const;
+        float riserHeight = 0.0f,
+        bool probeVerticalMoves = false) const;
     bool traceWalkSegmentInternal(
         const PathPoint &from,
         const PathPoint &to,
@@ -132,6 +133,7 @@ private:
         const PathPoint &to,
         const PathObject &object,
         TraceCandidateCache &cache) const;
+    PathTraceResult traceFlyingBody(const PathPoint &from, const PathPoint &to, const PathObject &object) const;
     void rebuildGeometry();
     void rebuildSpatialGrid();
     int32_t gridCoordinate(float value) const;

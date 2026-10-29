@@ -131,6 +131,8 @@ private:
     MawRules &m_rules;
     // Runtime: whether horizontal progression was in force at the last update.
     mutable std::optional<bool> m_horizontalApplied;
+    // Runtime: time since the last regeneration tick.
+    mutable float m_regenerationSeconds = 0.0f;
 };
 
 // The Shaman, Seraphim, Death Knight and Thief lines share only magic raise costs.

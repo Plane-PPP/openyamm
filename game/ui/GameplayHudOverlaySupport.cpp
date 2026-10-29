@@ -4,6 +4,7 @@
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/items/InventoryBags.h"
+#include "game/items/ItemRuntime.h"
 #include "game/party/PartySpellSystem.h"
 #include "game/party/SkillData.h"
 #include "game/party/SpellSchool.h"
@@ -13,6 +14,7 @@
 #include "game/ui/GameplayJournalAuras.h"
 #include "game/ui/GameplayMapProgressBar.h"
 #include "game/ui/GameplayPortraitGems.h"
+#include "game/ui/InventoryBagOverview.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/ui/SpellbookUiLayout.h"
 
@@ -23,6 +25,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <span>
 #include <unordered_set>
 
 namespace OpenYAMM::Game
@@ -1429,9 +1432,19 @@ void GameplayHudOverlaySupport::renderItemRarityGlow(
     }
 
     // A drop the loot filter left where it fell is outlined grey instead (RulesetLootFilter::leaveOnGround).
-    const std::optional<uint32_t> color = item.rulesetFields.lootFiltered != 0
+    std::optional<uint32_t> color = item.rulesetFields.lootFiltered != 0
         ? std::optional<uint32_t>(0x8c8c8cu)
         : gameRulesFor(context.partyReadOnly()).items.nameColor(item);
+
+    // Artifacts, relics and special items (the item table's material: Cycle of Life) without a colour of the rules
+    // glow teal.
+    const ItemDefinition *pDefinition =
+        context.itemTable() != nullptr ? context.itemTable()->get(item.objectDescriptionId) : nullptr;
+
+    if (!color && pDefinition != nullptr && pDefinition->rarity != ItemRarity::Common)
+    {
+        color = 0x20d8b8u;
+    }
 
     if (!color)
     {
@@ -1496,6 +1509,231 @@ bool GameplayHudOverlaySupport::bagOverviewActive(const GameplayScreenRuntime &c
                 == GameplayUiController::UtilitySpellOverlayMode::InventoryTarget)
         && gameRulesFor(pParty).items.bagCount(*pParty) > 1;
 #endif
+}
+
+bool GameplayHudOverlaySupport::shopBagOverviewActive(const GameplayScreenRuntime &context)
+{
+#if defined(__ANDROID__)
+    static_cast<void>(context);
+    return false;
+#else
+    const GameplayUiController::InventoryNestedOverlayState &overlay = context.inventoryNestedOverlay();
+    const Party *pParty = context.partyReadOnly();
+    return pParty != nullptr && overlay.active && !overlay.bagZoomed
+        && (overlay.mode == GameplayUiController::InventoryNestedOverlayMode::ShopDisplay
+            || overlay.mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell
+            || overlay.mode == GameplayUiController::InventoryNestedOverlayMode::ShopIdentify
+            || overlay.mode == GameplayUiController::InventoryNestedOverlayMode::ShopRepair)
+        && gameRulesFor(pParty).items.bagCount(*pParty) > 1;
+#endif
+}
+
+void GameplayHudOverlaySupport::renderBagOverview(
+    GameplayScreenRuntime &context,
+    const GameplayResolvedHudLayoutElement &grid,
+    const Character &character,
+    const std::function<void(const InventoryBagOverview::Slot &, uint8_t)> &renderBag)
+{
+    GameplayUiRuntime &ui = context.gameplayUiRuntime();
+    const float scale = grid.scale;
+    const std::optional<GameplayHudTextureHandle> backdrop =
+        ui.ensureSolidHudTextureLoaded("__bag_overview_backdrop__", 0xff121714u);
+    const std::optional<GameplayHudTextureHandle> bronze =
+        ui.ensureSolidHudTextureLoaded("__bag_overview_divider__", 0xff4f7d98u);
+    const std::optional<GameplayHudTextureHandle> edge =
+        ui.ensureSolidHudTextureLoaded("__bag_overview_edge__", 0xff2c3a40u);
+    const std::optional<GameplayHudTextureHandle> surface = ui.ensureHudTextureLoaded("obsidian_inventory_surface");
+
+    if (backdrop)
+    {
+        context.submitHudTexturedQuad(*backdrop, grid.x, grid.y, grid.width, grid.height);
+    }
+
+    // The grid part of the inventory page's surface (CharacterInventoryGrid at 7,8 on the 468 x 346 page).
+    constexpr float PageWidth = 468.0f;
+    constexpr float PageHeight = 346.0f;
+    constexpr float GridLeft = 7.0f;
+    constexpr float GridTop = 8.0f;
+    constexpr float GridWidth = 448.0f;
+    constexpr float GridHeight = 288.0f;
+    const float line = std::max(1.0f, std::round(scale));
+
+    for (int bag = 0; bag < InventoryBagOverview::Bags; ++bag)
+    {
+        const InventoryBagOverview::Slot slot = InventoryBagOverview::slot(grid, bag);
+
+        if (surface)
+        {
+            ui.submitHudTexturedQuad(surface->textureHandle, slot.x, slot.y, slot.width, slot.height,
+                GridLeft / PageWidth, GridTop / PageHeight, (GridLeft + GridWidth) / PageWidth,
+                (GridTop + GridHeight) / PageHeight);
+        }
+
+        if (edge)
+        {
+            context.submitHudTexturedQuad(*edge, slot.x - line, slot.y - line, slot.width + 2 * line, line);
+            context.submitHudTexturedQuad(*edge, slot.x - line, slot.y + slot.height, slot.width + 2 * line, line);
+            context.submitHudTexturedQuad(*edge, slot.x - line, slot.y, line, slot.height);
+            context.submitHudTexturedQuad(*edge, slot.x + slot.width, slot.y, line, slot.height);
+        }
+
+        renderBag(slot, uint8_t(bag));
+        // The bag's tags in its bottom right corner, the place a bag fills last.
+        const float tagSize = std::round(16.0f * scale);
+        const float tagInset = std::round(2.0f * scale);
+        renderBagTagMarks(context, character, uint8_t(bag), slot.x + slot.width - 2 * tagSize - tagInset,
+            slot.y + slot.height - tagSize - tagInset, 2 * tagSize, tagSize);
+    }
+
+    // The dividers: a bronze rule down the middle of each gap between the bags.
+    if (bronze)
+    {
+        const InventoryBagOverview::Slot first = InventoryBagOverview::slot(grid, 0);
+        const InventoryBagOverview::Slot last = InventoryBagOverview::slot(grid, InventoryBagOverview::Bags - 1);
+        const float rule = std::max(2.0f, std::round(2.0f * scale));
+        const float middleX = std::round((first.x + first.width + last.x - rule) * 0.5f);
+        const float middleY = std::round((first.y + first.height + last.y - rule) * 0.5f);
+        const float right = last.x + last.width;
+        const float bottom = last.y + last.height;
+        context.submitHudTexturedQuad(*bronze, middleX, first.y, rule, bottom - first.y);
+        context.submitHudTexturedQuad(*bronze, first.x, middleY, right - first.x, rule);
+    }
+}
+
+std::optional<GameplayHudOverlaySupport::InventoryCell> GameplayHudOverlaySupport::nestedInventoryCellAt(
+    const GameplayScreenRuntime &context,
+    int width,
+    int height,
+    float x,
+    float y)
+{
+    const Party *pParty = context.partyReadOnly();
+    const Character *pCharacter = pParty != nullptr ? pParty->activeMember() : nullptr;
+    const std::optional<GameplayResolvedHudLayoutElement> grid =
+        context.resolveInventoryNestedOverlayGridArea(width, height);
+
+    if (pCharacter == nullptr || !grid)
+    {
+        return std::nullopt;
+    }
+
+    if (shopBagOverviewActive(context))
+    {
+        for (int bag = 0; bag < InventoryBagOverview::Bags; ++bag)
+        {
+            const InventoryBagOverview::Slot slot = InventoryBagOverview::slot(*grid, bag);
+
+            if (InventoryBagOverview::insideGrid(slot, x, y))
+            {
+                const auto [gridX, gridY] = InventoryBagOverview::cellAt(slot, x, y);
+                return InventoryCell{uint8_t(bag), gridX, gridY};
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    if (x < grid->x || x >= grid->x + grid->width || y < grid->y || y >= grid->y + grid->height)
+    {
+        return std::nullopt;
+    }
+
+    const float cellWidth = grid->width / float(Character::InventoryWidth);
+    const float cellHeight = grid->height / float(Character::InventoryHeight);
+    return InventoryCell{pCharacter->rulesetState.currentBag,
+        uint8_t(std::clamp(int((x - grid->x) / cellWidth), 0, Character::InventoryWidth - 1)),
+        uint8_t(std::clamp(int((y - grid->y) / cellHeight), 0, Character::InventoryHeight - 1))};
+}
+
+std::optional<ItemSearch::Query> GameplayHudOverlaySupport::inventorySearchQuery(const GameplayScreenRuntime &context)
+{
+    const GameplayUiController::CharacterScreenState &screen = context.characterScreenReadOnly();
+
+    if (!screen.open || screen.page != GameplayUiController::CharacterPage::Inventory
+        || context.isAdventurersInnCharacterSourceActive())
+    {
+        return std::nullopt;
+    }
+
+    ItemSearch::Query query = ItemSearch::parse(screen.inventorySearch);
+    return query.empty() ? std::nullopt : std::optional<ItemSearch::Query>(std::move(query));
+}
+
+std::string GameplayHudOverlaySupport::itemSearchText(
+    const GameplayScreenRuntime &context,
+    const InventoryItem &item,
+    const Character *pViewer)
+{
+    const ItemDefinition *pDefinition =
+        context.itemTable() != nullptr ? context.itemTable()->get(item.objectDescriptionId) : nullptr;
+
+    if (pDefinition == nullptr)
+    {
+        return {};
+    }
+
+    // One field a line, so that a quoted phrase stays within a field.
+    std::string text = ItemRuntime::displayName(
+        item, *pDefinition, context.standardItemEnchantTable(), context.specialItemEnchantTable());
+    const auto add =
+        [&text](const std::string &part)
+        {
+            if (!part.empty() && part != "0" && part != "N / A")
+            {
+                text += '\n';
+                text += part;
+            }
+        };
+
+    add(pDefinition->unidentifiedName);
+    add(pDefinition->skillGroup);
+    add(pDefinition->equipStat);
+
+    if (pDefinition->rarity != ItemRarity::Common)
+    {
+        add(pDefinition->materialName);
+    }
+
+    if (item.broken)
+    {
+        add("Broken");
+    }
+
+    if (!item.identified && ItemRuntime::requiresIdentification(*pDefinition))
+    {
+        add("Not identified");
+        return ItemSearch::toLower(text);
+    }
+
+    const ItemRules &rules = gameRulesFor(context.partyReadOnly()).items;
+    add(rules.enchantDescription(
+        item, *pDefinition, context.standardItemEnchantTable(), context.specialItemEnchantTable(), pViewer));
+
+    for (const ItemInspectLine &line : rules.inspectLines(
+             item, *pDefinition, context.standardItemEnchantTable(), context.specialItemEnchantTable(), pViewer))
+    {
+        add(line.text);
+    }
+
+    return ItemSearch::toLower(text);
+}
+
+void GameplayHudOverlaySupport::renderSearchDimmedItem(
+    GameplayScreenRuntime &context,
+    const GameplayHudTextureHandle &icon,
+    float x,
+    float y,
+    float width,
+    float height)
+{
+    GameplayHudBatchQuad quad;
+    quad.textureHandle = icon.textureHandle;
+    quad.x = x;
+    quad.y = y;
+    quad.width = width;
+    quad.height = height;
+    quad.tintAbgr = 0x5cffffffu;
+    context.gameplayUiRuntime().submitHudQuadBatch(std::span<const GameplayHudBatchQuad>(&quad, 1));
 }
 
 void GameplayHudOverlaySupport::renderBagTagIcon(

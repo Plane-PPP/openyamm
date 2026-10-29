@@ -11,7 +11,7 @@ constexpr float PartyYellowAlertDistance = 5120.0f;
 constexpr float PartyRedAlertDistance = 307.2f;
 
 bool actorRaisesPartyYellowAlert(
-    const GameplayRuntimeActorState &actor,
+    const GameplayActorRulesView &actor,
     float partyX,
     float partyY,
     float partyFootZ);

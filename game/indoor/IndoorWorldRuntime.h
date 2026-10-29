@@ -117,6 +117,13 @@ public:
         float meleeAttackAnimationSeconds = 0.3f;
         float rangedAttackAnimationSeconds = 0.3f;
         float dyingAnimationSeconds = 0.6f;
+        // The monster's attack contact frames, attack sound delays and fidget length from the sprite frame table,
+        // looked up once instead of by sprite name on every AI step. Not saved: refreshed with the fields above.
+        float meleeAttackImpactSeconds = 0.0f;
+        float rangedAttackImpactSeconds = 0.0f;
+        float meleeAttackSoundDelaySeconds = 0.0f;
+        float rangedAttackSoundDelaySeconds = 0.0f;
+        float boredAnimationSeconds = 2.0f;
         float attackCooldownSeconds = 0.0f;
         float idleDecisionSeconds = 0.0f;
         float actionSeconds = 0.0f;
@@ -785,6 +792,7 @@ private:
     void materializeInitialMonsterSpawns();
     void syncMapActorAiStates();
     RuntimeGeometryCache &runtimeGeometryCache() const;
+    float flyingFootZUnderCeiling(float x, float y, float aimZ, float footZ, float collisionHeight) const;
     void carryRestingObjectsOnMovedFloors(const std::vector<std::pair<const MapDeltaDoor *, float>> &floorMoves);
     std::shared_ptr<const PathMap> indoorPathMap() const;
     bool indoorActorPathfindingEnabled() const;

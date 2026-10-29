@@ -1565,6 +1565,25 @@ elements:
       notes: 'MAW multibag (rulesets with ItemRules::bagCount > 1 only): the same for an alchemy bag (ours): potions, bottles
         and reagents picked up from the ground. Selected while the open bag is one; the potion icon is drawn by the
         renderer.'
+    - id: CharacterInventorySearch
+      anchor: top_left
+      offset_x: 368
+      offset_y: -22
+      width: 264
+      height: 20
+      z_index: 300
+      interactive: true
+      text:
+        value: '{inventory_search}'
+        font: Lucida
+        color: '#e5dcc7'
+        align_x: left
+        align_y: middle
+        scale: 0.7
+        pad_x: 5
+      notes: 'Item search (ItemSearch): a click types into it; the words must all appear in an item, | gives alternatives,
+        ! excludes a word, quotes keep a phrase. Items that do not match are dimmed in every bag and for every member
+        until Escape clears it or the screen closes. Drawn by the renderer; the run death count gives it the bar.'
     - id: CharacterInventoryInfo
       anchor: top_left
       offset_x: 16

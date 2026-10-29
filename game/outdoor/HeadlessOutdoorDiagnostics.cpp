@@ -21104,11 +21104,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     }
 
                     body.radius = actor.radius;
-                    const float actorHeight = actor.height;
-                    body.height =
-                        actor.height > 0
-                            ? std::max(actorHeight, body.radius * 2.0f + 2.0f)
-                            : body.radius * 2.0f + 2.0f;
+                    body.height = actor.height > 0 ? float(actor.height) : body.radius * 2.0f + 2.0f;
                 }
 
                 if (body.radius <= 40.0f)

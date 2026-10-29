@@ -1113,6 +1113,21 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         parseBoolValue(*value, settings.potionButtons);
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "follower_panel"))
+    {
+        parseBoolValue(*value, settings.followerPanel);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "minimap_zoom"))
+    {
+        int parsed = settings.minimapZoom;
+
+        if (parseIntValue(*value, parsed))
+        {
+            settings.minimapZoom = std::clamp(parsed, 0, 2);
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "melee_hit_blood_effects"))
     {
         bool parsed = settings.meleeHitBloodEffects;
@@ -2301,6 +2316,8 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("melee_camera_kick", boolValue(settings.meleeCameraKick));
     serializer.add("context_action_popup", boolValue(settings.contextActionPopup));
     serializer.add("rarity_glow", settings.rarityGlow);
+    serializer.add("follower_panel", boolValue(settings.followerPanel));
+    serializer.add("minimap_zoom", std::clamp(settings.minimapZoom, 0, 2));
     serializer.section("startup");
     serializer.add("start_in_main_menu", boolValue(settings.startInMainMenu));
     serializer.add("save_file", settings.startupSaveFile);

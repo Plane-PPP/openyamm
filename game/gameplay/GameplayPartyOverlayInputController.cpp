@@ -60,6 +60,73 @@ bool isScancodeNewlyPressed(
         || (input.isScancodeHeld(scancode) && context.previousKeyboardState()[scancode] == 0);
 }
 
+// The inventory's item search box (CharacterInventorySearch): a click on it types into it, a click elsewhere stops
+// typing and keeps the search, a right click clears it. Typed text, Backspace and Enter edit it; Escape clears it, also
+// while not typing, and leaves the screen open. True when the keyboard went to the search this frame.
+bool handleInventorySearch(GameplayScreenRuntime &context, const GameplayInputFrame &input)
+{
+    constexpr size_t MaxSearchLength = 48;
+    GameplayUiController::CharacterScreenState &screen = context.characterScreen();
+
+    if (screen.page != GameplayUiController::CharacterPage::Inventory
+        || context.isAdventurersInnCharacterSourceActive())
+    {
+        screen.inventorySearchActive = false;
+        return false;
+    }
+
+    const std::optional<GameplayResolvedHudLayoutElement> box =
+        context.resolveHudLayoutElement("CharacterInventorySearch", input.screenWidth, input.screenHeight, 0, 0);
+    const bool overBox = box && context.isPointerInsideResolvedElement(*box, input.pointerX, input.pointerY);
+
+    if (input.leftMouseButton.pressed)
+    {
+        screen.inventorySearchActive = overBox;
+    }
+
+    if (input.rightMouseButton.pressed && overBox)
+    {
+        screen.inventorySearch.clear();
+    }
+
+    if (isScancodeNewlyPressed(context, input, SDL_SCANCODE_ESCAPE)
+        && (screen.inventorySearchActive || !screen.inventorySearch.empty()))
+    {
+        screen.inventorySearch.clear();
+        screen.inventorySearchActive = false;
+        context.interactionState().alchemyBenchEscapeLatch = true;
+        return true;
+    }
+
+    if (!screen.inventorySearchActive)
+    {
+        return false;
+    }
+
+    for (const char character : input.textInput)
+    {
+        if (character >= 32 && character < 127 && screen.inventorySearch.size() < MaxSearchLength)
+        {
+            screen.inventorySearch.push_back(character);
+        }
+    }
+
+    for (uint16_t count = input.scancodePressCount(SDL_SCANCODE_BACKSPACE); count > 0; --count)
+    {
+        if (!screen.inventorySearch.empty())
+        {
+            screen.inventorySearch.pop_back();
+        }
+    }
+
+    if (input.scancodePressCount(SDL_SCANCODE_RETURN) > 0 || input.scancodePressCount(SDL_SCANCODE_KP_ENTER) > 0)
+    {
+        screen.inventorySearchActive = false;
+    }
+
+    return true;
+}
+
 struct HudPointerState
 {
     float x = 0.0f;
@@ -2008,15 +2075,9 @@ bool GameplayPartyOverlayInputController::openBagForKey(GameplayScreenRuntime &c
         return false;
     }
 
-    // A chest, and a shop's or chest's inventory, take and show the active member's open bag.
     if (partyBagButtonsShown(context))
     {
-        if (pParty->activeMember() != nullptr
-            && InventoryBags::openBag(*pParty->activeMember(), uint8_t(bag), bagCount))
-        {
-            context.setStatusBarEvent("Bag " + std::to_string(bag + 1));
-        }
-
+        openNestedInventoryBag(context, bag);
         return true;
     }
 
@@ -2029,6 +2090,55 @@ bool GameplayPartyOverlayInputController::openBagForKey(GameplayScreenRuntime &c
 
     zoomInventoryBag(context, *pParty, context.selectedCharacterScreenSourceIndex(), bag);
     return true;
+}
+
+void GameplayPartyOverlayInputController::openNestedInventoryBag(GameplayScreenRuntime &context, int bag)
+{
+    Party *pParty = context.party();
+    Character *pMember = pParty != nullptr ? pParty->activeMember() : nullptr;
+    const int bagCount = pParty != nullptr ? gameRulesFor(pParty).items.bagCount(*pParty) : 1;
+    GameplayUiController::InventoryNestedOverlayState &overlay = context.inventoryNestedOverlay();
+    const bool shopOverview = GameplayHudOverlaySupport::shopBagOverviewActive(context);
+
+    if (pMember == nullptr || bagCount <= 1 || bag < 0 || bag >= bagCount)
+    {
+        return;
+    }
+
+    if (overlay.bagZoomed && pMember->rulesetState.currentBag == bag)
+    {
+        overlay.bagZoomed = false;
+        return;
+    }
+
+    if (InventoryBags::openBag(*pMember, uint8_t(bag), bagCount) || shopOverview)
+    {
+        context.setStatusBarEvent("Bag " + std::to_string(bag + 1));
+    }
+
+    if (shopOverview)
+    {
+        overlay.bagZoomed = true;
+    }
+}
+
+void GameplayPartyOverlayInputController::openFirstBagsInOverview(GameplayScreenRuntime &context)
+{
+    Party *pParty = context.party();
+
+    if (pParty == nullptr
+        || !((context.characterScreenReadOnly().open && GameplayHudOverlaySupport::bagOverviewActive(context))
+            || GameplayHudOverlaySupport::shopBagOverviewActive(context)))
+    {
+        return;
+    }
+
+    const int bagCount = gameRulesFor(pParty).items.bagCount(*pParty);
+
+    for (size_t memberIndex = 0; memberIndex < pParty->memberCount(); ++memberIndex)
+    {
+        InventoryBags::openBag(*pParty->member(memberIndex), 0, bagCount);
+    }
 }
 
 bool GameplayPartyOverlayInputController::toggleBagTag(GameplayScreenRuntime &context, BagTag tag)
@@ -2176,12 +2286,14 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
     GameplayUiController::CharacterScreenState &screen = context.characterScreen();
     const bool skillsPage = screen.page == GameplayUiController::CharacterPage::Skills;
     const bool awardsPage = screen.page == GameplayUiController::CharacterPage::Awards;
+    // Keys typed into the item search are text, not the screen's keys.
+    const bool searchTyping = handleInventorySearch(context, input);
 
     for (const KeyboardAction action : {KeyboardAction::SkillCover, KeyboardAction::SkillManaShield})
     {
         const std::optional<std::string> switchedSkill = skillSwitchForAction(context, action);
 
-        if (switchedSkill && pActiveCharacter != nullptr && !isReadOnlyAdventurersInnView
+        if (switchedSkill && pActiveCharacter != nullptr && !isReadOnlyAdventurersInnView && !searchTyping
             && input.action(action).pressed)
         {
             bool &disabled = *switchedSkill == "Cover" ? pActiveCharacter->rulesetState.coverDisabled
@@ -2192,7 +2304,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
     }
 
     // The alchemist key on the inventory picks the member who takes the alchemy items when sorting (MAW's E).
-    if (screen.page == GameplayUiController::CharacterPage::Inventory && pParty != nullptr
+    if (screen.page == GameplayUiController::CharacterPage::Inventory && pParty != nullptr && !searchTyping
         && !context.isAdventurersInnCharacterSourceActive() && input.action(KeyboardAction::AlchemistPick).pressed)
     {
         if (const std::optional<std::string> status =
@@ -2203,7 +2315,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
     }
 
     // R on the skills page switches an Elementalist's spell rotation (MAW).
-    if (skillsPage && pActiveCharacter != nullptr && !isReadOnlyAdventurersInnView
+    if (skillsPage && pActiveCharacter != nullptr && !isReadOnlyAdventurersInnView && !searchTyping
         && input.action(KeyboardAction::SkillRotation).pressed)
     {
         if (const std::optional<bool> rotation =
@@ -2275,12 +2387,12 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
         }
     }
 
-    // The Escape that closed the alchemy bench keeps the screen open until it is released.
-    const bool closePressed =
-        (pKeyboardState != nullptr
-            && pKeyboardState[SDL_SCANCODE_ESCAPE]
-            && !context.interactionState().alchemyBenchEscapeLatch)
-        || isScancodeNewlyPressed(context, input, SDL_SCANCODE_E);
+    // The Escape that closed the alchemy bench or cleared the item search keeps the screen open until it is released.
+    const bool closePressed = !searchTyping
+        && ((pKeyboardState != nullptr
+                && pKeyboardState[SDL_SCANCODE_ESCAPE]
+                && !context.interactionState().alchemyBenchEscapeLatch)
+            || isScancodeNewlyPressed(context, input, SDL_SCANCODE_E));
     const bool isInventorySpellTargetMode =
         context.utilitySpellOverlayReadOnly().active
         && context.utilitySpellOverlayReadOnly().mode == GameplayUiController::UtilitySpellOverlayMode::InventoryTarget;
@@ -2306,7 +2418,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
         context.interactionState().closeOverlayLatch = false;
     }
 
-    const bool charCycleNewlyPressed = input.action(KeyboardAction::CharCycle).pressed;
+    const bool charCycleNewlyPressed = !searchTyping && input.action(KeyboardAction::CharCycle).pressed;
 
     if (charCycleNewlyPressed)
     {

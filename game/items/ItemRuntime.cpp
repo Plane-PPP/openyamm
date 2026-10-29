@@ -222,7 +222,10 @@ bool ItemRuntime::characterMeetsClassRestriction(const Character &character, con
     const int actualAccuracy = static_cast<int>(character.accuracy)
         + character.permanentBonuses.accuracy + character.magicalBonuses.accuracy;
 
-    if (actualMight < itemDefinition.requiredMight || actualAccuracy < itemDefinition.requiredAccuracy)
+    // Only items with a requirement check it: a negative stat (Lightning Crossbow's Accuracy -50) must not lock out
+    // every item that has none.
+    if ((itemDefinition.requiredMight > 0 && actualMight < itemDefinition.requiredMight)
+        || (itemDefinition.requiredAccuracy > 0 && actualAccuracy < itemDefinition.requiredAccuracy))
     {
         return false;
     }

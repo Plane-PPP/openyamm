@@ -173,8 +173,9 @@ void GameplayInputController::handleStandardUiHotkeys(
     GameplayScreenRuntime &context,
     const GameplayStandardUiHotkeyConfig &config)
 {
-    // Letters typed into the alchemy bench or journal search are text, not hotkeys; both handle Escape themselves.
-    if (GameplayUiController::alchemyBenchSearchActive(context.characterScreenReadOnly())
+    // Letters typed into the alchemy bench, inventory or journal search are text, not hotkeys; each handles Escape
+    // itself.
+    if (GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
         || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly()))
     {
         return;
@@ -250,8 +251,13 @@ void GameplayInputController::handleStandardUiHotkeys(
             return;
         }
 
-        // An open alchemy bench takes this Escape itself and leaves the character screen open.
-        if (characterScreenOpen && !context.characterScreenReadOnly().alchemyBench.active)
+        // An open alchemy bench, and an inventory item search (cleared by it), take this Escape themselves and leave
+        // the character screen open.
+        const GameplayUiController::CharacterScreenState &characterScreen = context.characterScreenReadOnly();
+
+        if (characterScreenOpen && !characterScreen.alchemyBench.active
+            && !(characterScreen.page == GameplayUiController::CharacterPage::Inventory
+                && !characterScreen.inventorySearch.empty()))
         {
             context.closeCharacterScreen();
             context.interactionState().menuToggleLatch = true;
@@ -439,7 +445,7 @@ void GameplayInputController::handleStandardUiHotkeys(
     {
         if (isActionNewlyPressed(context, KeyboardAction::FollowerPanel, config.pInputFrame, config.pKeyboardState))
         {
-            context.interactionState().followerPanelOpen = !context.interactionState().followerPanelOpen;
+            context.toggleFollowerPanel();
         }
 
         constexpr std::array<KeyboardAction, 4> FollowerActions = {KeyboardAction::Follower1,
@@ -555,7 +561,7 @@ void GameplayInputController::handleSharedGameplayHotkeys(
     const GameplaySharedGameplayHotkeyConfig &config)
 {
     if (config.pKeyboardState == nullptr
-        || GameplayUiController::alchemyBenchSearchActive(context.characterScreenReadOnly())
+        || GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
         || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly()))
     {
         context.interactionState().alwaysRunToggleLatch = false;

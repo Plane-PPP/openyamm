@@ -504,6 +504,10 @@ public:
         // Several bags (MAW): the open bag fills the grid at full size instead of the four-bag overview (the 1-4
         // buttons and keys zoom, the overview button returns). Not saved.
         bool inventoryBagZoomed = false;
+        // The inventory's item search (ItemSearch): what is typed, kept over every bag and member until Escape or the
+        // screen closes, and whether typing goes to it.
+        std::string inventorySearch;
+        bool inventorySearchActive = false;
         CharacterPage page = CharacterPage::Inventory;
         CharacterScreenSource source = CharacterScreenSource::Party;
         size_t sourceIndex = 0;
@@ -517,8 +521,8 @@ public:
     };
 
     static bool characterScreenSupportsInspection(const CharacterScreenState &screen);
-    // Typing goes to the alchemy bench's recipe search instead of hotkeys.
-    static bool alchemyBenchSearchActive(const CharacterScreenState &screen);
+    // Typing goes to the alchemy bench's recipe search or the inventory's item search instead of hotkeys.
+    static bool characterScreenSearchActive(const CharacterScreenState &screen);
     static bool journalSearchActive(const JournalScreenState &screen);
 
     struct InventoryNestedOverlayState
@@ -526,6 +530,8 @@ public:
         bool active = false;
         InventoryNestedOverlayMode mode = InventoryNestedOverlayMode::None;
         uint32_t houseId = 0;
+        // A shop's party inventory shows one bag at full size rather than the bag overview (several bags, desktop).
+        bool bagZoomed = false;
     };
 
     struct HouseShopOverlayState

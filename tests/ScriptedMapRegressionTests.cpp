@@ -19,6 +19,7 @@
 #include "game/outdoor/OutdoorPartyRuntime.h"
 #include "game/outdoor/OutdoorWorldRuntime.h"
 #include "game/party/Party.h"
+#include "game/tables/CharacterDollTable.h"
 
 #include "tests/RegressionGameData.h"
 #include "tests/RegressionMapLoader.h"
@@ -32,6 +33,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -1043,6 +1045,21 @@ OpenYAMM::Game::Party makeScriptedRegressionParty()
     OpenYAMM::Game::Party party = {};
     party.seed(seed);
     return party;
+}
+
+// Character 25, a dragon, on the creature paperdoll (doll type 5), which cannot wear armour.
+OpenYAMM::Game::CharacterDollTable makeDragonDollTable()
+{
+    std::vector<std::string> dragon(24);
+    dragon[0] = "25";
+    dragon[1] = "5";
+    std::vector<std::string> creatureDoll(28, "0");
+    creatureDoll[0] = "5";
+    std::fill(creatureDoll.begin() + 1, creatureDoll.begin() + 8, "-");
+    OpenYAMM::Game::CharacterDollTable table;
+    REQUIRE(table.loadCharacterRows({{}, dragon}));
+    REQUIRE(table.loadDollTypeRows({{}, creatureDoll}));
+    return table;
 }
 
 const OpenYAMM::Game::EventRuntimeState::PendingMapMove *pendingMapMove(
@@ -5708,6 +5725,72 @@ TEST_CASE("mm7 lincoln mmmerge exit requires each active member to have a wetsui
     CHECK_EQ(allowedState.pendingDialogueContext->transitionMapMove->z, 225);
     REQUIRE(allowedState.pendingDialogueContext->transitionMapMove->mapName.has_value());
     CHECK_EQ(*allowedState.pendingDialogueContext->transitionMapMove->mapName, "7out15.odm");
+}
+
+TEST_CASE("mm7 shoals let a dragon in with a carried wetsuit and still want the others worn")
+{
+    const OpenYAMM::Game::CharacterDollTable dolls = makeDragonDollTable();
+    const auto makeParty =
+        [&](bool dragon, bool carried)
+        {
+            OpenYAMM::Game::Party party = makeScriptedRegressionParty();
+            party.setCharacterDollTable(&dolls);
+            party.setQuestBit(642, true);
+            OpenYAMM::Game::Character &member = *party.member(0);
+            member.characterDataId = dragon ? 25 : 0;
+            member.health = 40;
+
+            if (carried)
+            {
+                member.inventory.push_back(makeScriptedInventoryItem(1406));
+            }
+
+            return party;
+        };
+
+    std::string error;
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> lincoln =
+        loadMm7MapOverlayProgram(OPENYAMM_SOURCE_DIR, "7d23", "7d23_mmmerge", error);
+    REQUIRE_MESSAGE(lincoln.has_value(), error.c_str());
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> avlee =
+        loadMm7MapOverlayProgram(OPENYAMM_SOURCE_DIR, "out14", "out14_mmmerge", error);
+    REQUIRE_MESSAGE(avlee.has_value(), error.c_str());
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> shoals =
+        loadMm7MapOverlayProgram(OPENYAMM_SOURCE_DIR, "7out15", "7out15_mmmerge", error);
+    REQUIRE_MESSAGE(shoals.has_value(), error.c_str());
+    OpenYAMM::Game::EventRuntime eventRuntime = {};
+
+    for (const auto &[dragon, carried, suited] :
+         std::vector<std::tuple<bool, bool, bool>>{{true, true, true}, {true, false, false}, {false, true, false}})
+    {
+        CAPTURE(dragon);
+        CAPTURE(carried);
+
+        OpenYAMM::Game::Party lincolnParty = makeParty(dragon, carried);
+        OpenYAMM::Game::EventRuntimeState lincolnState = {};
+        REQUIRE(eventRuntime.executeEventById(lincoln, std::nullopt, 501, lincolnState, &lincolnParty));
+        CHECK_EQ(pendingMapMove(lincolnState) != nullptr, suited);
+
+        OpenYAMM::Game::Party avleeParty = makeParty(dragon, carried);
+        OpenYAMM::Game::EventRuntimeState avleeState = {};
+        OpenYAMM::Game::EventRuntimeState::ActiveHookContext hookContext = {};
+        hookContext.kind = OpenYAMM::Game::EventRuntimeHookKind::MapTransition;
+        hookContext.boundaryEdge = static_cast<uint32_t>(OpenYAMM::Game::MapBoundaryEdge::West);
+        hookContext.destinationMapName = "7out15.odm";
+        avleeState.activeHookContext = hookContext;
+        REQUIRE(eventRuntime.executeHooks(
+            avlee, std::nullopt, OpenYAMM::Game::EventRuntimeHookKind::MapTransition, avleeState, &avleeParty));
+        REQUIRE(avleeState.activeHookContext.has_value());
+        CHECK_EQ(avleeState.activeHookContext->blocked, !suited);
+
+        OpenYAMM::Game::Party shoalsParty = makeParty(dragon, carried);
+        RecordingGameplayWorldContext shoalsWorldContext;
+        shoalsWorldContext.setPartyPosition(0.0f, 0.0f, 0.0f);
+        OpenYAMM::Game::EventRuntimeState shoalsState = {};
+        REQUIRE(eventRuntime.executeEventById(
+            shoals, std::nullopt, 65017, shoalsState, &shoalsParty, &shoalsWorldContext));
+        CHECK_EQ(shoalsParty.member(0)->health, suited ? 40 : 0);
+    }
 }
 
 TEST_CASE("mm7 stone city mmmerge throne room and dwarf king cleanup")

@@ -41,11 +41,20 @@ const std::vector<std::string> GameplayLayoutFiles = {
 };
 }
 
-bool GameplayUiController::alchemyBenchSearchActive(const CharacterScreenState &screen)
+bool GameplayUiController::characterScreenSearchActive(const CharacterScreenState &screen)
 {
-    return screen.open && screen.alchemyBench.active
-        && (screen.alchemyBench.craftingTab ? screen.alchemyBench.crafting.searchActive
-                                            : screen.alchemyBench.recipeSearchActive);
+    if (!screen.open)
+    {
+        return false;
+    }
+
+    if (screen.alchemyBench.active)
+    {
+        return screen.alchemyBench.craftingTab ? screen.alchemyBench.crafting.searchActive
+                                               : screen.alchemyBench.recipeSearchActive;
+    }
+
+    return screen.page == CharacterPage::Inventory && screen.inventorySearchActive;
 }
 
 bool GameplayUiController::journalSearchActive(const JournalScreenState &screen)
@@ -466,6 +475,7 @@ void GameplayUiController::openInventoryNestedOverlay(InventoryNestedOverlayMode
     state.inventoryNestedOverlay.active = true;
     state.inventoryNestedOverlay.mode = mode;
     state.inventoryNestedOverlay.houseId = houseId;
+    state.inventoryNestedOverlay.bagZoomed = false;
 }
 
 void GameplayUiController::closeInventoryNestedOverlay()

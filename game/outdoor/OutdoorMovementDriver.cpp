@@ -638,7 +638,7 @@ void OutdoorMovementDriver::update(
     }
 
     if (!input.turnBasedPhysicsStep
-        && m_state.supportOnWater
+        && m_state.supportOnDeepWater()
         && !m_partyMovementState.waterWalk
         && !m_partyMovementState.flying
         && !m_levitateActive)

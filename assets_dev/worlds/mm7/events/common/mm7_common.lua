@@ -756,11 +756,22 @@ function MM7.UpdateJudgeGreyDeath()
     SetQBit(QBit(646))
 end
 
+-- A member is suited for the Shoals wearing a Wetsuit, or carrying one when their paperdoll cannot wear armour:
+-- otherwise a dragon in the party would lock the Shoals away.
+function MM7.PartyMemberSuitedForShoals(memberIndex)
+    if evt.PartyMemberHasEquippedItem(memberIndex, MM7.WetsuitItemId) then
+        return true
+    end
+
+    return not evt.PartyMemberCanWearArmor(memberIndex)
+        and evt.PartyMemberItemCount(memberIndex, MM7.WetsuitItemId) > 0
+end
+
 function MM7.AllPartyMembersHaveWetsuit()
     local count = evt.GetPartyMemberCount()
 
     for memberIndex = 0, count - 1 do
-        if not evt.PartyMemberHasEquippedItem(memberIndex, MM7.WetsuitItemId) then
+        if not MM7.PartyMemberSuitedForShoals(memberIndex) then
             return false
         end
     end
@@ -829,7 +840,7 @@ function MM7.KillUnsuitedShoalsPartyMembers()
     local count = evt.GetPartyMemberCount()
 
     for memberIndex = 0, count - 1 do
-        if not evt.PartyMemberHasEquippedItem(memberIndex, MM7.WetsuitItemId) then
+        if not MM7.PartyMemberSuitedForShoals(memberIndex) then
             evt.ForPlayer(memberIndex)
             if not IsAtLeast(Dead, 0) then
                 SetValue(CurrentHealth, 0)

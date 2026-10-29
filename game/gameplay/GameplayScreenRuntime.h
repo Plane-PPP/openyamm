@@ -350,7 +350,10 @@ public:
     void preloadReferencedAssets();
     bool ensurePortraitRuntimeLoaded();
     void resetPortraitFxStates(size_t memberCount);
-    void resetOverlayInteractionState(bool followerPanelOpen = false);
+    // Opens the follower panel on a map load when the party has followers and the player left it open.
+    void resetOverlayInteractionState(bool hasFollowers = false);
+    // The panel button and key: the choice is remembered in the settings.
+    void toggleFollowerPanel();
     bool initializeHouseVideoPlayer();
     void shutdownHouseVideoPlayer();
     void stopHouseVideoPlayback();
@@ -526,6 +529,8 @@ public:
     bool renderHouseVideoFrame(float x, float y, float quadWidth, float quadHeight) const;
 
 private:
+    void rememberGameplayMinimapZoom();
+
     CombatLog m_combatLog;
     GameplayCombatLogPanel m_combatLogPanel;
     struct DelayedSpeechReaction

@@ -687,6 +687,27 @@ TEST_CASE("clubs equip without a learned skill")
     }
 }
 
+TEST_CASE("negative accuracy does not block items without a stat requirement")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+
+    // A low-accuracy Sorcerer wielding the Lightning Crossbow (Accuracy -50), GitHub issue #14.
+    OpenYAMM::Game::Character character = {};
+    character.accuracy = 10;
+    character.magicalBonuses.accuracy = -50;
+
+    OpenYAMM::Game::CharacterDollTypeEntry dollType = {};
+    dollType.canEquipCloak = true;
+
+    for (const uint32_t itemId : {137u, 122u})
+    {
+        CAPTURE(itemId);
+        const OpenYAMM::Game::ItemDefinition *pItem = gameData.itemTable.get(itemId);
+        REQUIRE(pItem != nullptr);
+        CHECK(OpenYAMM::Game::GameMechanics::canCharacterEquipItem(character, *pItem, &dollType));
+    }
+}
+
 TEST_CASE("wetsuit equip rules require empty equipment except blasters")
 {
     const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();

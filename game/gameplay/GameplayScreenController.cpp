@@ -75,7 +75,7 @@ void dropBagOverflow(GameplayScreenRuntime &context)
 }
 
 // The bag buttons on a chest and over a shop's or chest's party inventory (rulesets with several bags): a click opens
-// that bag of the active member.
+// that bag of the active member (GameplayPartyOverlayInputController::openNestedInventoryBag).
 void handleNestedInventoryBagButtons(GameplayScreenRuntime &context, const GameplayInputFrame &input)
 {
     Party *pParty = context.party();
@@ -100,11 +100,7 @@ void handleNestedInventoryBagButtons(GameplayScreenRuntime &context, const Gamep
         if (button && input.pointerX >= button->x && input.pointerX < button->x + button->width
             && input.pointerY >= button->y && input.pointerY < button->y + button->height)
         {
-            if (InventoryBags::openBag(*pParty->activeMember(), uint8_t(bag), bagCount))
-            {
-                context.setStatusBarEvent("Bag " + std::to_string(bag + 1));
-            }
-
+            GameplayPartyOverlayInputController::openNestedInventoryBag(context, bag);
             return;
         }
     }
@@ -746,6 +742,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleSharedOverlayInput(
     const GameplayInputFrame &input,
     const GameplayUiOverlayInputConfig &config)
 {
+    GameplayPartyOverlayInputController::openFirstBagsInOverview(context);
     handleNestedInventoryBagButtons(context, input);
     GameplayUiOverlayInputResult result = GameplayUiOverlayOrchestrator::handleStandardOverlayInput(
         context,
@@ -872,6 +869,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
 
     const bool canUsePartyNumberHotkeys =
         !config.blockPortraitInput
+        && !GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
         && !spellbookActive
         && !restActive
         && !menuActive
@@ -1027,8 +1025,9 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !houseBankInputActive
         && !config.blockJournalToggle;
 
-    // Keys typed into the journal search are text, not journal shortcuts.
-    const bool journalTyping = GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly());
+    // Keys typed into the journal or inventory search are text, not journal shortcuts.
+    const bool journalTyping = GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly())
+        || GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly());
     const bool mapShortcutPressed = !journalTyping
         && (input.isScancodeHeld(SDL_SCANCODE_M) || input.action(KeyboardAction::MapBook).held)
         && !(input.action(KeyboardAction::SkillManaShield).held

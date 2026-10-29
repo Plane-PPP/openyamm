@@ -58,6 +58,16 @@ struct GameSaveData
     uint32_t sourceSaveVersion = 0;
 };
 
+// What the Load and Save screens list about a save: the same fields of its GameSaveData.
+struct GameSaveSummary
+{
+    std::string mapFileName;
+    float savedGameMinutes = 0.0f;
+    RulesetSelection ruleset;
+    std::string saveName;
+    std::vector<uint8_t> previewBmp;
+};
+
 // MAW games carry four bags a member from this version on; older saves fit theirs into four when loaded
 // (InventoryBags::fitIntoBagCount).
 constexpr uint32_t SaveVersionFourMawBags = 121;
@@ -76,6 +86,8 @@ bool saveGameDataToPath(const std::filesystem::path &path, const GameSaveData &d
 inline constexpr const char *SaveFromNewerVersionError = "written by a newer version of OpenYAMM";
 
 std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &path, std::string &error);
+// Reads only the summary of current saves; older ones keep it behind the game state and are read whole.
+std::optional<GameSaveSummary> loadGameSaveSummaryFromPath(const std::filesystem::path &path, std::string &error);
 std::unordered_map<std::string, uint32_t> collectRequiredContentPackages(
     const GameSaveData &data,
     const ItemTable &itemTable,

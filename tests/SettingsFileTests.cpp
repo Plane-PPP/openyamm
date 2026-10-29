@@ -87,6 +87,17 @@ TEST_CASE("sparse settings round trip and only changed values are written")
     std::filesystem::remove_all(path.parent_path());
 }
 
+TEST_CASE("the remembered follower panel and minimap zoom load back and clamp the zoom step")
+{
+    const GameSettings loaded =
+        loadText("[profile]\nname=desktop\nversion=5\n[gameplay]\nfollower_panel=false\nminimap_zoom=2\n");
+    CHECK_FALSE(loaded.followerPanel);
+    CHECK(loaded.minimapZoom == 2);
+    CHECK(contains(savedNames(loaded), "gameplay.follower_panel"));
+    CHECK(contains(savedNames(loaded), "gameplay.minimap_zoom"));
+    CHECK(loadText("[profile]\nname=desktop\nversion=5\n[gameplay]\nminimap_zoom=9\n").minimapZoom == 2);
+}
+
 TEST_CASE("a changed default reaches files without the key and spares files with it")
 {
     // The file of a player who never touched the volume, and of one who chose today's default explicitly.

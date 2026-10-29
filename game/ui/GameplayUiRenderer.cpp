@@ -148,9 +148,10 @@ float nearestHostileActorDistanceToParty(const IGameplayWorldRuntime *pWorldRunt
 
     for (size_t actorIndex = 0; actorIndex < pWorldRuntime->mapActorCount(); ++actorIndex)
     {
-        GameplayRuntimeActorState actorState = {};
+        // The rules view, not the full runtime state: the HUD scans every actor each frame.
+        GameplayActorRulesView actorState = {};
 
-        if (!pWorldRuntime->actorRuntimeState(actorIndex, actorState)
+        if (!pWorldRuntime->actorRulesView(actorIndex, actorState)
             || actorState.isDead
             || actorState.isInvisible
             || !actorState.hostileToParty)

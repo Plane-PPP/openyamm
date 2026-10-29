@@ -5,6 +5,7 @@ add_executable(openyamm_unit_tests
     AssetPackIndexTests.cpp
     UpdaterTests.cpp
     SettingsFileTests.cpp
+    ItemSearchTests.cpp
     ItemVisualTests.cpp
     ActorPathRuntimeTests.cpp
     ActorCrowdingTests.cpp
@@ -288,6 +289,7 @@ add_executable(openyamm_unit_tests
     ../game/items/AlchemyBenchRuntime.cpp
     ../game/items/CraftingRuntime.cpp
     ../game/items/InventoryBags.cpp
+    ../game/items/ItemSearch.cpp
     ../game/items/QuickItemSlots.cpp
     ../game/items/InventoryItemMixingRuntime.cpp
     ../game/items/InventoryItemUseRuntime.cpp

@@ -2701,6 +2701,9 @@ void GameplayScreenRuntime::resetCharacterOverlayInteractionState()
     // The bench lives inside the character screen and never outlasts it.
     characterScreen().alchemyBench.active = false;
     characterScreen().alchemyBench.recipeSearchActive = false;
+    // So does the inventory's item search.
+    characterScreen().inventorySearch.clear();
+    characterScreen().inventorySearchActive = false;
 }
 
 void GameplayScreenRuntime::syncPartyConditionPortraits()
@@ -3433,6 +3436,8 @@ GameplayScreenRuntime::SharedUiBootstrapResult GameplayScreenRuntime::initialize
 
     bindAssetFileSystem(config.pAssetFileSystem);
     clearUiControllerRuntimeState();
+    uiController().state().gameplayMinimapZoomStep =
+        std::clamp(settingsSnapshot().minimapZoom, GameplayMinimapMinZoomStep, GameplayMinimapMaxZoomStep);
     resetPortraitFxStates(config.portraitMemberCount);
 
     if (config.initializeHouseVideoPlayer)
@@ -3486,10 +3491,22 @@ void GameplayScreenRuntime::resetPortraitFxStates(size_t memberCount)
     uiRuntime().resetPortraitPresentationState(memberCount);
 }
 
-void GameplayScreenRuntime::resetOverlayInteractionState(bool followerPanelOpen)
+void GameplayScreenRuntime::resetOverlayInteractionState(bool hasFollowers)
 {
     interactionState() = {};
-    interactionState().followerPanelOpen = followerPanelOpen;
+    interactionState().followerPanelOpen = hasFollowers && settingsSnapshot().followerPanel;
+}
+
+void GameplayScreenRuntime::toggleFollowerPanel()
+{
+    const bool open = !interactionState().followerPanelOpen;
+    interactionState().followerPanelOpen = open;
+
+    if (m_pSettings != nullptr && m_pSettings->followerPanel != open)
+    {
+        m_pSettings->followerPanel = open;
+        commitSettingsChange();
+    }
 }
 
 bool GameplayScreenRuntime::initializeHouseVideoPlayer()
@@ -4278,12 +4295,25 @@ void GameplayScreenRuntime::zoomGameplayMinimapIn()
 {
     GameplayUiController::State &state = uiController().state();
     state.gameplayMinimapZoomStep = std::min(state.gameplayMinimapZoomStep + 1, GameplayMinimapMaxZoomStep);
+    rememberGameplayMinimapZoom();
 }
 
 void GameplayScreenRuntime::zoomGameplayMinimapOut()
 {
     GameplayUiController::State &state = uiController().state();
     state.gameplayMinimapZoomStep = std::max(state.gameplayMinimapZoomStep - 1, GameplayMinimapMinZoomStep);
+    rememberGameplayMinimapZoom();
+}
+
+void GameplayScreenRuntime::rememberGameplayMinimapZoom()
+{
+    const int zoomStep = uiController().state().gameplayMinimapZoomStep;
+
+    if (m_pSettings != nullptr && m_pSettings->minimapZoom != zoomStep)
+    {
+        m_pSettings->minimapZoom = zoomStep;
+        commitSettingsChange();
+    }
 }
 
 void GameplayScreenRuntime::collectGameplayMinimapLines(std::vector<GameplayMinimapLineState> &lines)

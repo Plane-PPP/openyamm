@@ -2440,16 +2440,12 @@ float actorCollisionRadius(
     return OeNonFlyingActorRadius;
 }
 
+// The actor's own height, even below its width (indoorActorCollisionHeight explains why).
 float actorCollisionHeight(
     const OutdoorWorldRuntime::MapActorState &actor,
     float collisionRadius)
 {
-    if (actor.height > 0)
-    {
-        return std::max(static_cast<float>(actor.height), collisionRadius * 2.0f + 2.0f);
-    }
-
-    return collisionRadius * 2.0f + 2.0f;
+    return actor.height > 0 ? static_cast<float>(actor.height) : collisionRadius * 2.0f + 2.0f;
 }
 
 bool isActorUnavailableForCombat(const OutdoorWorldRuntime::MapActorState &actor);

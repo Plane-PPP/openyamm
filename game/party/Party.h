@@ -570,6 +570,9 @@ public:
     bool removeItem(uint32_t objectDescriptionId, uint32_t quantity = 1);
     static int effectiveMaximumHealth(const Character &member);
     static int effectiveMaximumSpellPoints(const Character &member);
+    // The most HP or SP a member can fill to: the maximum less what its auras hold back (MAW's reservations).
+    int reachableMaximumHealth(size_t memberIndex) const;
+    int reachableMaximumSpellPoints(size_t memberIndex) const;
     bool needsHealing() const;
     bool activeMemberNeedsHealing() const;
     void restoreAll();
@@ -630,6 +633,7 @@ public:
     bool grantItemToMember(size_t memberIndex, uint32_t objectDescriptionId, uint32_t quantity = 1);
     bool removeItemFromMember(size_t memberIndex, uint32_t objectDescriptionId, uint32_t quantity = 1);
     bool takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, uint8_t gridY, InventoryItem &item);
+    // Into the member's open bag, else the first of their other bags with room (rulesets with several bags).
     bool tryAutoPlaceItemInMemberInventory(size_t memberIndex, const InventoryItem &item);
     // Regroups the inventory by item type and repacks it; leaves it unchanged when the items cannot be repacked.
     bool sortMemberInventory(size_t memberIndex);
@@ -659,6 +663,8 @@ public:
     const InventoryItem *memberInventoryItem(size_t memberIndex, uint8_t gridX, uint8_t gridY) const;
     InventoryItem *memberInventoryItemMutable(size_t memberIndex, uint8_t gridX, uint8_t gridY);
     uint32_t equippedItemId(size_t memberIndex, EquipmentSlot slot) const;
+    // Whether the member's paperdoll can wear body armour (the doll type's Armor column); dragons cannot.
+    bool memberCanWearArmor(size_t memberIndex) const;
     // The Workshop: the first item the member wears that the mod fits (main hand, bow, off hand, armour, helm, cloak,
     // then the rest), 0 for none. fitWorkshopMod fits it there (replacing a mod already fitted) and returns that item.
     uint32_t workshopModTarget(size_t memberIndex, uint16_t modId) const;

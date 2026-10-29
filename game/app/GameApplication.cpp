@@ -7080,6 +7080,15 @@ bool GameApplication::processPendingDebugMapJump()
 
 void GameApplication::handleSdlEvent(const SDL_Event &event)
 {
+#if !defined(__ANDROID__) && !defined(OPENYAMM_IOS)
+    // PrintScreen saves the frame on every screen, the debug console included.
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.scancode == SDL_SCANCODE_PRINTSCREEN)
+    {
+        requestScreenshotFile();
+        return;
+    }
+#endif
+
     if (m_debugConsoleRendererInitialized)
     {
         ImGui_ImplSDL3_ProcessEvent(&event);
@@ -7202,7 +7211,7 @@ bool GameApplication::applicationTextInputActive() const
 
     return (saveGameScreen.active && saveGameScreen.editActive)
         || gameplayScreenRuntime.houseBankState().inputActive()
-        || GameplayUiController::alchemyBenchSearchActive(gameplayScreenRuntime.characterScreenReadOnly())
+        || GameplayUiController::characterScreenSearchActive(gameplayScreenRuntime.characterScreenReadOnly())
         || GameplayUiController::journalSearchActive(gameplayScreenRuntime.journalScreenStateReadOnly());
 }
 
@@ -7730,6 +7739,7 @@ void GameApplication::shutdownApplication()
 {
     setGameplayProfilingEnabled(false);
     m_screenManager.setActiveScreen(nullptr);
+    LoadGameScreen::stopSaveScan();
     m_pLoadingOverlayScreen.reset();
     m_gameSession.gameplayScreenRuntime().clearSharedUiRuntime();
     shutdownRenderer();
@@ -10257,7 +10267,6 @@ bool GameApplication::quickSaveToPath(
     }
 
     m_gameSession.setCurrentSavePath(path);
-    LoadGameScreen::invalidateCachedSaveSlots();
     GAMEPLAY_DEBUG_TRACE(
         "save_game_written path=\"" + path.string() + "\""
         + " map=\"" + saveData->mapFileName + "\""
@@ -10594,6 +10603,10 @@ void GameApplication::openMenuScreen(bool paused)
         }
         actions.applyRuleset = [this](const RulesetOptions &options, std::string &error)
         { return applyRulesetOptions(options, error); };
+    }
+    if (!paused)
+    {
+        LoadGameScreen::startSaveScan();
     }
     std::unique_ptr<MainMenuScreen> pScreen =
         std::make_unique<MainMenuScreen>(*m_pAssetFileSystem, m_gameDataRepository, &m_gameAudioSystem, m_settings,
@@ -11163,6 +11176,32 @@ void GameApplication::reportQuickSaveStatus(const std::string &status)
     {
         pEventRuntimeState->lastActivationResult = status;
     }
+}
+
+void GameApplication::requestScreenshotFile()
+{
+    SDL_Time now = 0;
+    SDL_DateTime localTime = {};
+
+    if (!SDL_GetCurrentTime(&now) || !SDL_TimeToDateTime(now, &localTime, true))
+    {
+        std::cerr << "Screenshot failed: no local time: " << SDL_GetError() << '\n';
+        return;
+    }
+
+    // Local time to the millisecond, so files sort by date and quick presses do not overwrite each other.
+    std::ostringstream name;
+    name << std::setfill('0') << std::setw(4) << localTime.year << '-' << std::setw(2) << localTime.month << '-'
+         << std::setw(2) << localTime.day << '_' << std::setw(2) << localTime.hour << '-' << std::setw(2)
+         << localTime.minute << '-' << std::setw(2) << localTime.second << '_' << std::setw(3)
+         << localTime.nanosecond / 1000000 << ".png";
+    m_screenshotCaptureService.requestCapture(
+        std::filesystem::path("screenshots") / name.str(),
+        [this](bool success, const std::string &message)
+        {
+            (success ? std::cout : std::cerr) << "Screenshot: " << message << '\n';
+            reportQuickSaveStatus(success ? "Screenshot saved" : "Screenshot failed");
+        });
 }
 
 void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, float deltaSeconds)

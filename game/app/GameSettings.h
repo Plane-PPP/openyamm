@@ -340,9 +340,13 @@ struct GameSettings
     // Small camera turn along the blow on critical hits and kills.
     bool meleeCameraKick = false;
     // A glow in the item's rarity colour around its icon in the inventory, chest and shop grids (rulesets with item
-    // rarities, such as MAW; Common items have none): "off", "hold" (while the Show Item Rarity key, Left Alt, is held)
-    // or "always".
+    // rarities, such as MAW; Common items have none; artifacts, relics and special items glow teal): "off", "hold"
+    // (while the Show Item Rarity key, Left Alt, is held) or "always".
     std::string rarityGlow = "always";
+    // HUD state the game remembers across map loads and saves: the follower panel beside the minimap (shown when the
+    // party has followers) and the minimap zoom step (0 zoomed out, 1 default, 2 zoomed in).
+    bool followerPanel = true;
+    int minimapZoom = 1;
 #if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     bool contextActionPopup = true;
 #else

@@ -765,7 +765,7 @@ void GameplayHudInputController::handleGameplayHudButtonInput(
                 context.zoomGameplayMinimapOut();
                 break;
             case GameplayHudPointerTargetType::FollowerPanelToggleButton:
-                context.interactionState().followerPanelOpen = !context.interactionState().followerPanelOpen;
+                context.toggleFollowerPanel();
                 break;
             case GameplayHudPointerTargetType::CombatLogToggleButton:
                 context.combatLogPanel().toggle();
