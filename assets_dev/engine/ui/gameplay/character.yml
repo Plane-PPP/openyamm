@@ -509,7 +509,7 @@ elements:
       notes: Approved section geometry; retain dynamic original content/formatting and semantic colour runs.
     - id: CharacterStatHitPointsValue
       anchor: top_left
-      offset_x: 115.208333
+      offset_x: 155.208333
       offset_y: 180.933334
       width: 85
       height: 14

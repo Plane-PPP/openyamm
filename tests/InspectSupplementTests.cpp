@@ -52,15 +52,32 @@ TEST_CASE("Inspect attributes use engine thresholds and preserve original descri
     {
         const auto text = rules.statTooltip(party, *party.member(0), stat, "Original description");
         CHECK(text.find("Original description\n\n") == 0);
-        CHECK(text.find("Thresholds:") != std::string::npos);
-        CHECK(text.find("Next threshold:") != std::string::npos);
-        CHECK(text.find("500:") != std::string::npos);
+        CHECK(text.find("Thresholds:") == std::string::npos);
+        CHECK(!text.empty());
+        CHECK(text.back() != '\n');
+        CHECK((text.find("Next threshold:") != std::string::npos || text.find("Highest threshold reached.") != std::string::npos));
+        CHECK(text.find("500:") == std::string::npos);
         CHECK(rules.statTooltip(party, *party.member(0), stat, "Original", true).find("Текущее значение") != std::string::npos);
     }
     CHECK(rules.statTooltip(party, *party.member(0), "Condition", "Unchanged") == "Unchanged");
     CHECK(GameMechanics::buildPrimaryStatInspectSupplement(party, *party.member(0), "Speed").find("Current value: 100") != std::string::npos);
     CHECK(GameMechanics::buildPrimaryStatInspectSupplement(party, *party.member(0), "Accuracy").find("Current value: 50") != std::string::npos);
-    CHECK(GameMechanics::buildPrimaryStatInspectSupplement(party, *party.member(0), "Might").find(">75:+10") != std::string::npos);
+    CHECK(GameMechanics::buildPrimaryStatInspectSupplement(party, *party.member(0), "Might").find("Next threshold: 100 -> +11") != std::string::npos);
+}
+TEST_CASE("Inspect compact Might description shows current bonus and next change without a table")
+{
+    Party party = inspectionParty();
+    party.member(0)->might = 107;
+    SkillRules rules;
+    const std::string text = rules.statTooltip(party, *party.member(0), "Might", "Original description");
+    CHECK(text.find("Current value: 107") != std::string::npos);
+    CHECK(text.find("Ordinary melee damage modifier: +11") != std::string::npos);
+    CHECK(text.find("Next threshold: 125 -> +12") != std::string::npos);
+    CHECK(text.find("Thresholds:") == std::string::npos);
+    CHECK(text.back() != '\n');
+    const std::string russian = rules.statTooltip(party, *party.member(0), "Might", "Original", true);
+    CHECK(russian.find("Пороги:") == std::string::npos);
+    CHECK(russian.find("Следующий порог: 125 -> +12") != std::string::npos);
 }
 TEST_CASE("Inspect long descriptions stay inside bounded viewports")
 {
@@ -142,7 +159,7 @@ TEST_CASE("Inspect resource contributions follow class multipliers and current b
     c->magicalBonuses.might = 25;
     const auto text = GameMechanics::buildPrimaryStatInspectSupplement(party, *c, "Might");
     CHECK(text.find("Current value: 125") != std::string::npos);
-    CHECK(text.find(">125:+12") != std::string::npos);
+    CHECK(text.find("Ordinary melee damage modifier: +12") != std::string::npos);
 }
 TEST_CASE("Inspect preview matches real equip and recovery includes haste and minimum")
 {

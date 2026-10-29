@@ -1,8 +1,11 @@
-# UI & inventory hotfix — in progress
+# UI & inventory hotfix — implemented / locally tested; Windows ZIP pending
 
 Implemented / locally tested, not packaged: zero-difficulty item names follow the existing identification rule;
 otherwise equal reagent stacks ignore only irrelevant identification flags. Genuine unknowns stay unknown.
 Compact stack icon drawing/grabbing/dropping now shares bounded aspect-fit geometry; other item art is unchanged.
+Empty bottles stack to50; brewing consumes1 bottle and1 reagent atomically and preserves closed MAW bags.
+Stat tooltips omit full Thresholds tables; HP aligns with SP/AC/Damage Resistance.
+169 selected unit cases /39,730 assertions and4 native cases /123 assertions passed.
 No potion effects, prices, recipe difficulties or save fields changed. [Investigation](docs/research/ui-inventory-hotfix.md).
 
 # Minotaur on OpenYAMM 1.18 — Windows ZIP packaged (2026-10-29)

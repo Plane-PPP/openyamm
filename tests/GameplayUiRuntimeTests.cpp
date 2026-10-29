@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 TEST_CASE("dimensional travel uses original artwork and matching continent hover regions")
 {
@@ -226,4 +228,33 @@ TEST_CASE("MAW bag overview: identify and repair act on the inspected item's bag
     otherBagOverlay.sourceBag = 2;
     CHECK_NE(GameplayScreenController::itemInspectInteractionKey(openBagOverlay),
         GameplayScreenController::itemInspectInteractionKey(otherBagOverlay));
+}
+
+TEST_CASE("Inventory hotfix character HP SP AC and resistance share a right aligned edge")
+{
+    using namespace OpenYAMM::Game;
+    UiLayoutManager manager;
+    std::ifstream source(std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "assets_dev/engine/ui/gameplay/character.yml");
+    REQUIRE(source);
+    std::ostringstream text;
+    text << source.rdbuf();
+    REQUIRE(manager.loadLayoutText("character.yml", text.str()));
+    for (const auto [width, height] : {std::pair{640, 480}, {1280, 720}, {2560, 1080}})
+    {
+        const auto hp = GameplayHudCommon::resolveHudLayoutElement(manager, {}, {},
+            "CharacterStatHitPointsValue", width, height, 0, 0);
+        REQUIRE(hp);
+        for (const char *id : {"CharacterStatHitPointsValue", "CharacterStatSpellPointsValue",
+                 "CharacterStatArmorClassValue", "CharacterStatDamageResistanceValue"})
+        {
+            const auto *element = manager.findElement(id);
+            REQUIRE(element);
+            CHECK(element->textAlignX == UiLayoutManager::TextAlignX::Right);
+            const auto rect = GameplayHudCommon::resolveHudLayoutElement(manager, {}, {}, id, width, height, 0, 0);
+            REQUIRE(rect);
+            CHECK(rect->x + rect->width == doctest::Approx(hp->x + hp->width));
+            CHECK(element->textPadX == 0);
+        }
+    }
 }

@@ -1,22 +1,12 @@
-## Empty bottle stacks — implemented / automatically tested locally
+## UI & inventory hotfix — implemented / automatically tested locally
 
-Canonical empty alchemy bottles now share the50-unit reagent stack path, including splits and saved quantities.
-Cursor brewing consumes1 of each stock transactionally; bench keeps closed-bag results and handles overflow.
-169 selected gameplay cases /39,730 assertions passed. UI hotfix validation and Windows packaging follow.
-
-## Inventory geometry hotfix — implemented / locally compiled and tested
-
-Shared one-cell aspect fit now matches render, grab and drop geometry for compact stack items.
-Confirmed real oversized Wasp Wing and Gog Blood icons; no global equipment-icon shrink.
-Logical merge/pickup dimensions normalize safely. [Details](research/ui-inventory-hotfix.md).
-Bottle stacks, simplified tooltips and Windows packaging remain next.
-
-## UI & inventory hotfix — names fixed / implementation ongoing
-
-Confirmed upstream raw-identification title mismatch from2026-03-29, independent of recent stacks/merge.
-Known-by-rules zero-difficulty reagents/potions now use their own names; irrelevant raw flags no longer split
-otherwise identical reagent stacks. Genuine unidentified items remain protected.14 cases /1406 assertions passed.
-[Investigation and remaining work](research/ui-inventory-hotfix.md). Geometry, bottles and UI next; no ZIP yet.
+Known-by-rules item names and stack identification compatibility corrected; genuine unknowns preserved.
+Shared bounded stack icon geometry fixes Wasp Wing/Gog Blood overflow. Empty bottles stack to50;
+brewing consumes1 bottle and1 reagent with atomic cursor placement and safe MAW closed-bag handling.
+Seven stat tooltips keep original/current/next information without threshold tables; HP shares the SP/AC/DR edge.
+169 gameplay cases /39,730 assertions and4 native world/layout cases /123 assertions passed.
+[Causes, compatibility and manual checklist](research/ui-inventory-hotfix.md).
+Next: Windows CI and incremental ZIP over minotaur-1.18-c0ccf0a877bc-23-1; campaign/visual retest remains manual.
 
 ## Expanded inspection — Implemented / automatically tested / Windows ZIP packaged
 

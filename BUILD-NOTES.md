@@ -1,3 +1,11 @@
+# UI & Inventory Hotfix on1.18 — local validation complete
+
+Update base: minotaur-1.18-c0ccf0a877bc-23-1. Names/stack compatibility, bounded icons, bottle stacks,
+transactional brewing, compact stat tooltips and HP alignment implemented. No new upstream merge/save fields.
+169 selected unit cases /39,730 assertions and4 native cases /123 assertions passed through safe-heavy-run.
+Windows packaging pending; manual campaign-save/visual testing remains pending.
+[Investigation and checklist](docs/research/ui-inventory-hotfix.md).
+
 # OpenYAMM1.18 / Minotaur — Windows ZIP packaged (2026-10-29)
 
 Official base4ab07ed519a66feab24599d69bc0ae19971250e2; update baseline remains

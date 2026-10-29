@@ -4568,20 +4568,11 @@ std::string GameMechanics::buildPrimaryStatInspectSupplement(
         text << (russian ? "\nБонус шанса Lethal Strike: +" : "\nLethal Strike chance bonus: +")
              << std::fixed << std::setprecision(2) << lethalStrikeLuckBonus(character) << "%";
     const auto next = std::find_if(thresholds.begin(), thresholds.end(),
-        [input](const auto &tier) { return tier.first > input; });
+        [input, &effect](const auto &tier) { return tier.first > input && effect(tier.first) != effect(input); });
     if (next != thresholds.end())
         text << (russian ? "\nСледующий порог: " : "\nNext threshold: ") << next->first
              << " -> " << signedNumber(effect(next->first));
     else text << (russian ? "\nДостигнут верхний порог." : "\nHighest threshold reached.");
-    text << (russian ? "\n\nПороги: значение -> эффект; > текущая ступень\n"
-                     : "\n\nThresholds: value -> effect; > current tier\n");
-    size_t current = 0;
-    for (size_t i = 0; i < thresholds.size(); ++i) if (thresholds[i].first <= input) current = i;
-    for (size_t i = 0; i < thresholds.size(); ++i)
-    {
-        text << (i == current ? ">" : " ") << thresholds[i].first << ":" << signedNumber(effect(thresholds[i].first));
-        if (i + 1 < thresholds.size()) text << ((i + 1) % 3 == 0 ? "\n" : " | ");
-    }
     return text.str();
 }
 }

@@ -22,20 +22,25 @@ Original old binary produced frozen tests/fixtures/minotaur-1.14-v132.oysav, ver
 ## Reagent stacks
 
 Implemented; 21 initial stack/Alchemy cases /1187 assertions passed on Linux, followed by the expanded checks below. UI compiled; visual checks pending.
-Only common items typed Reagent stack, up to50 per1x1 inventory cell; quest/unique/artifact items excluded.
-Compatibility compares every InventoryItem property except quantity, geometry and grid position.
+Common items typed Reagent and the canonical empty alchemy bottle stack, up to50 per1x1 cell;
+quest/unique/artifact items excluded. Bottle identity comes from potion settings, not a localized name.
+Compatibility compares every InventoryItem property except quantity, geometry and grid position;
+raw identification flags are irrelevant only for items already known by the identification rules.
 Automatic grants are transactional on full inventories; compatible manual drops fill50 and leave excess held.
 Sort coalesces old singles. Plain inventory click takes all; Shift takes1; Ctrl takes ceil(quantity/2).
 Shift wins if both modifiers are held. Existing sort-button modifier shortcuts remain unchanged.
 To sell a portion, split it into an empty inventory cell, then sell that portion. Sale/buy values count units.
 Inventory, bags, held item and floor/chest/corpse payloads reuse the existing serialized quantity field.
-One brewing operation consumes1 reagent, in both cursor orientations and on the bench; planner counts all units.
-No reagent bags, potion/bottle/weapon/armour auto-stacking or balance changes introduced.
+One brewing operation consumes1 reagent and1 bottle, in both cursor orientations and on the bench.
+Remaining stocks survive; direct cursor brewing refuses atomically if its result cannot fit. The bench returns
+an overflow potion through its existing free-cursor path and refuses to brew while the cursor is occupied.
+Prepared potions, weapons and armour do not stack. No reagent bags or balance changes introduced.
 
 ## Numeric inspection supplements
 
 Implemented; original descriptions/enchantments retained. Standard's seven primary-stat descriptions append
-current effective value, actual effect, next tier and every meaningful threshold (29 entries in three columns).
+current effective value, actual effect and the next threshold that changes the effect.
+The UI hotfix removes the long threshold table; original descriptions and real bonus calculations remain.
 The threshold API reads the combat engine's original parameter table. Current values come from the actual
 CharacterSheetSummary, avoiding the legacy raw-stat API that would double-count worn bonuses. HP/SP contributions call the same class
 resource functions on copies, relative to the zero-modifier tier, respecting the class's mana mode.
