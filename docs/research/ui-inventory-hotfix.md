@@ -99,3 +99,5 @@ The first expanded run exposed a closed-MAW-bag result regression, fixed by pref
 New test setup was corrected for both visual-scale columns and the reader's decoded upstream139 version
 inside a mod140 envelope. The HP test lives in the native runtime target, which owns the real layout resolver.
 The existing genuine old-writer fixtures remain intact. No save schema change or Minotaur balance change.
+
+Additional local inventory/chest/corpse selection:89 cases /6,820 assertions passed (partly overlapping).

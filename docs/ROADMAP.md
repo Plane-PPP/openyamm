@@ -5,6 +5,7 @@ Shared bounded stack icon geometry fixes Wasp Wing/Gog Blood overflow. Empty bot
 brewing consumes1 bottle and1 reagent with atomic cursor placement and safe MAW closed-bag handling.
 Seven stat tooltips keep original/current/next information without threshold tables; HP shares the SP/AC/DR edge.
 169 gameplay cases /39,730 assertions and4 native world/layout cases /123 assertions passed.
+Additional inventory/chest/corpse selection:89 cases /6,820 assertions passed.
 [Causes, compatibility and manual checklist](research/ui-inventory-hotfix.md).
 Next: Windows CI and incremental ZIP over minotaur-1.18-c0ccf0a877bc-23-1; campaign/visual retest remains manual.
 
