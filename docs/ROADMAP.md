@@ -1,13 +1,14 @@
-## UI & inventory hotfix — implemented / automatically tested locally
+## UI & inventory hotfix — implemented / tested on Linux and Windows / ZIP packaged
 
 Known-by-rules item names and stack identification compatibility corrected; genuine unknowns preserved.
-Shared bounded stack icon geometry fixes Wasp Wing/Gog Blood overflow. Empty bottles stack to50;
-brewing consumes1 bottle and1 reagent with atomic cursor placement and safe MAW closed-bag handling.
+Shared bounded stack icon geometry fixes Wasp Wing/Gog Blood overflow. Empty bottles stack to 50;
+brewing consumes 1 bottle and 1 reagent with atomic cursor placement and safe MAW closed-bag handling.
 Seven stat tooltips keep original/current/next information without threshold tables; HP shares the SP/AC/DR edge.
-169 gameplay cases /39,730 assertions and4 native world/layout cases /123 assertions passed.
-Additional inventory/chest/corpse selection:89 cases /6,820 assertions passed.
+169 gameplay cases / 39,730 assertions and 4 native world/layout cases / 123 assertions passed.
+Additional inventory/chest/corpse selection: 89 cases / 6,820 assertions passed.
 [Causes, compatibility and manual checklist](research/ui-inventory-hotfix.md).
-Next: Windows CI and incremental ZIP over minotaur-1.18-c0ccf0a877bc-23-1; campaign/visual retest remains manual.
+[Successful Windows run and31.27MiB ZIP](research/windows-ui-inventory-hotfix-build.md) over the prior1.18 package.
+Next: user campaign/visual retest. Confirmed next-update baseline recorded; existing deferred design scope unchanged.
 
 ## Expanded inspection — Implemented / automatically tested / Windows ZIP packaged
 
@@ -24,7 +25,7 @@ Identify Monster, bestiary and teacher flavor/next-teacher hints remain Deferred
 
 ## Reagent stacks — Implemented / automatically tested on Linux and Windows
 
-Up to50 ordinary same-property reagents per cell; atomic pickup, manual merge/remainder, split controls,
+Up to 50 ordinary same-property reagents per cell; atomic pickup, manual merge/remainder, split controls,
 sorting, single-unit brewing, sale/buy pricing and quantity persistence added.
 21 selected cases /1187 assertions passed. [Current 1.18 notes](minotaur-1.18.md).
 Expanded tooltips and final unit/runtime/Windows packaging checks passed; manual gameplay remains pending.
@@ -37,7 +38,7 @@ Official Alchemy/item/follower, black-potion and Mind Resistance fixes retained;
 Levitate setter duplication removed; pre-movement sync and queued-effect guards retained.
 Adapted Lethal Strike death handling to ShieldHitModifiers without changing balance.
 Cybernetics keeps upstream ID48; Lethal Strike moves to49, named saved skills and teachers preserved.
-Mod save140 maps to upstream139; production mod132 maps explicitly to131; older mappings retained.
+Mod save140 maps to upstream 139; production mod 132 maps explicitly to131; older mappings retained.
 Original 1.14 binary generated a frozen v132 fixture; 85 selected cases /32,239 assertions passed.
 Reagent stacks, expanded tooltips and Windows packaging completed in the stages above.
 Historical intermediate counts below describe their own stage, not the current package.

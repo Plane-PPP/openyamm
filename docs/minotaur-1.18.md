@@ -1,20 +1,22 @@
 # Minotaur Rebalance on OpenYAMM 1.18
 
 Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual gameplay pending. Official v1.18: 4ab07ed519a66feab24599d69bc0ae19971250e2.
-Previous package/base: minotaur-1.14-c991da37a2de-20-1. Backup branch: backup/minotaur-before-v1.18-2026-10-29.
+Original1.18 package base: minotaur-1.14-c991da37a2de-20-1.
+Current [UI/inventory hotfix ZIP](research/windows-ui-inventory-hotfix-build.md) updates minotaur-1.18-c0ccf0a877bc-23-1
+to minotaur-1.18-fc2c74c256c9-24-1;169 unit and 4 native cases passed on Linux and Windows. Backup branch: backup/minotaur-before-v1.18-2026-10-29.
 
 ## Merge
 
 Official Alchemy (items and hirelings), Mind Resistance and black-potion restrictions retained from
 [4ab07ed](https://github.com/pjasicek/openyamm/commit/4ab07ed519a66feab24599d69bc0ae19971250e2).
-Our local7450b20 Alchemy helper and46e71d0 Mind fix are superseded by the official equivalent logic;
+Our local7450b20 Alchemy helper and 46e71d0 Mind fix are superseded by the official equivalent logic;
 there is one effective-level addition and one Mind duration case. Original learned skill/mastery stay unchanged.
 Levitate upstream fix is [8a6d10f](https://github.com/pjasicek/openyamm/commit/8a6d10f9d21a2e8ac8601a63b7efbfeb9786bc44);
 our b1907da contains additional first-update and queued-hazard protections, so those guards remain.
 Official Levitate guards retained once; keep our pre-movement sync and queued-environmental-tick protection.
 New floorBurn/resistance/FireImmune behavior preserved. Lethal Strike uses the new shield API and native death.
 Cybernetics remains ID48; Lethal Strike is49. Saved skills are named; teacher topics updated.
-Mod save140 maps to upstream139; old mod132 maps to131. Legacy89/94/95/130 and84/85 paths retained.
+Mod save140 maps to upstream 139; old mod 132 maps to131. Legacy89/94/95/130 and84/85 paths retained.
 Upstream139 omits blood geometry and reconstructs it at map load; keep its original migration.
 A compact-save regression verifies that 2,400 baked vertices do not increase the file size, while splat metadata survives.
 Original old binary produced frozen tests/fixtures/minotaur-1.14-v132.oysav, verified by the new reader.
@@ -22,16 +24,16 @@ Original old binary produced frozen tests/fixtures/minotaur-1.14-v132.oysav, ver
 ## Reagent stacks
 
 Implemented; 21 initial stack/Alchemy cases /1187 assertions passed on Linux, followed by the expanded checks below. UI compiled; visual checks pending.
-Common items typed Reagent and the canonical empty alchemy bottle stack, up to50 per1x1 cell;
+Common items typed Reagent and the canonical empty alchemy bottle stack, up to 50 per1x1 cell;
 quest/unique/artifact items excluded. Bottle identity comes from potion settings, not a localized name.
 Compatibility compares every InventoryItem property except quantity, geometry and grid position;
 raw identification flags are irrelevant only for items already known by the identification rules.
 Automatic grants are transactional on full inventories; compatible manual drops fill50 and leave excess held.
-Sort coalesces old singles. Plain inventory click takes all; Shift takes1; Ctrl takes ceil(quantity/2).
+Sort coalesces old singles. Plain inventory click takes all; Shift takes 1; Ctrl takes ceil(quantity/2).
 Shift wins if both modifiers are held. Existing sort-button modifier shortcuts remain unchanged.
 To sell a portion, split it into an empty inventory cell, then sell that portion. Sale/buy values count units.
 Inventory, bags, held item and floor/chest/corpse payloads reuse the existing serialized quantity field.
-One brewing operation consumes1 reagent and1 bottle, in both cursor orientations and on the bench.
+One brewing operation consumes 1 reagent and1 bottle, in both cursor orientations and on the bench.
 Remaining stocks survive; direct cursor brewing refuses atomically if its result cannot fit. The bench returns
 an overflow potion through its existing free-cursor path and refuses to brew while the cursor is occupied.
 Prepared potions, weapons and armour do not stack. No reagent bags or balance changes introduced.
@@ -83,7 +85,7 @@ Extract the whole update ZIP, not its inner payload alone. Run Apply-MinotaurUpd
 `-InstallationRoot "D:\path\to\OpenYAMM"` pointing at the directory containing `app/current`, then launch the
 usual OpenYAMM.exe. The installer validates baseline/packs, writes a versioned program directory and switches
 the pointer only after validation; unchanged heavy packs are reused. It does not migrate saves itself.
-The new game loads old saves and writes mod140; do not open new saves in the old1.14 executable.
+The new game loads old saves and writes mod 140; do not open new saves in the old1.14 executable.
 
 Manual checklist: load a copy of an actual1.14 campaign save, verify party/equipment/skills and save/reload.
 Sort old reagent singles; merge49+3, split1/half, transfer between characters, brew repeatedly and sell a split
@@ -95,7 +97,7 @@ Teacher flavor/next-teacher dialogue, Identify Monster and expanded bestiary rem
 
 ## Local resource evidence
 
-[Recorded runs](research/v1.18-local-resources.csv): all compilation/tests under safe-heavy-run, jobs4,
+[Recorded runs](research/v1.18-local-resources.csv): all compilation/tests under safe-heavy-run, jobs 4,
 16/18GiB RAM and1GiB swap budget. No limit events, OOM, swap use or measurable memory PSI.
 The largest task peak (5,619MiB) occurred in an otherwise successful native build followed by a stale runtime-test
 constructor compile error; that test API was corrected, not a memory retry. Final native/runtime/unit build passed.
