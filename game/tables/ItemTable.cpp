@@ -999,9 +999,12 @@ const std::vector<ItemSetBonusDefinition> &ItemTable::setBonuses() const
 
 void ItemTable::applyPotionSettings(const MergedPotionSettingTable &potionSettingTable)
 {
+    const uint32_t emptyBottleId = potionSettingTable.emptyBottleItemId();
     for (ItemDefinition &entry : m_entries)
     {
         entry.hasPotionPower = false;
+        entry.isEmptyAlchemyBottle = emptyBottleId != 0 && entry.itemId == emptyBottleId
+            && entry.equipStat == "Bottle";
         InventoryItem probe;
         probe.objectDescriptionId = entry.itemId;
         if (ReagentStacks::eligible(probe, this))

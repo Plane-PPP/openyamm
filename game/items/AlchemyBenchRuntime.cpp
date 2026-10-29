@@ -725,7 +725,24 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
         party.recordExplosiveMix(recipe.targetItemId, recipe.heldItemId);
     }
 
-    if (outcome.result.success)
+    std::optional<InventoryItem> brewedPotion;
+    if (outcome.result.success && outcome.result.action == InventoryItemMixAction::ReagentBottleMix)
+    {
+        if (outcome.result.heldItemReplacement)
+        {
+            brewedPotion = *outcome.result.heldItemReplacement;
+            outcome.result.heldItemReplacement.reset();
+        }
+        else
+        {
+            brewedPotion = *pTarget;
+            InventoryItem removed;
+            InventoryBags::takeFromBag(party, targetLocation->memberIndex, targetLocation->bag, bagCount,
+                targetLocation->gridX, targetLocation->gridY, removed);
+        }
+        outcome.resultItem = *brewedPotion;
+    }
+    if (outcome.result.success && !brewedPotion)
     {
         outcome.resultItem = *pTarget;
     }
@@ -750,6 +767,22 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
                 remainder, heldLocation->gridX, heldLocation->gridY, replaced))
         {
             outcome.overflowItem = remainder;
+        }
+    }
+    if (brewedPotion)
+    {
+        // Preserve the target bag, including a closed MAW bag, before trying other inventory space.
+        const bool placed = InventoryBags::withBagOpen(party, targetLocation->memberIndex,
+            targetLocation->bag, bagCount, [&]()
+            {
+                Character *pMember = party.member(targetLocation->memberIndex);
+                return pMember->addInventoryItemAt(*brewedPotion,
+                    targetLocation->gridX, targetLocation->gridY, &tables.itemTable)
+                    || pMember->addInventoryItem(*brewedPotion, &tables.itemTable);
+            });
+        if (!placed && !party.tryGrantInventoryItemStartingAt(targetLocation->memberIndex, *brewedPotion))
+        {
+            outcome.overflowItem = *brewedPotion;
         }
     }
     if (outcome.result.heldItemReplacement)

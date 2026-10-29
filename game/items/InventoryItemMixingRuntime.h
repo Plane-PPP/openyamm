@@ -40,6 +40,8 @@ struct InventoryItemMixResult
     uint8_t failureDamageLevel = 0;
     uint32_t unlockedAutonoteId = 0;
     std::optional<InventoryItem> heldItemReplacement;
+    // Both ingredient stacks remain: the caller must store this separate, non-stackable potion atomically.
+    std::optional<InventoryItem> producedItem;
     std::string statusText;
 };
 

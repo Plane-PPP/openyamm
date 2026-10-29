@@ -1,3 +1,9 @@
+## Empty bottle stacks — implemented / automatically tested locally
+
+Canonical empty alchemy bottles now share the50-unit reagent stack path, including splits and saved quantities.
+Cursor brewing consumes1 of each stock transactionally; bench keeps closed-bag results and handles overflow.
+169 selected gameplay cases /39,730 assertions passed. UI hotfix validation and Windows packaging follow.
+
 ## Inventory geometry hotfix — implemented / locally compiled and tested
 
 Shared one-cell aspect fit now matches render, grab and drop geometry for compact stack items.

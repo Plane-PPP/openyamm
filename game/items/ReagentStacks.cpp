@@ -13,7 +13,7 @@ uint32_t takeCount(uint32_t quantity, bool shift, bool control)
 bool eligible(const InventoryItem &item, const ItemTable *pTable)
 {
     const ItemDefinition *pDefinition = pTable != nullptr ? pTable->get(item.objectDescriptionId) : nullptr;
-    return pDefinition != nullptr && pDefinition->equipStat == "Reagent"
+    return pDefinition != nullptr && (pDefinition->equipStat == "Reagent" || pDefinition->isEmptyAlchemyBottle)
         && pDefinition->rarity == ItemRarity::Common && item.rarity == ItemRarity::Common
         && item.artifactId == 0 && pDefinition->materialName != "Quest"
         && !pDefinition->hasContentFlag("Quest") && !pDefinition->hasContentFlag("QuestItem")

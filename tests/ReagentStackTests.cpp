@@ -82,7 +82,7 @@ TEST_CASE("Reagent stacks auto merge matrix and 125 units occupy three cells")
     CHECK(c.inventory[2].quantity == 25);
 }
 
-TEST_CASE("Reagent stacks preserve identity metadata and do not stack bottles or equipment")
+TEST_CASE("Reagent stacks preserve identity metadata and do not stack potions or equipment")
 {
     Character c;
     REQUIRE(c.addInventoryItem(reagent(25), &tables().itemTable));
@@ -95,7 +95,8 @@ TEST_CASE("Reagent stacks preserve identity metadata and do not stack bottles or
     CHECK_FALSE(ReagentStacks::compatible(stolen, reagent(25), &tables().itemTable));
     REQUIRE(c.addInventoryItem(reagent(1, 220), &tables().itemTable));
     REQUIRE(c.addInventoryItem(reagent(1, 220), &tables().itemTable));
-    CHECK(c.inventory.size() == 6);
+    CHECK(c.inventory.size() == 5);
+    CHECK(c.inventory.back().quantity == 2);
     InventoryItem unique = reagent(); unique.artifactId = 1;
     CHECK_FALSE(ReagentStacks::eligible(unique, &tables().itemTable));
     CHECK_FALSE(ReagentStacks::eligible(reagent(1, 1), &tables().itemTable));
@@ -107,7 +108,7 @@ TEST_CASE("Reagent stacks full inventory insertion is atomic and can fill existi
     REQUIRE(c.addInventoryItem(reagent(42), &tables().itemTable));
     while (c.usedInventoryCells() < c.inventoryCapacity())
     {
-        REQUIRE(c.addInventoryItem(reagent(1, 220), &tables().itemTable));
+        REQUIRE(c.addInventoryItem(reagent(1, 1), &tables().itemTable));
     }
     const auto original = c.inventory;
     CHECK_FALSE(c.addInventoryItem(reagent(15), &tables().itemTable));

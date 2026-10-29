@@ -1281,6 +1281,12 @@ bool GameplayItemService::mixAlchemyBench(GameplayScreenRuntime &runtime, bool m
         return false;
     }
 
+    if (runtime.heldInventoryItem().active)
+    {
+        runtime.setStatusBarEvent("Put away the held item before brewing.");
+        return false;
+    }
+
     const GameDataRepository &data = m_session.data();
     const AlchemyBenchTables tables = {
         data.itemTable(),
@@ -1302,7 +1308,7 @@ bool GameplayItemService::mixAlchemyBench(GameplayScreenRuntime &runtime, bool m
     InventoryItemMixResult lastResult = {};
     InventoryItem brewedItem = {};
     uint32_t mixedCount = 0;
-    bool bottleOverflow = false;
+    bool itemOverflow = false;
 
     while (true)
     {
@@ -1318,14 +1324,14 @@ bool GameplayItemService::mixAlchemyBench(GameplayScreenRuntime &runtime, bool m
 
         if (outcome.overflowItem.has_value())
         {
-            // No pack had room for the empty bottle; hand it to the cursor and step back to the pack.
+            // No pack had room for the product or returned bottle; use the free cursor and return to the pack.
             GameplayUiController::HeldInventoryItemState &heldItem = runtime.heldInventoryItem();
             heldItem = {};
             heldItem.active = true;
             heldItem.item = *outcome.overflowItem;
             pParty->setHeldItemForQueries(heldItem.item);
             bench.active = false;
-            bottleOverflow = true;
+            itemOverflow = true;
         }
 
         if (!outcome.result.success)
@@ -1335,7 +1341,7 @@ bool GameplayItemService::mixAlchemyBench(GameplayScreenRuntime &runtime, bool m
 
         ++mixedCount;
 
-        if (!mixAll || bottleOverflow)
+        if (!mixAll || itemOverflow)
         {
             break;
         }
@@ -1393,9 +1399,9 @@ bool GameplayItemService::mixAlchemyBench(GameplayScreenRuntime &runtime, bool m
     const std::string brewedName = pBrewed != nullptr ? pBrewed->name : "potion";
     const bool discovery = untried && lastResult.success && lastResult.unlockedAutonoteId != 0;
 
-    if (bottleOverflow)
+    if (itemOverflow)
     {
-        lastResult.statusText = "No room for the empty bottle.";
+        lastResult.statusText = "No inventory room; the result is on the cursor.";
     }
     else if (discovery)
     {
@@ -1452,6 +1458,12 @@ bool GameplayItemService::brewAlchemyChain(GameplayScreenRuntime &runtime, bool 
         return false;
     }
 
+    if (runtime.heldInventoryItem().active)
+    {
+        runtime.setStatusBarEvent("Put away the held item before brewing.");
+        return false;
+    }
+
     const GameDataRepository &data = m_session.data();
     const AlchemyBenchTables tables = {
         data.itemTable(),
@@ -1485,14 +1497,14 @@ bool GameplayItemService::brewAlchemyChain(GameplayScreenRuntime &runtime, bool 
 
     if (outcome.lastMix.overflowItem.has_value())
     {
-        // No pack had room for an empty bottle; hand it to the cursor and step back to the pack.
+        // Keep an overflow product or returned bottle on the free cursor.
         GameplayUiController::HeldInventoryItemState &heldItem = runtime.heldInventoryItem();
         heldItem = {};
         heldItem.active = true;
         heldItem.item = *outcome.lastMix.overflowItem;
         pParty->setHeldItemForQueries(heldItem.item);
         bench.active = false;
-        result.statusText = "No room for the empty bottle.";
+        result.statusText = "No inventory room; the result is on the cursor.";
     }
     else if (outcome.brewedCount == 0)
     {

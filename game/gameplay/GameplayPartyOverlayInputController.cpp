@@ -1955,8 +1955,19 @@ void activateBagOverviewTarget(
     }
 
     InventoryItem item = {};
+    uint32_t quantity = UINT32_MAX;
+    const InventoryItem *pSource = InventoryBags::itemInBagAt(
+        *party.member(memberIndex), target.bag, target.gridX, target.gridY);
+    const GameplayInputFrame *pInput = context.currentGameplayInputFrame();
+    if (pSource != nullptr && pInput != nullptr && ReagentStacks::eligible(*pSource, context.itemTable()))
+    {
+        quantity = ReagentStacks::takeCount(pSource->quantity,
+            pInput->isScancodeHeld(SDL_SCANCODE_LSHIFT) || pInput->isScancodeHeld(SDL_SCANCODE_RSHIFT),
+            pInput->isScancodeHeld(SDL_SCANCODE_LCTRL) || pInput->isScancodeHeld(SDL_SCANCODE_RCTRL));
+    }
 
-    if (!InventoryBags::takeFromBag(party, memberIndex, target.bag, bagCount, target.gridX, target.gridY, item))
+    if (!InventoryBags::takeFromBag(party, memberIndex, target.bag, bagCount,
+            target.gridX, target.gridY, item, quantity))
     {
         return;
     }

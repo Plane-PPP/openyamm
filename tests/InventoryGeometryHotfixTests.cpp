@@ -32,7 +32,7 @@ TEST_CASE("Inventory hotfix reagent factories merging and old pickup preserve on
 {
     REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
     const auto &table = OpenYAMM::Tests::regressionGameData().itemTable;
-    for (uint32_t id : {202u, 217u, 1018u})
+    for (uint32_t id : {202u, 217u, 220u, 1018u})
     {
         const auto *definition = table.get(id);
         REQUIRE(definition);

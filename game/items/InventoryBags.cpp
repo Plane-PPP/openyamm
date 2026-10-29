@@ -743,10 +743,11 @@ bool takeFromBag(
     int bagCount,
     uint8_t gridX,
     uint8_t gridY,
-    InventoryItem &item)
+    InventoryItem &item,
+    uint32_t quantity)
 {
     return withBagOpen(party, memberIndex, bag, bagCount,
-        [&]() { return party.takeItemFromMemberInventoryCell(memberIndex, gridX, gridY, item); });
+        [&]() { return party.takeItemFromMemberInventoryCell(memberIndex, gridX, gridY, item, quantity); });
 }
 }
 }

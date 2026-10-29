@@ -62,6 +62,7 @@ add_executable(openyamm_unit_tests
     InspectSupplementTests.cpp
     ItemNamingHotfixTests.cpp
     InventoryGeometryHotfixTests.cpp
+    BottleStackHotfixTests.cpp
     GameplayRuleRegressionTests.cpp
     LethalStrikeTests.cpp
     AxeRebalanceTests.cpp

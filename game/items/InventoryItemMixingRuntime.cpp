@@ -258,7 +258,8 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
     const ItemDefinition *pHeldDefinition = itemTable.get(heldItem.objectDescriptionId);
     const ItemDefinition *pTargetDefinition = itemTable.get(targetItem.objectDescriptionId);
 
-    if (pHeldDefinition == nullptr || pTargetDefinition == nullptr)
+    if (pHeldDefinition == nullptr || pTargetDefinition == nullptr
+        || heldItem.quantity == 0 || targetItem.quantity == 0)
     {
         return {};
     }
@@ -320,29 +321,40 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
             return result;
         };
 
-    if (heldReagentResult.has_value() && targetItemId == bottleItemId)
+    const bool heldIsReagent = heldReagentResult.has_value() && targetItemId == bottleItemId;
+    const bool targetIsReagent = heldItemId == bottleItemId && targetReagentResult.has_value();
+    if (heldIsReagent || targetIsReagent)
     {
-        InventoryItemMixResult result = mixReagentIntoBottle(*heldReagentResult, *pHeldDefinition, heldItem);
-        targetItem.quantity = 1;
+        const InventoryItem original = targetItem;
+        const InventoryItem reagent = heldIsReagent ? heldItem : original;
+        InventoryItemMixResult result = mixReagentIntoBottle(
+            heldIsReagent ? *heldReagentResult : *targetReagentResult,
+            heldIsReagent ? *pHeldDefinition : *pTargetDefinition, reagent);
+        InventoryItem potion = targetItem;
+        potion.quantity = 1;
+        if (const ItemDefinition *pPotion = itemTable.get(potion.objectDescriptionId))
+        {
+            potion.width = pPotion->inventoryWidth;
+            potion.height = pPotion->inventoryHeight;
+        }
+        targetItem = potion;
         if (heldItem.quantity > 1)
         {
             result.heldItemReplacement = heldItem;
             --result.heldItemReplacement->quantity;
         }
-        return result;
-    }
-
-    if (heldItemId == bottleItemId && targetReagentResult.has_value())
-    {
-        // The power is read before the reagent becomes the potion.
-        const InventoryItem original = targetItem;
-        InventoryItemMixResult result = mixReagentIntoBottle(*targetReagentResult, *pTargetDefinition, targetItem);
-        targetItem.quantity = 1;
         if (original.quantity > 1)
         {
-            result.heldItemReplacement = targetItem;
             targetItem = original;
             --targetItem.quantity;
+            if (result.heldItemReplacement)
+            {
+                result.producedItem = potion;
+            }
+            else
+            {
+                result.heldItemReplacement = potion;
+            }
         }
         return result;
     }
@@ -457,16 +469,40 @@ InventoryItemMixResult InventoryItemMixingRuntime::tryApplyHeldItemToInventoryIt
 
     if (!result.handled)
     {
-        result = mixItems(
-            heldItem,
-            *pTargetItem,
-            alchemyMastery(alchemyMember),
-            gameRulesFor(&party).potions.mixingAlchemyLevel(alchemyMember),
-            itemTable,
-            potionMixingTable,
-            potionSettingTable,
-            reagentSettingTable,
-            pPotionNoteTable);
+        InventoryItem targetAfter = *pTargetItem;
+        InventoryItem heldCopy = heldItem;
+        result = mixItems(heldCopy, targetAfter, alchemyMastery(alchemyMember),
+            gameRulesFor(&party).potions.mixingAlchemyLevel(alchemyMember), itemTable,
+            potionMixingTable, potionSettingTable, reagentSettingTable, pPotionNoteTable);
+        if (result.success && result.action == InventoryItemMixAction::ReagentBottleMix)
+        {
+            Character candidate = *pMember;
+            InventoryItem removed;
+            const uint8_t x = pTargetItem->gridX;
+            const uint8_t y = pTargetItem->gridY;
+            candidate.takeInventoryItemAt(x, y, removed);
+            bool placed = candidate.addInventoryItemAt(targetAfter, x, y, &itemTable)
+                || candidate.addInventoryItem(targetAfter, &itemTable);
+            if (!placed && !result.heldItemReplacement && !result.producedItem)
+            {
+                // Both inputs were singletons: the newly free cursor can carry a tall potion.
+                result.heldItemReplacement = targetAfter;
+                result.targetItemRemoved = true;
+                placed = true;
+            }
+            if (!placed || (result.producedItem && !candidate.addInventoryItem(*result.producedItem, &itemTable)))
+            {
+                InventoryItemMixResult refused;
+                refused.handled = true;
+                refused.action = InventoryItemMixAction::ReagentBottleMix;
+                refused.statusText = "Not enough room for the potion.";
+                return refused;
+            }
+            *pMember = std::move(candidate);
+            result.producedItem.reset();
+            return result;
+        }
+        *pTargetItem = targetAfter;
     }
 
     if (result.targetItemRemoved)

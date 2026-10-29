@@ -6,6 +6,7 @@
 
 namespace OpenYAMM::Game::ReagentStacks
 {
+// Ordinary reagents and the table-designated empty alchemy bottle share this stack policy.
 constexpr uint32_t Limit = 50;
 uint32_t takeCount(uint32_t quantity, bool shift, bool control);
 bool eligible(const InventoryItem &item, const ItemTable *pTable);

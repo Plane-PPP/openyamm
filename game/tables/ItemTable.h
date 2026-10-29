@@ -149,6 +149,8 @@ struct ItemDefinition
     std::string balanceProfile;
     // An MM6-MM8 potion (not the empty bottle): its strength is the item's standard enchant power.
     bool hasPotionPower = false;
+    // Derived from the canonical empty-bottle entry in potion_settings, never from its display name.
+    bool isEmptyAlchemyBottle = false;
 
     bool hasContentFlag(const std::string &flag) const;
     bool availableInWorld(const std::string &worldId) const;

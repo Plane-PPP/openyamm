@@ -106,6 +106,7 @@ bool takeFromBag(
     int bagCount,
     uint8_t gridX,
     uint8_t gridY,
-    InventoryItem &item);
+    InventoryItem &item,
+    uint32_t quantity = UINT32_MAX);
 }
 }
