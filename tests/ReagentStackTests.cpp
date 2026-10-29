@@ -297,3 +297,38 @@ TEST_CASE("Reagent stacks held items floor objects chests and corpses retain qua
     CHECK(restored.activeCorpseView->items[0].item.quantity == 25);
     std::filesystem::remove(path);
 }
+TEST_CASE("Reagent stacks compact save omits baked blood geometry without losing splat metadata")
+{
+    GameSaveData save;
+    save.mapFileName = "out01.odm";
+    save.party = partyWithMembers().snapshot();
+    save.hasOutdoorRuntimeState = true;
+    save.hasIndoorSceneState = true;
+    OutdoorWorldRuntime::BloodSplatState outdoor;
+    outdoor.sourceActorId = 7; outdoor.radius = 123; outdoor.x = 42;
+    outdoor.vertices.resize(1200);
+    save.outdoorWorld.bloodSplats.push_back(outdoor);
+    IndoorWorldRuntime::BloodSplatState indoor;
+    indoor.sourceActorId = 8; indoor.radius = 124; indoor.y = 43;
+    indoor.vertices.resize(1200);
+    save.indoorScene.worldRuntime.bloodSplats.push_back(indoor);
+    const auto a = std::filesystem::temp_directory_path() / "minotaur-compact-geometry-a.oysav";
+    const auto b = std::filesystem::temp_directory_path() / "minotaur-compact-geometry-b.oysav";
+    std::string error;
+    REQUIRE_MESSAGE(saveGameDataToPath(a, save, error), error);
+    save.outdoorWorld.bloodSplats[0].vertices.clear();
+    save.indoorScene.worldRuntime.bloodSplats[0].vertices.clear();
+    REQUIRE_MESSAGE(saveGameDataToPath(b, save, error), error);
+    CHECK(std::filesystem::file_size(a) == std::filesystem::file_size(b));
+    const auto loaded = loadGameDataFromPath(a, error);
+    REQUIRE_MESSAGE(loaded, error);
+    REQUIRE(loaded->outdoorWorld.bloodSplats.size() == 1);
+    REQUIRE(loaded->indoorScene.worldRuntime.bloodSplats.size() == 1);
+    CHECK(loaded->outdoorWorld.bloodSplats[0].sourceActorId == 7);
+    CHECK(loaded->outdoorWorld.bloodSplats[0].radius == 123);
+    CHECK(loaded->outdoorWorld.bloodSplats[0].vertices.empty());
+    CHECK(loaded->indoorScene.worldRuntime.bloodSplats[0].sourceActorId == 8);
+    CHECK(loaded->indoorScene.worldRuntime.bloodSplats[0].radius == 124);
+    CHECK(loaded->indoorScene.worldRuntime.bloodSplats[0].vertices.empty());
+    std::filesystem::remove(a); std::filesystem::remove(b);
+}

@@ -210,3 +210,26 @@ TEST_CASE("Inspect every armor mastery penalty matches its isolated combat contr
         CHECK(after - before == GameMechanics::armorRecoveryPenaltyTicks(*c, *definition));
     }
 }
+
+TEST_CASE("Inspect previews obey doll weapon restrictions and identify wand recovery")
+{
+    Party party = inspectionParty();
+    InventoryItem axe; axe.objectDescriptionId = item("Axe", "Weapon");
+    CharacterDollTypeEntry restricted;
+    const auto refused = GameMechanics::buildItemRecoveryInspectSupplement(party, 0, axe, false,
+        &data().spellTable, {}, false, &restricted);
+    CHECK(refused.find("Base weapon Recovery:") == 0);
+    CHECK(refused.find("equip preview") == std::string::npos);
+    for (const auto &entry : data().itemTable.entries())
+    {
+        if (entry.equipStat != "WeaponW") continue;
+        InventoryItem wand; wand.objectDescriptionId = entry.itemId;
+        party.member(0)->equipment.mainHand = entry.itemId;
+        const int expected = GameMechanics::attackRecoveryTicks(party, *party.member(0), CharacterAttackMode::Wand,
+            &data().spellTable);
+        CHECK(GameMechanics::buildItemRecoveryInspectSupplement(party, 0, wand, true, &data().spellTable)
+            .find(": " + std::to_string(expected) + " ticks") != std::string::npos);
+        return;
+    }
+    FAIL("missing wand fixture");
+}

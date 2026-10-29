@@ -5,12 +5,18 @@ Previous package/base: minotaur-1.14-c991da37a2de-20-1. Backup branch: backup/mi
 
 ## Merge
 
-Official Alchemy (items and hirelings), Mind Resistance and black-potion restrictions retained.
+Official Alchemy (items and hirelings), Mind Resistance and black-potion restrictions retained from
+[4ab07ed](https://github.com/pjasicek/openyamm/commit/4ab07ed519a66feab24599d69bc0ae19971250e2).
+Our local7450b20 Alchemy helper and46e71d0 Mind fix are superseded by the official equivalent logic;
+there is one effective-level addition and one Mind duration case. Original learned skill/mastery stay unchanged.
+Levitate upstream fix is [8a6d10f](https://github.com/pjasicek/openyamm/commit/8a6d10f9d21a2e8ac8601a63b7efbfeb9786bc44);
+our b1907da contains additional first-update and queued-hazard protections, so those guards remain.
 Official Levitate guards retained once; keep our pre-movement sync and queued-environmental-tick protection.
 New floorBurn/resistance/FireImmune behavior preserved. Lethal Strike uses the new shield API and native death.
 Cybernetics remains ID48; Lethal Strike is49. Saved skills are named; teacher topics updated.
 Mod save140 maps to upstream139; old mod132 maps to131. Legacy89/94/95/130 and84/85 paths retained.
 Upstream139 omits blood geometry and reconstructs it at map load; keep its original migration.
+A compact-save regression verifies that 2,400 baked vertices do not increase the file size, while splat metadata survives.
 Original old binary produced frozen tests/fixtures/minotaur-1.14-v132.oysav, verified by the new reader.
 
 ## Reagent stacks
@@ -40,7 +46,8 @@ The helper is also used by the real attack calculation; Speed, Haste and other e
 Equipped weapons show actual final Recovery for the whole attack, so both dual-wielded weapons agree.
 Unequipped weapons use the normal equip plan on a Party copy; the label identifies an equip preview.
 If equip validation fails (including space/restrictions), show explicitly labeled base weapon Recovery instead.
-The preview chooses the ordinary default equip slot; it does not promise an off-hand arrangement the player
+The preview applies the inspecting character’s doll/type equipment restrictions and includes wands’ spell Recovery.
+It chooses the ordinary default equip slot; it does not promise an off-hand arrangement the player
 has not chosen. It never mutates the real Party. Ruleset combat overrides (MAW) take precedence.
 MAW keeps its own existing stat/armor descriptions rather than showing Standard's incompatible thresholds
 or pretending its multiplicative armor impairment is an additive tick penalty.
@@ -51,7 +58,7 @@ are untouched. Actual 4:3/16:9/ultrawide/Android visual validation remains manua
 
 ## Validation in progress
 
-152 selected gameplay cases /35,969 assertions passed, including nine inspection cases and MAW bags/potions.
+154 selected gameplay cases /35,992 assertions passed, including ten inspection cases and MAW bags/potions.
 Full native executable compiled successfully (protected run 20261029T083305Z-2419c36760, peak4343MiB).
 Final native/runtime/unit build passed. Three genuine indoor/outdoor/new-game Lethal Strike cases /58 assertions passed.
 Windows ZIP packaging: Pending.

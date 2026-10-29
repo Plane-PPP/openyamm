@@ -5,7 +5,6 @@
 #include "game/tables/ItemTable.h"
 
 #include <algorithm>
-#include <limits>
 
 namespace OpenYAMM::Game
 {

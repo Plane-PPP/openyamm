@@ -315,7 +315,8 @@ public:
     static int attackRecoveryTicks(const Party &, const Character &, CharacterAttackMode,
         const SpellTable *, CharacterAttackTuning = {});
     static std::string buildItemRecoveryInspectSupplement(const Party &, size_t memberIndex,
-        const InventoryItem &, bool equipped, const SpellTable *, CharacterAttackTuning = {}, bool russian = false);
+        const InventoryItem &, bool equipped, const SpellTable *, CharacterAttackTuning = {}, bool russian = false,
+        const CharacterDollTypeEntry *dollType = nullptr);
     static int primaryStatModifier(int value);
     static std::vector<std::pair<int, int>> primaryStatThresholds();
     static std::string buildPrimaryStatInspectSupplement(const Party &party, const Character &character,

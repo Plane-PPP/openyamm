@@ -4440,14 +4440,16 @@ int GameMechanics::attackRecoveryTicks(const Party &party, const Character &char
 }
 
 std::string GameMechanics::buildItemRecoveryInspectSupplement(const Party &party, size_t memberIndex,
-    const InventoryItem &item, bool equipped, const SpellTable *spells, CharacterAttackTuning tuning, bool russian)
+    const InventoryItem &item, bool equipped, const SpellTable *spells, CharacterAttackTuning tuning, bool russian,
+    const CharacterDollTypeEntry *dollType)
 {
     const Character *viewer = party.member(memberIndex);
     const ItemDefinition *definition = party.itemTable() ? party.itemTable()->get(item.objectDescriptionId) : nullptr;
     if (!viewer || !definition) return {};
     const bool armor = definition->equipStat == "Armor" || definition->equipStat == "Shield";
     const bool weapon = definition->equipStat == "Weapon" || definition->equipStat == "Weapon2"
-        || definition->equipStat == "Weapon1or2" || definition->equipStat == "Missile";
+        || definition->equipStat == "Weapon1or2" || definition->equipStat == "WeaponW"
+        || definition->equipStat == "Missile";
     if (!armor && !weapon) return {};
     const std::string skill = canonicalSkillName(definition->skillGroup);
     const CharacterAttackMode mode = definition->equipStat == "Missile" ? CharacterAttackMode::Bow
@@ -4467,7 +4469,7 @@ std::string GameMechanics::buildItemRecoveryInspectSupplement(const Party &party
         return std::string(russian ? "Recovery атаки (текущий комплект): " : "Attack Recovery (current equipment): ")
             + std::to_string(attackRecoveryTicks(party, *viewer, mode, spells, tuning)) + (russian ? " тиков" : " ticks");
     Party trial = party;
-    const auto plan = resolveCharacterEquipPlan(*viewer, *definition, party.itemTable(), nullptr, std::nullopt, false);
+    const auto plan = resolveCharacterEquipPlan(*viewer, *definition, party.itemTable(), dollType, std::nullopt, false);
     std::optional<InventoryItem> displaced;
     if (plan && trial.tryEquipItemOnMember(memberIndex, plan->targetSlot, item,
             plan->displacedSlot, plan->autoStoreDisplacedItem, displaced))

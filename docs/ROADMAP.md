@@ -2,7 +2,7 @@
 
 Real Standard attribute bonuses/thresholds and armor/weapon Recovery now supplement original descriptions.
 Read-only equip previews, ruleset Recovery overrides and bounded wheel/touch scrolling included.
-152 selected cases /35,969 assertions and three native Lethal Strike cases /58 assertions passed.
+154 selected cases /35,992 assertions and three native Lethal Strike cases /58 assertions passed.
 Full native game compiled; Windows ZIP pending.
 [Current 1.18 notes](minotaur-1.18.md).
 

@@ -6400,11 +6400,14 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
     }
     if (!showBrokenOnly && !showUnidentifiedOnly && pViewer != nullptr)
     {
+        const CharacterDollEntry *doll = resolveCharacterDollEntry(context.characterDollTable(), pViewer);
+        const CharacterDollTypeEntry *dollType = doll && context.characterDollTable()
+            ? context.characterDollTable()->getDollType(doll->dollTypeId) : nullptr;
         const std::string recovery = GameMechanics::buildItemRecoveryInspectSupplement(*pViewerParty,
             overlay.sourceMemberIndex, resolvedItemState,
             overlay.sourceType == GameplayUiController::ItemInspectSourceType::Equipment,
             context.spellTable(), characterAttackTuningFromSettings(context.settingsSnapshot()),
-            context.settingsSnapshot().minotaurRussianText);
+            context.settingsSnapshot().minotaurRussianText, dollType);
         if (!recovery.empty()) itemDescription += "\n\n" + recovery;
     }
     const std::string itemStatusText =

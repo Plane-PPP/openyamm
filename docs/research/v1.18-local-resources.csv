@@ -7,3 +7,7 @@ run,label,exit,seconds,peak_MiB,swap_MiB,mean_VM_CPU_percent,max_memory_PSI_some
 20261029T091337Z-382224b588,v118-final-fixtures-regressions,0,5.14,40.36,0.0,3.71,0.0,0.0,0,0
 20261029T091401Z-16a8e30ee5,v118-newgame-native-fixtures,0,5.14,39.36,0.0,0.28,0.0,0.0,0,0
 20261029T091505Z-e20dd2f807,v118-updater-package-tests,0,5.14,45.0,0.0,0.4,0.0,0.0,0,0
+20261029T093624Z-034986e42c,v118-preview-restrictions-build,0,345.47,5226.33,0.0,46.08,0.0,0.0,0,0
+20261029T101758Z-2d52f384b0,v118-compact-save-test-build,0,10.14,679.87,0.0,6.81,0.0,0.0,0,0
+20261029T101831Z-7143bfa7b4,v118-release-regressions,0,5.14,40.36,0.0,3.73,0.0,0.0,0,0
+20261029T101852Z-b59069787a,v118-release-native-regressions,0,5.16,39.41,0.0,0.28,0.0,0.0,0,0
