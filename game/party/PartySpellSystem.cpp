@@ -922,6 +922,7 @@ float resolvePartyBuffDurationSeconds(uint32_t spellId, uint32_t skillLevel, Ski
         case SpellId::AirResistance:
         case SpellId::WaterResistance:
         case SpellId::EarthResistance:
+        case SpellId::MindResistance:
         case SpellId::BodyResistance:
             return secondsFromHours(static_cast<float>(skillLevel));
         case SpellId::FeatherFall:

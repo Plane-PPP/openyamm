@@ -976,6 +976,11 @@ const HouseTable *GameplayScreenRuntime::houseTable() const
     return &m_session.data().houseTable();
 }
 
+const MapStats &GameplayScreenRuntime::mapStats() const
+{
+    return m_session.data().mapStats();
+}
+
 const ChestTable *GameplayScreenRuntime::chestTable() const
 {
     return &m_session.data().chestTable();

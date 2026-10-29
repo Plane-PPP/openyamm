@@ -472,6 +472,8 @@ TEST_CASE("MAW loot filter facts and shop rerolls")
     ItemDefinition sword;
     sword.itemId = 2;
     sword.equipStat = "Weapon";
+    // Items without a price are never filtered (DEVIATIONS 182).
+    sword.value = 100;
     InventoryItem item;
     item.objectDescriptionId = 2;
     item.rulesetFields.lootRarity = uint8_t(MawRarity::Rare);
@@ -488,6 +490,7 @@ TEST_CASE("MAW loot filter facts and shop rerolls")
     // A spellbook or a quest item is never the filter's.
     ItemDefinition book;
     book.equipStat = "Book";
+    book.value = 100;
     CHECK_FALSE(items.lootFilterFacts(item, book).has_value());
     CHECK(standardItemRules().lootFilter() == nullptr);
     CHECK_FALSE(standardItemRules().lootFilterFacts(item, sword).has_value());

@@ -499,6 +499,7 @@ enum class GameplayJournalPointerTargetType
     NotesSeerButton,
     NotesMiscButton,
     NotesTrainerButton,
+    NotesArcomageButton,
     NotesSearchField,
     MapZoomInButton,
     MapZoomOutButton,

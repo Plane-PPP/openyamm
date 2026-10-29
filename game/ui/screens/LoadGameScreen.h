@@ -28,6 +28,7 @@ class LoadGameScreen : public MenuDesignScreen
     using LoadAction = std::function<bool(const std::filesystem::path &)>;
     using CancelAction = std::function<void()>;
     using SaveAction = std::function<bool(const std::filesystem::path &, const std::string &)>;
+    using SortOrderAction = std::function<void(bool newestFirst)>;
 
     // loadWarning: what loading from play costs now, said in the confirmation (MAW's pending Beyond Madness death).
     LoadGameScreen(const Engine::AssetFileSystem &assetFileSystem, const GameDataRepository &gameData,
@@ -41,6 +42,8 @@ class LoadGameScreen : public MenuDesignScreen
     static std::optional<std::filesystem::path> mostRecentSave(std::string &mapFileName);
     void configureSave(SaveAction action, const std::string &location, float gameMinutes,
                        const std::vector<uint8_t> &previewBmp, SaveFoodCost foodCost = {});
+    // The list order (gameplay.save_list_order) and where a change of it is remembered.
+    void configureSortOrder(bool newestFirst, SortOrderAction changed);
     void handleSdlEvent(const SDL_Event &event) override;
 
   private:
@@ -56,6 +59,7 @@ class LoadGameScreen : public MenuDesignScreen
         // "MAW · Hell difficulty · Horizontal progression"; empty for the Standard ruleset.
         std::string rulesetBadge;
         std::string savedAt;
+        std::filesystem::file_time_type modified = {};
         bool populated = false;
         int previewWidth = 0;
         int previewHeight = 0;
@@ -71,6 +75,10 @@ class LoadGameScreen : public MenuDesignScreen
     void drawScreen(float deltaSeconds) override;
     // The filter buttons, and whether the filter changed.
     bool drawRulesetFilters(const std::string &prefix);
+    // The Name / Newest switch, and whether the order changed.
+    bool drawSortButtons(const std::string &prefix);
+    // Orders m_slots by the switch.
+    void sortSlots();
     void refreshRulesetFilters();
     // The slots the ruleset filter lets through, as indices into m_slots.
     std::vector<size_t> shownSlots() const;
@@ -93,6 +101,8 @@ class LoadGameScreen : public MenuDesignScreen
     // The rulesets the saves were played with, Standard first; the filter is a ruleset id, empty for all.
     std::vector<RulesetFilter> m_rulesetFilters;
     std::string m_rulesetFilter;
+    bool m_newestFirst = false;
+    SortOrderAction m_sortOrderChanged;
     size_t m_newerSaveCount = 0;
     bool m_slotsLoaded = false;
     uint64_t m_slotsSignature = 0;

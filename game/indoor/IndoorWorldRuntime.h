@@ -84,6 +84,9 @@ public:
         bool spell2CastSupported = true;
         float wanderRadius = 0.0f;
         bool hostileToParty = false;
+        // The party made it hostile (hit it or its faction), so a hit on it still alerts its friendly faction; an
+        // actor hostile on its own (map, template, event) alerts none.
+        bool angeredByParty = false;
         bool hasDetectedParty = false;
         bool bloodSplatSpawned = false;
         ActorAiMotionState motionState = ActorAiMotionState::Standing;
@@ -719,7 +722,6 @@ private:
         bool valid = false;
         std::vector<IndoorVertex> vertices;
         IndoorFaceGeometryCache geometryCache;
-        std::vector<std::vector<uint16_t>> neighboringSectorIds;
         bool pathMapValid = false;
         std::shared_ptr<const PathMap> pathMapSnapshot;
     };
@@ -954,7 +956,11 @@ private:
     // The original game drops a monster's Meteor Shower indoors: only a monster with the indoor_meteor_shower
     // modifier keeps it castable here, so the others pick another attack.
     void applyIndoorMeteorShowerRule(ActorAiFrameFacts &facts) const;
-    void aggroNearbyMapActorFaction(size_t actorIndex);
+    // A party hit on the actor alerts its faction within 4096 (MM8 0x439278); friendly actors only when
+    // alertsFriendlyActors (the victim was friendly or angered by the party).
+    void aggroNearbyMapActorFaction(size_t actorIndex, bool alertsFriendlyActors);
+    // Up to a few unaware hostile actors near this one, which they can see, become aware of the party.
+    void wakeIndoorActorNeighbours(size_t actorIndex);
     void initializeMm9Barrels();
     void applyMm9BarrelVisual(const MapMm9BarrelSource &source, const MapDeltaMm9BarrelState &state);
 
@@ -1013,6 +1019,8 @@ private:
     std::vector<size_t> m_actorCorpsePhysicsActorIndices;
     mutable ActorInspectPreviewAnimation m_actorInspectPreviewAnimation = {};
     std::vector<uint8_t> m_activatedIndoorSectorMask;
+    // Advances once per active-actor selection; spreads the unaware actors' sight checks across AI steps.
+    uint32_t m_indoorActorSightCheckStep = 0;
     std::vector<BloodSplatState> m_bloodSplats;
     uint64_t m_bloodSplatRevision = 0;
     float m_actorUpdateAccumulatorSeconds = 0.0f;

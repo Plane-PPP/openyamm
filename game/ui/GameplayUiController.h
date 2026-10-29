@@ -112,7 +112,9 @@ public:
         Obelisk,
         Seer,
         Misc,
-        Trainer
+        Trainer,
+        // Every Arcomage tavern and whether the party has beaten it (not autonotes).
+        Arcomage
     };
 
     enum class HouseBankInputMode : uint8_t

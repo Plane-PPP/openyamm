@@ -289,6 +289,9 @@ public:
     int getRelationBetweenMonsters(int16_t leftMonsterId, int16_t rightMonsterId) const;
     bool isHostileToParty(int16_t monsterId) const;
     bool isLikelySameFaction(int16_t leftMonsterId, int16_t rightMonsterId) const;
+    // Whether a party hit on one monster alerts the other (MM8 0x4391ca): the same hostile.txt class, or both Dark Elf
+    // peasant classes. Pass relation monster ids, which already follow an actor's Ally class.
+    bool sharesAlertFaction(int16_t leftRelationMonsterId, int16_t rightRelationMonsterId) const;
     MonsterRelationAddOns &relationAddOns()
     {
         return m_relationAddOns;

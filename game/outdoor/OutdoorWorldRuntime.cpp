@@ -7015,6 +7015,7 @@ void OutdoorWorldRuntime::refreshConditionalMonsterRelations()
         }
 
         const bool hostile = m_pMonsterTable->isHostileToParty(relationMonsterId);
+        actor.angeredByParty = false;
         actor.hostileToParty = hostile;
         actor.hasDetectedParty = actor.hasDetectedParty && hostile;
     }
@@ -8508,7 +8509,14 @@ OutdoorWorldRuntime::Snapshot OutdoorWorldRuntime::snapshot() const
     snapshot.projectiles = projectileSnapshot.projectiles;
     snapshot.projectileImpacts = projectileSnapshot.projectileImpacts;
     snapshot.fireSpikeTraps = m_fireSpikeTraps;
-    snapshot.bloodSplats = m_bloodSplats;
+    // Without their triangles, which restoreSnapshot bakes again from the map: they were most of a save's size.
+    snapshot.bloodSplats.reserve(m_bloodSplats.size());
+
+    for (const BloodSplatState &splat : m_bloodSplats)
+    {
+        snapshot.bloodSplats.push_back({splat.sourceActorId, splat.x, splat.y, splat.z, splat.radius, {}});
+    }
+
     snapshot.armageddon = m_armageddonState;
     snapshot.hasOutdoorRuntimeSaveParityFields = true;
     if (m_pOutdoorMapDeltaData != nullptr)
@@ -8614,7 +8622,18 @@ void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_gameplayOverlayPeakAlpha = snapshot.gameplayOverlayPeakAlpha;
     m_gameplayOverlayColorAbgr = snapshot.gameplayOverlayColorAbgr;
     m_fireSpikeTraps = snapshot.fireSpikeTraps;
-    m_bloodSplats = snapshot.bloodSplats;
+    m_bloodSplats.clear();
+
+    for (BloodSplatState splat : snapshot.bloodSplats)
+    {
+        bakeBloodSplatGeometry(splat);
+
+        if (!splat.vertices.empty())
+        {
+            m_bloodSplats.push_back(std::move(splat));
+        }
+    }
+
     ++m_bloodSplatRevision;
     m_armageddonState = snapshot.armageddon;
     if (m_pOutdoorMapDeltaData != nullptr
@@ -15163,6 +15182,7 @@ void OutdoorWorldRuntime::applyEventRuntimeState(bool syncPersistentHostilityMas
                 return;
             }
 
+            actor.angeredByParty = false;
             actor.hostileToParty = hostileToParty;
             actor.hasDetectedParty = hostileToParty;
             if (hostileToParty)
@@ -17394,15 +17414,24 @@ bool OutdoorWorldRuntime::setMapActorHostileToParty(
     return true;
 }
 
-void OutdoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex, float partyX, float partyY, float partyZ)
+void OutdoorWorldRuntime::aggroNearbyMapActorFaction(
+    size_t actorIndex,
+    bool alertsFriendlyActors,
+    float partyX,
+    float partyY,
+    float partyZ)
 {
-    if (actorIndex >= m_mapActors.size() || m_pMonsterTable == nullptr)
+    // Only friendly actors change here, and a monster hostile on its own rouses no friendly ally: hitting a raiding
+    // warlock must not turn the town warlocks of its class (see the indoor alert).
+    if (actorIndex >= m_mapActors.size() || m_pMonsterTable == nullptr || !alertsFriendlyActors)
     {
         return;
     }
 
     const MapActorState &victim = m_mapActors[actorIndex];
     const MonsterTable::MonsterStatsEntry *pVictimStats = m_pMonsterTable->findStatsById(victim.monsterId);
+    const GameplayActorService actorService = {};
+    const int16_t victimRelationMonsterId = actorService.relationMonsterId(victim.monsterId, victim.ally);
 
     for (size_t otherActorIndex = 0; otherActorIndex < m_mapActors.size(); ++otherActorIndex)
     {
@@ -17415,18 +17444,20 @@ void OutdoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex, float pa
 
         // Allies already hostile keep their current action; re-alerting them on every party hit would
         // cancel their attacks and snap their facing for the whole group under rapid fire.
-        if (otherActor.hostileToParty || isActorUnavailableForCombat(otherActor))
+        if (otherActor.hostileToParty || isActorUnavailableForCombat(otherActor)
+            || outdoorActorFightsForParty(otherActor))
         {
             continue;
         }
 
-        const bool sameEventGroup = victim.group != 0 && victim.group == otherActor.group;
-        const bool sameMonsterFaction = m_pMonsterTable->isLikelySameFaction(victim.monsterId, otherActor.monsterId);
+        // An event group is not a faction: one map can spawn hostile and friendly monsters in the same group.
+        const bool sameMonsterFaction = m_pMonsterTable->sharesAlertFaction(
+            victimRelationMonsterId, actorService.relationMonsterId(otherActor.monsterId, otherActor.ally));
         const MonsterTable::MonsterStatsEntry *pOtherStats = m_pMonsterTable->findStatsById(otherActor.monsterId);
         const bool sameCivilianAggression =
             actorSharesCivilianAggression(victim.group, pVictimStats, otherActor.group, pOtherStats);
 
-        if (!sameEventGroup && !sameMonsterFaction && !sameCivilianAggression)
+        if (!sameMonsterFaction && !sameCivilianAggression)
         {
             continue;
         }
@@ -17442,6 +17473,7 @@ void OutdoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex, float pa
         }
 
         setMapActorHostileToParty(otherActorIndex, partyX, partyY, partyZ, true);
+        otherActor.angeredByParty = true;
     }
 }
 
@@ -17662,6 +17694,8 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
         return false;
     }
 
+    const bool alertsFriendlyActors = !actor.hostileToParty || actor.angeredByParty;
+
     // The rules may turn the hit aside (MAW's Swapper bosses).
     if (gameRulesFor(m_pParty).combat.deflectsPartyHit(*this, actorIndex))
     {
@@ -17718,6 +17752,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     if (!actor.usesMm9ActorRules)
     {
         setMapActorHostileToParty(actorIndex, partyX, partyY, partyZ, false);
+        actor.angeredByParty = alertsFriendlyActors;
         actor.provokedByParty = !died;
         const float hitDistance =
             length3d(partyX - actor.preciseX, partyY - actor.preciseY, partyZ - actor.preciseZ) - float(actor.radius);
@@ -17818,7 +17853,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
 
     if (!actor.usesMm9ActorRules)
     {
-        aggroNearbyMapActorFaction(actorIndex, partyX, partyY, partyZ);
+        aggroNearbyMapActorFaction(actorIndex, alertsFriendlyActors, partyX, partyY, partyZ);
     }
     return true;
 }
@@ -18749,6 +18784,7 @@ bool OutdoorWorldRuntime::resurrectMapActor(size_t actorIndex, int health, bool 
     applyGameplayActorSpellEffectState(effectState, actor);
     actor.hostilityType = friendlyToParty ? 0 : actor.hostilityType;
     actor.alertStatusBit = false;
+    actor.angeredByParty = false;
     actor.hostileToParty = !friendlyToParty
         && m_pMonsterTable != nullptr
         && m_pGameplayActorService != nullptr

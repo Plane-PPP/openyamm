@@ -110,6 +110,7 @@ add_library(openyamm_game STATIC
     gameplay/GenericActorDialog.cpp
     gameplay/HouseInteraction.cpp
     gameplay/HouseServiceRuntime.cpp
+    gameplay/JournalArcomageRuntime.cpp
     gameplay/JournalQuestRuntime.cpp
     gameplay/NpcFollowerRuntime.cpp
     gameplay/ReputationRuntime.cpp

@@ -12,6 +12,7 @@
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/AwardRuntime.h"
 #include "game/gameplay/GameplayInputFrame.h"
+#include "game/gameplay/JournalArcomageRuntime.h"
 #include "game/gameplay/JournalQuestRuntime.h"
 #include "game/events/EvtEnums.h"
 #include "game/gameplay/StoryTextFormatter.h"
@@ -917,6 +918,8 @@ std::string journalNotesCategoryTitle(GameplayUiController::JournalNotesCategory
             return "Miscellaneous";
         case GameplayUiController::JournalNotesCategory::Trainer:
             return "Teacher Locations";
+        case GameplayUiController::JournalNotesCategory::Arcomage:
+            return "Arcomage";
     }
 
     return "Notes";
@@ -4491,7 +4494,8 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
                 || (tab == "Story" && journalScreen.view == GameplayUiController::JournalView::Story)
                 || (tab == "Notes" && journalScreen.view == GameplayUiController::JournalView::Notes)
                 || (tab == "Progress" && journalScreen.view == GameplayUiController::JournalView::Progress);
-            const std::array<const char *, 6> categories = {"Potion", "Fountain", "Obelisk", "Seer", "Misc", "Trainer"};
+            const std::array<const char *, 7> categories = {
+                "Potion", "Fountain", "Obelisk", "Seer", "Misc", "Trainer", "Arcomage"};
             for (size_t i = 0; i < categories.size(); ++i)
             {
                 selected |= id == std::string("JournalNotes") + categories[i] + "Button"
@@ -4970,6 +4974,7 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
             renderInteractiveTextureLayout("JournalNotesSeerButton");
             renderInteractiveTextureLayout("JournalNotesMiscButton");
             renderInteractiveTextureLayout("JournalNotesTrainerButton");
+            renderInteractiveTextureLayout("JournalNotesArcomageButton");
 
             const GameplayScreenRuntime::HudLayoutElement *pSearchLayout =
                 context.findHudLayoutElement("JournalNotesSearch");
@@ -5011,6 +5016,18 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
                     if (categoryMatches && (search.empty() || toLowerCopy(entry.text).find(search) != std::string::npos))
                     {
                         noteTexts.push_back(entry.text);
+                    }
+                }
+            }
+
+            if (pParty != nullptr && context.houseTable() != nullptr
+                && journalScreen.notesCategory == GameplayUiController::JournalNotesCategory::Arcomage)
+            {
+                for (const std::string &text : buildArcomageTavernTexts(*context.houseTable(), context.mapStats(), *pParty))
+                {
+                    if (search.empty() || toLowerCopy(text).find(search) != std::string::npos)
+                    {
+                        noteTexts.push_back(text);
                     }
                 }
             }

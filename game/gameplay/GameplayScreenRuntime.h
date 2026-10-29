@@ -42,6 +42,7 @@ class AwardTable;
 class ItemTable;
 class MergedComplexItemPictureTable;
 class MonsterProjectileTable;
+class MapStats;
 class MonsterTable;
 class MergedPotionSettingTable;
 class PotionMixingTable;
@@ -129,6 +130,7 @@ public:
     const MergedComplexItemPictureTable *mergedComplexItemPictureTable() const;
     const SpellTable *spellTable() const;
     const HouseTable *houseTable() const;
+    const MapStats &mapStats() const;
     const ChestTable *chestTable() const;
     const NpcDialogTable *npcDialogTable() const;
     const MonsterTable *monsterTable() const;

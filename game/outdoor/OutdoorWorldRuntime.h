@@ -309,6 +309,9 @@ public:
         bool alertStatusBit = false;
         bool bloodSplatSpawned = false;
         bool hasDetectedParty = false;
+        // The party made it hostile (hit it or its faction), so a hit on it still alerts its friendly faction; an
+        // actor hostile on its own (map, template, event) alerts none.
+        bool angeredByParty = false;
         // A party hit woke it beyond the full-AI range: it acts out to the engagement range until it comes within
         // the full-AI range or loses the party (MM8 leaves an outdoor monster shot from afar standing).
         bool provokedByParty = false;
@@ -1363,7 +1366,12 @@ private:
         size_t spawnPointIndex,
         bool aggro);
     bool setMapActorHostileToParty(size_t actorIndex, float partyX, float partyY, float partyZ, bool resetActionState);
-    void aggroNearbyMapActorFaction(size_t actorIndex, float partyX, float partyY, float partyZ);
+    void aggroNearbyMapActorFaction(
+        size_t actorIndex,
+        bool alertsFriendlyActors,
+        float partyX,
+        float partyY,
+        float partyZ);
     ChestViewState buildChestView(uint32_t chestId) const;
     void activateChestView(uint32_t chestId);
     bool attemptOpenChest(uint32_t chestId, bool openedByTelekinesis = false);

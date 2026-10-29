@@ -821,10 +821,6 @@ private:
     bool m_gameplayMouseLookEnabled = false;
     bool m_gameplayCursorMode = false;
     bool m_jumpHeld;
-    bool m_indoorGeometryRenderingDisabled = false;
-    bool m_indoorGeometryRenderingToggleHeld = false;
-    bool m_indoorGeometryTranslucent = false;
-    bool m_indoorGeometryTranslucentToggleHeld = false;
     InspectHit m_cachedInspectHit = {};
     bool m_cachedInspectHitValid = false;
     float m_cachedInspectMouseX = 0.0f;

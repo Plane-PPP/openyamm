@@ -1661,6 +1661,8 @@ TEST_CASE("MAW chests: gold from the map's level, removed potions rerolled, plac
     ItemDefinition longsword;
     longsword.itemId = 1;
     longsword.equipStat = "Weapon";
+    // Items without a price are never filtered (DEVIATIONS 182).
+    longsword.value = 100;
     InventoryItem sword;
     sword.objectDescriptionId = 1;
     CHECK_EQ(items.lootFilterFacts(sword, longsword)->rarity, 1);
@@ -1670,6 +1672,7 @@ TEST_CASE("MAW chests: gold from the map's level, removed potions rerolled, plac
     ItemDefinition cureWounds;
     cureWounds.itemId = 222;
     cureWounds.equipStat = "Bottle";
+    cureWounds.value = 10;
     InventoryItem potion;
     potion.objectDescriptionId = 222;
     CHECK(items.lootFilterFacts(potion, cureWounds)->kind == RulesetLootKind::Potions);

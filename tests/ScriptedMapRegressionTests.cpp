@@ -10,6 +10,7 @@
 #include "game/gameplay/CorpseLootRuntime.h"
 #include "game/gameplay/GameplayActorHitFeedback.h"
 #include "game/gameplay/GameplayActorService.h"
+#include "game/gameplay/JournalArcomageRuntime.h"
 #include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/maps/ActorModelManifest.h"
@@ -9795,3 +9796,23 @@ TEST_CASE("mm8 Nightmare slime actor bindings resolve all tiers without ranged s
 }
 
 TEST_SUITE_END();
+
+TEST_CASE("the journal's Arcomage notes list every tavern per continent and the ones the party has won")
+{
+    const OpenYAMM::Tests::RegressionMapLoader &mapLoader = requireRegressionMapLoader();
+    OpenYAMM::Game::Party party = {};
+    party.seed(createRegressionPartySeed());
+    // 228: the first MM8 tavern, in Jadame.
+    party.recordArcomageWin(228, 0, 0);
+
+    const std::vector<std::string> texts = OpenYAMM::Game::buildArcomageTavernTexts(
+        mapLoader.gameDataLoader.getHouseTable(), mapLoader.gameDataLoader.getMapStats(), party);
+
+    REQUIRE(!texts.empty());
+    CHECK(std::find(texts.begin(), texts.end(), "Jadame: 1 of 11 taverns won.") != texts.end());
+    // Emerald Island's Two Palms Tavern plays Arcomage too, though Antagarich's champion award counts the other 13.
+    CHECK(std::find(texts.begin(), texts.end(), "Antagarich: 0 of 14 taverns won.") != texts.end());
+    CHECK(std::find(texts.begin(), texts.end(), "The Vampyre Lounge, The Pit: not won yet") != texts.end());
+    CHECK(std::count_if(texts.begin(), texts.end(), [](const std::string &text) { return text.ends_with(": won"); })
+        == 1);
+}

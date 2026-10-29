@@ -193,30 +193,37 @@ potions:
     item: {action: temporary_special_enchant, enchant: DragonSlaying}
   264:
     name: Pure Luck
+    once_per_character: true
     effects:
       - permanent_stat: {stats: [luck], amount: 50, into: bonus}
   265:
     name: Pure Speed
+    once_per_character: true
     effects:
       - permanent_stat: {stats: [speed], amount: 50, into: bonus}
   266:
     name: Pure Intellect
+    once_per_character: true
     effects:
       - permanent_stat: {stats: [intellect], amount: 50, into: bonus}
   267:
     name: Pure Endurance
+    once_per_character: true
     effects:
       - permanent_stat: {stats: [endurance], amount: 50, into: bonus}
   268:
     name: Pure Personality
+    once_per_character: true
     effects:
       - permanent_stat: {stats: [personality], amount: 50, into: bonus}
   269:
     name: Pure Accuracy
+    once_per_character: true
     effects:
       - permanent_stat: {stats: [accuracy], amount: 50, into: bonus}
   270:
     name: Pure Might
+    once_per_character: true
     effects:
       - permanent_stat: {stats: [might], amount: 50, into: bonus}
   # Rejuvenation undoes magical ageing first; once there is none, it makes the drinker younger.

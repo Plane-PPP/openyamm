@@ -1374,12 +1374,15 @@ MawAttackDelay mawCharacterAttackDelay(
     MawAttackDelay delay = mawAttackDelay(inputs);
     delay.delay = int(mawRound(delay.delay * mawArtifactAttackDelayMultiplier(rules, character)));
 
-    // A dragon's bite slows with Fangs, its breath with Dragon Ability: x (1 + 0.015 s) (CL:805-818).
+    // A dragon's bite slows with Fangs, any ranged delay (its breath; the Shoot readouts ask for a bow's) with Dragon
+    // Ability: x (1 + 0.015 s) (CL:805-818).
     if (mode == CharacterAttackMode::Melee && mawIsDragon(character))
     {
         delay.delay = int(mawRound(delay.delay * (1 + 0.015 * skillLevel(character, "Unarmed"))));
     }
-    else if (mode == CharacterAttackMode::DragonBreath && mawIsDragon(character))
+    else if ((mode == CharacterAttackMode::DragonBreath || mode == CharacterAttackMode::Bow
+                 || mode == CharacterAttackMode::Wand)
+        && mawIsDragon(character))
     {
         delay.delay = int(mawRound(delay.delay * (1 + 0.015 * skillLevel(character, "DragonAbility"))));
     }

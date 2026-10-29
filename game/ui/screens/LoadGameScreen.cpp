@@ -541,6 +541,11 @@ void LoadGameScreen::drawScreen(float deltaSeconds)
         cancel();
         return;
     }
+    if (drawSortButtons(prefix))
+    {
+        m_scrollOffset = 0;
+        m_revealSelection = true;
+    }
     if (drawRulesetFilters(prefix))
     {
         m_scrollOffset = 0;
@@ -853,6 +858,7 @@ void LoadGameScreen::refreshSaveSlots()
         const std::filesystem::file_time_type modified = entry.last_write_time(timestampError);
         if (!timestampError)
         {
+            slot.modified = modified;
             const std::time_t timestamp =
                 std::chrono::system_clock::to_time_t(
                     std::chrono::time_point_cast<std::chrono::system_clock::duration>(
@@ -896,8 +902,7 @@ void LoadGameScreen::refreshSaveSlots()
         m_slots.push_back(std::move(slot));
     }
 
-    std::sort(m_slots.begin(), m_slots.end(), [](const SaveSlotSummary &left, const SaveSlotSummary &right)
-              { return compareSavePathsForDisplay(left.path, right.path); });
+    sortSlots();
 
     if (m_selectedIndex >= m_slots.size())
     {
@@ -924,6 +929,7 @@ void LoadGameScreen::loadCachedSaveSlots()
     m_slots = s_cachedSlots;
     m_newerSaveCount = s_cachedNewerSaveCount;
     m_slotsSignature = s_cachedSignature;
+    sortSlots();
 
     if (m_selectedIndex >= m_slots.size())
     {
@@ -1037,6 +1043,70 @@ bool LoadGameScreen::drawRulesetFilters(const std::string &prefix)
     }
 
     return changed;
+}
+
+void LoadGameScreen::configureSortOrder(bool newestFirst, SortOrderAction changed)
+{
+    m_newestFirst = newestFirst;
+    m_sortOrderChanged = std::move(changed);
+    sortSlots();
+}
+
+void LoadGameScreen::sortSlots()
+{
+    std::stable_sort(m_slots.begin(), m_slots.end(), [this](const SaveSlotSummary &left, const SaveSlotSummary &right)
+        {
+            if (m_newestFirst && left.modified != right.modified)
+            {
+                return left.modified > right.modified;
+            }
+            return compareSavePathsForDisplay(left.path, right.path);
+        });
+}
+
+bool LoadGameScreen::drawSortButtons(const std::string &prefix)
+{
+    const Rect area = designRect(prefix + "SortButtons");
+    const float gap = 6 * designScale();
+    const float width = (area.width - gap) / 2;
+    bool newestFirst = m_newestFirst;
+
+    if (button(prefix + "SortByName", {area.x, area.y, width, area.height}, "Name", "tab", true, !m_newestFirst))
+    {
+        newestFirst = false;
+    }
+
+    if (button(prefix + "SortByNewest", {area.x + width + gap, area.y, width, area.height}, "Newest", "tab", true,
+            m_newestFirst))
+    {
+        newestFirst = true;
+    }
+
+    if (newestFirst == m_newestFirst)
+    {
+        return false;
+    }
+
+    // The selected save stays selected in the new order.
+    const std::optional<std::filesystem::path> selected = m_selectedIndex < m_slots.size()
+        ? std::optional<std::filesystem::path>(m_slots[m_selectedIndex].path) : std::nullopt;
+    m_newestFirst = newestFirst;
+    sortSlots();
+
+    for (size_t index = 0; selected && index < m_slots.size(); ++index)
+    {
+        if (m_slots[index].path == *selected)
+        {
+            m_selectedIndex = index;
+        }
+    }
+
+    if (m_sortOrderChanged)
+    {
+        m_sortOrderChanged(m_newestFirst);
+    }
+
+    return true;
 }
 
 bool LoadGameScreen::tryLoadSelectedSlot()

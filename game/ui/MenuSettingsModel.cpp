@@ -955,8 +955,7 @@ bool reservedMenuBinding(const InputBinding &binding, KeyboardAction action)
         return false;
     }
     const bool bagKey = action >= KeyboardAction::Bag1 && action <= KeyboardAction::Bag4;
-    return binding.scancode == SDL_SCANCODE_ESCAPE || binding.scancode == SDL_SCANCODE_F9 ||
-           binding.scancode == SDL_SCANCODE_F10 || binding.scancode == SDL_SCANCODE_GRAVE ||
+    return binding.scancode == SDL_SCANCODE_ESCAPE || binding.scancode == SDL_SCANCODE_GRAVE ||
            (!bagKey && binding.scancode >= SDL_SCANCODE_1 && binding.scancode <= SDL_SCANCODE_5);
 }
 } // namespace OpenYAMM::Game

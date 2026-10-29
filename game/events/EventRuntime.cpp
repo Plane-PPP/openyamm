@@ -8106,6 +8106,37 @@ int luaNpcText(lua_State *pLuaState)
     return 1;
 }
 
+// The topic an NPC offers in a slot: the one an event set with SetNPCTopic, else the NPC table's.
+int luaGetNpcTopic(lua_State *pLuaState)
+{
+    const uint32_t npcId = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 1));
+    const uint32_t topicSlotIndex = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 2));
+    const EventRuntimeState *pRuntimeState = readableRuntimeState(pLuaState);
+
+    if (pRuntimeState != nullptr)
+    {
+        const auto npcIt = pRuntimeState->npcTopicOverrides.find(npcId);
+
+        if (npcIt != pRuntimeState->npcTopicOverrides.end())
+        {
+            const auto slotIt = npcIt->second.find(topicSlotIndex);
+
+            if (slotIt != npcIt->second.end())
+            {
+                lua_pushinteger(pLuaState, slotIt->second);
+                return 1;
+            }
+        }
+    }
+
+    const EventRuntime *pEventRuntime = readableEventRuntime(pLuaState);
+    const NpcDialogTable *pNpcDialogTable = pEventRuntime != nullptr ? pEventRuntime->npcDialogTable() : nullptr;
+    const NpcEntry *pNpc = pNpcDialogTable != nullptr ? pNpcDialogTable->getNpc(npcId) : nullptr;
+    lua_pushinteger(pLuaState,
+        pNpc != nullptr && topicSlotIndex < pNpc->topicIds.size() ? pNpc->topicIds[topicSlotIndex] : 0);
+    return 1;
+}
+
 int luaSetMonsterRelation(lua_State *pLuaState)
 {
     EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
@@ -9224,6 +9255,7 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "CheckMonstersKilled", luaCheckMonstersKilled);
     registerLuaFunction(pLuaState, "IsHouseOpen", luaIsHouseOpen);
     registerLuaFunction(pLuaState, "NPCText", luaNpcText);
+    registerLuaFunction(pLuaState, "GetNPCTopic", luaGetNpcTopic);
     registerLuaFunction(pLuaState, "ChangeGroupToGroup", luaChangeGroupToGroup);
     registerLuaFunction(pLuaState, "ChangeGroupAlly", luaChangeGroupAlly);
     registerLuaFunction(pLuaState, "CheckSeason", luaCheckSeason);

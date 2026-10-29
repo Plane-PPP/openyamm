@@ -1462,16 +1462,10 @@ std::unordered_map<std::string, OutdoorWorldRuntime::Snapshot> &GameSession::out
     return m_outdoorWorldStates;
 }
 
-void GameSession::storeOutdoorWorldState(const std::string &mapFileName, const OutdoorWorldRuntime::Snapshot &snapshot)
+std::string GameSession::mapStateKey(const std::string &mapFileName) const
 {
-    OutdoorWorldRuntime::Snapshot normalizedSnapshot = snapshot;
-    normalizedSnapshot.gameMinutes = m_gameMinutes;
-    if (normalizedSnapshot.eventRuntimeState)
-    {
-        mergeNamedGlobalVarsFromRuntime(*normalizedSnapshot.eventRuntimeState);
-        applyNamedGlobalVarsToRuntime(*normalizedSnapshot.eventRuntimeState);
-    }
-    m_outdoorWorldStates[mapFileName] = normalizedSnapshot;
+    const MapStatsEntry *pMap = data().mapStats().findByFileName(mapFileName);
+    return pMap != nullptr && !pMap->canonicalId.empty() ? pMap->canonicalId : mapFileName;
 }
 
 const std::optional<IndoorSceneRuntime::Snapshot> &GameSession::currentIndoorSceneState() const
@@ -1509,18 +1503,6 @@ const std::unordered_map<std::string, IndoorSceneRuntime::Snapshot> &GameSession
 std::unordered_map<std::string, IndoorSceneRuntime::Snapshot> &GameSession::indoorSceneStates()
 {
     return m_indoorSceneStates;
-}
-
-void GameSession::storeIndoorSceneState(const std::string &mapFileName, const IndoorSceneRuntime::Snapshot &snapshot)
-{
-    IndoorSceneRuntime::Snapshot normalizedSnapshot = snapshot;
-    normalizedSnapshot.worldRuntime.gameMinutes = m_gameMinutes;
-    if (normalizedSnapshot.eventRuntimeState)
-    {
-        mergeNamedGlobalVarsFromRuntime(*normalizedSnapshot.eventRuntimeState);
-        applyNamedGlobalVarsToRuntime(*normalizedSnapshot.eventRuntimeState);
-    }
-    m_indoorSceneStates[mapFileName] = normalizedSnapshot;
 }
 
 const std::unordered_map<std::string, int32_t> &GameSession::namedGlobalVars() const
@@ -1706,7 +1688,7 @@ void GameSession::captureOutdoorRuntimeState(
         applyNamedGlobalVarsToRuntime(*normalizedWorldSnapshot.eventRuntimeState);
     }
     m_currentOutdoorWorldState = normalizedWorldSnapshot;
-    m_outdoorWorldStates[mapFileName] = normalizedWorldSnapshot;
+    m_outdoorWorldStates[mapStateKey(mapFileName)] = normalizedWorldSnapshot;
     setCameraAngles(yawRadians, pitchRadians);
 }
 
@@ -1728,7 +1710,7 @@ void GameSession::captureIndoorRuntimeState(
         applyNamedGlobalVarsToRuntime(*normalizedSnapshot.eventRuntimeState);
     }
     m_currentIndoorSceneState = normalizedSnapshot;
-    m_indoorSceneStates[mapFileName] = normalizedSnapshot;
+    m_indoorSceneStates[mapStateKey(mapFileName)] = normalizedSnapshot;
 }
 
 std::optional<GameSaveData> GameSession::buildSaveData() const
@@ -1911,7 +1893,7 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
 
     if (saveData.hasOutdoorRuntimeState && m_currentSceneKind == SceneKind::Outdoor)
     {
-        m_outdoorWorldStates[m_currentMapFileName] = *m_currentOutdoorWorldState;
+        m_outdoorWorldStates[mapStateKey(m_currentMapFileName)] = *m_currentOutdoorWorldState;
     }
 
     m_currentIndoorSceneState = saveData.hasIndoorSceneState
@@ -1946,7 +1928,7 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
 
     if (saveData.hasIndoorSceneState && m_currentSceneKind == SceneKind::Indoor)
     {
-        m_indoorSceneStates[m_currentMapFileName] = *m_currentIndoorSceneState;
+        m_indoorSceneStates[mapStateKey(m_currentMapFileName)] = *m_currentIndoorSceneState;
     }
 
     for (const auto &[legacyCanonicalId, canonicalId] : data().mapStats().legacyCanonicalIdRenames())
@@ -1954,6 +1936,31 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
         migrateMapStateKey(m_outdoorWorldStates, legacyCanonicalId, canonicalId);
         migrateMapStateKey(m_indoorSceneStates, legacyCanonicalId, canonicalId);
     }
+
+    // Saves before this kept every map twice, under its file name and its canonical id (which loading preferred).
+    const auto keyByCanonicalId = [this](auto &states)
+    {
+        for (auto stateIt = states.begin(); stateIt != states.end();)
+        {
+            const std::string key = mapStateKey(stateIt->first);
+
+            if (key == stateIt->first)
+            {
+                ++stateIt;
+                continue;
+            }
+
+            auto node = states.extract(stateIt++);
+
+            if (!states.contains(key))
+            {
+                node.key() = key;
+                states.insert(std::move(node));
+            }
+        }
+    };
+    keyByCanonicalId(m_outdoorWorldStates);
+    keyByCanonicalId(m_indoorSceneStates);
 
     m_cameraYawRadians = saveData.cameraYawRadians;
     m_cameraPitchRadians = saveData.cameraPitchRadians;

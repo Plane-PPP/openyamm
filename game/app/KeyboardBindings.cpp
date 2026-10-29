@@ -140,6 +140,10 @@ const std::array<KeyboardBindingDefinition, KeyboardActionCount> KeyboardBinding
         KeyboardBindingColumn::Left, 0, {}, true},
     {KeyboardAction::QuickItem6, "quick_item_6", "Potion Slot 6", KeyboardBindingPage::Hidden,
         KeyboardBindingColumn::Left, 0, {}, true},
+    {KeyboardAction::QuickSave, "quick_save", "Quick Save", KeyboardBindingPage::Hidden,
+        KeyboardBindingColumn::Left, 0, {InputBindingKind::Keyboard, SDL_SCANCODE_F9, 0}, true},
+    {KeyboardAction::QuickLoad, "quick_load", "Quick Load", KeyboardBindingPage::Hidden,
+        KeyboardBindingColumn::Left, 0, {InputBindingKind::Keyboard, SDL_SCANCODE_F10, 0}, true},
 }};
 
 const std::array<KeyboardScancodeName, 97> KeyboardScancodeNames = {{

@@ -1621,6 +1621,29 @@ bool MonsterTable::isLikelySameFaction(int16_t leftMonsterId, int16_t rightMonst
     return !leftFactionKey.empty() && leftFactionKey == rightFactionKey;
 }
 
+bool MonsterTable::sharesAlertFaction(int16_t leftRelationMonsterId, int16_t rightRelationMonsterId) const
+{
+    if (!m_relationAddOns.empty())
+    {
+        if (const std::optional<bool> same = m_relationAddOns.sameFaction(leftRelationMonsterId, rightRelationMonsterId))
+        {
+            return *same;
+        }
+    }
+
+    // Classes 7 and 8 are the Dark Elf peasants, male and female.
+    constexpr size_t DarkElfPeasantMaleClass = 7;
+    constexpr size_t DarkElfPeasantFemaleClass = 8;
+    const size_t leftClass = relationIndexForMonsterId(leftRelationMonsterId);
+    const size_t rightClass = relationIndexForMonsterId(rightRelationMonsterId);
+    const auto isDarkElfPeasant = [](size_t relationClass)
+    {
+        return relationClass == DarkElfPeasantMaleClass || relationClass == DarkElfPeasantFemaleClass;
+    };
+
+    return leftClass == rightClass || (isDarkElfPeasant(leftClass) && isDarkElfPeasant(rightClass));
+}
+
 const std::vector<MonsterEntry> &MonsterTable::getEntries() const
 {
     return m_entries;

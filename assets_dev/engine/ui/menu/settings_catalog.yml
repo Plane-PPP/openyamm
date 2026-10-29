@@ -689,6 +689,12 @@ bindings:
 - id: double_speed
   name: Toggle double speed
   group: System
+- id: quick_save
+  name: Quick save
+  group: System
+- id: quick_load
+  name: Quick load
+  group: System
 # MAW's keys (devdocs/maw/GAPS.md §11 D.18): listed only in a MAW game's pause menu. `context` is the page a key acts
 # on; keys of different contexts may share a key (A picks the alchemist on the inventory page and moves left in play;
 # MAW's E closes our character screen).

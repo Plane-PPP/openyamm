@@ -108,6 +108,16 @@ elements:
     visible: true
     interactive: false
     notes: 'Renderer primitive: 1px brass rule, #b5a47755, in the browser reference.'
+  - id: SaveGameSortButtons
+    anchor: top_left
+    offset_x: 263.0
+    offset_y: 76.0
+    width: 150.0
+    height: 24.0
+    z_index: 10
+    visible: true
+    interactive: false
+    notes: Name / Newest order switch (gameplay.save_list_order), drawn by the controller.
   - id: SaveGameRulesetFilters
     anchor: top_left
     offset_x: 441.6

@@ -3770,30 +3770,6 @@ void IndoorRenderer::render(
         ++m_indoorPerformanceDiagnostics.renderFrames;
     }
 
-    const bool geometryToggleHeld = input.isScancodeHeld(SDL_SCANCODE_F8);
-
-    if (geometryToggleHeld && !m_indoorGeometryRenderingToggleHeld)
-    {
-        m_indoorGeometryRenderingDisabled = !m_indoorGeometryRenderingDisabled;
-        std::cout << "Indoor geometry rendering "
-                  << (m_indoorGeometryRenderingDisabled ? "disabled" : "enabled")
-                  << " by F8\n";
-    }
-
-    m_indoorGeometryRenderingToggleHeld = geometryToggleHeld;
-
-    const bool geometryTranslucentToggleHeld = input.isScancodeHeld(SDL_SCANCODE_F12);
-
-    if (geometryTranslucentToggleHeld && !m_indoorGeometryTranslucentToggleHeld)
-    {
-        m_indoorGeometryTranslucent = !m_indoorGeometryTranslucent;
-        std::cout << "Indoor geometry translucent debug rendering "
-                  << (m_indoorGeometryTranslucent ? "enabled" : "disabled")
-                  << " by F12\n";
-    }
-
-    m_indoorGeometryTranslucentToggleHeld = geometryTranslucentToggleHeld;
-
     const float deltaMilliseconds = deltaSeconds * 1000.0f;
     m_elapsedTime += std::max(deltaSeconds, 0.0f);
 
@@ -4016,7 +3992,7 @@ void IndoorRenderer::render(
     {
         updateWaterGeometry();
     }
-    const bool enhancedWater = m_waterRenderer.isReady() && !m_indoorGeometryRenderingDisabled && !m_indoorGeometryTranslucent;
+    const bool enhancedWater = m_waterRenderer.isReady();
 
     const uint64_t visibilityBeginTickCount = collectRenderDiagnostics ? SDL_GetTicksNS() : 0;
     const std::vector<uint8_t> renderVisibleSectorMask = buildVisibleSectorMask(eye);
@@ -4209,8 +4185,7 @@ void IndoorRenderer::render(
     uint64_t submittedTexturedBatchCount = 0;
     uint64_t culledTexturedBatchCount = 0;
 
-    if (!m_indoorGeometryRenderingDisabled
-        && bgfx::isValid(m_indoorLitProgramHandle)
+    if (bgfx::isValid(m_indoorLitProgramHandle)
         && bgfx::isValid(m_textureSamplerHandle)
         && bgfx::isValid(m_indoorLightPositionsUniformHandle)
         && bgfx::isValid(m_indoorLightColorsUniformHandle)
@@ -4266,7 +4241,7 @@ void IndoorRenderer::render(
 
     const uint64_t bloodSplatsBeginTickCount = collectRenderDiagnostics ? SDL_GetTicksNS() : 0;
 
-    if (!m_indoorGeometryRenderingDisabled && settings.bloodSplats)
+    if (settings.bloodSplats)
     {
         renderBloodSplats(
             transparentView,
@@ -6637,8 +6612,6 @@ void IndoorRenderer::shutdown()
     m_houseTable.reset();
     m_mechanismBindings.clear();
     m_lastVisibilityDiagnosticsLogTick = 0;
-    m_indoorGeometryRenderingDisabled = false;
-    m_indoorGeometryRenderingToggleHeld = false;
     clearPortalVisibilityCaches();
     m_worldFxSystem.reset();
 
@@ -10513,23 +10486,11 @@ bool IndoorRenderer::submitTexturedBatch(const TexturedBatch &batch, uint16_t vi
         IndoorSkyProjectionPitchOffsetRadians
     };
     bgfx::setUniform(m_indoorSkyProjectionParamsUniformHandle, indoorSkyProjectionParams.data());
-    if (viewId == MainViewId && m_indoorGeometryTranslucent)
-    {
-        bgfx::setState(
-            BGFX_STATE_WRITE_RGB
-            | BGFX_STATE_WRITE_A
-            | BGFX_STATE_DEPTH_TEST_LEQUAL
-            | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_FACTOR, BGFX_STATE_BLEND_INV_FACTOR) | BGFX_STATE_MSAA,
-            0x80808080u);
-    }
-    else
-    {
-        bgfx::setState(
-            BGFX_STATE_WRITE_RGB
-            | BGFX_STATE_WRITE_A
-            | BGFX_STATE_WRITE_Z
-            | BGFX_STATE_DEPTH_TEST_LEQUAL | BGFX_STATE_MSAA);
-    }
+    bgfx::setState(
+        BGFX_STATE_WRITE_RGB
+        | BGFX_STATE_WRITE_A
+        | BGFX_STATE_WRITE_Z
+        | BGFX_STATE_DEPTH_TEST_LEQUAL | BGFX_STATE_MSAA);
 
     bgfx::submit(viewId, m_indoorLitProgramHandle);
     return true;

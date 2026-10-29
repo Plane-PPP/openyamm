@@ -20,6 +20,9 @@ exploration fixes described below are historical, superseded experiments. Door c
 actor detection and their optimizations are separate and remain in place. See the Darkmoor performance section
 for the measured regression and correction.
 
+**Current actor detection (2026-10-28):** monsters notice the party by sight, close hearing, a neighbour's alarm
+or damage, never by sector membership. See [detection by sight, hearing and neighbours](#openyamm-detection-by-sight-hearing-and-neighbours-2026-10-28).
+
 The subsequent [Goblinwatch entrance audit](#goblinwatch-entrance-parity-audit-2026-09-30) found additional
 portal traversal differences. The [implemented follow-up](#mm8-portal-traversal-corrections-2026-09-30) removes
 aperture enlargement and rejected-portal recovery, uses live door vertices, and restores the verified facing,
@@ -201,9 +204,14 @@ that encounter state survives those operations.
 
 Original MM8 routine **`0x439278`** propagates aggression to nearby matching actors. Party damage calls
 it after killing (`0x438101`) or stunning (`0x438174`) the victim, with the aggression argument set to 1.
-It scans actors that CanAct, excludes the victim, checks the faction helper `0x4391ca` and an additional
-actor-group exception, then requires approximate 3D distance **strictly below 4096**. The comparison at
-`0x439345` uses float constant `4096.0` at `0x4ea5f0`.
+It scans actors that CanAct, excludes the victim, checks the faction helper `0x4391ca`, skips actors whose
+Ally field (`+0x350`) is 9999 when aggression is 1 (`0x4392e8`), then requires approximate 3D distance
+**strictly below 4096**. The comparison at `0x439345` uses float constant `4096.0` at `0x4ea5f0`.
+
+The faction helper `0x4391ca` takes each actor's class from its Ally field (`+0x350`) or, when that is zero,
+`(monsterId - 1) / 3 + 1` (`0x4391cc–0x4391fe`), the column of `hostile.txt`. The two actors match when
+both classes are equal (`0x43926d–0x439271`) or both are 7–8, the Dark Elf peasants (`0x43920e–0x439220`);
+the other constant comparisons between `0x4391ff` and `0x439267` only repeat equality. Event groups and class names play no part.
 
 The alert has no line-of-sight or explored-sector test, but its writes are limited:
 
@@ -214,6 +222,23 @@ The alert has no line-of-sight or explored-sector test, but its writes are limit
 
 Therefore “a nearby ally was attacked” and “this actor has detected/encountered the party” are different
 state changes. Ordinary indoor selection still determines whether the alerted actor receives full AI.
+
+**OpenYAMM alert rule (2026-10-28), indoors and outdoors.** Allies are matched by MM8's class rule
+(`MonsterTable::sharesAlertFaction`, after a world's `relations.yml` add-on), not by event group or by the first
+word of the class name as before. The old rules let a gog hit in Nighon Tunnels rouse the dwarves of its spawn
+group, let the Misty Islands Assassin (`PeasantF3`) rouse the `PeasantF1`/`PeasantF2` villagers, and let any
+hostile dragon struck in Garrote Gorge rouse the Dragon Hunters (all "Dragon ..."). Actors fighting for the
+party are skipped. OpenYAMM keeps its rule that peasants and guard groups 38/55 alert one another.
+
+One deliberate deviation: a victim **hostile on its own** (by its map, its monster template or an event) alerts no
+friendly actor; indoors it still marks hostile allies Aggressor with hostility type 4. MM8 has no such test, so
+striking a raiding warlock of Mount Nighon's hostile group 56 near town would turn the friendly town warlocks of the
+same class. A victim the party made hostile (it was struck while friendly, or alerted by such a strike) keeps
+rallying its class, so the alert still spreads from villager to villager; the runtimes remember this as
+`angeredByParty`, saved since save version 138 (older saves load it as false). Striking a friendly actor rouses its
+whole class as in MM8. Scenarios `mm6/mist_faction_alerts.yml`,
+`mm7/nighon_tunnels_faction_alerts.yml`, `mm7/mount_nighon_faction_alerts.yml` and
+`mm8_garrote_gorge_faction_alerts.yml` cover these maps; each fails with the previous rule.
 
 ## 3. Full AI is selected per actor
 
@@ -491,6 +516,54 @@ Validation: the normal game builds; 41 focused portal/exploration unit cases (21
 and all four detection/faction runtime cases (803 assertions) pass, including closed/open doors and
 encounter memory after restore. Previously saved discovery is retained; reproduce the reveal fix with
 fresh map discovery rather than expecting already explored saves to be cleared.
+
+### OpenYAMM detection by sight, hearing and neighbours (2026-10-28)
+
+An October change let any monster within 5120 in the party's sector, or one portal hop from it, detect the
+party without a geometry test, through walls and closed doors. Large MM6 sectors made this wake whole room
+groups at once. The user selected sight-based detection instead. `selectIndoorActiveActors` now grants fresh
+detection in these ways only:
+
+| Trigger | Rule |
+| --- | --- |
+| Sight | The full wall/door combat line of sight, within 5120, along either of two rays: from the monster's eyes (90% of its height) to the party's (160 above its feet), then, only if that is blocked, from its chest (75%) to the party's body (96). Each unaware monster checks on one AI step in 16 (eight times a second, staggered by actor index). |
+| Hearing | Horizontal edge distance up to 512 and feet within 256 of the party's height, without a wall test. Covers a monster just around a corner or behind a door the party stands at. |
+| Neighbour wake | A monster that newly detects the party (sight, hearing, or its own AI gaining sight) or is hit by the party wakes up to five unaware hostile monsters within 512 (3D, feet within 256), nearest first, only with full line of sight between the two. Woken monsters do not wake others. |
+| Damage | Unchanged: the struck monster detects the party; its neighbours now wake as above. |
+
+The same-sector scheduling pass is unchanged: monsters in the party's feet sector still enter full AI, but they
+engage only once they see the party. Remembered detection, the 30/48 caps, faction alerts (hostility only) and
+background updates are unchanged. The height band is what keeps hearing and wakes from reaching the floor above
+or below; line of sight already stops sight-based detection there. The world runtime's per-sector neighbour
+lists existed only for the removed shortcut and were dropped from its geometry cache.
+
+The eye ray was added on 2026-10-29 after a Castle of Air report (MM8 `d27.blv`, party at `(-532, -517, 0)`):
+air elementals across the fountain in the party's own sector, both sides in plain view, never engaged because
+the fountain rim hid the chest-to-body ray. The fallback ray keeps the old reach under low lintels. A blocked
+monster costs one more check per interval.
+
+`tests/IndoorActorDetectionRuntimeTests.cpp` covers same-sector and one-hop monsters behind walls, sight across
+two portals, sight over a low rim but not a higher wall, hearing through a wall at and beyond 512, the height band with stacked rooms, neighbour wakes
+without chaining, damage wakes, the Goblinwatch entrance walk and the closed/opened doorway with restore.
+
+Measured at the fresh MM6 Goblinwatch start pose (feet `(576, 6912, 192)`, the 2026-09-30 startup save and pose),
+1600x900 windowed, VSync off, desktop OpenGL, 6-second warmup and 22-second interval, runs in the order
+before, after, after, before with nothing else running. Medians of the per-second diagnostics:
+
+| | Before | After | After repeat | Before repeat |
+| --- | ---: | ---: | ---: | ---: |
+| Monsters in full AI | 4 | 0 | 0 | 4 |
+| Sight checks per second | 7808 | 520 | 520 | 7808 |
+| Active-actor selection per AI step, microseconds | 44 | 10 | 11 | 40.5 |
+| Actor fact collection per AI step, microseconds | 182.5 | 129 | 135 | 174 |
+| Game frame, microseconds | 270 | 238 | 248 | 254 |
+| FPS | 1859 | 1876 | 1897 | 1848 |
+
+Before the change, the one-hop shortcut had already put four monsters behind the closed entrance doors into
+full AI at this pose; afterwards nobody notices the party. Selection is about four times cheaper, with roughly
+65 unaware monsters within 5120 each checked eight times a second instead of 128. The FPS difference (1–2%)
+is within run-to-run variation: actor AI is a small share of this frame. Run records, settings, the pose and
+`summarize.py` are in [`output/goblinwatch_detection_20261028/`](../output/goblinwatch_detection_20261028/).
 
 ## Native idle Goblinwatch performance (2026-09-30)
 

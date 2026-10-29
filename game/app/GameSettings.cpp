@@ -1088,6 +1088,11 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         parseBoolValue(*value, settings.enemyHealthBarDamageTrail);
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "save_list_order"))
+    {
+        settings.saveListNewestFirst = *value == "newest";
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "quest_markers"))
     {
         bool parsed = settings.questMarkers;
@@ -2286,6 +2291,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("enemy_health_bar_values", settings.enemyHealthBarValues);
     serializer.add("enemy_health_bar_damage_trail", boolValue(settings.enemyHealthBarDamageTrail));
     serializer.add("quest_markers", boolValue(settings.questMarkers));
+    serializer.add("save_list_order", settings.saveListNewestFirst ? "newest" : "name");
     serializer.add("party_frame", boolValue(settings.partyFrame));
     serializer.add("potion_buttons", boolValue(settings.potionButtons));
     serializer.add("melee_hit_blood_effects", boolValue(settings.meleeHitBloodEffects));

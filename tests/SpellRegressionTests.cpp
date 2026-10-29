@@ -2243,6 +2243,7 @@ TEST_CASE("indoor scene runtime state survives save round trip")
     actorState.crowdSideSign = -1;
     actorState.attackImpactTriggered = true;
     actorState.suppressLowHealthFlee = true;
+    actorState.angeredByParty = true;
     actorState.spellEffects.dayOfProtectionRemainingSeconds = 11.0f;
     actorState.spellEffects.dayOfProtectionPower = 12;
     actorState.spellEffects.hourOfPowerRemainingSeconds = 13.0f;
@@ -2363,6 +2364,7 @@ TEST_CASE("indoor scene runtime state survives save round trip")
     CHECK_EQ(loadedActorState.crowdEscapeAttempts, 11);
     CHECK_EQ(loadedActorState.crowdSideSign, -1);
     CHECK(loadedActorState.suppressLowHealthFlee);
+    CHECK(loadedActorState.angeredByParty);
     CHECK_EQ(loadedActorState.spellEffects.dayOfProtectionRemainingSeconds, 11.0f);
     CHECK_EQ(loadedActorState.spellEffects.dayOfProtectionPower, 12);
     CHECK_EQ(loadedActorState.spellEffects.hourOfPowerRemainingSeconds, 13.0f);
@@ -2386,7 +2388,10 @@ TEST_CASE("indoor scene runtime state survives save round trip")
     CHECK_EQ(loadedSnapshot.worldRuntime.mapActorCorpseViews[0]->title, "Saved Corpse");
     CHECK_EQ(loadedSnapshot.worldRuntime.mapActorCorpseViews[0]->items[0].itemId, 540u);
     REQUIRE_EQ(loadedSnapshot.worldRuntime.bloodSplats.size(), 1u);
-    CHECK_EQ(loadedSnapshot.worldRuntime.bloodSplats[0].vertices[0].v, 0.75f);
+    CHECK_EQ(loadedSnapshot.worldRuntime.bloodSplats[0].sourceActorId, 12u);
+    CHECK_EQ(loadedSnapshot.worldRuntime.bloodSplats[0].radius, 4.0f);
+    // The triangles are not saved: the map bakes them again when it restores the splat.
+    CHECK(loadedSnapshot.worldRuntime.bloodSplats[0].vertices.empty());
     CHECK_EQ(loadedSnapshot.worldRuntime.actorUpdateAccumulatorSeconds, 0.125f);
 
     REQUIRE_EQ(loadedSnapshot.timers.size(), 1u);

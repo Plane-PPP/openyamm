@@ -8763,13 +8763,6 @@ void GameApplication::synchronizeSessionFromRuntime()
             m_outdoorGameView.cameraYawRadians(),
             m_outdoorGameView.cameraPitchRadians());
 
-        const std::optional<MapAssetInfo> &selectedMap = m_gameDataLoader.getSelectedMap();
-
-        if (selectedMap && !selectedMap->map.canonicalId.empty())
-        {
-            m_gameSession.storeOutdoorWorldState(selectedMap->map.canonicalId, worldSnapshot);
-        }
-
         return;
     }
 
@@ -8782,13 +8775,6 @@ void GameApplication::synchronizeSessionFromRuntime()
             m_pMapSceneRuntime->party(),
             snapshot);
         m_gameSession.setCameraAngles(m_indoorRenderer.cameraYawRadians(), m_indoorRenderer.cameraPitchRadians());
-
-        const std::optional<MapAssetInfo> &selectedMap = m_gameDataLoader.getSelectedMap();
-
-        if (selectedMap && !selectedMap->map.canonicalId.empty())
-        {
-            m_gameSession.storeIndoorSceneState(selectedMap->map.canonicalId, snapshot);
-        }
     }
 }
 
@@ -9824,32 +9810,15 @@ void GameApplication::updateQuickSaveInput()
 {
     const GameplayInputFrame &inputFrame = m_gameInputSystem.frame();
 
-    if (inputFrame.isScancodeHeld(SDL_SCANCODE_F9))
+    if (inputFrame.action(KeyboardAction::QuickSave).pressed)
     {
-        if (!m_quickSaveLatch)
-        {
-            m_pendingQuickSave = true;
-            m_quickSaveLatch = true;
-        }
-    }
-    else
-    {
-        m_quickSaveLatch = false;
+        m_pendingQuickSave = true;
     }
 
-    if (inputFrame.isScancodeHeld(SDL_SCANCODE_F10))
+    if (inputFrame.action(KeyboardAction::QuickLoad).pressed)
     {
-        if (!m_quickLoadLatch)
-        {
-            m_pendingQuickLoad = true;
-            m_quickLoadLatch = true;
-        }
+        m_pendingQuickLoad = true;
     }
-    else
-    {
-        m_quickLoadLatch = false;
-    }
-
 }
 
 void GameApplication::updateDoubleSpeedInput()
@@ -10675,6 +10644,16 @@ void GameApplication::openSaveGameScreen()
             return true;
         },
         location, m_gameSession.gameMinutes(), m_menuSavePreviewBmp, saveFoodCost());
+    pScreen->configureSortOrder(m_settings.saveListNewestFirst, [this](bool newestFirst)
+        {
+            m_settings.saveListNewestFirst = newestFirst;
+            std::string error;
+
+            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            {
+                std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
+            }
+        });
     m_screenManager.setActiveScreen(std::move(pScreen));
 }
 
@@ -10710,6 +10689,16 @@ void GameApplication::openLoadGameScreen(bool returnToGameplayMenu, const std::s
         },
         returnToGameplayMenu, &m_gameAudioSystem,
         returnToGameplayMenu ? boundGameRules().experience.loadWarning().value_or("") : std::string());
+    pScreen->configureSortOrder(m_settings.saveListNewestFirst, [this](bool newestFirst)
+        {
+            m_settings.saveListNewestFirst = newestFirst;
+            std::string error;
+
+            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            {
+                std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
+            }
+        });
 
 
     if (!m_mainMenuChildScreensPrepared)

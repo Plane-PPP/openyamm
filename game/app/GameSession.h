@@ -197,7 +197,6 @@ public:
 
     const std::unordered_map<std::string, OutdoorWorldRuntime::Snapshot> &outdoorWorldStates() const;
     std::unordered_map<std::string, OutdoorWorldRuntime::Snapshot> &outdoorWorldStates();
-    void storeOutdoorWorldState(const std::string &mapFileName, const OutdoorWorldRuntime::Snapshot &snapshot);
 
     const std::optional<IndoorSceneRuntime::Snapshot> &currentIndoorSceneState() const;
     void setCurrentIndoorSceneState(const IndoorSceneRuntime::Snapshot &snapshot);
@@ -205,7 +204,6 @@ public:
 
     const std::unordered_map<std::string, IndoorSceneRuntime::Snapshot> &indoorSceneStates() const;
     std::unordered_map<std::string, IndoorSceneRuntime::Snapshot> &indoorSceneStates();
-    void storeIndoorSceneState(const std::string &mapFileName, const IndoorSceneRuntime::Snapshot &snapshot);
 
     const std::unordered_map<std::string, int32_t> &namedGlobalVars() const;
     int32_t namedGlobalVar(const std::string &name, int32_t defaultValue = 0) const;
@@ -266,6 +264,9 @@ public:
     void restoreHeldInventoryItemFromSaveData(const GameSaveData &saveData);
 
 private:
+    // The one key a map's stored state goes under: its canonical id, or the file name of a map MapStats does not list.
+    std::string mapStateKey(const std::string &mapFileName) const;
+
     struct GameplayUpdatePerformanceDiagnostics
     {
         uint64_t frames = 0;

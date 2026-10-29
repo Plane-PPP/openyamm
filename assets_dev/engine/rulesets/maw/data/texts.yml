@@ -961,8 +961,8 @@ class_skills:
     Unarmed:
       description: >-
         Dragons use their fangs to deal atrocious damage to enemies. Damage is 30 + 2 per level (up to level
-        {dragon_level_cap}); the Fangs skill raises it by a percentage of mastery and skill level, and each point also
-        makes the bite 1.5 % slower.
+        {dragon_level_cap}); the Fangs skill raises it by a percentage of mastery and skill level. Each point also
+        makes the bite 1.5 % slower and 1.5 % stronger, so fewer, heavier bites deal the same damage over time.
       normal: "Attack +2, damage +4 % per point"
       expert: "Attack +3, damage +6 % per point"
       master: "Attack +4, damage +8 % per point"

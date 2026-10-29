@@ -821,6 +821,17 @@ std::string formatFoundItemStatusText(const std::string &itemName)
 
 constexpr float ActiveActorUpdateRange = 10240.0f;
 constexpr float IndoorActorDetectRange = 5120.0f;
+// A monster hears the party through walls this close (edge distance), within the height band of its own floor.
+constexpr float IndoorActorHearingRange = 512.0f;
+constexpr float IndoorActorAwarenessHeightBand = 256.0f;
+// A monster that notices the party, or is hit by it, wakes a few hostile neighbours it can see.
+constexpr float IndoorActorWakeRadius = 512.0f;
+constexpr size_t IndoorActorWakeLimit = 5;
+// Each unaware monster tries its sight check on one AI step in 16: eight times a second.
+constexpr uint32_t IndoorActorSightCheckStepInterval = 16;
+// The sight check looks from the monster's eyes to the party's, then from its chest to the party's body: a fountain
+// rim or a table hides the lower ray while both sides see each other's heads (Castle of Air).
+constexpr float IndoorActorEyeHeightFactor = 0.9f;
 constexpr int IndoorActorDetectPortalLimit = 30;
 constexpr float IndoorFactionAggroRange = 4096.0f;
 constexpr size_t MaxIndoorBloodSplats = 64;
@@ -4315,7 +4326,6 @@ void IndoorWorldRuntime::invalidateRuntimeGeometryCache()
     m_runtimeGeometryCache.valid = false;
     m_runtimeGeometryCache.vertices.clear();
     m_runtimeGeometryCache.geometryCache = IndoorFaceGeometryCache();
-    m_runtimeGeometryCache.neighboringSectorIds.clear();
     m_runtimeGeometryCache.pathMapValid = false;
     m_runtimeGeometryCache.pathMapSnapshot.reset();
     if (m_actorMovementController)
@@ -4603,7 +4613,6 @@ IndoorWorldRuntime::RuntimeGeometryCache &IndoorWorldRuntime::runtimeGeometryCac
 
     m_runtimeGeometryCache.vertices.clear();
     m_runtimeGeometryCache.geometryCache = IndoorFaceGeometryCache();
-    m_runtimeGeometryCache.neighboringSectorIds.clear();
     m_runtimeGeometryCache.pathMapValid = false;
     m_runtimeGeometryCache.pathMapSnapshot.reset();
 
@@ -4613,8 +4622,6 @@ IndoorWorldRuntime::RuntimeGeometryCache &IndoorWorldRuntime::runtimeGeometryCac
             buildIndoorMechanismAdjustedVertices(*m_pIndoorMapData, mapDeltaData(), eventRuntimeState());
         m_runtimeGeometryCache.geometryCache.reset(m_pIndoorMapData->faces.size());
         m_runtimeGeometryCache.geometryCache.setAttributeOverrides(mapDeltaData());
-        m_runtimeGeometryCache.neighboringSectorIds =
-            buildNeighboringIndoorSectorIds(*m_pIndoorMapData, mapDeltaData());
     }
 
     m_runtimeGeometryCache.valid = true;
@@ -5126,7 +5133,10 @@ std::vector<bool> IndoorWorldRuntime::selectIndoorActiveActors(
 
     const GameplayWorldPoint partyTargetPoint =
         {partyFacts.position.x, partyFacts.position.y, partyFacts.position.z + PartyTargetHeightOffset};
+    const GameplayWorldPoint partyEyePoint =
+        {partyFacts.position.x, partyFacts.position.y, partyFacts.position.z + IndoorBodyDimensions{}.height};
     std::optional<int16_t> partyDetectionSectorId;
+    int16_t partyEyeSectorId = -1;
 
     constexpr uint32_t RuntimeSelectionBits =
         static_cast<uint32_t>(EvtActorAttribute::Active)
@@ -5197,6 +5207,9 @@ std::vector<bool> IndoorWorldRuntime::selectIndoorActiveActors(
             return left.distanceToParty < right.distanceToParty;
         });
 
+    const uint32_t sightCheckStep = m_indoorActorSightCheckStep++;
+    std::vector<size_t> newlyDetectedActorIndices;
+
     for (const ActorSelectionCandidate &candidate : activeActorDistances)
     {
         if (pickedActorIndices.size() >= OeIndoorDetectedActorPassLimit)
@@ -5210,49 +5223,60 @@ std::vector<bool> IndoorWorldRuntime::selectIndoorActiveActors(
             aiState.hasDetectedParty || defaultActorHasDetectedParty(actor, aiState.hostileToParty);
         bool canDetectParty = previouslyDetectedParty;
 
+        if (!canDetectParty)
+        {
+            const float hearingDistance = std::max(0.0f,
+                std::hypot(partyFacts.position.x - aiState.preciseX, partyFacts.position.y - aiState.preciseY)
+                    - static_cast<float>(actor.radius));
+            canDetectParty = hearingDistance <= IndoorActorHearingRange
+                && std::abs(partyFacts.position.z - aiState.preciseZ) <= IndoorActorAwarenessHeightBand;
+        }
+
         if (!canDetectParty
             && candidate.detectionDistanceSquared <= IndoorActorDetectRange * IndoorActorDetectRange
+            && (sightCheckStep + candidate.actorIndex) % IndoorActorSightCheckStepInterval == 0
             && m_pIndoorMapData != nullptr && !vertices.empty())
         {
             const int16_t actorSectorId =
                 aiState.sectorId >= 0 ? aiState.sectorId : actor.sectorId;
-            RuntimeGeometryCache &runtimeGeometry = runtimeGeometryCache();
-            if (partySectorId >= 0 && static_cast<size_t>(partySectorId) < runtimeGeometry.neighboringSectorIds.size())
+            const uint64_t losBeginTickCount = pDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
+            IndoorFaceGeometryCache &geometryCache = runtimeGeometryCache().geometryCache;
+            // The party endpoints are shared by all fresh detection queries in this selection pass.
+            if (!partyDetectionSectorId)
             {
-                const std::vector<uint16_t> &nearbySectorIds = runtimeGeometry.neighboringSectorIds[partySectorId];
-                // Awareness crosses walls and closed doors within the same sector or one portal hop.
-                // Attack line of sight still uses the full geometry check.
-                canDetectParty = actorSectorId >= 0
-                    && std::find(nearbySectorIds.begin(), nearbySectorIds.end(), actorSectorId)
-                        != nearbySectorIds.end();
+                partyDetectionSectorId = resolveIndoorPointSector(
+                    m_pIndoorMapData, vertices, &geometryCache,
+                    {partyTargetPoint.x, partyTargetPoint.y, partyTargetPoint.z}, partySectorId);
+                partyEyeSectorId = resolveIndoorPointSector(
+                    m_pIndoorMapData, vertices, &geometryCache,
+                    {partyEyePoint.x, partyEyePoint.y, partyEyePoint.z}, partySectorId);
             }
 
-            if (!canDetectParty)
-            {
-                const float actorTargetZ =
-                    aiState.preciseZ + std::max(24.0f, static_cast<float>(actor.height) * ActorDirectionHeightFactor);
-                const GameplayWorldPoint actorTargetPoint = {aiState.preciseX, aiState.preciseY, actorTargetZ};
-                const uint64_t losBeginTickCount = pDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
-                IndoorFaceGeometryCache &geometryCache = runtimeGeometry.geometryCache;
-                // The party endpoint is shared by all fresh detection queries in this selection pass.
-                if (!partyDetectionSectorId)
+            const auto seesParty =
+                [&](float heightFactor, const GameplayWorldPoint &partyPoint, int16_t partyPointSectorId)
                 {
-                    partyDetectionSectorId = resolveIndoorPointSector(
+                    const GameplayWorldPoint actorPoint = {aiState.preciseX, aiState.preciseY,
+                        aiState.preciseZ + std::max(24.0f, static_cast<float>(actor.height) * heightFactor)};
+                    const int16_t actorPointSectorId = resolveIndoorPointSector(
                         m_pIndoorMapData, vertices, &geometryCache,
-                        {partyTargetPoint.x, partyTargetPoint.y, partyTargetPoint.z}, partySectorId);
-                }
-                const int16_t resolvedActorSectorId = resolveIndoorPointSector(
-                    m_pIndoorMapData, vertices, &geometryCache,
-                    {actorTargetPoint.x, actorTargetPoint.y, actorTargetPoint.z}, actorSectorId);
-                canDetectParty = indoorCombatLineOfSightInSectors(
-                    *m_pIndoorMapData, pMapDeltaData, eventRuntimeState(), vertices, geometryCache,
-                    actorTargetPoint, resolvedActorSectorId, partyTargetPoint, *partyDetectionSectorId);
+                        {actorPoint.x, actorPoint.y, actorPoint.z}, actorSectorId);
 
-                if (pDiagnostics != nullptr)
-                {
-                    ++pDiagnostics->activeSelectionLosChecks;
-                    pDiagnostics->activeSelectionLosNanoseconds += SDL_GetTicksNS() - losBeginTickCount;
-                }
+                    if (pDiagnostics != nullptr)
+                    {
+                        ++pDiagnostics->activeSelectionLosChecks;
+                    }
+
+                    return indoorCombatLineOfSightInSectors(
+                        *m_pIndoorMapData, pMapDeltaData, eventRuntimeState(), vertices, geometryCache,
+                        actorPoint, actorPointSectorId, partyPoint, partyPointSectorId);
+                };
+
+            canDetectParty = seesParty(IndoorActorEyeHeightFactor, partyEyePoint, partyEyeSectorId)
+                || seesParty(ActorDirectionHeightFactor, partyTargetPoint, *partyDetectionSectorId);
+
+            if (pDiagnostics != nullptr)
+            {
+                pDiagnostics->activeSelectionLosNanoseconds += SDL_GetTicksNS() - losBeginTickCount;
             }
         }
 
@@ -5262,7 +5286,18 @@ std::vector<bool> IndoorWorldRuntime::selectIndoorActiveActors(
             aiState.hasDetectedParty = true;
             aiState.spellEffects.hasDetectedParty = true;
             pickActor(candidate.actorIndex);
+
+            if (!previouslyDetectedParty)
+            {
+                newlyDetectedActorIndices.push_back(candidate.actorIndex);
+            }
         }
+    }
+
+    // Woken neighbours carry Nearby, so the remembered pass below still selects them this step.
+    for (size_t actorIndex : newlyDetectedActorIndices)
+    {
+        wakeIndoorActorNeighbours(actorIndex);
     }
 
     for (size_t actorIndex = 0; actorIndex < pMapDeltaData->actors.size(); ++actorIndex)
@@ -5502,6 +5537,8 @@ std::vector<bool> IndoorWorldRuntime::applyIndoorActorAiFrameResult(
         actorPhysicsApplied.assign(actorCount, 0);
     }
 
+    std::vector<size_t> newlyDetectedActorIndices;
+
     for (const ActorAiUpdate &update : result.actorUpdates)
     {
         if (update.actorIndex >= actorCount || update.actorIndex >= m_mapActorAiStates.size())
@@ -5538,6 +5575,11 @@ std::vector<bool> IndoorWorldRuntime::applyIndoorActorAiFrameResult(
 
         if (update.state.hasDetectedParty)
         {
+            if (*update.state.hasDetectedParty && !aiState.hasDetectedParty)
+            {
+                newlyDetectedActorIndices.push_back(update.actorIndex);
+            }
+
             aiState.hasDetectedParty = *update.state.hasDetectedParty;
             aiState.spellEffects.hasDetectedParty = *update.state.hasDetectedParty;
 
@@ -5814,6 +5856,11 @@ std::vector<bool> IndoorWorldRuntime::applyIndoorActorAiFrameResult(
 
     applyIndoorActorCorpsePhysicsSteps(movementController, actorPhysicsApplied, pDiagnostics);
     m_positionRecoveryBatchActive = false;
+
+    for (size_t actorIndex : newlyDetectedActorIndices)
+    {
+        wakeIndoorActorNeighbours(actorIndex);
+    }
 
     // Action-entry voices precede damage reactions so a death voice remains the actor's final request.
     for (const ActorAudioRequest &audioRequest : result.audioRequests)
@@ -12183,6 +12230,85 @@ size_t IndoorWorldRuntime::revealActorsAround(size_t actorIndex, float radius)
     return revealed;
 }
 
+void IndoorWorldRuntime::wakeIndoorActorNeighbours(size_t actorIndex)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
+        || actorIndex >= m_mapActorAiStates.size())
+    {
+        return;
+    }
+
+    struct WakeCandidate
+    {
+        size_t actorIndex = 0;
+        float distanceSquared = 0.0f;
+    };
+
+    const MapDeltaActor &waker = pMapDeltaData->actors[actorIndex];
+    const MapActorAiState &wakerState = m_mapActorAiStates[actorIndex];
+    std::vector<WakeCandidate> candidates;
+
+    for (size_t otherIndex = 0; otherIndex < pMapDeltaData->actors.size() && otherIndex < m_mapActorAiStates.size();
+         ++otherIndex)
+    {
+        const MapDeltaActor &actor = pMapDeltaData->actors[otherIndex];
+        const MapActorAiState &aiState = m_mapActorAiStates[otherIndex];
+
+        if (otherIndex == actorIndex || actor.hp <= 0 || !aiState.hostileToParty || aiState.hasDetectedParty
+            || (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) != 0
+            || std::abs(aiState.preciseZ - wakerState.preciseZ) > IndoorActorAwarenessHeightBand)
+        {
+            continue;
+        }
+
+        const float distanceSquared = lengthSquared3d(aiState.preciseX - wakerState.preciseX,
+            aiState.preciseY - wakerState.preciseY, aiState.preciseZ - wakerState.preciseZ);
+
+        if (distanceSquared <= IndoorActorWakeRadius * IndoorActorWakeRadius)
+        {
+            candidates.push_back({otherIndex, distanceSquared});
+        }
+    }
+
+    std::sort(candidates.begin(), candidates.end(),
+        [](const WakeCandidate &left, const WakeCandidate &right)
+        {
+            return left.distanceSquared < right.distanceSquared;
+        });
+
+    const GameplayWorldPoint wakerPoint = {wakerState.preciseX, wakerState.preciseY,
+        wakerState.preciseZ + std::max(24.0f, static_cast<float>(waker.height) * ActorDirectionHeightFactor)};
+    const int16_t wakerSectorId = wakerState.sectorId >= 0 ? wakerState.sectorId : waker.sectorId;
+    size_t woken = 0;
+
+    for (const WakeCandidate &candidate : candidates)
+    {
+        if (woken >= IndoorActorWakeLimit)
+        {
+            break;
+        }
+
+        MapDeltaActor &actor = pMapDeltaData->actors[candidate.actorIndex];
+        MapActorAiState &aiState = m_mapActorAiStates[candidate.actorIndex];
+        const GameplayWorldPoint actorPoint = {aiState.preciseX, aiState.preciseY,
+            aiState.preciseZ + std::max(24.0f, static_cast<float>(actor.height) * ActorDirectionHeightFactor)};
+        const int16_t actorSectorId = aiState.sectorId >= 0 ? aiState.sectorId : actor.sectorId;
+
+        if (!hasIndoorCombatLineOfSight(wakerPoint, wakerSectorId, actorPoint, actorSectorId))
+        {
+            continue;
+        }
+
+        // Woken actors do not wake others in turn: only sight of the party or a hit does that.
+        actor.attributes |= static_cast<uint32_t>(EvtActorAttribute::Nearby);
+        aiState.hasDetectedParty = true;
+        aiState.spellEffects.hasDetectedParty = true;
+        ++woken;
+    }
+}
+
 size_t IndoorWorldRuntime::gatherCorpsesToParty(size_t maxCount)
 {
     MapDeltaData *pMapDeltaData = mapDeltaData();
@@ -12349,6 +12475,7 @@ void IndoorWorldRuntime::setMapActorHostilityFromEvent(size_t actorIndex, bool h
     if (actorIndex < m_mapActorAiStates.size())
     {
         MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+        aiState.angeredByParty = false;
         aiState.hostileToParty = hostileToParty;
         aiState.hasDetectedParty = detectedParty;
         aiState.spellEffects.hostileToParty = hostileToParty;
@@ -12356,7 +12483,7 @@ void IndoorWorldRuntime::setMapActorHostilityFromEvent(size_t actorIndex, bool h
     }
 }
 
-void IndoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex)
+void IndoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex, bool alertsFriendlyActors)
 {
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
@@ -12370,6 +12497,8 @@ void IndoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex)
     const MapDeltaActor &victim = pMapDeltaData->actors[actorIndex];
     const int16_t victimMonsterId = resolveIndoorActorStatsId(victim);
     const MonsterTable::MonsterStatsEntry *pVictimStats = m_pMonsterTable->findStatsById(victimMonsterId);
+    const GameplayActorService actorService = {};
+    const int16_t victimRelationMonsterId = actorService.relationMonsterId(victimMonsterId, victim.ally);
     const float victimX =
         actorIndex < m_mapActorAiStates.size() ? m_mapActorAiStates[actorIndex].preciseX : static_cast<float>(victim.x);
     const float victimY =
@@ -12387,19 +12516,30 @@ void IndoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex)
         MapDeltaActor &otherActor = pMapDeltaData->actors[otherActorIndex];
 
         if (otherActor.hp <= 0
-            || (otherActor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) != 0)
+            || (otherActor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) != 0
+            || otherActorIndex >= m_mapActorAiStates.size())
         {
             continue;
         }
 
-        const bool sameEventGroup = victim.group != 0 && victim.group == otherActor.group;
+        MapActorAiState &aiState = m_mapActorAiStates[otherActorIndex];
+
+        // MM8 leaves the party's own allies alone. A monster hostile on its own only rouses allies that are hostile
+        // too: hitting a raiding warlock must not turn the friendly town warlocks of its class.
+        if (actorFightsForParty(otherActor, aiState) || (!alertsFriendlyActors && !aiState.hostileToParty))
+        {
+            continue;
+        }
+
+        // An event group is not a faction: Nighon Tunnels spawns gogs and friendly dwarves in the same group.
         const int16_t otherMonsterId = resolveIndoorActorStatsId(otherActor);
-        const bool sameMonsterFaction = m_pMonsterTable->isLikelySameFaction(victimMonsterId, otherMonsterId);
+        const bool sameMonsterFaction = m_pMonsterTable->sharesAlertFaction(
+            victimRelationMonsterId, actorService.relationMonsterId(otherMonsterId, otherActor.ally));
         const MonsterTable::MonsterStatsEntry *pOtherStats = m_pMonsterTable->findStatsById(otherMonsterId);
         const bool sameCivilianAggression =
             actorSharesCivilianAggression(victim.group, pVictimStats, otherActor.group, pOtherStats);
 
-        if (!sameEventGroup && !sameMonsterFaction && !sameCivilianAggression)
+        if (!sameMonsterFaction && !sameCivilianAggression)
         {
             continue;
         }
@@ -12424,7 +12564,7 @@ void IndoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex)
         // walls still need ordinary detection before receiving full AI or a hostile minimap marker.
         otherActor.hostilityType = 4;
         otherActor.attributes |= static_cast<uint32_t>(EvtActorAttribute::Aggressor);
-        MapActorAiState &aiState = m_mapActorAiStates[otherActorIndex];
+        aiState.angeredByParty = aiState.angeredByParty || !aiState.hostileToParty;
         aiState.hostileToParty = true;
         aiState.spellEffects.hostileToParty = true;
     }
@@ -16458,6 +16598,9 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
         return false;
     }
 
+    const bool alertsFriendlyActors = actorIndex >= m_mapActorAiStates.size()
+        || !m_mapActorAiStates[actorIndex].hostileToParty || m_mapActorAiStates[actorIndex].angeredByParty;
+
     // The rules may turn the hit aside (MAW's Swapper bosses).
     if (gameRulesFor(m_pParty).combat.deflectsPartyHit(*this, actorIndex))
     {
@@ -16545,6 +16688,7 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
             aiState.moveDirectionY = 0.0f;
         }
 
+        aiState.angeredByParty = alertsFriendlyActors;
         aiState.hostileToParty = true;
         aiState.hasDetectedParty = true;
         aiState.spellEffects.hostileToParty = true;
@@ -16612,7 +16756,8 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
             });
     }
 
-    aggroNearbyMapActorFaction(actorIndex);
+    aggroNearbyMapActorFaction(actorIndex, alertsFriendlyActors);
+    wakeIndoorActorNeighbours(actorIndex);
     return actor.hp != previousHp || shieldHit.absorbed;
 }
 
@@ -19534,7 +19679,14 @@ IndoorWorldRuntime::Snapshot IndoorWorldRuntime::snapshot() const
     snapshot.activeCorpseView = m_activeCorpseView;
     snapshot.mapActorAiStates = m_mapActorAiStates;
     snapshot.activatedIndoorSectorMask = m_activatedIndoorSectorMask;
-    snapshot.bloodSplats = m_bloodSplats;
+    // Without their triangles, which restoreSnapshot bakes again from the map: they were most of a save's size.
+    snapshot.bloodSplats.reserve(m_bloodSplats.size());
+
+    for (const BloodSplatState &splat : m_bloodSplats)
+    {
+        snapshot.bloodSplats.push_back({splat.sourceActorId, splat.x, splat.y, splat.z, splat.radius, {}});
+    }
+
     snapshot.fireSpikeTraps = m_fireSpikeTraps;
     snapshot.actorUpdateAccumulatorSeconds = m_actorUpdateAccumulatorSeconds;
     if (m_pGameplayProjectileService != nullptr)
@@ -19570,7 +19722,6 @@ void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_activeCorpseView = snapshot.activeCorpseView;
     m_mapActorAiStates = snapshot.mapActorAiStates;
     m_activatedIndoorSectorMask = snapshot.activatedIndoorSectorMask;
-    m_bloodSplats = snapshot.bloodSplats;
     m_fireSpikeTraps = snapshot.fireSpikeTraps;
     m_searchableLootPropState.searchedSourceIds = {
         snapshot.searchedLootPropSourceIds.begin(),
@@ -19588,6 +19739,19 @@ void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
         m_pGameplayProjectileService->restoreSnapshot(snapshot.projectileState);
     }
     invalidateRuntimeGeometryCache();
+    m_bloodSplats.clear();
+
+    // Snapshots keep only where each splat is; its triangles follow the restored doors.
+    for (BloodSplatState splat : snapshot.bloodSplats)
+    {
+        bakeBloodSplatGeometry(splat);
+
+        if (!splat.vertices.empty())
+        {
+            m_bloodSplats.push_back(std::move(splat));
+        }
+    }
+
     syncMapActorAiStates();
     refreshActivatedIndoorSectors();
 

@@ -2306,6 +2306,13 @@ std::optional<LootFilterFacts> MawItemRules::lootFilterFacts(
     const InventoryItem &item,
     const ItemDefinition &itemDefinition) const
 {
+    // Items without a price (the blasters, Wetsuit, quest artifacts) are never filtered; MAW's chest filter sold the
+    // Control Center's blasters for nothing (DEVIATIONS 182).
+    if (itemDefinition.value <= 0)
+    {
+        return std::nullopt;
+    }
+
     const std::string &stat = itemDefinition.equipStat;
     LootFilterFacts facts;
 

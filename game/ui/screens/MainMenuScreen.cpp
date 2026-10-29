@@ -1417,6 +1417,7 @@ void MainMenuScreen::captureBinding(KeyboardAction action)
     m_searchEditing = false;
     setTextEditing(false);
     m_capture = action;
+    m_captureModifier.reset();
     confirm("Assign Key", std::string(keyboardBindingDefinition(action).label) +
             "\nPress a key, mouse button, or scroll the wheel.",
             {"Cancel", "Clear", "Left Mouse"},
@@ -1497,12 +1498,23 @@ void MainMenuScreen::handleSdlEvent(const SDL_Event &event)
             }
             const bool modifierKey =
                 event.key.scancode >= SDL_SCANCODE_LCTRL && event.key.scancode <= SDL_SCANCODE_RGUI;
-            if (!modifierKey && (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) != 0)
+            if (modifierKey)
             {
-                setModalBody("Modifier combinations are not supported. Choose a single key.");
+                if (!m_captureModifier)
+                {
+                    m_captureModifier = event.key.scancode;
+                }
                 return;
             }
+            // Bindings are single keys: a combination binds its key.
+            m_captureModifier.reset();
             acceptBinding(keyboardInputBinding(event.key.scancode));
+        }
+        if (event.type == SDL_EVENT_KEY_UP && m_captureModifier && event.key.scancode == *m_captureModifier)
+        {
+            const SDL_Scancode modifier = *m_captureModifier;
+            m_captureModifier.reset();
+            acceptBinding(keyboardInputBinding(modifier));
         }
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button != SDL_BUTTON_LEFT)
         {

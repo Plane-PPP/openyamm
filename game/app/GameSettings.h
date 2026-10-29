@@ -324,6 +324,8 @@ struct GameSettings
     std::string enemyHealthBarValues = "target";
     bool enemyHealthBarDamageTrail = true;
     bool questMarkers = false;
+    // The load and save lists: false keeps Quicksave, Autosave, then the rest by name; true puts the newest first.
+    bool saveListNewestFirst = false;
     // Obsidian basebar frame behind the gameplay party portraits; fullscreen overlays always draw their own strip.
     bool partyFrame = true;
     // The round potion quick-slot button at each gameplay portrait; the Potion Wheel key opens the ring without it.

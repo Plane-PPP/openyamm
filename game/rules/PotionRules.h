@@ -30,7 +30,7 @@ public:
         uint32_t alchemyLevel) const;
     // The HP or SP pool a character of this level is expected to have, for pool_share amounts. Standard: 0.
     virtual double estimatedPool(PotionPool pool, int level) const;
-    // The Alchemy level the alchemist mixes with. Standard: the trained level.
+    // The Alchemy level the alchemist mixes with. Standard: the trained level plus item and follower bonuses.
     virtual uint32_t mixingAlchemyLevel(const Character &alchemist) const;
     // The power of a potion mixed with a catalyst, from the target's and the held item's power. Standard: the held
     // item's, the stronger of the two when both are catalysts.

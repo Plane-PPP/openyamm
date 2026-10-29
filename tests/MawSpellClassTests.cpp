@@ -478,6 +478,9 @@ TEST_CASE("MAW dragon rules follow the portrait's race (A6.1, A6.3)")
     CHECK(mawCharacterAttackDelay(rules, humanDragon, items, CharacterAttackMode::Melee, 0).delay < bare);
     CHECK_EQ(mawCharacterAttackDelay(rules, dragon, items, CharacterAttackMode::DragonBreath, 0).delay,
         int(std::round(bare * 1.3)));
+    // The Shoot tooltip and Ranged Power ask for a bow's delay; a dragon's ranged delay is its breath's.
+    CHECK_EQ(mawCharacterAttackDelay(rules, dragon, items, CharacterAttackMode::Bow, 0).delay,
+        int(std::round(bare * 1.3)));
 
     // Scales never dodge, Grandmaster Dodging or not.
     std::mt19937 rng(5);

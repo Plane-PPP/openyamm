@@ -83,8 +83,9 @@ TEST_CASE("menu binding reservation and equality follow native single input bind
 {
     constexpr KeyboardAction Jump = KeyboardAction::Jump;
     CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_ESCAPE), Jump));
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F9), Jump));
-    CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F10), Jump));
+    // Quick save and load are bindings of their own (F9 and F10 by default), so those keys are free to assign.
+    CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F9), Jump));
+    CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F10), Jump));
     CHECK(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_5), Jump));
     CHECK_FALSE(reservedMenuBinding(keyboardInputBinding(SDL_SCANCODE_F2), Jump));
     CHECK_FALSE(reservedMenuBinding(mouseButtonInputBinding(SDL_BUTTON_LEFT), Jump));

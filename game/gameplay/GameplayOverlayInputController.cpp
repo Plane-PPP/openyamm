@@ -2471,6 +2471,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 {"JournalNotesSeerButton", GameplayJournalPointerTargetType::NotesSeerButton},
                 {"JournalNotesMiscButton", GameplayJournalPointerTargetType::NotesMiscButton},
                 {"JournalNotesTrainerButton", GameplayJournalPointerTargetType::NotesTrainerButton},
+                {"JournalNotesArcomageButton", GameplayJournalPointerTargetType::NotesArcomageButton},
                 {"JournalNotesSearch", GameplayJournalPointerTargetType::NotesSearchField},
             };
 
@@ -2791,6 +2792,12 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 journalScreen.notesPage = 0;
                 break;
 
+            case GameplayJournalPointerTargetType::NotesArcomageButton:
+                journalScreen.view = GameplayUiController::JournalView::Notes;
+                journalScreen.notesCategory = GameplayUiController::JournalNotesCategory::Arcomage;
+                journalScreen.notesPage = 0;
+                break;
+
             case GameplayJournalPointerTargetType::NotesSearchField:
                 journalScreen.notesSearchActive = true;
                 break;
@@ -2861,6 +2868,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
             case GameplayJournalPointerTargetType::NotesSeerButton:
             case GameplayJournalPointerTargetType::NotesMiscButton:
             case GameplayJournalPointerTargetType::NotesTrainerButton:
+            case GameplayJournalPointerTargetType::NotesArcomageButton:
             case GameplayJournalPointerTargetType::NotesSearchField:
             case GameplayJournalPointerTargetType::MapNote:
             case GameplayJournalPointerTargetType::CloseButton:
