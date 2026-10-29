@@ -2202,7 +2202,7 @@ void renderBagOverviewDropPreview(
         float(icon->width) * iconScale, float(icon->height) * iconScale, mouseX, mouseY, held.grabOffsetX,
         held.grabOffsetY);
     const InventoryBags::PlacementPreview preview = dropX >= 0 && dropY >= 0
-        ? InventoryBags::previewPlaceInBag(character, bag, held.item, uint8_t(dropX), uint8_t(dropY))
+        ? InventoryBags::previewPlaceInBag(character, bag, held.item, uint8_t(dropX), uint8_t(dropY), context.itemTable())
         : InventoryBags::PlacementPreview{};
     const uint32_t color = !preview.fits ? 0x664848e0u : preview.replacedItem ? 0x6650c8e8u : 0x6658d058u;
     const std::optional<GameplayHudTextureHandle> fill = context.gameplayUiRuntime().ensureSolidHudTextureLoaded(
@@ -6239,6 +6239,8 @@ void GameplayPartyOverlayRenderer::renderHeldInventoryItem(GameplayScreenRuntime
         static_cast<float>(texture->height) * scale * fraction * pItemDefinition->inventoryDrawScale;
 
     context.submitHudTexturedQuad(*texture, itemX, itemY, itemWidth, itemHeight);
+    GameplayHudOverlaySupport::renderReagentQuantity(context, heldItem.item,
+        itemX, itemY, itemWidth, itemHeight, scale * fraction);
     submitItemTintOverlay(
         context,
         *texture,
@@ -6384,9 +6386,14 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
             rulesetLines.insert(rulesetLines.end(), comparison.begin(), comparison.end());
         }
     }
-    const std::string itemDescription = showBrokenOnly || showUnidentifiedOnly
+    std::string itemDescription = showBrokenOnly || showUnidentifiedOnly
         ? std::string {}
         : itemRules.itemDescription(resolvedItemState, pViewer).value_or(pItemDefinition->notes);
+    if (resolvedItemState.quantity > 1 && pItemDefinition->equipStat == "Reagent")
+    {
+        itemDescription += "\n\nQuantity: " + std::to_string(resolvedItemState.quantity)
+            + " / 50. Shift-click: one; Ctrl-click: half; drag: all.";
+    }
     const std::string itemStatusText =
         showBrokenOnly ? "Broken item" : (showUnidentifiedOnly ? "Not identified" : std::string {});
     const bool showStatusOnly = !itemStatusText.empty();
@@ -10591,6 +10598,8 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                             false,
                             itemTintColorAbgr(&item, pItemDefinition, ItemTintContext::CharacterScreen));
 
+                        GameplayHudOverlaySupport::renderReagentQuantity(context, item,
+                            itemRect.x, itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
                         if (inspectedCharacterCanAct)
                         {
                             GameplayRenderedInspectableHudItem inspectableItem = {};

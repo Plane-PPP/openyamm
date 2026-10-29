@@ -1,3 +1,4 @@
+#include "game/items/ReagentStacks.h"
 #include "game/gameplay/GameplayPartyOverlayInputController.h"
 
 #include "game/gameplay/GameplayAlchemyBenchInputController.h"
@@ -3943,8 +3944,16 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             }
 
             InventoryItem heldItem = {};
+            uint32_t takeQuantity = UINT32_MAX;
+            if (ReagentStacks::eligible(*pItem, context.itemTable()))
+            {
+                const bool shift = pKeyboardState[SDL_SCANCODE_LSHIFT] || pKeyboardState[SDL_SCANCODE_RSHIFT];
+                const bool control = pKeyboardState[SDL_SCANCODE_LCTRL] || pKeyboardState[SDL_SCANCODE_RCTRL];
+                takeQuantity = ReagentStacks::takeCount(pItem->quantity, shift, control);
+            }
 
-            if (!pParty->takeItemFromMemberInventoryCell(memberIndex, pItem->gridX, pItem->gridY, heldItem))
+            if (!pParty->takeItemFromMemberInventoryCell(memberIndex, pItem->gridX, pItem->gridY,
+                    heldItem, takeQuantity))
             {
                 return;
             }

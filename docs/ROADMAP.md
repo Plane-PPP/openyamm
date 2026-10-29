@@ -1,3 +1,10 @@
+## Reagent stacks — Implemented / selected Linux tests passed
+
+Up to50 ordinary same-property reagents per cell; atomic pickup, manual merge/remainder, split controls,
+sorting, single-unit brewing, sale/buy pricing and quantity persistence added.
+21 selected cases /1187 assertions passed. [Current 1.18 notes](minotaur-1.18.md).
+Expanded tooltips and final native/UI/Windows validation remain Pending. No new Windows ZIP yet.
+
 ## OpenYAMM v1.18 integration — Implemented / selected Linux tests passed
 
 Merged official v1.18 `4ab07ed519a66feab24599d69bc0ae19971250e2` into the feature branch,

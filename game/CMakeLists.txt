@@ -132,6 +132,7 @@ add_library(openyamm_game STATIC
     items/AlchemyBenchRuntime.cpp
     items/CraftingRuntime.cpp
     items/InventoryBags.cpp
+    items/ReagentStacks.cpp
     items/QuickItemSlots.cpp
     items/InventoryItemMixingRuntime.cpp
     maps/IndoorSceneYml.cpp

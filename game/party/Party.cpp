@@ -1,3 +1,4 @@
+#include "game/items/ReagentStacks.h"
 #include "game/party/Party.h"
 
 #include "game/events/EventRuntime.h"
@@ -1793,7 +1794,7 @@ void grantRosterInventoryToCharacter(
             continue;
         }
 
-        character.addInventoryItem(item);
+        character.addInventoryItem(item, pItemTable);
     }
 }
 
@@ -1944,8 +1945,43 @@ size_t Character::implantSocketCount() const
     return std::min<size_t>(implants.size(), size_t(std::max<int>(1, int(pCybernetics->mastery))));
 }
 
-bool Character::addInventoryItem(const InventoryItem &item)
+bool Character::addInventoryItem(const InventoryItem &item, const ItemTable *pTable)
 {
+    if (item.quantity == 0)
+    {
+        return false;
+    }
+    if (ReagentStacks::eligible(item, pTable))
+    {
+        std::vector<InventoryItem> candidate = inventory;
+        InventoryItem remaining = item;
+        remaining.width = remaining.height = 1;
+        for (InventoryItem &target : candidate)
+        {
+            if (target.quantity < ReagentStacks::Limit && ReagentStacks::compatible(target, remaining, pTable))
+            {
+                const uint32_t moved = std::min(remaining.quantity, ReagentStacks::Limit - target.quantity);
+                target.quantity += moved;
+                remaining.quantity -= moved;
+            }
+        }
+        while (remaining.quantity > 0)
+        {
+            const auto slot = findFirstFreeInventorySlot(candidate, 1, 1);
+            if (!slot)
+            {
+                return false;
+            }
+            InventoryItem part = remaining;
+            part.quantity = std::min(remaining.quantity, ReagentStacks::Limit);
+            part.gridX = slot->first;
+            part.gridY = slot->second;
+            candidate.push_back(part);
+            remaining.quantity -= part.quantity;
+        }
+        inventory = std::move(candidate);
+        return true;
+    }
     InventoryItem placedItem = item;
     placedItem.width = std::max<uint8_t>(1, item.width);
     placedItem.height = std::max<uint8_t>(1, item.height);
@@ -1958,16 +1994,25 @@ bool Character::addInventoryItem(const InventoryItem &item)
         return false;
     }
 
-    return addInventoryItemAt(placedItem, placement->first, placement->second);
+    return addInventoryItemAt(placedItem, placement->first, placement->second, pTable);
 }
 
-bool Character::addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uint8_t gridY)
+bool Character::addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uint8_t gridY,
+    const ItemTable *pTable)
 {
     InventoryItem placedItem = item;
     placedItem.width = std::max<uint8_t>(1, item.width);
     placedItem.height = std::max<uint8_t>(1, item.height);
     placedItem.gridX = gridX;
     placedItem.gridY = gridY;
+    if (ReagentStacks::eligible(item, pTable))
+    {
+        if (item.quantity > ReagentStacks::Limit || item.quantity == 0)
+        {
+            return false;
+        }
+        placedItem.width = placedItem.height = 1;
+    }
 
     if (!inventoryItemFitsAt(placedItem, placedItem.gridX, placedItem.gridY))
     {
@@ -1992,32 +2037,38 @@ bool Character::removeInventoryItem(uint32_t objectDescriptionId, uint32_t quant
     {
         return false;
     }
-
-    for (size_t itemIndex = 0; itemIndex < inventory.size(); ++itemIndex)
+    uint64_t available = 0;
+    for (const InventoryItem &item : inventory)
     {
-        InventoryItem &item = inventory[itemIndex];
-
-        if (item.objectDescriptionId != objectDescriptionId)
+        if (item.objectDescriptionId == objectDescriptionId)
         {
+            available += item.quantity;
+        }
+    }
+    if (available < quantity)
+    {
+        return false;
+    }
+    for (auto it = inventory.begin(); it != inventory.end() && quantity > 0;)
+    {
+        if (it->objectDescriptionId != objectDescriptionId)
+        {
+            ++it;
             continue;
         }
-
-        if (item.quantity < quantity)
+        const uint32_t removed = std::min(quantity, it->quantity);
+        quantity -= removed;
+        it->quantity -= removed;
+        if (it->quantity == 0)
         {
-            return false;
+            it = inventory.erase(it);
         }
-
-        item.quantity -= quantity;
-
-        if (item.quantity == 0)
+        else
         {
-            inventory.erase(inventory.begin() + itemIndex);
+            ++it;
         }
-
-        return true;
     }
-
-    return false;
+    return true;
 }
 
 const InventoryItem *Character::inventoryItemAt(uint8_t gridX, uint8_t gridY) const
@@ -2033,7 +2084,7 @@ const InventoryItem *Character::inventoryItemAt(uint8_t gridX, uint8_t gridY) co
     return nullptr;
 }
 
-bool Character::takeInventoryItemAt(uint8_t gridX, uint8_t gridY, InventoryItem &item)
+bool Character::takeInventoryItemAt(uint8_t gridX, uint8_t gridY, InventoryItem &item, uint32_t quantity)
 {
     for (size_t itemIndex = 0; itemIndex < inventory.size(); ++itemIndex)
     {
@@ -2042,8 +2093,17 @@ bool Character::takeInventoryItemAt(uint8_t gridX, uint8_t gridY, InventoryItem 
             continue;
         }
 
+        if (quantity == 0)
+        {
+            return false;
+        }
         item = inventory[itemIndex];
-        inventory.erase(inventory.begin() + itemIndex);
+        item.quantity = std::min(quantity, item.quantity);
+        inventory[itemIndex].quantity -= item.quantity;
+        if (inventory[itemIndex].quantity == 0)
+        {
+            inventory.erase(inventory.begin() + itemIndex);
+        }
         return true;
     }
 
@@ -2054,7 +2114,7 @@ bool Character::tryPlaceInventoryItemAt(
     const InventoryItem &item,
     uint8_t gridX,
     uint8_t gridY,
-    std::optional<InventoryItem> &replacedItem)
+    std::optional<InventoryItem> &replacedItem, const ItemTable *pTable)
 {
     replacedItem.reset();
 
@@ -2063,6 +2123,10 @@ bool Character::tryPlaceInventoryItemAt(
     placedItem.height = std::max<uint8_t>(1, item.height);
     placedItem.gridX = gridX;
     placedItem.gridY = gridY;
+    if (ReagentStacks::eligible(item, pTable))
+    {
+        placedItem.width = placedItem.height = 1;
+    }
 
     if (!inventoryItemFitsAt(placedItem, gridX, gridY))
     {
@@ -2082,16 +2146,29 @@ bool Character::tryPlaceInventoryItemAt(
 
     if (!targetItemIndex)
     {
-        return addInventoryItemAt(placedItem, gridX, gridY);
+        return addInventoryItemAt(placedItem, gridX, gridY, pTable);
     }
 
+    InventoryItem &target = inventory[*targetItemIndex];
+    if (ReagentStacks::compatible(target, item, pTable))
+    {
+        const uint32_t space = target.quantity < ReagentStacks::Limit ? ReagentStacks::Limit - target.quantity : 0;
+        const uint32_t moved = std::min(space, item.quantity);
+        target.quantity += moved;
+        if (item.quantity > moved)
+        {
+            replacedItem = item;
+            replacedItem->quantity -= moved;
+        }
+        return true;
+    }
     replacedItem = inventory[*targetItemIndex];
     inventory.erase(inventory.begin() + *targetItemIndex);
 
     const bool placedAtReplacedItemOrigin =
-        addInventoryItemAt(placedItem, replacedItem->gridX, replacedItem->gridY);
+        addInventoryItemAt(placedItem, replacedItem->gridX, replacedItem->gridY, pTable);
     const bool placedInFirstFreeSlot =
-        !placedAtReplacedItemOrigin && addInventoryItem(placedItem);
+        !placedAtReplacedItemOrigin && addInventoryItem(placedItem, pTable);
 
     if (!placedAtReplacedItemOrigin && !placedInFirstFreeSlot)
     {
@@ -2837,8 +2914,8 @@ void Party::seed(const PartySeed &seed)
             resolvedItem.height = resolveInventoryHeight(seededItem.objectDescriptionId);
 
             const bool placed = (seededItem.width > 0 && seededItem.height > 0)
-                ? member.addInventoryItemAt(resolvedItem, seededItem.gridX, seededItem.gridY)
-                : member.addInventoryItem(resolvedItem);
+                ? member.addInventoryItemAt(resolvedItem, seededItem.gridX, seededItem.gridY, m_pItemTable)
+                : member.addInventoryItem(resolvedItem, m_pItemTable);
 
             if (!placed)
             {
@@ -3528,9 +3605,9 @@ void Party::requestSpeech(size_t memberIndex, SpeechId speechId)
 namespace
 {
 // Into the member's open bag, else another of their bags (a ruleset with several, MAW); the open bag stays open.
-bool addToAnyBag(Character &member, const InventoryItem &item, int bagCount)
+bool addToAnyBag(Character &member, const InventoryItem &item, int bagCount, const ItemTable *pTable)
 {
-    if (member.addInventoryItem(item))
+    if (member.addInventoryItem(item, pTable))
     {
         return true;
     }
@@ -3540,7 +3617,7 @@ bool addToAnyBag(Character &member, const InventoryItem &item, int bagCount)
 
     for (int bag = 0; bag < bagCount && !added; ++bag)
     {
-        added = InventoryBags::openBag(member, uint8_t(bag), bagCount) && member.addInventoryItem(item);
+        added = InventoryBags::openBag(member, uint8_t(bag), bagCount) && member.addInventoryItem(item, pTable);
     }
 
     InventoryBags::openBag(member, openBag, bagCount);
@@ -3611,7 +3688,7 @@ bool Party::tryGrantItem(uint32_t objectDescriptionId, uint32_t quantity)
         {
             Character &member = testMembers[(firstIndex + offset) % testMembers.size()];
 
-            if (addToAnyBag(member, item, bagCount))
+            if (addToAnyBag(member, item, bagCount, m_pItemTable))
             {
                 added = true;
                 break;
@@ -3646,7 +3723,7 @@ bool Party::tryGrantInventoryItem(const InventoryItem &item, size_t *pRecipientM
 bool Party::tryGrantInventoryItemToMember(size_t memberIndex, const InventoryItem &item)
 {
     Character *pMember = member(memberIndex);
-    if (pMember == nullptr || item.objectDescriptionId == 0 || item.quantity == 0 || !pMember->addInventoryItem(item))
+    if (pMember == nullptr || item.objectDescriptionId == 0 || item.quantity == 0 || !pMember->addInventoryItem(item, m_pItemTable))
     {
         m_lastStatus = "inventory full";
         return false;
@@ -3669,7 +3746,7 @@ bool Party::canGrantInventoryItem(const InventoryItem &item) const
     {
         Character testMember = member;
 
-        if (addToAnyBag(testMember, item, bagCount))
+        if (addToAnyBag(testMember, item, bagCount, m_pItemTable))
         {
             return true;
         }
@@ -3704,7 +3781,7 @@ bool Party::tryGrantInventoryItemStartingAt(
         const size_t memberIndex = (firstIndex + offset) % testMembers.size();
         Character &member = testMembers[memberIndex];
 
-        if (addToAnyBag(member, item, bagCount))
+        if (addToAnyBag(member, item, bagCount, m_pItemTable))
         {
             // Only the member who took it, so pointers to the members stay valid (see tryGrantItem).
             m_members[memberIndex] = std::move(member);
@@ -5140,7 +5217,7 @@ bool Party::grantItemToMember(size_t memberIndex, uint32_t objectDescriptionId, 
     {
         InventoryItem item = makeInventoryItem(m_pItemTable, objectDescriptionId);
 
-        if (!pMember->addInventoryItem(item))
+        if (!pMember->addInventoryItem(item, m_pItemTable))
         {
             return false;
         }
@@ -5174,7 +5251,8 @@ bool Party::removeItemFromMember(size_t memberIndex, uint32_t objectDescriptionI
     return true;
 }
 
-bool Party::takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, uint8_t gridY, InventoryItem &item)
+bool Party::takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, uint8_t gridY, InventoryItem &item,
+    uint32_t quantity)
 {
     Character *pMember = member(memberIndex);
 
@@ -5183,7 +5261,7 @@ bool Party::takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, u
         return false;
     }
 
-    if (!pMember->takeInventoryItemAt(gridX, gridY, item))
+    if (!pMember->takeInventoryItemAt(gridX, gridY, item, quantity))
     {
         return false;
     }
@@ -5201,7 +5279,7 @@ bool Party::tryAutoPlaceItemInMemberInventory(size_t memberIndex, const Inventor
         return false;
     }
 
-    if (!pMember->addInventoryItem(item))
+    if (!pMember->addInventoryItem(item, m_pItemTable))
     {
         m_lastStatus = "inventory full";
         return false;
@@ -5222,6 +5300,10 @@ bool Party::sortMemberInventory(size_t memberIndex)
     }
 
     std::vector<InventoryItem> items = pMember->inventory;
+    if (!ReagentStacks::consolidate(items, m_pItemTable))
+    {
+        return false;
+    }
 
     for (InventoryItem &item : items)
     {
@@ -5300,7 +5382,7 @@ bool Party::tryPlaceItemInMemberInventoryCell(
         return false;
     }
 
-    if (!pMember->tryPlaceInventoryItemAt(item, gridX, gridY, replacedItem))
+    if (!pMember->tryPlaceInventoryItemAt(item, gridX, gridY, replacedItem, m_pItemTable))
     {
         return false;
     }
@@ -5426,7 +5508,7 @@ bool Party::tryEquipItemOnMember(
             displacedItemId,
             displacedRuntimeState);
 
-        if (!pMember->addInventoryItem(displacedInventoryItem))
+        if (!pMember->addInventoryItem(displacedInventoryItem, m_pItemTable))
         {
             m_lastStatus = "inventory full";
             return false;

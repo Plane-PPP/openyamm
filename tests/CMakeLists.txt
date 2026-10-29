@@ -58,6 +58,7 @@ add_executable(openyamm_unit_tests
     GameplayBolsterRuntimeTests.cpp
     GameplaySaveLoadUiSupportTests.cpp
     AlchemyBenchRegressionTests.cpp
+    ReagentStackTests.cpp
     GameplayRuleRegressionTests.cpp
     LethalStrikeTests.cpp
     AxeRebalanceTests.cpp
@@ -292,6 +293,7 @@ add_executable(openyamm_unit_tests
     ../game/items/AlchemyBenchRuntime.cpp
     ../game/items/CraftingRuntime.cpp
     ../game/items/InventoryBags.cpp
+    ../game/items/ReagentStacks.cpp
     ../game/items/QuickItemSlots.cpp
     ../game/items/InventoryItemMixingRuntime.cpp
     ../game/items/InventoryItemUseRuntime.cpp

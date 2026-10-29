@@ -1,3 +1,4 @@
+#include "game/items/ReagentStacks.h"
 #include "game/gameplay/HouseServiceRuntime.h"
 
 #include "game/gameplay/NpcFollowerRuntime.h"
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -1459,14 +1461,18 @@ int HouseServiceRuntime::buyPrice(
         return 0;
     }
 
+    const bool reagentStack = ReagentStacks::eligible(item, &itemTable);
+    InventoryItem unit = item;
+    if (reagentStack) unit.quantity = 1;
     const int actualValue = gameRulesFor(&party).items.shopBuyValue(
-        item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
+        unit, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable);
     const int price = PriceCalculator::itemBuyingPrice(
         partyMerchantMember(party),
         actualValue,
         houseEntry.priceMultiplier,
         effectiveReputation);
-    return std::max(actualValue, price);
+    return int(std::min<int64_t>(std::numeric_limits<int>::max(),
+        int64_t(std::max(actualValue, price)) * (reagentStack ? std::max(1u, item.quantity) : 1u)));
 }
 
 int HouseServiceRuntime::sellPrice(

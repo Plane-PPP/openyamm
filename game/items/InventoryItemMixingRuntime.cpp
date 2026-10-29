@@ -322,13 +322,29 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
 
     if (heldReagentResult.has_value() && targetItemId == bottleItemId)
     {
-        return mixReagentIntoBottle(*heldReagentResult, *pHeldDefinition, heldItem);
+        InventoryItemMixResult result = mixReagentIntoBottle(*heldReagentResult, *pHeldDefinition, heldItem);
+        targetItem.quantity = 1;
+        if (heldItem.quantity > 1)
+        {
+            result.heldItemReplacement = heldItem;
+            --result.heldItemReplacement->quantity;
+        }
+        return result;
     }
 
     if (heldItemId == bottleItemId && targetReagentResult.has_value())
     {
         // The power is read before the reagent becomes the potion.
-        return mixReagentIntoBottle(*targetReagentResult, *pTargetDefinition, targetItem);
+        const InventoryItem original = targetItem;
+        InventoryItemMixResult result = mixReagentIntoBottle(*targetReagentResult, *pTargetDefinition, targetItem);
+        targetItem.quantity = 1;
+        if (original.quantity > 1)
+        {
+            result.heldItemReplacement = targetItem;
+            targetItem = original;
+            --targetItem.quantity;
+        }
+        return result;
     }
 
     if (pHeldPotionSetting == nullptr || pTargetPotionSetting == nullptr)

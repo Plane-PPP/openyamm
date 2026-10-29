@@ -449,6 +449,8 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
                 view, item.item, *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height,
                 gridMetrics.scale);
             view.submitHudTexturedQuad(*itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
+            GameplayHudOverlaySupport::renderReagentQuantity(view, item.item,
+                itemRect.x, itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
 
             if (pItemDefinition->itemId == 0)
             {

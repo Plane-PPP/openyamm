@@ -876,7 +876,7 @@ bool GameplayItemService::useQuickItemSlot(GameplayScreenRuntime &runtime, size_
             heldItem = {};
             pParty->clearHeldItemForQueries();
         }
-        else if (pCarrier->addInventoryItem(heldItem.item))
+        else if (pCarrier->addInventoryItem(heldItem.item, pParty->itemTable()))
         {
             heldItem = {};
             pParty->clearHeldItemForQueries();

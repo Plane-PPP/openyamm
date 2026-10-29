@@ -216,16 +216,18 @@ struct Character
     // The Augment row shows: the character has Cybernetics or an implant (never in MM6-MM8).
     bool showsImplantSockets() const;
 
-    bool addInventoryItem(const InventoryItem &item);
-    bool addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uint8_t gridY);
+    bool addInventoryItem(const InventoryItem &item, const ItemTable *pTable = nullptr);
+    bool addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uint8_t gridY,
+        const ItemTable *pTable = nullptr);
     bool removeInventoryItem(uint32_t objectDescriptionId, uint32_t quantity = 1);
     const InventoryItem *inventoryItemAt(uint8_t gridX, uint8_t gridY) const;
-    bool takeInventoryItemAt(uint8_t gridX, uint8_t gridY, InventoryItem &item);
+    bool takeInventoryItemAt(uint8_t gridX, uint8_t gridY, InventoryItem &item,
+        uint32_t quantity = UINT32_MAX);
     bool tryPlaceInventoryItemAt(
         const InventoryItem &item,
         uint8_t gridX,
         uint8_t gridY,
-        std::optional<InventoryItem> &replacedItem);
+        std::optional<InventoryItem> &replacedItem, const ItemTable *pTable = nullptr);
     size_t inventoryItemCount() const;
     size_t usedInventoryCells() const;
     size_t inventoryCapacity() const;
@@ -629,7 +631,8 @@ public:
     bool hasItemAnywhere(uint32_t objectDescriptionId) const;
     bool grantItemToMember(size_t memberIndex, uint32_t objectDescriptionId, uint32_t quantity = 1);
     bool removeItemFromMember(size_t memberIndex, uint32_t objectDescriptionId, uint32_t quantity = 1);
-    bool takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, uint8_t gridY, InventoryItem &item);
+    bool takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, uint8_t gridY, InventoryItem &item,
+        uint32_t quantity = UINT32_MAX);
     bool tryAutoPlaceItemInMemberInventory(size_t memberIndex, const InventoryItem &item);
     // Regroups the inventory by item type and repacks it; leaves it unchanged when the items cannot be repacked.
     bool sortMemberInventory(size_t memberIndex);

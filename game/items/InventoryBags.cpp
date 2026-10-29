@@ -1,3 +1,4 @@
+#include "game/items/ReagentStacks.h"
 #include "game/items/InventoryBags.h"
 
 #include "game/party/Party.h"
@@ -112,6 +113,7 @@ int engineSkillNumber(const std::string &skillGroup)
 
 void sortByMawOrder(std::vector<InventoryItem> &items, const ItemTable *pItemTable)
 {
+    ReagentStacks::consolidate(items, pItemTable);
     // Tallest first (a wide item one cell tall counts 1.5), then the skill's number, then the item id
     // (zzMaw-Item-Sorter.lua:155-167).
     const auto sortKey =
@@ -660,13 +662,13 @@ PlacementPreview previewPlaceInBag(
     uint8_t bag,
     const InventoryItem &item,
     uint8_t gridX,
-    uint8_t gridY)
+    uint8_t gridY, const ItemTable *pTable)
 {
     // The real placement on a copy of the bag's items.
     Character probe;
     probe.inventory = itemsInBag(character, bag);
     PlacementPreview preview;
-    preview.fits = probe.tryPlaceInventoryItemAt(item, gridX, gridY, preview.replacedItem);
+    preview.fits = probe.tryPlaceInventoryItemAt(item, gridX, gridY, preview.replacedItem, pTable);
 
     if (preview.fits && !probe.inventory.empty())
     {

@@ -1,3 +1,4 @@
+#include "game/items/ReagentStacks.h"
 #include "game/ui/GameplayBuffHud.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
 
@@ -460,6 +461,29 @@ int skillMasteryAvailability(
 
     return 2;
 }
+}
+
+void GameplayHudOverlaySupport::renderReagentQuantity(
+    GameplayScreenRuntime &context, const InventoryItem &item,
+    float x, float y, float width, float height, float scale)
+{
+    if (item.quantity <= 1 || !ReagentStacks::eligible(item, context.itemTable()))
+    {
+        return;
+    }
+    const auto font = context.findHudFont("SMALLNUM");
+    if (!font)
+    {
+        return;
+    }
+    const std::string text = "x" + std::to_string(item.quantity);
+    const float fontScale = std::max(0.5f, scale * 0.65f);
+    const float textWidth = context.measureHudTextWidth("SMALLNUM", text) * fontScale;
+    const float textX = std::round(x + std::max(0.0f, width - textWidth));
+    const float textY = std::round(y + std::max(0.0f, height - font->fontHeight * fontScale));
+    context.renderHudFontLayer(*font, font->shadowTextureHandle, text, textX, textY, fontScale);
+    context.renderHudFontLayer(*font, context.hudFontMainLayer(*font, 0xffffffffu),
+        text, textX, textY, fontScale);
 }
 
 std::string GameplayHudOverlaySupport::formatRemainingDuration(float remainingSeconds)

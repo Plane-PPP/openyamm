@@ -14,6 +14,9 @@ struct GameplayHudTextureHandle;
 class GameplayHudOverlaySupport
 {
 public:
+    static void renderReagentQuantity(GameplayScreenRuntime &context, const InventoryItem &item,
+        float x, float y, float width, float height, float scale);
+
     // Time left on a buff or effect for popups: "1h 5m", "3m 20s", "45s", or "Constant".
     static std::string formatRemainingDuration(float remainingSeconds);
 

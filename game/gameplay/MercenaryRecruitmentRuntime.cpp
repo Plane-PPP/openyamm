@@ -863,7 +863,7 @@ bool generateAndEquipBySkill(
     if (pItemDefinition == nullptr
         || !tryEquipGeneratedItem(character, *item, *pItemDefinition, tables.pItemTable, pDollType, slot))
     {
-        return character.addInventoryItem(*item);
+        return character.addInventoryItem(*item, tables.pItemTable);
     }
 
     return true;
@@ -899,7 +899,7 @@ bool generateAndEquipByEquipStat(
     if (pItemDefinition == nullptr
         || !tryEquipGeneratedItem(character, *item, *pItemDefinition, tables.pItemTable, pDollType, slot))
     {
-        return character.addInventoryItem(*item);
+        return character.addInventoryItem(*item, tables.pItemTable);
     }
 
     return true;

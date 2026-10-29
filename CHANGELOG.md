@@ -1,3 +1,12 @@
+# Unreleased — Minotaur on OpenYAMM 1.18
+
+Implemented / selected Linux checks passed; Windows packaging/manual testing pending:
+- Merge official v1.18 and its Alchemy, Mind Resistance, Levitate and black-potion fixes.
+- Preserve Minotaur balance, named skills and old saves; Lethal Strike49 coexists with Cybernetics48.
+- Stack ordinary compatible reagents to50; Shift takes1, Ctrl takes half upward.
+- Brewing consumes one unit; sort, transactional grants, split-sale pricing and saved quantities covered.
+See [implementation status](docs/minotaur-1.18.md). Extended tooltips are still Pending.
+
 # Windows gameplay fixes patch (2026-10-27)
 
 Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual gameplay pending:

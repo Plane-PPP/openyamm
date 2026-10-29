@@ -81,7 +81,7 @@ PlacementPreview previewPlaceInBag(
     uint8_t bag,
     const InventoryItem &item,
     uint8_t gridX,
-    uint8_t gridY);
+    uint8_t gridY, const ItemTable *pTable = nullptr);
 // Whether `bag` of the character carries the tag.
 bool hasTag(const Character &character, uint8_t bag, BagTag tag);
 // Tags or untags `bag`; returns whether it carries the tag now.

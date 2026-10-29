@@ -303,11 +303,11 @@ std::vector<AlchemyIngredient> AlchemyBenchRuntime::collectIngredients(
 
             if (found == ingredients.end())
             {
-                ingredients.push_back({item.objectDescriptionId, *kind, 1, power});
+                ingredients.push_back({item.objectDescriptionId, *kind, item.quantity, power});
             }
             else
             {
-                ++found->count;
+                found->count += item.quantity;
                 found->bestPower = std::max(found->bestPower, power);
             }
         });
@@ -690,6 +690,9 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
         return outcome;
     }
 
+    InventoryItem remainder = heldItem;
+    remainder.quantity = heldItem.quantity > 0 ? heldItem.quantity - 1 : 0;
+    heldItem.quantity = 1;
     // Looked up after the held item is out, which may move the bag's other items.
     InventoryItem *pTarget = itemAt(party, *targetLocation);
     const AlchemistInfo alchemist = resolveAlchemist(party);
@@ -711,6 +714,7 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
     if (!outcome.result.handled || !outcome.result.heldItemConsumed)
     {
         std::optional<InventoryItem> replaced;
+        heldItem.quantity += remainder.quantity;
         InventoryBags::placeInBag(party, heldLocation->memberIndex, heldLocation->bag, bagCount, heldItem,
             heldLocation->gridX, heldLocation->gridY, replaced);
         return outcome;
@@ -739,6 +743,23 @@ AlchemyMixOutcome AlchemyBenchRuntime::mix(Party &party, const AlchemyRecipe &re
             removedItem);
     }
 
+    if (remainder.quantity > 0)
+    {
+        std::optional<InventoryItem> replaced;
+        if (!InventoryBags::placeInBag(party, heldLocation->memberIndex, heldLocation->bag, bagCount,
+                remainder, heldLocation->gridX, heldLocation->gridY, replaced))
+        {
+            outcome.overflowItem = remainder;
+        }
+    }
+    if (outcome.result.heldItemReplacement)
+    {
+        outcome.resultItem = *outcome.result.heldItemReplacement;
+        if (!party.tryGrantInventoryItemStartingAt(targetLocation->memberIndex, outcome.resultItem))
+        {
+            outcome.overflowItem = outcome.resultItem;
+        }
+    }
     if (outcome.result.returnsBottle)
     {
         const InventoryItem bottle =
@@ -876,7 +897,10 @@ AlchemyChainPlanner::AlchemyChainPlanner(
 
             if (kind.has_value())
             {
-                m_carried.push_back({item.objectDescriptionId, ingredientPower(item, *kind, tables, alchemist)});
+                for (uint32_t unit = 0; unit < item.quantity; ++unit)
+                {
+                    m_carried.push_back({item.objectDescriptionId, ingredientPower(item, *kind, tables, alchemist)});
+                }
             }
         });
 }
