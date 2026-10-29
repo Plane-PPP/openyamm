@@ -15,3 +15,6 @@ run,label,exit,seconds,peak_MiB,swap_MiB,mean_VM_CPU_percent,max_memory_PSI_some
 20261029T110246Z-acba09a34c,v118-final-inspect-audit-build,0,10.14,996.93,0.0,14.06,0.0,0.0,0,0
 20261029T110319Z-eac91c9a51,v118-audited-release-regressions,0,5.14,40.36,0.0,3.69,0.0,0.0,0,0
 20261029T110414Z-820349cfae,v118-audited-native-regressions,0,5.14,39.74,0.0,0.27,0.0,0.0,0,0
+20261029T120635Z-b899a7c536,v118-final-inventory-loot-regressions,1,5.14,51.12,0.0,0.43,0.0,0.0,0,0
+20261029T120841Z-687462bb12,v118-debug-lich-test-adaptation,0,15.15,899.97,0.0,10.87,0.0,0.0,0,0
+20261029T120958Z-565d2e259f,v118-focused-inventory-loot,0,5.15,82.96,0.0,1.58,0.0,0.0,0,0

@@ -1,11 +1,18 @@
-# OpenYAMM1.18 / Minotaur — implementation and local validation complete, Windows pending
+# OpenYAMM1.18 / Minotaur — Windows ZIP packaged (2026-10-29)
 
 Official base4ab07ed519a66feab24599d69bc0ae19971250e2; update baseline remains
 minotaur-1.14-c991da37a2de-20-1. Merge, reagent stacks and numeric inspection supplements implemented.
 156 selected Linux cases /36,020 assertions plus3 native Lethal Strike cases /58 assertions passed.
 Native game, unit and runtime targets compile under safe-heavy-run/jobs4, no swap/PSI/OOM events.
 Windows workflow retains adaptive runner parallelism, adds the new tests and emits minotaur-1.18 versions.
-ZIP, real Windows installer checks and Windows measurements are pending; no manual retest claimed.
+[Successful Windows run40863165794](https://github.com/Plane-PPP/openyamm/actions/runs/40863165794), source
+c0ccf0a877bc74fca0aa84a1594ed099d318cbdd. Windows:156 cases /36,020 assertions plus3 native cases /58 assertions.
+[Minotaur-Update-minotaur-1.18-c0ccf0a877bc-23-1.zip](https://github.com/Plane-PPP/openyamm/actions/runs/40863165794/artifacts/12894798568)
+is143,681,237 bytes (137.03MiB); SHA-256211612350913e54b36d93a016cf6ba0fb57c82afdba138077390ab475b4ac667.
+9 changed packs,123 reused (5.27GiB). Windows runner4vCPU/15.99GiB, jobs4; observed RAM peak7.855GiB,
+minimum available8.140GiB. Program18m39s, unit/runtime compilation16m36s, Windows job47m59s.
+All monitored phases completed with exit0; installer/package/monitor checks passed. No manual retest claimed.
+[Full build report and installation](docs/research/windows-1.18-build.md).
 [Implementation, compatibility and installation](docs/minotaur-1.18.md).
 
 ## Windows gameplay fixes ZIP — 2026-10-27

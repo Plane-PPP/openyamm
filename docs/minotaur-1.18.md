@@ -1,6 +1,6 @@
 # Minotaur Rebalance on OpenYAMM 1.18
 
-Work in progress; no Windows package claimed yet. Official v1.18: 4ab07ed519a66feab24599d69bc0ae19971250e2.
+Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual gameplay pending. Official v1.18: 4ab07ed519a66feab24599d69bc0ae19971250e2.
 Previous package/base: minotaur-1.14-c991da37a2de-20-1. Backup branch: backup/minotaur-before-v1.18-2026-10-29.
 
 ## Merge
@@ -58,17 +58,21 @@ Long description bodies are clipped to the available viewport and scroll by mous
 English/Russian supplements use the mod's existing minotaur_russian_text selection; original localized texts
 are untouched. Actual 4:3/16:9/ultrawide/Android visual validation remains manual.
 
-## Validation in progress
+## Automatic validation
 
 156 selected gameplay cases /36,020 assertions passed, including twelve inspection cases and MAW bags/potions.
 Full native executable compiled successfully (protected run 20261029T083305Z-2419c36760, peak4343MiB).
 Final native/runtime/unit build passed. Three genuine indoor/outdoor/new-game Lethal Strike cases /58 assertions passed.
-Windows ZIP packaging: Pending.
+Windows: the same 156 cases /36,020 assertions and3 native cases /58 assertions passed.
+[Successful run and package report](research/windows-1.18-build.md).
+[Download 137MiB ZIP](https://github.com/Plane-PPP/openyamm/actions/runs/40863165794/artifacts/12894798568).
+Version minotaur-1.18-c0ccf0a877bc-23-1;9 changed packs,123 reused (5,657,002,470 bytes).
+A separate local inventory/loot selection passed83 cases /4,076 assertions (overlaps the main selection).
 Manual tests, including the user's actual saves and Android/widescreen rendering, are not claimed.
 
 ## Installation and manual checks
 
-Windows CI will produce an incremental ZIP against installed minotaur-1.14-c991da37a2de-20-1.
+The published incremental ZIP updates installed minotaur-1.14-c991da37a2de-20-1.
 Back up the actual save directory before the first launch; retain the old files separately for rollback.
 Extract the whole update ZIP, not its inner payload alone. Run Apply-MinotaurUpdate.cmd with
 `-InstallationRoot "D:\path\to\OpenYAMM"` pointing at the directory containing `app/current`, then launch the

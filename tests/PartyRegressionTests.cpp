@@ -1713,7 +1713,9 @@ TEST_CASE("default party seed grants first member full spell access and preserve
     {
         const OpenYAMM::Game::CharacterSkill *pSkill = pMember->findSkill(skillName);
 
-        if (OpenYAMM::Game::isTechnologySkill(skillName) || OpenYAMM::Game::isRulesetSkill(skillName))
+        // Lethal Strike is exclusive to playable Minotaurs, including in the debug Lich seed.
+        if (OpenYAMM::Game::isTechnologySkill(skillName) || OpenYAMM::Game::isRulesetSkill(skillName)
+            || skillName == "LethalStrike")
         {
             CHECK(pSkill == nullptr);
             continue;

@@ -1,6 +1,6 @@
-# Unreleased — Minotaur on OpenYAMM 1.18
+# Minotaur on OpenYAMM 1.18 — Windows ZIP packaged (2026-10-29)
 
-Implemented / selected Linux checks passed; Windows packaging/manual testing pending:
+Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual gameplay pending:
 - Merge official v1.18 and its Alchemy, Mind Resistance, Levitate and black-potion fixes.
 - Preserve Minotaur balance, named skills and old saves; Lethal Strike49 coexists with Cybernetics48.
 - Stack ordinary compatible reagents to50; Shift takes1, Ctrl takes half upward.
@@ -8,7 +8,9 @@ Implemented / selected Linux checks passed; Windows packaging/manual testing pen
 - Preserve original RMB descriptions and append real primary-stat bonuses and engine thresholds.
 - Show isolated armor Recovery penalties and final weapon Recovery, including read-only equip previews.
 - Bound long descriptions to the viewport with wheel/touch scrolling; keep MAW-specific formulas.
-See [implementation status](docs/minotaur-1.18.md). Windows packaging/manual tests remain pending.
+156 selected cases /36,020 assertions and3 native cases /58 assertions passed on Linux and Windows.
+[Windows report /137MiB ZIP](docs/research/windows-1.18-build.md);9 packs changed,123 reused.
+Manual campaign-save and graphical checks remain pending. See [implementation status](docs/minotaur-1.18.md).
 
 # Windows gameplay fixes patch (2026-10-27)
 

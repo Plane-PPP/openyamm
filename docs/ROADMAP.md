@@ -1,19 +1,24 @@
-## Expanded inspection — Implemented / final checks in progress
+## Expanded inspection — Implemented / automatically tested / Windows ZIP packaged
 
 Real Standard attribute bonuses/thresholds and armor/weapon Recovery now supplement original descriptions.
 Read-only equip previews, ruleset Recovery overrides and bounded wheel/touch scrolling included.
 156 selected cases /36,020 assertions and three native Lethal Strike cases /58 assertions passed.
-Full native game compiled; Windows ZIP pending.
+Linux and Windows checks passed; [Windows package and resource report](research/windows-1.18-build.md).
+[137MiB update ZIP](https://github.com/Plane-PPP/openyamm/actions/runs/40863165794/artifacts/12894798568)
+updates minotaur-1.14-c991da37a2de-20-1 to minotaur-1.18-c0ccf0a877bc-23-1.
+A separate local inventory/loot selection passed83 cases /4,076 assertions; debug-Lich test scope corrected.
+Next stage: user campaign-save, inventory and visual retest; then separately scoped corrections.
+Identify Monster, bestiary and teacher flavor/next-teacher hints remain Deferred.
 [Current 1.18 notes](minotaur-1.18.md).
 
-## Reagent stacks — Implemented / selected Linux tests passed
+## Reagent stacks — Implemented / automatically tested on Linux and Windows
 
 Up to50 ordinary same-property reagents per cell; atomic pickup, manual merge/remainder, split controls,
 sorting, single-unit brewing, sale/buy pricing and quantity persistence added.
 21 selected cases /1187 assertions passed. [Current 1.18 notes](minotaur-1.18.md).
-Expanded tooltips implemented below; final runtime/Windows validation pending. No new Windows ZIP yet.
+Expanded tooltips and final unit/runtime/Windows packaging checks passed; manual gameplay remains pending.
 
-## OpenYAMM v1.18 integration — Implemented / selected Linux tests passed
+## OpenYAMM v1.18 integration — Implemented / automatically tested / packaged
 
 Merged official v1.18 `4ab07ed519a66feab24599d69bc0ae19971250e2` into the feature branch,
 from backup `backup/minotaur-before-v1.18-2026-10-29` (`9dcf1c7`).
@@ -23,8 +28,8 @@ Adapted Lethal Strike death handling to ShieldHitModifiers without changing bala
 Cybernetics keeps upstream ID48; Lethal Strike moves to49, named saved skills and teachers preserved.
 Mod save140 maps to upstream139; production mod132 maps explicitly to131; older mappings retained.
 Original 1.14 binary generated a frozen v132 fixture; 85 selected cases /32,239 assertions passed.
-Reagent stacks and expanded tooltips implemented in following stages; final Windows packaging is pending.
-No new Windows artifact is claimed at this stage.
+Reagent stacks, expanded tooltips and Windows packaging completed in the stages above.
+Historical intermediate counts below describe their own stage, not the current package.
 
 ## История: подготовка обновления upstream — заменено интеграцией v1.18 выше
 
