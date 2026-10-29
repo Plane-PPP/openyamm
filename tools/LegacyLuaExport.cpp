@@ -1210,6 +1210,13 @@ EvtVariable canonicalMm8Variable(uint32_t rawVariableId, uint32_t index)
             static_cast<uint32_t>(EvtVariable::Counter1) + rawVariableId - 0x00F7u);
     }
 
+    // MM8 stores History1-29 at 0x116-0x132, two above MM7's range.
+    if (rawVariableId >= 0x0116u && rawVariableId <= 0x0132u)
+    {
+        return static_cast<EvtVariable>(
+            static_cast<uint32_t>(EvtVariable::HistoryBegin) + rawVariableId - 0x0116u);
+    }
+
     switch (rawVariableId)
     {
         case 0x00E9u: return EvtVariable::PlayerBits;

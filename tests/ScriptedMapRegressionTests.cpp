@@ -5398,8 +5398,9 @@ TEST_CASE("mm7 global mmmerge supplement applies remaining original quest fixups
         sceneContext.setCurrentGameMinutes(360.0f);
         REQUIRE(eventRuntime.executeEventById(
             std::nullopt, globalEventProgram, 783, runtimeState, &party, &sceneContext));
-        CHECK_EQ(party.historyEventTimes(2).at(3), 360);
-        CHECK_EQ(party.historyEventTimes(2).at(4), 360);
+        // Its pages 1 and 2 are the forward pages, known from the start; the castle pages come later.
+        CHECK_FALSE(party.historyEventTimes(2).contains(3));
+        CHECK_FALSE(party.historyEventTimes(2).contains(4));
         CHECK_EQ(sceneContext.currentGameMinutes(), 360.0f + 14 * 24 * 60);
         CHECK_FALSE(party.hasQuestBit(528));
         CHECK_EQ(runtimeState.npcHouseOverrides[340], 215u);
@@ -5961,10 +5962,10 @@ TEST_CASE("mm7 colony zod releases Roland and restores the open pathway")
     freshState.activeHistoryContinentId = 2;
     freshState.variables[static_cast<uint32_t>(OpenYAMM::Game::EvtVariable::Hour)] = 6;
     REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 376, freshState, &freshParty));
-    CHECK_EQ(freshParty.historyEventTimes(2).at(26), 360);
+    CHECK_EQ(freshParty.historyEventTimes(2).at(24), 360);
     freshState.variables[static_cast<uint32_t>(OpenYAMM::Game::EvtVariable::Hour)] = 7;
     REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 376, freshState, &freshParty));
-    CHECK_EQ(freshParty.historyEventTimes(2).at(26), 360);
+    CHECK_EQ(freshParty.historyEventTimes(2).at(24), 360);
     REQUIRE_EQ(freshState.grantedItems.size(), 1u);
     CHECK_EQ(freshState.grantedItems.front().objectDescriptionId, 1463u);
     CHECK(freshParty.hasQuestBit(752));
