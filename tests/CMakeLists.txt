@@ -491,6 +491,7 @@ add_executable(openyamm_runtime_tests
     OutdoorLightingProbeRuntimeTests.cpp
     OutdoorEventSpellProjectileTests.cpp
     MonsterModifierWorldTests.cpp
+    StealingInputRuntimeTests.cpp
 )
 
 target_include_directories(openyamm_runtime_tests PRIVATE
