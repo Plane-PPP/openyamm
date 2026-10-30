@@ -1757,9 +1757,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
         if (overlayInteractionState.gameplayHudDropHeldItemRequested)
         {
             overlayInteractionState.gameplayHudDropHeldItemRequested = false;
-            const std::optional<GameplayHeldItemDropRequest> heldItemDropRequest =
-                pWorldRuntime != nullptr ? pWorldRuntime->buildHeldItemDropRequest() : std::nullopt;
-            dropHeldItemToActiveWorld(runtime, heldItemDropRequest);
+            dropHeldItemInFrontOfParty(runtime);
             runtime.clearContextActionState();
             result.heldItemHandled = true;
             return result;
@@ -2110,6 +2108,14 @@ GameplayInteractionController::updateWorldInteractionFrame(
     }
 
     return result;
+}
+
+bool GameplayInteractionController::dropHeldItemInFrontOfParty(GameplayScreenRuntime &runtime)
+{
+    const IGameplayWorldRuntime *pWorldRuntime = runtime.worldRuntime();
+    const std::optional<GameplayHeldItemDropRequest> dropRequest =
+        pWorldRuntime != nullptr ? pWorldRuntime->buildHeldItemDropRequest() : std::nullopt;
+    return dropHeldItemToActiveWorld(runtime, dropRequest);
 }
 
 bool GameplayInteractionController::isSameActivationTarget(

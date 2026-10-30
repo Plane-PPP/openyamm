@@ -5,6 +5,7 @@
 #include "game/tables/CharacterDollTable.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayInputFrame.h"
+#include "game/gameplay/GameplayInteractionController.h"
 #include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/AwardRuntime.h"
@@ -2709,9 +2710,17 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             if (!context.isAdventurersInnCharacterSourceActive()
                 && context.characterScreenReadOnly().page == GameplayUiController::CharacterPage::Inventory)
             {
-                const GameplayCharacterPointerTarget sortTarget = resolveCharacterButtonTarget(
-                    "CharacterInventorySortButton",
-                    GameplayCharacterPointerTargetType::InventorySortButton);
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
+                // Touch has no world under the cursor to drop on, so the held item turns Sort into Drop.
+                const GameplayCharacterPointerTargetType sortTargetType = context.heldInventoryItem().active
+                    ? GameplayCharacterPointerTargetType::InventoryDropButton
+                    : GameplayCharacterPointerTargetType::InventorySortButton;
+#else
+                const GameplayCharacterPointerTargetType sortTargetType =
+                    GameplayCharacterPointerTargetType::InventorySortButton;
+#endif
+                const GameplayCharacterPointerTarget sortTarget =
+                    resolveCharacterButtonTarget("CharacterInventorySortButton", sortTargetType);
 
                 if (sortTarget.type != GameplayCharacterPointerTargetType::None)
                 {
@@ -3574,6 +3583,12 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             if (target.type == GameplayCharacterPointerTargetType::AlchemyButton)
             {
                 openWorkbench(context);
+                return;
+            }
+
+            if (target.type == GameplayCharacterPointerTargetType::InventoryDropButton)
+            {
+                GameplayInteractionController::dropHeldItemInFrontOfParty(context);
                 return;
             }
 

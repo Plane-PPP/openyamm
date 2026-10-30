@@ -4153,9 +4153,10 @@ void GameplayOverlayInputController::handleLootOverlayInput(
         const auto findChestPointerTarget =
             [&view, screenWidth, screenHeight](float mouseX, float mouseY) -> GameplayChestPointerTarget
             {
-                static constexpr std::array<std::pair<const char *, GameplayChestPointerTargetType>, 3> Buttons = {{
+                static constexpr std::array<std::pair<const char *, GameplayChestPointerTargetType>, 4> Buttons = {{
                     {"ChestTakeAllButton", GameplayChestPointerTargetType::TakeAllButton},
                     {"ChestTakeGoldButton", GameplayChestPointerTargetType::TakeGoldButton},
+                    {"ChestInventoryButton", GameplayChestPointerTargetType::InventoryButton},
                     {"ChestCloseButton", GameplayChestPointerTargetType::CloseButton},
                 }};
 
@@ -4344,6 +4345,21 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                     || target.type == GameplayChestPointerTargetType::TakeGoldButton)
                 {
                     takeAllActiveChestItems(view, target.type == GameplayChestPointerTargetType::TakeGoldButton);
+                    return;
+                }
+
+                // Switches between the chest and the party's packs, as the inventory key does.
+                if (target.type == GameplayChestPointerTargetType::InventoryButton)
+                {
+                    if (view.inventoryNestedOverlay().active)
+                    {
+                        view.closeInventoryNestedOverlay();
+                    }
+                    else
+                    {
+                        view.openChestTransferInventoryOverlay();
+                    }
+
                     return;
                 }
 

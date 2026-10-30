@@ -187,6 +187,8 @@ public:
         const GameplayInputFrame &input,
         const GameplaySharedInputFrameResult &sharedInput,
         bool worldInputBlocked);
+    // Drops the held item in front of the party, for the touch Drop buttons.
+    static bool dropHeldItemInFrontOfParty(GameplayScreenRuntime &runtime);
 
 private:
     static bool isSameActivationTarget(const GameplayWorldHit &lhs, const GameplayWorldHit &rhs);
