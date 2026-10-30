@@ -5,6 +5,7 @@
 #include "game/audio/SoundIds.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayLootFilter.h"
+#include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/items/InventoryBags.h"
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
@@ -553,7 +554,7 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
         const InventoryItem inventoryItem = normalizedCorpseInventoryItem(item);
         const std::string itemName = corpseLootItemName(item, pItemTable);
 
-        if (party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), inventoryItem))
+        if (const std::optional<StoredPickup> stored = storePickedUpItem(party, inventoryItem, pItemTable))
         {
             GameplayChestItemState removedItem = {};
 
@@ -568,7 +569,7 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
                 + gameplayDebugTraceItemSummary(inventoryItem.objectDescriptionId, pItemTable)
                 + " corpse_index=" + std::to_string(pCorpseView->sourceIndex)
                 + " loot_item_index=0"
-                + " member_index=" + std::to_string(party.activeMemberIndex()));
+                + " member_index=" + std::to_string(stored->memberIndex));
 
             if (result.firstItemName.empty())
             {
@@ -735,9 +736,9 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
 
             const InventoryItem inventoryItem = normalizedCorpseInventoryItem(item);
             const std::vector<std::vector<size_t>> bagSizes = memberBagSizes(party, bagCount);
-            size_t recipientIndex = 0;
+            const std::optional<StoredPickup> stored = storePickedUpItem(party, inventoryItem, party.itemTable());
 
-            if (!party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), inventoryItem, &recipientIndex))
+            if (!stored)
             {
                 summary.leftItems.push_back(inventoryItem);
                 ++itemIndex;
@@ -750,7 +751,7 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
             }
 
             summary.takenItems.push_back(inventoryItem);
-            summary.takenItemPlaces.push_back(grantedItemPlace(party, recipientIndex, bagCount, bagSizes));
+            summary.takenItemPlaces.push_back(grantedItemPlace(party, stored->memberIndex, bagCount, bagSizes));
         }
 
         worldRuntime.closeActiveCorpseView();
