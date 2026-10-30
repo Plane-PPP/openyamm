@@ -120,6 +120,8 @@ void IndoorPartyRuntime::initializeEyePosition(float x, float y, float z, bool r
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_dashSeconds = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
@@ -141,6 +143,8 @@ void IndoorPartyRuntime::teleportEyePosition(float x, float y, float z)
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_dashSeconds = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
@@ -209,17 +213,16 @@ void IndoorPartyRuntime::update(
         turnBasedMovementStep ? std::max(deltaSeconds, MaxAccumulatedMovementSeconds) : MaxAccumulatedMovementSeconds;
     m_movementAccumulatorSeconds =
         std::min(m_movementAccumulatorSeconds + deltaSeconds, maxAccumulatedMovementSeconds);
-    const float impulseVelocityX = m_pendingImpulseVelocityX;
-    const float impulseVelocityY = m_pendingImpulseVelocityY;
-    const float impulseVelocityZ = m_pendingImpulseVelocityZ;
-    const bool hasPendingImpulse =
-        impulseVelocityX != 0.0f || impulseVelocityY != 0.0f || impulseVelocityZ != 0.0f;
+    const bool hasPendingImpulse = m_pendingImpulseVelocityX != 0.0f || m_pendingImpulseVelocityY != 0.0f
+        || m_pendingImpulseVelocityZ != 0.0f;
     float landingFallDistance = 0.0f;
     std::vector<size_t> contactedActorIndices;
 
     if (hasPendingImpulse)
     {
-        m_movementState.verticalVelocity = std::max(m_movementState.verticalVelocity, impulseVelocityZ);
+        m_movementState.verticalVelocity = std::max(m_movementState.verticalVelocity, m_pendingImpulseVelocityZ);
+        m_jumpCarryVelocityX = m_pendingImpulseVelocityX;
+        m_jumpCarryVelocityY = m_pendingImpulseVelocityY;
         m_pendingImpulseVelocityX = 0.0f;
         m_pendingImpulseVelocityY = 0.0f;
         m_pendingImpulseVelocityZ = 0.0f;
@@ -244,8 +247,8 @@ void IndoorPartyRuntime::update(
         m_movementState = m_movementController.resolveMove(
             m_movementState,
             body,
-            desiredVelocityX * speedMultiplier + impulseVelocityX + (dashing ? m_dashVelocityX : 0.0f),
-            desiredVelocityY * speedMultiplier + impulseVelocityY + (dashing ? m_dashVelocityY : 0.0f),
+            desiredVelocityX * speedMultiplier + m_jumpCarryVelocityX + (dashing ? m_dashVelocityX : 0.0f),
+            desiredVelocityY * speedMultiplier + m_jumpCarryVelocityY + (dashing ? m_dashVelocityY : 0.0f),
             m_pendingJumpRequested,
             IndoorMovementStepSeconds,
             &contactedActorIndices,
@@ -265,6 +268,11 @@ void IndoorPartyRuntime::update(
         if (m_movementState.landedThisFrame)
         {
             landingFallDistance = std::max(landingFallDistance, m_movementState.fallDistance);
+        }
+        if (m_movementState.grounded && m_movementState.verticalVelocity <= 0.0f)
+        {
+            m_jumpCarryVelocityX = 0.0f;
+            m_jumpCarryVelocityY = 0.0f;
         }
         recordSteppedFloorFace(m_steppedFloorFaces, m_movementState);
         if (m_collisionTraceEnabled)
@@ -317,8 +325,8 @@ void IndoorPartyRuntime::update(
                     << " start_velocity_z=" << previousMovementState.verticalVelocity
                     << " end_velocity_z=" << m_movementState.verticalVelocity
                     << " requested_velocity=("
-                    << desiredVelocityX * speedMultiplier + impulseVelocityX
-                    << "," << desiredVelocityY * speedMultiplier + impulseVelocityY << ")"
+                    << desiredVelocityX * speedMultiplier + m_jumpCarryVelocityX
+                    << "," << desiredVelocityY * speedMultiplier + m_jumpCarryVelocityY << ")"
                     << " jump_requested=" << (m_pendingJumpRequested ? "true" : "false")
                     << " debug_block=" << indoorMoveBlockKindName(debugInfo.primaryBlockKind)
                     << " full_succeeded=" << (debugInfo.fullMoveSucceeded ? "true" : "false")
@@ -517,6 +525,8 @@ void IndoorPartyRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_pendingImpulseVelocityX = snapshot.pendingImpulseVelocityX;
     m_pendingImpulseVelocityY = snapshot.pendingImpulseVelocityY;
     m_pendingImpulseVelocityZ = snapshot.pendingImpulseVelocityZ;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
     m_burningDamageTimerSeconds = 0.0f;
