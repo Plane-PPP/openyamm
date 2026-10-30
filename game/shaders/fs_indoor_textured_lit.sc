@@ -6,11 +6,9 @@
 // distances from the eye; sky faces stay clear. Only those maps load these programs.
 // v_gradientU, v_gradientV: the face's texture gradients for surface materials (SURFACE_MATERIALS,
 // surface_material.sh); the vertex shaders always pass them, and bgfx links only matching varyings.
-#if INDOOR_BAKED
+// v_lightmapUv: read only by INDOOR_BAKED, but declared by every variant: shaderc keeps the $input lines of both
+// branches of an #if and takes the last, so Metal and SPIR-V lost it; vs_indoor_textured_lit passes zero.
 $input v_texcoord0, v_worldPosition, v_texcoord1, v_screenspace, v_flowInfo, v_color0, v_lightmapUv, v_gradientU, v_gradientV
-#else
-$input v_texcoord0, v_worldPosition, v_texcoord1, v_screenspace, v_flowInfo, v_color0, v_gradientU, v_gradientV
-#endif
 
 #include "common.sh"
 #include "world_clip.sh"
