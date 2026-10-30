@@ -5080,6 +5080,7 @@ void OutdoorWorldRuntime::initialize(
             outdoorActorCollisionSet,
             outdoorSpriteObjectCollisionSet);
         syncOutdoorFaceGeometryAttributesFromMapDelta();
+        resyncOutdoorModelMechanismGeometry();
     }
     m_nextActorId = 0;
     projectileService().clear();
@@ -8695,6 +8696,7 @@ void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
         ++m_pOutdoorMapDeltaData->surfaceRevision;
         syncOutdoorFaceGeometryAttributesFromMapDelta();
     }
+    resyncOutdoorModelMechanismGeometry();
     m_openedChests.clear();
     m_openedChests.reserve(snapshot.openedChestFlags.size());
 
@@ -9759,11 +9761,22 @@ std::vector<bool> OutdoorWorldRuntime::selectOutdoorActiveActors(float partyX, f
         activeActorCandidates.push_back(candidate);
     }
 
-    return selectOutdoorActiveActorMask(
+    std::vector<bool> activeActorMask = selectOutdoorActiveActorMask(
         activeActorCandidates,
         m_mapActors.size(),
         MaxActiveActorUpdates,
         ActiveActorUpdateRange);
+
+    // MM8's full AI update sets Nearby on every actor it runs (0x4020de).
+    for (size_t actorIndex = 0; actorIndex < activeActorMask.size(); ++actorIndex)
+    {
+        if (activeActorMask[actorIndex])
+        {
+            m_mapActors[actorIndex].nearby = true;
+        }
+    }
+
+    return activeActorMask;
 }
 
 bool OutdoorWorldRuntime::cachedActorLineOfSight(
@@ -13591,10 +13604,28 @@ void OutdoorWorldRuntime::refreshOutdoorModelMechanismGeometry()
         m_pPartyRuntime->updateFaceGeometries(updatedGeometries);
     }
 
-    if (m_pOutdoorMapData->sceneProfile != OutdoorSceneProfile::BModelWorld || navigationEndpointChanged)
+    // Actor paths follow a mechanism's endpoints, not its motion: the path map is rebuilt once a mechanism settles,
+    // and a rebuilt map starts its own revision sequence, so the routes planned on the old one are dropped.
+    if (navigationEndpointChanged)
     {
-        invalidateOutdoorPathMaps(false);
+        invalidateOutdoorPathMaps(true);
     }
+}
+
+void OutdoorWorldRuntime::resyncOutdoorModelMechanismGeometry()
+{
+    if (m_pOutdoorMapData == nullptr || !m_eventRuntimeState || m_eventRuntimeState->outdoorModelMechanisms.empty())
+    {
+        return;
+    }
+
+    // Restored or initially open mechanisms: place every mechanism's collision at its current state without
+    // carrying anything standing on it, then rebuild the actor path map once.
+    m_outdoorMechanismOffsets.clear();
+    m_outdoorNavigationMechanismMovingStates.clear();
+    refreshOutdoorModelMechanismGeometry();
+    m_outdoorMechanismGeometryRefreshAccumulatorSeconds = 0.0f;
+    invalidateOutdoorPathMaps(true);
 }
 
 void OutdoorWorldRuntime::initializeOutdoorModelMechanismsFromMapData()
@@ -13609,8 +13640,7 @@ void OutdoorWorldRuntime::initializeOutdoorModelMechanismsFromMapData()
 
     m_eventRuntimeState->outdoorModelMechanisms.clear();
 
-    if (m_pOutdoorMapData == nullptr
-        || m_pOutdoorMapData->sceneProfile != OutdoorSceneProfile::BModelWorld)
+    if (m_pOutdoorMapData == nullptr)
     {
         return;
     }
@@ -17791,6 +17821,8 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     actor.currentHp = std::max(0, actor.currentHp - damage);
     int experienceReward = 0;
     faceMapActorReaction(actor, partyX - actor.preciseX, partyY - actor.preciseY);
+    // Every party hit sets Nearby, from any distance (MM8 0x4379b8).
+    actor.nearby = true;
 
     const bool died = actor.currentHp <= 0;
 
@@ -20559,6 +20591,7 @@ std::vector<size_t> OutdoorWorldRuntime::spawnMonsters(const GameplayMonsterSpaw
         {
             actor.hostileToParty = true;
             actor.hasDetectedParty = true;
+            actor.nearby = true;
             actor.hostilityType = std::max<uint8_t>(actor.hostilityType, 4);
         }
 
@@ -20665,6 +20698,7 @@ bool OutdoorWorldRuntime::summonHostileMonsterById(
 
         actor.hostileToParty = true;
         actor.hasDetectedParty = true;
+        actor.nearby = true;
         actor.hostilityType = std::max<uint8_t>(actor.hostilityType, 4);
         applyOeOutdoorActorFloorCorrection(actor, *pStats);
         m_mapActors.push_back(std::move(actor));
@@ -22123,8 +22157,7 @@ void OutdoorWorldRuntime::collectGameplayMinimapMarkers(std::vector<GameplayMini
         if (!wizardEyeShowsActorMarker(
                 pActor->isDead,
                 outdoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex),
-                pActor->hasDetectedParty,
-                hostileToParty))
+                pActor->nearby))
         {
             continue;
         }

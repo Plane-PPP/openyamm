@@ -1422,6 +1422,27 @@ void ensureIndoorMapRevealState(const IndoorMapData &indoorMapData, MapDeltaData
     }
 }
 
+// Sectors with a face the party has seen, so drawn on the automap.
+std::vector<bool> indoorDiscoveredSectors(const IndoorMapData &indoorMapData, const MapDeltaData &mapDeltaData)
+{
+    std::vector<bool> discovered(indoorMapData.sectors.size(), false);
+
+    for (size_t sectorIndex = 0; sectorIndex < indoorMapData.sectors.size(); ++sectorIndex)
+    {
+        for (uint16_t faceId : indoorMapData.sectors[sectorIndex].faceIds)
+        {
+            if (faceId < mapDeltaData.faceAttributes.size()
+                && hasFaceAttribute(mapDeltaData.faceAttributes[faceId], FaceAttribute::SeenByParty))
+            {
+                discovered[sectorIndex] = true;
+                break;
+            }
+        }
+    }
+
+    return discovered;
+}
+
 bool updateIndoorJournalRevealMask(
     const IndoorMapData &indoorMapData,
     const std::vector<int16_t> &revealSectorIds,
@@ -4040,6 +4061,21 @@ void IndoorWorldRuntime::initialize(
             });
     // Until the first world update the map is still filling: on-load event spawns of a first visit join its roster.
     m_firstFillOpen = firstPlacement;
+    // Placed actors carry no authored hostility (MapDeltaData): as outdoors, those hostile to the party take their
+    // monster's Hst on the first visit.
+    if (firstPlacement)
+    {
+        for (MapDeltaActor &actor : mapDeltaData()->actors)
+        {
+            const MonsterTable::MonsterStatsEntry *pStats =
+                monsterTable.findStatsById(resolveIndoorActorStatsId(actor));
+
+            if (actor.hostilityType == 0 && pStats != nullptr && defaultActorHostileToParty(actor, &monsterTable))
+            {
+                actor.hostilityType = static_cast<uint8_t>(std::clamp(pStats->hostility, 0, 255));
+            }
+        }
+    }
     // On-load event group flags target generated spawn actors too.
     applyEventRuntimeState(true);
     syncMapActorAiStates();
@@ -4161,6 +4197,21 @@ void IndoorWorldRuntime::initialize(
             });
     // Until the first world update the map is still filling: on-load event spawns of a first visit join its roster.
     m_firstFillOpen = firstPlacement;
+    // Placed actors carry no authored hostility (MapDeltaData): as outdoors, those hostile to the party take their
+    // monster's Hst on the first visit.
+    if (firstPlacement)
+    {
+        for (MapDeltaActor &actor : mapDeltaData()->actors)
+        {
+            const MonsterTable::MonsterStatsEntry *pStats =
+                monsterTable.findStatsById(resolveIndoorActorStatsId(actor));
+
+            if (actor.hostilityType == 0 && pStats != nullptr && defaultActorHostileToParty(actor, &monsterTable))
+            {
+                actor.hostilityType = static_cast<uint8_t>(std::clamp(pStats->hostility, 0, 255));
+            }
+        }
+    }
     // On-load event group flags target generated spawn actors too.
     applyEventRuntimeState(true);
     syncMapActorAiStates();
@@ -4437,8 +4488,17 @@ std::vector<uint32_t> IndoorWorldRuntime::refreshMechanismRuntimeGeometryCache(
                 mechanismIterator != pEventRuntimeState->mechanisms.end()
                     ? mechanismIterator->second.currentDistance
                     : baseMechanism.currentDistance;
+            const int8_t rotationDirection =
+                mechanismIterator != pEventRuntimeState->mechanisms.end()
+                    ? mechanismIterator->second.rotationDirection
+                    : int8_t(1);
 
-            applyIndoorMechanismDoorToVertices(door, distance, m_runtimeGeometryCache.vertices);
+            applyIndoorMechanismDoorToVertices(
+                door,
+                findIndoorMoverDefinition(*m_pIndoorMapData, door.doorId),
+                distance,
+                rotationDirection,
+                m_runtimeGeometryCache.vertices);
 
             for (uint16_t faceId : door.faceIds)
             {
@@ -10389,7 +10449,8 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
     facts.movement.allowIdleWander = m_pGameplayActorService != nullptr;
     facts.movement.movementAllowed =
         pStats->movementType != MonsterTable::MonsterMovementType::Stationary
-        && !bolster.immobile;
+        && !bolster.immobile
+        && !actor.immobile;
     facts.movement.movementBlocked = false;
     // The placement (posts and their facing) for tactics.
     facts.movement.placedImmobile = actor.immobile;
@@ -11367,6 +11428,11 @@ void IndoorWorldRuntime::updateIndoorJournalRevealIfNeeded()
         {
             ++m_indoorMinimapRevealRevision;
             m_cachedGameplayMinimapLinesValid = false;
+        }
+
+        if (minimapRevealChanged || !m_indoorJournalRevealStateValid)
+        {
+            m_indoorDiscoveredSectors = indoorDiscoveredSectors(*m_pIndoorMapData, *pMapDeltaData);
         }
 
         m_indoorJournalRevealStateValid = true;
@@ -16735,9 +16801,11 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     const int nextHp = std::max(0, previousHp - appliedDamage);
     int experienceReward = 0;
     actor.hp = nextHp;
+    // Every party hit sets Nearby, from any distance (MM8 0x4379b8).
     actor.attributes |= static_cast<uint32_t>(EvtActorAttribute::Hostile)
         | static_cast<uint32_t>(EvtActorAttribute::Aggressor)
         | static_cast<uint32_t>(EvtActorAttribute::Active)
+        | static_cast<uint32_t>(EvtActorAttribute::Nearby)
         | static_cast<uint32_t>(EvtActorAttribute::FullAi);
 
     syncMapActorAiStates();
@@ -17737,14 +17805,9 @@ bool IndoorWorldRuntime::tryGetGameplayMinimapState(GameplayMinimapState &state)
         pWizardEyeBuff != nullptr ? pWizardEyeBuff->skillMastery : SkillMastery::None;
     const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
 
-    if ((m_pIndoorMapData != nullptr && m_pIndoorMapData->mapPresentation)
-        || toLowerCopy(m_map->worldId) == "mm9")
+    if (m_pIndoorMapData != nullptr && m_pIndoorMapData->mapPresentation)
     {
-        if (m_pIndoorMapData == nullptr || !m_pIndoorMapData->mapPresentation
-            || !applyMapPresentationToMinimapState(
-                *m_pIndoorMapData->mapPresentation,
-                moveState.footZ,
-                state))
+        if (!applyMapPresentationToMinimapState(*m_pIndoorMapData->mapPresentation, moveState.footZ, state))
         {
             return false;
         }
@@ -17913,11 +17976,20 @@ void IndoorWorldRuntime::collectGameplayMinimapMarkers(std::vector<GameplayMinim
             continue;
         }
 
+        // Nearby stays set once the actor saw or heard the party or was hit, as in MM: Wizard Eye keeps showing it
+        // while it fights others or loses sight of the party. Beyond MM, it also shows every actor in a mapped room.
+        const MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+        const bool nearby = (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Nearby)) != 0;
+        const int16_t sectorId = actorIndex < m_mapActorAiStates.size() && m_mapActorAiStates[actorIndex].sectorId >= 0
+            ? m_mapActorAiStates[actorIndex].sectorId
+            : actor.sectorId;
+        const bool inMappedSector = sectorId >= 0 && size_t(sectorId) < m_indoorDiscoveredSectors.size()
+            && m_indoorDiscoveredSectors[size_t(sectorId)];
+
         if (!wizardEyeShowsActorMarker(
                 actorState.isDead,
                 indoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex),
-                actorState.hasDetectedParty,
-                actorState.hostileToParty))
+                nearby || inMappedSector))
         {
             continue;
         }
@@ -19606,6 +19678,83 @@ std::vector<IndoorActorCollision> IndoorWorldRuntime::actorMovementCollidersForA
     }
 
     return colliders;
+}
+
+bool IndoorWorldRuntime::partyClimbingLadder() const
+{
+    return m_pPartyRuntime != nullptr && m_pPartyRuntime->climbingLadder();
+}
+
+void IndoorWorldRuntime::collectMoverActorBodies(
+    const bx::Vec3 &minimum,
+    const bx::Vec3 &maximum,
+    std::vector<std::pair<size_t, IndoorMoverBody>> &bodies) const
+{
+    bodies.clear();
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr)
+    {
+        return;
+    }
+
+    const GameplayActorService fallbackActorService = {};
+    const GameplayActorService *pActorService =
+        m_pGameplayActorService != nullptr ? m_pGameplayActorService : &fallbackActorService;
+    const size_t actorCount = std::min(pMapDeltaData->actors.size(), m_mapActorAiStates.size());
+
+    for (size_t actorIndex = 0; actorIndex < actorCount; ++actorIndex)
+    {
+        const MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+        const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+
+        if (!indoorActorSectorActivated(actor, &aiState)
+            || indoorActorUnavailableForCombat(actor, aiState, *pActorService))
+        {
+            continue;
+        }
+
+        const float radius = indoorActorCollisionRadius(actor);
+        const float height = indoorActorCollisionHeight(actor, radius);
+
+        if (radius <= 0.0f
+            || aiState.preciseX + radius < minimum.x || aiState.preciseX - radius > maximum.x
+            || aiState.preciseY + radius < minimum.y || aiState.preciseY - radius > maximum.y
+            || aiState.preciseZ + height < minimum.z || aiState.preciseZ > maximum.z)
+        {
+            continue;
+        }
+
+        bodies.push_back(
+            {actorIndex, IndoorMoverBody{aiState.preciseX, aiState.preciseY, aiState.preciseZ, radius, height}});
+    }
+}
+
+void IndoorWorldRuntime::displaceActorByMover(size_t actorIndex, float deltaX, float deltaY, float deltaZ)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr
+        || actorIndex >= pMapDeltaData->actors.size()
+        || actorIndex >= m_mapActorAiStates.size())
+    {
+        return;
+    }
+
+    MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+    aiState.preciseX += deltaX;
+    aiState.preciseY += deltaY;
+    aiState.preciseZ += deltaZ;
+    MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+    actor.x = static_cast<int>(std::lround(aiState.preciseX));
+    actor.y = static_cast<int>(std::lround(aiState.preciseY));
+    actor.z = static_cast<int>(std::lround(aiState.preciseZ));
+
+    if (m_actorMovementController)
+    {
+        m_actorMovementController->updateActorColliderPosition(
+            actorIndex, aiState.sectorId, aiState.preciseX, aiState.preciseY, aiState.preciseZ);
+    }
 }
 
 std::vector<IndoorActorCollision> IndoorWorldRuntime::actorMovementCollidersForPartyMovement() const

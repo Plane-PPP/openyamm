@@ -701,6 +701,8 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
 {
     GameplayUiController::LootSummaryOverlayState summary = {};
     const int bagCount = party.rules().items.bagCount(party);
+    // Added once after the sweep: each addGold queues the gold sound.
+    int partyGold = 0;
 
     for (size_t actorIndex : worldRuntime.lootableCorpseActorIndices())
     {
@@ -728,7 +730,7 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
                 }
 
                 const FoundGold foundGold = resolveFoundGold(taken.goldAmount, worldRuntime.eventRuntimeState());
-                party.addGold(static_cast<int>(foundGold.partyAmount));
+                partyGold += static_cast<int>(foundGold.partyAmount);
                 summary.goldAmount += static_cast<int>(foundGold.amount);
                 summary.followerGoldShare += static_cast<int>(foundGold.followerShare);
                 continue;
@@ -757,7 +759,11 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
         worldRuntime.closeActiveCorpseView();
     }
 
-    if (!summary.takenItems.empty() && summary.goldAmount == 0)
+    if (partyGold > 0)
+    {
+        party.addGold(partyGold);
+    }
+    else if (!summary.takenItems.empty())
     {
         party.requestSound(SoundId::Gold);
     }

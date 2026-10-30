@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 141;
+constexpr uint32_t SaveVersion = 142;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -209,6 +209,8 @@ constexpr uint32_t SaveVersionSummaryFirst = 140;
 // History pages are numbered as in the history tables; MMerge events recorded them two pages late before
 // (LegacyLuaExport read MM8's History variables with MM7's numbering).
 constexpr uint32_t SaveVersionHistoryNumbering = 141;
+// Outdoor actors keep MM's Nearby attribute (MapActorState::nearby) for Wizard Eye.
+constexpr uint32_t SaveVersionOutdoorNearby = 142;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -3694,6 +3696,7 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.provokedAttackReach);
     writeValue(writer, value.dormant);
     writeValue(writer, value.angeredByParty);
+    writeValue(writer, value.nearby);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
@@ -3853,7 +3856,8 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && (reader.version() < SaveVersionOutdoorProvokedActors || readValue(reader, value.provokedByParty))
         && (reader.version() < SaveVersionOutdoorProvokedAttackReach || readValue(reader, value.provokedAttackReach))
         && (reader.version() < SaveVersionActorDormant || readValue(reader, value.dormant))
-        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty));
+        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty))
+        && (reader.version() < SaveVersionOutdoorNearby || readValue(reader, value.nearby));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)

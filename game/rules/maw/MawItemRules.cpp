@@ -1901,6 +1901,11 @@ std::string MawItemRules::enchantDescription(
     return ItemEnchantRuntime::buildEnchantDescription(special, pStandardTable, pSpecialTable);
 }
 
+bool MawItemRules::glowsItemRarity() const
+{
+    return true;
+}
+
 std::optional<uint32_t> MawItemRules::nameColor(const InventoryItem &item) const
 {
     switch (MawRarity(item.rulesetFields.lootRarity))

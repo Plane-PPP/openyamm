@@ -2862,7 +2862,7 @@ GameApplication::GameApplication(const Engine::ApplicationConfig &config)
             m_settings = settings;
             std::string error;
 
-            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            if (!saveSettings(m_settings, error))
             {
                 std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
             }
@@ -4467,7 +4467,7 @@ void GameApplication::registerDebugConsoleCommands()
                 applyCurrentSettingsToActiveRuntime();
                 m_outdoorGameView.reloadTerrainMaterials();
                 std::string error;
-                if (action != "reload" && !saveGameSettings(settingsFilePath(), m_settings, error))
+                if (action != "reload" && !saveSettings(m_settings, error))
                 {
                     return commandResult(false, "Applied, but could not save settings.ini: " + error);
                 }
@@ -4605,6 +4605,8 @@ void GameApplication::registerDebugConsoleCommands()
                 {"ao", &m_settings.ambientOcclusion}, {"grading", &m_settings.cinematicGrading},
                 {"model_lods", &m_settings.modelLods}, {"lightmaps", &m_settings.lightmaps},
                 {"creature_outlines", &m_settings.creatureOutlines}, {"light_grid", &m_settings.lightGridEnabled},
+                {"surface_materials", &m_settings.surfaceMaterials}, {"surface_parallax", &m_settings.surfaceParallax},
+                {"surface_reflections", &m_settings.surfaceReflections},
                 {"freeze", &m_renderFreezeWorld}, {"hud", &m_renderHud}};
             const auto describe = [&]()
             {
@@ -6350,7 +6352,7 @@ void GameApplication::registerDebugConsoleCommands()
                     return commandResult(false, error);
                 }
                 applyCurrentSettingsToActiveRuntime();
-                if (!saveGameSettings(settingsFilePath(), m_settings, error))
+                if (!saveSettings(m_settings, error))
                 {
                     return commandResult(false, "Applied, but could not save settings.ini: " + error);
                 }
@@ -6423,7 +6425,7 @@ void GameApplication::registerDebugConsoleCommands()
 
                 std::string error;
 
-                if (!saveGameSettings(settingsFilePath(), m_settings, error))
+                if (!saveSettings(m_settings, error))
                 {
                     std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
                 }
@@ -7553,6 +7555,11 @@ std::filesystem::path GameApplication::settingsFilePath() const
     return std::filesystem::path("settings.ini");
 }
 
+bool GameApplication::saveSettings(const GameSettings &settings, std::string &error) const
+{
+    return !m_config.saveSettings || saveGameSettings(settingsFilePath(), settings, error);
+}
+
 void GameApplication::loadOrCreateSettings()
 {
     m_settings = GameSettings::createDefault();
@@ -7587,7 +7594,7 @@ void GameApplication::loadOrCreateSettings()
 
     m_settings.startWorldId = normalizeWorldId(m_config.activeWorldId);
 
-    if (!loadFailed && !saveGameSettings(path, m_settings, error))
+    if (!loadFailed && !saveSettings(m_settings, error))
     {
         std::cerr << "GameApplication: failed to write " << path.string() << ": " << error << '\n';
     }
@@ -7661,6 +7668,7 @@ bool GameApplication::syncActorModels(IGameplayWorldRuntime &world, float deltaS
 void GameApplication::applyCurrentSettingsToActiveRuntime()
 {
     m_gameDataLoader.setActorModels(m_settings.actorModels, m_settings.actorModelsManifest);
+    m_gameDataLoader.setSurfaceMaterials(m_settings.surfaceMaterials);
     m_gameSession.gameplayUiRuntime().bindSpriteAtlasCache(m_spriteAtlasCache);
     m_gameSession.gameplayUiRuntime().bindActorModelPreview(m_actorModelPreview);
     configureGameplayDebugTrace(m_settings.gameplayTrace, m_settings.gameplayTraceFile, m_settings.gameplayTraceAppend);
@@ -9643,7 +9651,8 @@ void GameApplication::prepareGameplayRendering()
         const bool grading = m_cinematicGrading.begin(
             width, height, m_settings.cinematicGrading, m_settings.cinematicStrength,
             m_settings.ambientOcclusion, m_settings.ambientOcclusionStrength, m_settings.sharpening,
-            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength);
+            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength,
+            m_settings.surfaceMaterials && m_settings.surfaceReflections);
         if (m_pMapSceneRuntime->kind() == SceneKind::Outdoor)
         {
             m_outdoorGameView.render(width, height, idleInput, 0.0f, true);
@@ -10525,7 +10534,7 @@ bool GameApplication::applyMenuSettings(const GameSettings &settings, bool persi
                                                  previous.verticalSync, restoreError);
         return false;
     }
-    if (persist && !saveGameSettings(settingsFilePath(), settings, error))
+    if (persist && !saveSettings(settings, error))
     {
         if (displayChanged)
         {
@@ -10662,7 +10671,7 @@ void GameApplication::openSaveGameScreen()
             m_settings.saveListNewestFirst = newestFirst;
             std::string error;
 
-            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            if (!saveSettings(m_settings, error))
             {
                 std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
             }
@@ -10707,7 +10716,7 @@ void GameApplication::openLoadGameScreen(bool returnToGameplayMenu, const std::s
             m_settings.saveListNewestFirst = newestFirst;
             std::string error;
 
-            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            if (!saveSettings(m_settings, error))
             {
                 std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
             }
@@ -11449,7 +11458,8 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
                 }
                 m_cinematicGrading.begin(width, height, m_settings.cinematicGrading, m_settings.cinematicStrength,
                     m_settings.ambientOcclusion, m_settings.ambientOcclusionStrength, m_settings.sharpening,
-                    m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength);
+                    m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength,
+                    m_settings.surfaceMaterials && m_settings.surfaceReflections);
                 pWorldRuntime->renderWorld(width, height, backgroundInput, 0.0f);
                 m_cinematicGrading.submit();
                 m_gameSession.renderGameplayUi(width, height);
@@ -11683,7 +11693,8 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
         const float worldRenderDeltaSeconds = gameplayWorldPaused ? deltaSeconds : scaledGameplayDeltaSeconds;
         m_cinematicGrading.begin(width, height, m_settings.cinematicGrading, m_settings.cinematicStrength,
             m_settings.ambientOcclusion, m_settings.ambientOcclusionStrength, m_settings.sharpening,
-            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength);
+            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength,
+            m_settings.surfaceMaterials && m_settings.surfaceReflections);
         pWorldRuntime->renderWorld(width, height, m_gameInputSystem.frame(), worldRenderDeltaSeconds);
         m_cinematicGrading.submit();
         recordFrameDiagnostics(m_framePerformanceDiagnostics.renderWorldNanoseconds, renderWorldBeginTickCount);

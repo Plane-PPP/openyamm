@@ -57,7 +57,7 @@ SetMapMetadata({
     [63] = { kind = "enter_house", source = "opcode", houseId = 535, targetName = "House of Brandy" },
     [65] = { kind = "enter_house", source = "opcode", houseId = 536, targetName = "Bowes Residence" },
     [67] = { kind = "enter_house", source = "opcode", houseId = 537, targetName = "Breman Residence" },
-    [69] = { kind = "enter_house", source = "opcode", houseId = 547, targetName = " Home of Rihansi " },
+    [69] = { kind = "enter_house", source = "opcode", houseId = 547, targetName = "Home of Rihansi" },
     [71] = { kind = "enter_house", source = "opcode", houseId = 548, targetName = "Bombah Hall" },
     [73] = { kind = "enter_house", source = "opcode", houseId = 549, targetName = "Keldon's Cottage" },
     [75] = { kind = "enter_house", source = "opcode", houseId = 552, targetName = "Featherwind's House" },
@@ -103,7 +103,7 @@ SetMapMetadata({
     [197] = { kind = "enter_house", source = "opcode", houseId = 773, targetName = "Merchant Guildhouse" },
     [199] = { kind = "enter_house", source = "opcode", houseId = 183, targetName = "Elemental Guild" },
     [451] = { kind = "enter_house", source = "opcode", houseId = 902, targetName = "House Memoria" },
-    [453] = { kind = "enter_house", source = "opcode", houseId = 903, targetName = "House of Hawthorne " },
+    [453] = { kind = "enter_house", source = "opcode", houseId = 903, targetName = "House of Hawthorne" },
     [455] = { kind = "enter_house", source = "opcode", houseId = 904, targetName = "Lott's Family Home" },
     [457] = { kind = "enter_house", source = "opcode", houseId = 905, targetName = "House of Nosewort" },
     [459] = { kind = "enter_house", source = "opcode", houseId = 909, targetName = "Dotes Family Hovel" },
@@ -316,11 +316,11 @@ end, "Breman Residence")
 
 RegisterEvent(68, "Breman Residence", nil, "Breman Residence")
 
-RegisterEvent(69, " Home of Rihansi ", function()
-    evt.EnterHouse(547) --  Home of Rihansi
-end, " Home of Rihansi ")
+RegisterEvent(69, "Home of Rihansi", function()
+    evt.EnterHouse(547) -- Home of Rihansi
+end, "Home of Rihansi")
 
-RegisterEvent(70, " Home of Rihansi ", nil, " Home of Rihansi ")
+RegisterEvent(70, "Home of Rihansi", nil, "Home of Rihansi")
 
 RegisterEvent(71, "Bombah Hall", function()
     evt.EnterHouse(548) -- Bombah Hall
@@ -624,11 +624,11 @@ end, "House Memoria")
 
 RegisterEvent(452, "House Memoria", nil, "House Memoria")
 
-RegisterEvent(453, "House of Hawthorne ", function()
+RegisterEvent(453, "House of Hawthorne", function()
     evt.EnterHouse(903) -- House of Hawthorne
-end, "House of Hawthorne ")
+end, "House of Hawthorne")
 
-RegisterEvent(454, "House of Hawthorne ", nil, "House of Hawthorne ")
+RegisterEvent(454, "House of Hawthorne", nil, "House of Hawthorne")
 
 RegisterEvent(455, "Lott's Family Home", function()
     evt.EnterHouse(904) -- Lott's Family Home

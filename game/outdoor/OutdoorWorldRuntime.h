@@ -309,6 +309,9 @@ public:
         bool alertStatusBit = false;
         bool bloodSplatSpawned = false;
         bool hasDetectedParty = false;
+        // MM's Nearby attribute, which indoor actors keep in their attributes: set for good once the party's AI range
+        // (5632) reaches it or the party hits it, whether or not it noticed the party. Wizard Eye shows it from then on.
+        bool nearby = false;
         // The party made it hostile (hit it or its faction), so a hit on it still alerts its friendly faction; an
         // actor hostile on its own (map, template, event) alerts none.
         bool angeredByParty = false;

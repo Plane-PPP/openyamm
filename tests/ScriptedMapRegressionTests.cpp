@@ -5814,6 +5814,7 @@ TEST_CASE("looting every satchel takes all the gold and each item that fits, and
     world.addSatchel(first);
     world.addSatchel(second);
     const int goldBefore = world.party()->gold();
+    world.party()->clearPendingAudioRequests();
 
     const OpenYAMM::Game::GameplayUiController::LootSummaryOverlayState summary =
         OpenYAMM::Game::lootAllCorpses(world, *world.party());
@@ -5822,6 +5823,15 @@ TEST_CASE("looting every satchel takes all the gold and each item that fits, and
     CHECK_EQ(summary.satchelCount, 2u);
     CHECK_EQ(summary.goldAmount, 150);
     CHECK_EQ(world.party()->gold() - goldBefore, 150);
+    // One gold sound for the whole sweep, not one per satchel.
+    size_t goldSounds = 0;
+
+    for (const OpenYAMM::Game::Party::PendingAudioRequest &request : world.party()->pendingAudioRequests())
+    {
+        goldSounds += request.soundId == OpenYAMM::Game::SoundId::Gold ? 1 : 0;
+    }
+
+    CHECK_EQ(goldSounds, 1u);
     REQUIRE_EQ(summary.takenItems.size(), 1u);
     CHECK_EQ(summary.takenItems[0].objectDescriptionId, 1406u);
     // Where it went, for the summary to inspect (identify, repair) the item itself.

@@ -107,7 +107,7 @@ SetMapMetadata({
     [203] = { kind = "enter_house", source = "opcode", houseId = 757, targetName = "Oracle" },
     [209] = { kind = "enter_house", source = "opcode", houseId = 1607, targetName = "The Adventurer's Inn" },
     [451] = { kind = "enter_house", source = "opcode", houseId = 902, targetName = "House Memoria" },
-    [453] = { kind = "enter_house", source = "opcode", houseId = 903, targetName = "House of Hawthorne " },
+    [453] = { kind = "enter_house", source = "opcode", houseId = 903, targetName = "House of Hawthorne" },
     [455] = { kind = "enter_house", source = "opcode", houseId = 904, targetName = "Lott's Family Home" },
     [457] = { kind = "enter_house", source = "opcode", houseId = 905, targetName = "House of Nosewort" },
     [459] = { kind = "enter_house", source = "opcode", houseId = 909, targetName = "Dotes Family Hovel" },
@@ -1126,15 +1126,15 @@ end, "House Memoria")
 
 RegisterEvent(452, "House Memoria", nil, "House Memoria")
 
-RegisterEvent(453, "House of Hawthorne ", function()
+RegisterEvent(453, "House of Hawthorne", function()
     if not IsQBitSet(QBit(57)) then -- The Pirates invaded Ravenshore
         evt.EnterHouse(903) -- House of Hawthorne
         return
     end
     evt.FaceAnimation(FaceAnimation.DoorLocked)
-end, "House of Hawthorne ")
+end, "House of Hawthorne")
 
-RegisterEvent(454, "House of Hawthorne ", nil, "House of Hawthorne ")
+RegisterEvent(454, "House of Hawthorne", nil, "House of Hawthorne")
 
 RegisterEvent(455, "Lott's Family Home", function()
     if not IsQBitSet(QBit(57)) then -- The Pirates invaded Ravenshore
