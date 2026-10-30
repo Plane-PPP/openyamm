@@ -18626,6 +18626,27 @@ bool IndoorWorldRuntime::summonEventObject(
     return summonEventPayload(objectId, true, x, y, z, speed, count, randomRotate);
 }
 
+bool IndoorWorldRuntime::summonEventInventoryItem(
+    const InventoryItem &item,
+    int32_t x,
+    int32_t y,
+    int32_t z,
+    int32_t speed,
+    bool randomRotate
+)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr
+        || !summonEventPayload(item.objectDescriptionId, false, x, y, z, speed, 1, randomRotate))
+    {
+        return false;
+    }
+
+    writeIndoorHeldItem(pMapDeltaData->spriteObjects.back(), item);
+    return true;
+}
+
 bool IndoorWorldRuntime::summonEventPayload(
     uint32_t payloadId,
     bool payloadIsObjectId,

@@ -20184,6 +20184,24 @@ bool OutdoorWorldRuntime::summonEventObject(
     return summonEventPayload(objectId, true, x, y, z, speed, count, randomRotate);
 }
 
+bool OutdoorWorldRuntime::summonEventInventoryItem(
+    const InventoryItem &item,
+    int32_t x,
+    int32_t y,
+    int32_t z,
+    int32_t speed,
+    bool randomRotate
+)
+{
+    if (!summonEventPayload(item.objectDescriptionId, false, x, y, z, speed, 1, randomRotate))
+    {
+        return false;
+    }
+
+    m_worldItems.back().item = item;
+    return true;
+}
+
 bool OutdoorWorldRuntime::summonEventPayload(
     uint32_t payloadId,
     bool payloadIsObjectId,

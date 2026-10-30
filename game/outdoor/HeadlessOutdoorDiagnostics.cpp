@@ -25029,6 +25029,56 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
     );
 
     runCase(
+        "dwi_flower_event_spawns_random_ring",
+        [&](std::string &failure)
+        {
+            RegressionScenario scenario = {};
+
+            if (!initializeRegressionScenario(gameDataLoader, *selectedMap, scenario))
+            {
+                failure = "scenario init failed";
+                return false;
+            }
+
+            Character *pMember = scenario.party.member(0);
+
+            if (pMember == nullptr)
+            {
+                failure = "party member missing";
+                return false;
+            }
+
+            pMember->skills["DisarmTraps"] = {"DisarmTraps", 5, SkillMastery::Normal};
+            scenario.party.setQuestBit(271, false);
+            const size_t initialCount = scenario.world.worldItemCount();
+
+            if (!executeLocalEventInScenario(gameDataLoader, *selectedMap, scenario, 495))
+            {
+                failure = "flower event 495 did not execute";
+                return false;
+            }
+
+            if (scenario.world.worldItemCount() != initialCount + 1)
+            {
+                failure = "flower event did not spawn exactly one item";
+                return false;
+            }
+
+            const OutdoorWorldRuntime::WorldItemState *pWorldItem = scenario.world.worldItemState(initialCount);
+            const ItemDefinition *pItemDefinition =
+                pWorldItem != nullptr ? gameDataLoader.getItemTable().get(pWorldItem->item.objectDescriptionId) : nullptr;
+
+            if (pItemDefinition == nullptr || pItemDefinition->equipStat != "Ring")
+            {
+                failure = "flower event spawned a non-ring item";
+                return false;
+            }
+
+            return true;
+        }
+    );
+
+    runCase(
         "event_summon_item_and_object_preserve_distinct_payload_semantics",
         [&](std::string &failure)
         {

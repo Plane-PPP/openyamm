@@ -647,6 +647,14 @@ public:
         uint32_t count,
         bool randomRotate
     ) override;
+    bool summonEventInventoryItem(
+        const InventoryItem &item,
+        int32_t x,
+        int32_t y,
+        int32_t z,
+        int32_t speed,
+        bool randomRotate
+    ) override;
     bool summonEventObject(
         uint32_t objectId,
         int32_t x,
