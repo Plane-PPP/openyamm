@@ -12541,9 +12541,9 @@ bool GameApplication::processPendingArcomageGame()
 
     Party *pParty = nullptr;
 
-    if (m_pOutdoorPartyRuntime != nullptr)
+    if (m_pMapSceneRuntime != nullptr)
     {
-        pParty = &m_pOutdoorPartyRuntime->party();
+        pParty = &m_pMapSceneRuntime->party();
     }
     else if (m_gameSession.partyState().has_value())
     {
@@ -13099,9 +13099,10 @@ void GameApplication::handleCompletedArcomageScreen()
     const bool finished = state.result.finished;
     Party *pParty = nullptr;
 
-    if (m_pOutdoorPartyRuntime != nullptr)
+    // The scene runtime owns the live party indoors and outdoors; the session copy is overwritten from it.
+    if (m_pMapSceneRuntime != nullptr)
     {
-        pParty = &m_pOutdoorPartyRuntime->party();
+        pParty = &m_pMapSceneRuntime->party();
     }
     else if (m_gameSession.partyState().has_value())
     {
@@ -13139,7 +13140,7 @@ void GameApplication::handleCompletedArcomageScreen()
             arcomageStatusText = "You lost!";
         }
 
-        if (m_pOutdoorPartyRuntime != nullptr)
+        if (m_pMapSceneRuntime != nullptr)
         {
             synchronizeSessionFromRuntime();
         }
