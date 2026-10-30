@@ -3827,7 +3827,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
 
                 if (!plan.has_value())
                 {
-                    context.setStatusBarEvent("Can't equip that item there");
+                    context.setStatusBarEvent(
+                        GameMechanics::equipRefusalReason(*pCharacter, *pItemDefinition, pActiveCharacterDollType)
+                            .value_or("Can't equip that item there"));
                     context.playSpeechReaction(memberIndex, SpeechId::CantEquip, true);
                     return;
                 }
@@ -3917,7 +3919,8 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
 
                 if (!plan.has_value())
                 {
-                    context.setStatusBarEvent("Can't equip that item");
+                    context.setStatusBarEvent(GameMechanics::equipRefusalReason(
+                        *pCharacter, *pItemDefinition, pActiveCharacterDollType).value_or("Can't equip that item"));
                     context.playSpeechReaction(memberIndex, SpeechId::CantEquip, true);
                     return;
                 }
