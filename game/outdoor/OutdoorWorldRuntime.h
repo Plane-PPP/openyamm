@@ -16,6 +16,7 @@
 #include "game/gameplay/GameplayCombatController.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/gameplay/MonsterDeathExplosion.h"
 #include "game/gameplay/SearchableLootPropRuntime.h"
 #include "game/maps/MapAssetLoader.h"
 #include "game/maps/MapDeltaData.h"
@@ -926,6 +927,9 @@ public:
     // After a load: dead actors whose corpse loot was never rolled (older saves, map deltas) get it on the first update,
     // once the event state that adds guaranteed items is bound.
     void rollPendingCorpseLoot();
+    // An actor whose HP reached 0: its dying animation, killed event, corpse physics, drops and death blast.
+    void beginOutdoorActorDeath(size_t actorIndex);
+    void detonatePendingDeathExplosions();
     bool openMapActorCorpseView(size_t actorIndex);
     bool takeActiveCorpseItem(size_t itemIndex, ChestItemState &item) override;
     void closeActiveCorpseView() override;
@@ -1393,7 +1397,8 @@ private:
     GameplayWorldPoint chestTrapSourcePoint() const;
     GameplayWorldPoint chestTrapVisualPoint(const GameplayWorldPoint &sourcePoint) const;
     void applyChestTrapState(uint32_t chestId, const ChestTrapOpenResult &trapResult);
-    void spawnChestTrapVisual(const GameplayWorldPoint &point, const ChestTrapOpenResult &trapResult);
+    // The impact of object objectId at point, with the fireball's sound: a chest trap or a monster's death blast.
+    void spawnObjectBurstVisual(const GameplayWorldPoint &point, uint16_t objectId, CombatDamageType damageType);
     void pushAudioEvent(
         uint32_t soundId,
         uint32_t sourceId,
@@ -1653,6 +1658,8 @@ private:
     std::vector<MapActorState> m_mapActors;
     bool m_monsterKilledHooksEnabled = false;
     std::vector<MonsterKilledEvent> m_pendingMonsterKilledEvents;
+    // Deaths of exploding monsters, detonated on the next actor update (MonsterDeathExplosion.h).
+    std::vector<PendingMonsterDeathExplosion> m_pendingDeathExplosions;
     std::vector<size_t> m_mm9FoundPlayerActorIndices;
     std::vector<bool> m_mm9FoundPlayerEventAttempted;
     std::vector<size_t> m_mm9CivilianActorIndices;

@@ -260,6 +260,7 @@ add_executable(openyamm_unit_tests
     ../game/gameplay/TravelRuntime.cpp
     ../game/gameplay/CorpseLootRuntime.cpp
     ../game/gameplay/GameplayLootFilter.cpp
+    ../game/gameplay/MonsterDeathExplosion.cpp
     ../game/gameplay/SavePreviewImage.cpp
     ../game/maps/MapDeltaData.cpp
     ../game/maps/MapAssetLoader.cpp

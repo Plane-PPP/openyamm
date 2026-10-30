@@ -31133,7 +31133,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             {
                 check("party", objectId, 0, 0, GameplayProjectileVisualMode::SpriteBillboard, true);
             }
-            // A discharged chest trap is an impact of its trap object, which is also its source (spawnChestTrapVisual).
+            // A discharged chest trap is an impact of its trap object, which is also its source
+            // (spawnObjectBurstVisual).
             for (const int trapObjectId : {811, 812, 813, 814})
             {
                 const ObjectEntry *pTrap = objects.findByObjectId(int16_t(trapObjectId));

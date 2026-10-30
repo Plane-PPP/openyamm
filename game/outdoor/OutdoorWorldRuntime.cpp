@@ -4759,7 +4759,7 @@ bool OutdoorWorldRuntime::attemptOpenChest(uint32_t chestId, bool openedByTeleki
 
     if (trapResult.trapDischarged)
     {
-        spawnChestTrapVisual(visualPoint, trapResult);
+        spawnObjectBurstVisual(visualPoint, trapResult.trapObjectId, trapResult.damageType);
     }
 
     return trapResult.shouldOpenChest;
@@ -4842,11 +4842,12 @@ void OutdoorWorldRuntime::applyChestTrapState(uint32_t chestId, const ChestTrapO
     }
 }
 
-void OutdoorWorldRuntime::spawnChestTrapVisual(
+void OutdoorWorldRuntime::spawnObjectBurstVisual(
     const GameplayWorldPoint &point,
-    const ChestTrapOpenResult &trapResult)
+    uint16_t objectId,
+    CombatDamageType damageType)
 {
-    if (trapResult.trapObjectId == 0)
+    if (objectId == 0)
     {
         return;
     }
@@ -4857,10 +4858,10 @@ void OutdoorWorldRuntime::spawnChestTrapVisual(
     }
 
     const std::optional<uint16_t> objectDescriptionId =
-        m_pObjectTable->findDescriptionIdByObjectId(static_cast<int16_t>(trapResult.trapObjectId));
-    const ObjectEntry *pTrapObject = m_pObjectTable->findByObjectId(static_cast<int16_t>(trapResult.trapObjectId));
+        m_pObjectTable->findDescriptionIdByObjectId(static_cast<int16_t>(objectId));
+    const ObjectEntry *pObject = m_pObjectTable->findByObjectId(static_cast<int16_t>(objectId));
 
-    if (!objectDescriptionId || pTrapObject == nullptr)
+    if (!objectDescriptionId || pObject == nullptr)
     {
         return;
     }
@@ -4868,9 +4869,9 @@ void OutdoorWorldRuntime::spawnChestTrapVisual(
     ProjectileState projectile = {};
     projectile.sourceKind = ProjectileState::SourceKind::Event;
     projectile.sourceId = EventSpellSourceId;
-    // The trap is the burst's source, so it plays the trap's named effect (engine/effects/projectiles.yml).
-    projectile.objectName = pTrapObject->internalName;
-    projectile.objectSpriteName = pTrapObject->spriteName;
+    // The object is the burst's source, so it plays the object's named effect (engine/effects/projectiles.yml).
+    projectile.objectName = pObject->internalName;
+    projectile.objectSpriteName = pObject->spriteName;
     projectile.impactObjectDescriptionId = *objectDescriptionId;
     projectile.impactSoundIdOverride = static_cast<uint32_t>(SoundId::Fireball);
     projectile.sourceX = point.x;
@@ -4879,9 +4880,65 @@ void OutdoorWorldRuntime::spawnChestTrapVisual(
     projectile.x = point.x;
     projectile.y = point.y;
     projectile.z = point.z;
-    projectile.damageType = trapResult.damageType;
+    projectile.damageType = damageType;
 
     spawnProjectileImpact(projectile, point.x, point.y, point.z, true);
+}
+
+void OutdoorWorldRuntime::beginOutdoorActorDeath(size_t actorIndex)
+{
+    MapActorState &actor = m_mapActors[actorIndex];
+    beginDyingState(actor, m_pActorSpriteFrameTable);
+    queueMonsterKilledEvent(actorIndex, actor.monsterId);
+    activateOutdoorActorCorpsePhysics(actorIndex);
+    spawnMonsterDeathDropsForActor(actorIndex, actor);
+
+    if (std::optional<PendingMonsterDeathExplosion> explosion = monsterDeathExplosionFor(*this, actorIndex))
+    {
+        m_pendingDeathExplosions.push_back(*explosion);
+    }
+}
+
+void OutdoorWorldRuntime::detonatePendingDeathExplosions()
+{
+    if (m_pendingDeathExplosions.empty() || m_pGameplayActorService == nullptr)
+    {
+        m_pendingDeathExplosions.clear();
+        return;
+    }
+
+    // A blast that kills records the next one, detonated on the next update.
+    const std::vector<PendingMonsterDeathExplosion> pending = std::move(m_pendingDeathExplosions);
+    m_pendingDeathExplosions.clear();
+
+    for (const PendingMonsterDeathExplosion &explosion : pending)
+    {
+        std::mt19937 rng(explosion.actorId * 2654435761u ^ m_sessionChestSeed);
+        const MonsterDeathExplosion result =
+            resolveMonsterDeathExplosion(*this, *this, *m_pGameplayActorService, explosion, rng);
+        spawnObjectBurstVisual(explosion.point, MonsterDeathExplosionObjectId, result.actorDamageType);
+
+        if (result.hitsParty && m_pGameplayCombatController != nullptr)
+        {
+            m_pGameplayCombatController->recordPartyProjectileImpact(
+                explosion.actorId,
+                result.partyDamage,
+                0,
+                0,
+                true,
+                result.partyDamageType,
+                GameplayActorAttackAbility::Attack1);
+        }
+
+        for (const MonsterDeathExplosionActorHit &hit : result.actorHits)
+        {
+            applyMonsterAttackToMapActor(
+                hit.actorIndex,
+                hit.damage,
+                explosion.actorId,
+                shieldAttackTierForDamageType(result.actorDamageType, false));
+        }
+    }
 }
 
 void OutdoorWorldRuntime::initialize(
@@ -4932,6 +4989,7 @@ void OutdoorWorldRuntime::initialize(
     m_actorBehaviors.reset();
     m_monsterKilledHooksEnabled = false;
     m_pendingMonsterKilledEvents.clear();
+    m_pendingDeathExplosions.clear();
     m_mm9FoundPlayerActorIndices.clear();
     m_mm9FoundPlayerEventAttempted.clear();
     m_mm9CivilianActorIndices.clear();
@@ -8590,6 +8648,7 @@ OutdoorWorldRuntime::Snapshot OutdoorWorldRuntime::snapshot() const
 void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
 {
     m_pendingMonsterKilledEvents.clear();
+    m_pendingDeathExplosions.clear();
     m_actorSightCache.clear();
     m_actorShields.clear();
     m_actorModifiers.clear();
@@ -12295,6 +12354,8 @@ void OutdoorWorldRuntime::updateMapActors(float deltaSeconds, float partyX, floa
     {
         return;
     }
+
+    detonatePendingDeathExplosions();
 
     updateMm9FoundPlayerEvents(deltaSeconds, partyX, partyY, partyZ);
     refreshHiddenDecorationEntities();
@@ -16585,10 +16646,7 @@ bool OutdoorWorldRuntime::applyReflectedDamageToActor(
         if (actor.currentHp <= 0)
         {
             actor.killedByParty = true;
-            beginDyingState(actor, m_pActorSpriteFrameTable);
-            queueMonsterKilledEvent(actorIndex, actor.monsterId);
-            activateOutdoorActorCorpsePhysics(actorIndex);
-            spawnMonsterDeathDropsForActor(actorIndex, actor);
+            beginOutdoorActorDeath(actorIndex);
             const bx::Vec3 knockback = actorKnockbackVelocity(
                 actor.preciseX,
                 actor.preciseY,
@@ -17250,10 +17308,7 @@ bool OutdoorWorldRuntime::applyMonsterAttackToMapActor(
 
     if (actor.currentHp <= 0)
     {
-        beginDyingState(actor, m_pActorSpriteFrameTable);
-        queueMonsterKilledEvent(actorIndex, actor.monsterId);
-        activateOutdoorActorCorpsePhysics(actorIndex);
-        spawnMonsterDeathDropsForActor(actorIndex, actor);
+        beginOutdoorActorDeath(actorIndex);
         const float sourceX = pSourceActor != nullptr ? pSourceActor->preciseX : actor.preciseX;
         const float sourceY = pSourceActor != nullptr ? pSourceActor->preciseY : actor.preciseY;
         const float sourceZ =
@@ -17856,10 +17911,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     if (died)
     {
         actor.killedByParty = true;
-        beginDyingState(actor, m_pActorSpriteFrameTable);
-        queueMonsterKilledEvent(actorIndex, actor.monsterId);
-        activateOutdoorActorCorpsePhysics(actorIndex);
-        spawnMonsterDeathDropsForActor(actorIndex, actor);
+        beginOutdoorActorDeath(actorIndex);
         const bx::Vec3 knockback = actorKnockbackVelocity(
             actor.preciseX,
             actor.preciseY,

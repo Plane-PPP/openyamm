@@ -14,6 +14,7 @@
 #include "game/gameplay/GameplayBolsterRuntime.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/gameplay/MonsterDeathExplosion.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/gameplay/SearchableLootPropRuntime.h"
 #include "game/ui/GameplayOverlayTypes.h"
@@ -918,7 +919,8 @@ private:
     GameplayWorldPoint chestTrapSourcePoint() const;
     GameplayWorldPoint chestTrapVisualPoint(const GameplayWorldPoint &sourcePoint) const;
     void applyChestTrapState(uint32_t chestId, const ChestTrapOpenResult &trapResult);
-    void spawnChestTrapVisual(const GameplayWorldPoint &point, const ChestTrapOpenResult &trapResult);
+    // The impact of object objectId at point, with the fireball's sound: a chest trap or a monster's death blast.
+    void spawnObjectBurstVisual(const GameplayWorldPoint &point, uint16_t objectId, CombatDamageType damageType);
     bool applyActorMeleeAttackToMapActor(size_t sourceActorIndex, const ActorAttackRequest &attackRequest);
     int applyMonsterDamageEventHooks(
         size_t actorIndex,
@@ -937,6 +939,16 @@ private:
         const GameplayWorldPoint *pSource,
         bool force = false);
     void beginMapActorDyingState(size_t actorIndex, MapDeltaActor &actor);
+    // Damage from a monster's splash or blast (not the party's): shields, event hooks, death and a kill reward for
+    // sourceActorId when it is an actor.
+    void applyNonPartyAreaDamageToActor(
+        size_t actorIndex,
+        int damage,
+        CombatDamageType damageType,
+        ShieldAttackTier shieldTier,
+        const GameplayWorldPoint &sourcePoint,
+        std::optional<uint32_t> killerActorId);
+    void detonatePendingDeathExplosions();
     void spawnMonsterDeathDropsForActor(size_t actorIndex, const MapDeltaActor &actor);
     bool spawnMonsterDeathDropItem(
         const InventoryItem &item,
@@ -1073,6 +1085,8 @@ private:
     // Per sector: some of its faces are drawn on the automap. Rebuilt only when the reveal pass maps something new;
     // Wizard Eye shows the actors standing in these sectors.
     std::vector<bool> m_indoorDiscoveredSectors;
+    // Deaths of exploding monsters, detonated on the next actor update (MonsterDeathExplosion.h).
+    std::vector<PendingMonsterDeathExplosion> m_pendingDeathExplosions;
     size_t m_lastIndoorJournalRevealFaceCount = 0;
     size_t m_lastIndoorJournalRevealOutlineCount = 0;
     std::vector<FireSpikeTrapState> m_fireSpikeTraps;

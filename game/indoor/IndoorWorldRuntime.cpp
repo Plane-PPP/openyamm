@@ -4026,6 +4026,7 @@ void IndoorWorldRuntime::initialize(
     m_activeChestView.reset();
     m_mapActorCorpseViews.clear();
     m_mapActorRevealedLoot.clear();
+    m_pendingDeathExplosions.clear();
     m_corpseLootPending = true;
     m_activeCorpseView.reset();
     m_mapActorAiStates.clear();
@@ -4164,6 +4165,7 @@ void IndoorWorldRuntime::initialize(
     m_activeChestView.reset();
     m_mapActorCorpseViews.clear();
     m_mapActorRevealedLoot.clear();
+    m_pendingDeathExplosions.clear();
     m_corpseLootPending = true;
     m_activeCorpseView.reset();
     m_mapActorAiStates.clear();
@@ -7442,34 +7444,15 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
         }
         else if (impact.applyNonPartyProjectileDamage && impact.damage > 0)
         {
-            MapDeltaActor &targetActor = pMapDeltaData->actors[impact.actorIndex];
-            const int16_t resolvedMonsterId = resolveIndoorActorStatsId(targetActor);
-            const int appliedDamage = applyActorShieldHit(
+            applyNonPartyAreaDamageToActor(
                 impact.actorIndex,
-                applyMonsterDamageEventHooks(
-                    impact.actorIndex,
-                    resolvedMonsterId,
-                    impact.damage,
-                    projectile.damageType),
+                impact.damage,
+                projectile.damageType,
                 GameplayProjectileService::projectileShieldTier(projectile),
-                {projectile.sourceX, projectile.sourceY, projectile.sourceZ}).bodyDamage;
-            const int previousHp = targetActor.hp;
-            targetActor.hp = std::max(0, targetActor.hp - appliedDamage);
-
-            if (previousHp > 0 && targetActor.hp <= 0)
-            {
-                beginMapActorDyingState(impact.actorIndex, targetActor);
-
-                if (projectile.sourceKind == GameplayProjectileService::ProjectileState::SourceKind::Actor)
-                {
-                    rewardKillByActor(impact.actorIndex, projectile.sourceId);
-                }
-            }
-            else if (previousHp > 0 && targetActor.hp < previousHp)
-            {
-                const GameplayWorldPoint sourcePoint = {projectile.sourceX, projectile.sourceY, projectile.sourceZ};
-                beginMapActorHitReaction(impact.actorIndex, targetActor, &sourcePoint);
-            }
+                {projectile.sourceX, projectile.sourceY, projectile.sourceZ},
+                projectile.sourceKind == GameplayProjectileService::ProjectileState::SourceKind::Actor
+                    ? std::optional<uint32_t>(projectile.sourceId)
+                    : std::nullopt);
         }
     }
 
@@ -10783,6 +10766,7 @@ void IndoorWorldRuntime::updateActorAi(float deltaSeconds)
     const uint64_t syncBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
     syncMapActorAiStates();
     rollPendingCorpseLoot();
+    detonatePendingDeathExplosions();
     refreshConditionalMonsterRelations();
     updateActorShields(deltaSeconds);
     updateActorModifiers(deltaSeconds);
@@ -15301,8 +15285,97 @@ void IndoorWorldRuntime::beginMapActorDyingState(size_t actorIndex, MapDeltaActo
         pushIndoorMonsterSound(actorIndex, pStats->deathSoundId);
     }
 
+    if (std::optional<PendingMonsterDeathExplosion> explosion = monsterDeathExplosionFor(*this, actorIndex))
+    {
+        m_pendingDeathExplosions.push_back(*explosion);
+    }
+
     notifyMonsterKilledEventHooks(actorIndex, resolveIndoorActorStatsId(actor));
     spawnMonsterDeathDropsForActor(actorIndex, actor);
+}
+
+void IndoorWorldRuntime::applyNonPartyAreaDamageToActor(
+    size_t actorIndex,
+    int damage,
+    CombatDamageType damageType,
+    ShieldAttackTier shieldTier,
+    const GameplayWorldPoint &sourcePoint,
+    std::optional<uint32_t> killerActorId)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size() || damage <= 0)
+    {
+        return;
+    }
+
+    MapDeltaActor &targetActor = pMapDeltaData->actors[actorIndex];
+    const int16_t resolvedMonsterId = resolveIndoorActorStatsId(targetActor);
+    const int appliedDamage = applyActorShieldHit(
+        actorIndex,
+        applyMonsterDamageEventHooks(actorIndex, resolvedMonsterId, damage, damageType),
+        shieldTier,
+        sourcePoint).bodyDamage;
+    const int previousHp = targetActor.hp;
+    targetActor.hp = std::max(0, targetActor.hp - appliedDamage);
+
+    if (previousHp > 0 && targetActor.hp <= 0)
+    {
+        beginMapActorDyingState(actorIndex, targetActor);
+
+        if (killerActorId)
+        {
+            rewardKillByActor(actorIndex, *killerActorId);
+        }
+    }
+    else if (previousHp > 0 && targetActor.hp < previousHp)
+    {
+        beginMapActorHitReaction(actorIndex, targetActor, &sourcePoint);
+    }
+}
+
+void IndoorWorldRuntime::detonatePendingDeathExplosions()
+{
+    if (m_pendingDeathExplosions.empty() || m_pGameplayActorService == nullptr)
+    {
+        m_pendingDeathExplosions.clear();
+        return;
+    }
+
+    // A blast that kills records the next one, detonated on the next update.
+    const std::vector<PendingMonsterDeathExplosion> pending = std::move(m_pendingDeathExplosions);
+    m_pendingDeathExplosions.clear();
+
+    for (const PendingMonsterDeathExplosion &explosion : pending)
+    {
+        std::mt19937 rng(explosion.actorId * 2654435761u ^ m_sessionChestSeed);
+        const MonsterDeathExplosion result =
+            resolveMonsterDeathExplosion(*this, *this, *m_pGameplayActorService, explosion, rng);
+        spawnObjectBurstVisual(explosion.point, MonsterDeathExplosionObjectId, result.actorDamageType);
+
+        if (result.hitsParty && m_pGameplayCombatController != nullptr)
+        {
+            m_pGameplayCombatController->recordPartyProjectileImpact(
+                explosion.actorId,
+                result.partyDamage,
+                0,
+                0,
+                true,
+                result.partyDamageType,
+                GameplayActorAttackAbility::Attack1);
+        }
+
+        for (const MonsterDeathExplosionActorHit &hit : result.actorHits)
+        {
+            applyNonPartyAreaDamageToActor(
+                hit.actorIndex,
+                hit.damage,
+                result.actorDamageType,
+                shieldAttackTierForDamageType(result.actorDamageType, false),
+                explosion.point,
+                explosion.actorId);
+        }
+    }
 }
 
 void IndoorWorldRuntime::spawnMonsterDeathDropsForActor(size_t actorIndex, const MapDeltaActor &actor)
@@ -20013,6 +20086,7 @@ void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_actorUpdateAccumulatorSeconds = snapshot.actorUpdateAccumulatorSeconds;
     m_immolationTickAccumulatorGameMinutes = 0.0f;
     m_immolationTickSequence = 0;
+    m_pendingDeathExplosions.clear();
     m_indoorJournalRevealStateValid = false;
     ++m_indoorMinimapRevealRevision;
     m_cachedGameplayMinimapLinesValid = false;
@@ -20361,7 +20435,7 @@ bool IndoorWorldRuntime::attemptOpenChest(uint32_t chestId, bool openedByTelekin
 
     if (trapResult.trapDischarged)
     {
-        spawnChestTrapVisual(visualPoint, trapResult);
+        spawnObjectBurstVisual(visualPoint, trapResult.trapObjectId, trapResult.damageType);
     }
 
     return trapResult.shouldOpenChest;
@@ -20447,11 +20521,12 @@ void IndoorWorldRuntime::applyChestTrapState(uint32_t chestId, const ChestTrapOp
     }
 }
 
-void IndoorWorldRuntime::spawnChestTrapVisual(
+void IndoorWorldRuntime::spawnObjectBurstVisual(
     const GameplayWorldPoint &point,
-    const ChestTrapOpenResult &trapResult)
+    uint16_t objectId,
+    CombatDamageType damageType)
 {
-    if (m_pGameplayProjectileService == nullptr || trapResult.trapObjectId == 0)
+    if (m_pGameplayProjectileService == nullptr || objectId == 0)
     {
         return;
     }
@@ -20462,10 +20537,10 @@ void IndoorWorldRuntime::spawnChestTrapVisual(
     }
 
     const std::optional<uint16_t> objectDescriptionId =
-        m_pObjectTable->findDescriptionIdByObjectId(static_cast<int16_t>(trapResult.trapObjectId));
-    const ObjectEntry *pTrapObject = m_pObjectTable->findByObjectId(static_cast<int16_t>(trapResult.trapObjectId));
+        m_pObjectTable->findDescriptionIdByObjectId(static_cast<int16_t>(objectId));
+    const ObjectEntry *pObject = m_pObjectTable->findByObjectId(static_cast<int16_t>(objectId));
 
-    if (!objectDescriptionId || pTrapObject == nullptr)
+    if (!objectDescriptionId || pObject == nullptr)
     {
         return;
     }
@@ -20473,9 +20548,9 @@ void IndoorWorldRuntime::spawnChestTrapVisual(
     GameplayProjectileService::ProjectileState projectile = {};
     projectile.sourceKind = GameplayProjectileService::ProjectileState::SourceKind::Event;
     projectile.sourceId = EventSpellSourceId;
-    // The trap is the burst's source, so it plays the trap's named effect (engine/effects/projectiles.yml).
-    projectile.objectName = pTrapObject->internalName;
-    projectile.objectSpriteName = pTrapObject->spriteName;
+    // The object is the burst's source, so it plays the object's named effect (engine/effects/projectiles.yml).
+    projectile.objectName = pObject->internalName;
+    projectile.objectSpriteName = pObject->spriteName;
     projectile.impactObjectDescriptionId = *objectDescriptionId;
     projectile.impactSoundIdOverride = static_cast<uint32_t>(SoundId::Fireball);
     projectile.sourceX = point.x;
@@ -20484,7 +20559,7 @@ void IndoorWorldRuntime::spawnChestTrapVisual(
     projectile.x = point.x;
     projectile.y = point.y;
     projectile.z = point.z;
-    projectile.damageType = trapResult.damageType;
+    projectile.damageType = damageType;
 
     spawnIndoorProjectileImpactVisual(projectile, point, true);
 }
