@@ -147,9 +147,9 @@ vec3 surfaceGlowColor(vec3 albedo)
 
 // The history texel a world point (relative to the history camera) falls on; xy: texture coordinate, z: whether it
 // lies inside the view.
-vec3 surfaceReflectionTexel(vec3 point)
+vec3 surfaceReflectionTexel(vec3 rayPoint)
 {
-    vec4 clip = mul(u_reflectionViewProjection, vec4(point + u_reflectionCamera.xyz, 1.0));
+    vec4 clip = mul(u_reflectionViewProjection, vec4(rayPoint + u_reflectionCamera.xyz, 1.0));
     vec2 ndc = clip.xy / max(clip.w, 0.0001);
     float inside = clip.w > 1.0 && abs(ndc.x) < 1.0 && abs(ndc.y) < 1.0 ? 1.0 : 0.0;
     return vec3(ndc.x * 0.5 + 0.5, ndc.y * (0.5 * u_reflectionCamera.w) + 0.5, inside);
@@ -173,14 +173,14 @@ vec4 surfaceScreenReflection(vec3 position, vec3 direction, vec3 faceNormal)
     for (int i = 0; i < SURFACE_REFLECTION_STEPS; ++i)
     {
         float next = travelled + stepLength;
-        vec3 point = origin + direction * next;
-        vec3 texel = surfaceReflectionTexel(point);
+        vec3 rayPoint = origin + direction * next;
+        vec3 texel = surfaceReflectionTexel(rayPoint);
         if (texel.z < 0.5 || next > SURFACE_REFLECTION_DISTANCE)
         {
             break;
         }
         vec4 scene = texture2DLod(s_reflectionPosition, texel.xy, 0.0);
-        float behind = length(point) - length(scene.xyz);
+        float behind = length(rayPoint) - length(scene.xyz);
         if (scene.a > 0.5 && behind > 0.0 && behind < max(stepLength * 2.0, 24.0))
         {
             float low = travelled;
