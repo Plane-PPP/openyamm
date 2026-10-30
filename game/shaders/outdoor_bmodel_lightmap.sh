@@ -120,7 +120,9 @@ vec3 surfaceSkyRadiance(vec3 direction, vec3 radiance, float roughness)
 
 // A face with material maps under the bake: the bake's light for the flat face relit for the detailed normal (as the
 // terrain does), occlusion, the highlights of the sun and point lights, the sky's reflection and glow. Linear result.
-vec3 surfaceBakedColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal, vec3 toCamera, float distance)
+// It takes the varyings from main: Metal and HLSL see them only there.
+vec3 surfaceBakedColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal, vec3 toCamera, float distance,
+    vec3 worldPosition, vec2 lightmapUv)
 {
     vec3 albedo = pow(max(displayColor, vec3_splat(0.0)), vec3_splat(2.2));
     vec3 normal = material.normal;
@@ -144,9 +146,9 @@ vec3 surfaceBakedColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal
     vec3 f0 = mix(vec3_splat(0.04), albedo, material.metal);
     vec3 diffuseAlbedo = albedo * (1.0 - SURFACE_METAL_DIFFUSE_LOSS * material.metal);
 
-    vec4 sunSample = texture2D(s_texLightmap, v_lightmapUv);
-    vec4 skySample = texture2D(s_texBakedSky, v_lightmapUv);
-    vec4 directSample = texture2D(s_texBakedSunDirect, v_lightmapUv);
+    vec4 sunSample = texture2D(s_texLightmap, lightmapUv);
+    vec4 skySample = texture2D(s_texBakedSky, lightmapUv);
+    vec4 directSample = texture2D(s_texBakedSunDirect, lightmapUv);
     vec3 totalSun = sunSample.rgb * (sunSample.a * 4.0);
     vec3 directSun = min(directSample.rgb * (directSample.a * 4.0), totalSun);
     float visibility = 1.0;
@@ -154,7 +156,7 @@ vec3 surfaceBakedColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal
     if (u_sunShadowParams[0].x > 0.5)
     {
         vec3 shadowNormal = dot(faceNormal, u_sunShadowParams[3].xyz) < 0.0 ? -faceNormal : faceNormal;
-        visibility = sunShadowVisibility(v_worldPosition, shadowNormal, 1.0);
+        visibility = sunShadowVisibility(worldPosition, shadowNormal, 1.0);
     }
 #endif
     vec3 toSun = normalize(u_surfaceSun.xyz);
@@ -172,12 +174,12 @@ vec3 surfaceBakedColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal
         SurfacePoint lit = material;
         lit.normal = normal;
         lit.roughness = roughness;
-        surfacePointLights(v_worldPosition, lit, faceNormal, view, f0, vec2(-1.0, -1.0), false, pointDiffuse,
+        surfacePointLights(worldPosition, lit, faceNormal, view, f0, vec2(-1.0, -1.0), false, pointDiffuse,
             pointSpecular);
     }
     else
     {
-        pointDiffuse = getFxLighting(v_worldPosition);
+        pointDiffuse = getFxLighting(worldPosition);
     }
 
     vec3 color = diffuseAlbedo * min(irradiance + pointDiffuse, vec3_splat(4.0));
@@ -193,7 +195,7 @@ vec3 surfaceBakedColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal
     // Only smooth and metal surfaces show the sky: the painted colours already hold rough surfaces' faint sheen.
     float reflection = max(material.metal, 1.0 - smoothstep(0.3, 0.7, roughness));
     vec3 environment = surfaceTracedReflection(surfaceSkyRadiance(reflected, sky / (0.55 + 0.45 * faceNormal.z),
-        roughness), v_worldPosition, reflected, faceNormal, roughness, reflection);
+        roughness), worldPosition, reflected, faceNormal, roughness, reflection);
     specular += environment * surfaceEnvironmentResponse(f0, roughness, nv)
         * (specularOcclusion * reflection * u_surfaceMaterial.w);
     return color + specular + surfaceGlowColor(albedo) * (material.glow * SURFACE_GLOW_SCALE);
@@ -250,7 +252,7 @@ void main()
     if (hasMaterial)
     {
         litTextureColor = vec4(pow(max(surfaceBakedColor(textureColor.rgb, material, faceNormal, toCamera,
-            cameraDistance), vec3_splat(0.0)), vec3_splat(1.0 / 2.2)), textureColor.a);
+            cameraDistance, v_worldPosition, v_lightmapUv), vec3_splat(0.0)), vec3_splat(1.0 / 2.2)), textureColor.a);
     }
     else
 #endif

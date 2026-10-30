@@ -51,20 +51,21 @@ float indoorFaceFacing(vec3 normal, vec3 toLight)
     return smoothstep(0.0, 0.08, facing) * (0.86 + 0.14 * sqrt(facing));
 }
 
-// The static light: the room ambient plus the vertex bake of the static lights, or the face's lightmap.
-vec3 indoorStaticLight(vec3 vertexLighting)
+// The static light: the room ambient plus the vertex bake of the static lights, or the face's lightmap. The helpers
+// take the varyings from main: Metal and HLSL see them only there.
+vec3 indoorStaticLight(vec3 vertexLighting, vec2 lightmapUv)
 {
 #if INDOOR_BAKED
-    vec4 baked = texture2D(s_texLightmap, v_lightmapUv);
+    vec4 baked = texture2D(s_texLightmap, lightmapUv);
     return baked.rgb * (baked.a * 4.0);
 #else
     return u_indoorLightParams.yzw + vertexLighting * 2.0;
 #endif
 }
 
-vec3 getIndoorLighting(vec3 worldPosition, vec3 vertexLighting)
+vec3 getIndoorLighting(vec3 worldPosition, vec3 vertexLighting, vec2 lightmapUv)
 {
-    vec3 lighting = indoorStaticLight(vertexLighting);
+    vec3 lighting = indoorStaticLight(vertexLighting, lightmapUv);
     // BLV faces are flat: the normal from the position derivatives, turned toward the camera.
     vec3 normal = cross(dFdx(worldPosition), dFdy(worldPosition));
     normal *= inversesqrt(max(dot(normal, normal), 0.000001));
@@ -126,19 +127,19 @@ vec3 getIndoorLighting(vec3 worldPosition, vec3 vertexLighting)
 // detailed normal with their highlights, the room's light reflected by smooth and metal surfaces, and glow (glass is
 // lit from outside, so it glows at any hour). Display-space result like getIndoorLighting's product.
 vec3 surfaceIndoorColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal, vec3 toCamera, float distance,
-    vec3 vertexLighting)
+    vec3 vertexLighting, vec3 worldPosition, vec2 lightmapUv)
 {
     vec3 view = toCamera / max(distance, 0.001);
     vec3 albedo = pow(max(displayColor, vec3_splat(0.0)), vec3_splat(2.2));
     vec3 f0 = mix(vec3_splat(0.04), albedo, material.metal);
-    vec3 room = indoorStaticLight(vertexLighting);
+    vec3 room = indoorStaticLight(vertexLighting, lightmapUv);
     vec3 lighting = room * material.occlusion;
     vec3 specular = vec3_splat(0.0);
     if (u_indoorFaceGrid.x > 0.5)
     {
         vec3 diffuse;
         vec3 highlights;
-        surfacePointLights(v_worldPosition, material, faceNormal, view, f0, u_indoorFaceGrid.yz, true, diffuse,
+        surfacePointLights(worldPosition, material, faceNormal, view, f0, u_indoorFaceGrid.yz, true, diffuse,
             highlights);
         lighting += diffuse;
         specular += highlights;
@@ -151,10 +152,10 @@ vec3 surfaceIndoorColor(vec3 displayColor, SurfacePoint material, vec3 faceNorma
             {
                 break;
             }
-            vec3 toLight = u_indoorLightPositions[i].xyz - v_worldPosition;
+            vec3 toLight = u_indoorLightPositions[i].xyz - worldPosition;
             vec3 direction = toLight * inversesqrt(max(dot(toLight, toLight), 0.0001));
             vec3 light = u_indoorLightColors[i].rgb * (u_indoorLightColors[i].w
-                * lightGridAttenuation(u_indoorLightPositions[i], v_worldPosition)
+                * lightGridAttenuation(u_indoorLightPositions[i], worldPosition)
                 * indoorFaceFacing(faceNormal, toLight));
             lighting += light * surfaceRelight(material.normal, faceNormal, direction);
             specular += light * surfaceSpecular(material.normal, view, direction, material.roughness, f0);
@@ -172,7 +173,7 @@ vec3 surfaceIndoorColor(vec3 displayColor, SurfacePoint material, vec3 faceNorma
         * (reflected.z >= 0.0 ? 0.45 : 0.25);
     // Only smooth and metal surfaces show the room: the painted colours already hold rough surfaces' faint sheen.
     float reflection = max(material.metal, 1.0 - smoothstep(0.3, 0.7, material.roughness));
-    roomRadiance = surfaceTracedReflection(roomRadiance, v_worldPosition, reflected, faceNormal, material.roughness,
+    roomRadiance = surfaceTracedReflection(roomRadiance, worldPosition, reflected, faceNormal, material.roughness,
         reflection);
     color += roomRadiance * surfaceEnvironmentResponse(f0, material.roughness, nv)
         * (specularOcclusion * reflection * u_surfaceMaterial.w);
@@ -250,9 +251,10 @@ void main()
     }
 
 #if SURFACE_MATERIALS
-    vec3 color = surfaceIndoorColor(textureColor.rgb, material, faceNormal, toCamera, cameraDistance, v_color0.rgb);
+    vec3 color = surfaceIndoorColor(textureColor.rgb, material, faceNormal, toCamera, cameraDistance, v_color0.rgb,
+        v_worldPosition, v_lightmapUv);
 #else
-    vec3 color = textureColor.rgb * getIndoorLighting(v_worldPosition, v_color0.rgb);
+    vec3 color = textureColor.rgb * getIndoorLighting(v_worldPosition, v_color0.rgb, v_lightmapUv);
 #endif
 
     if (v_texcoord1.x > 0.5 && u_secretPulseParams.x > 0.5)
