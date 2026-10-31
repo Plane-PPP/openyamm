@@ -73,6 +73,8 @@ jobs:
     if: ${{ inputs.tests_only != true }}
     name: Windows x64 release
     env:
+      MINOTAUR_UPSTREAM_VERSION: "1.20"
+      MINOTAUR_UPSTREAM_SHA: 1add1d374848648887c08707199921335b4ba440
       MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
     runs-on: windows-latest
     timeout-minutes: 240
@@ -146,7 +148,7 @@ jobs:
           if [ -n "$PREVIOUS_BUILD_SHA" ] && [ "$PREVIOUS_BUILD_SHA" != "$base_sha" ]; then
             echo "previous_build_sha must match the selected baseline"; exit 1
           fi
-          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.18-%s-%s-%s\n' \
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.20-%s-%s-%s\n' \
             "$base_path" "$base_sha" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
 
       - name: Detect actual runner resources and compilation parallelism
@@ -171,6 +173,7 @@ jobs:
           PREVIOUS_BUILD_SHA="$MINOTAUR_BASE_SHA"
           revision_file="BUILD-REVISION.txt"
           printf 'Commit SHA: %s\nRepository: %s\nRef: %s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_REF" > "$revision_file"
+          printf 'Upstream release: v%s\nUpstream SHA: %s\n' "$MINOTAUR_UPSTREAM_VERSION" "$MINOTAUR_UPSTREAM_SHA" >> "$revision_file"
           if [ -n "$PREVIOUS_BUILD_SHA" ]; then
             [[ "$PREVIOUS_BUILD_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid previous build SHA"; exit 1; }
             git fetch --no-tags --depth=1 origin "$PREVIOUS_BUILD_SHA"
@@ -195,8 +198,8 @@ jobs:
         run: |
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests openyamm_runtime_tests --parallel "$MINOTAUR_BUILD_JOBS"
           # MM9 is not shipped by this MM6/MM7/MM8 package; Bloodaxe is not an Axe mechanic test.
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inventory hotfix*,Bottle stacks*,Inspect *,*potion*,*bag*,technology skills are appended*' --test-case-exclude='MM9*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*,Inventory hotfix*'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inventory hotfix*,Bottle stacks*,Inspect *,*potion*,*bag*,technology skills are appended*,*summary*,*summaries*,*history*,item search*,*steal*' --test-case-exclude='MM9*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*,Inventory hotfix*,*steal*'
 
       - name: Prepare indexed content (not included in unchanged update payloads)
         run: >-

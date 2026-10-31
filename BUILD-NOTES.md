@@ -1,3 +1,10 @@
+# Current1.20 integration
+
+Official v1.20:1add1d374848648887c08707199921335b4ba440. Native definition-sized stacks, safe old-layout repair.
+Local compilation/tests exclusively safe-heavy-run jobs4 at16/18GiB +1GiB swap; no OOM/limit change.
+Linux189 unit cases/48,755 assertions;7 native cases/159 assertions passed. Windows package pending.
+[Audit, save compatibility and visual limits](docs/research/openyamm-1.20-stack-geometry.md).
+
 # UI & Inventory Hotfix on1.18 — Windows ZIP packaged
 
 Update base: minotaur-1.18-c0ccf0a877bc-23-1. Names/stack compatibility, bounded icons, bottle stacks,

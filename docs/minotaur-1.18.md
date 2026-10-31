@@ -1,3 +1,5 @@
+> Historical1.18 compact geometry below is superseded by [native multi-cell geometry](research/openyamm-1.20-stack-geometry.md).
+
 # Minotaur Rebalance on OpenYAMM 1.18
 
 Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual gameplay pending. Official v1.18: 4ab07ed519a66feab24599d69bc0ae19971250e2.

@@ -1,3 +1,5 @@
+> Historical1.18 compact geometry below is superseded by [native multi-cell geometry](openyamm-1.20-stack-geometry.md).
+
 # UI & inventory hotfix on OpenYAMM 1.18
 
 Status: implemented, automatically tested on Linux and Windows; ZIP packaged; manual testing pending. Base package minotaur-1.18-c0ccf0a877bc-23-1; branch head before work d8e5fe5.

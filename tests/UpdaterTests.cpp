@@ -803,3 +803,32 @@ TEST_CASE("the packager writes the content format this binary reads")
         "\nCONTENT_FORMAT = " + std::to_string(OpenYAMM::Engine::SupportedContentFormat) + "\n";
     CHECK(packager.find(expected) != std::string::npos);
 }
+
+TEST_CASE("Minotaur offline channel cannot be replaced by an official signed update")
+{
+    const std::filesystem::path root = makeTemporaryRoot();
+    const std::filesystem::path install = root / "OpenYAMM";
+    const std::filesystem::path server = root / "server";
+    const TestSigner signer;
+    const std::string version = "minotaur-1.20-test";
+    installRelease(install, version, ReleaseOnePacks);
+    publishRelease(server, signer, "1.20", ReleaseTwoPacks, "official program");
+    auto log = std::make_shared<FolderTransport::Log>();
+    AppUpdater updater(AppInstallation(install), version, "windows-x64", BaseUrl,
+        std::make_unique<FolderTransport>(server, log));
+    updater.setTrustedKeys({signer.publicKey});
+    updater.check();
+    updater.wait();
+    CHECK(updater.status().state == UpdateState::Failed);
+    CHECK(updater.status().message.find("does not take updates") != std::string::npos);
+    updater.download();
+    updater.wait();
+    CHECK(AppInstallation(install).currentVersion() == version);
+    CHECK_FALSE(std::filesystem::exists(install / "app/1.20"));
+    for (const auto &[url, offset] : log->requests)
+    {
+        CHECK(url.find("packs/") == std::string::npos);
+        CHECK(url.find("apps/") == std::string::npos);
+    }
+    std::filesystem::remove_all(root);
+}
