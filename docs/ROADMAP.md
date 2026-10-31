@@ -1,3 +1,12 @@
+## Undead condition immunities — research complete; fixes pending
+
+User reproduced Naga poison on a quest-promoted MM8 Lich and a Vampire. Vampire poison is compatible with its
+expected Mind-only immunity. Standard Lich promotion incorrectly sets Light/Dark instead of Mind/Body; inherited
+from upstream, not Minotaur Rebalance. Standard Vampire Mind initialization is also missing; MAW has separate race rules.
+[Evidence, original-game distinctions and unresolved native-MM8 special-attack semantics](research/undead-condition-immunities.md).
+No gameplay/save/CI change. Next: decide fidelity target and verify native MM8 before implementing condition policy;
+then separately scoped school/migration fixes and regression tests. No blanket undead condition immunity approved.
+
 ## OpenYAMM 1.20 — implemented / Linux and Windows tested / ZIP packaged
 
 Official stable v1.20: 1add1d374848648887c08707199921335b4ba440, published 2026-10-30.
