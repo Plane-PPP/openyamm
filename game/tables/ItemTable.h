@@ -139,6 +139,9 @@ struct ItemDefinition
     float inventoryDrawScale = 1.0f;
     float jewelryDrawScale = 1.0f;
     std::vector<ItemEquipmentPlacement> equipmentPlacements;
+    // Native logical image extent, independent of quantity and the selected HD asset tier.
+    uint32_t inventoryIconLogicalWidth = 0;
+    uint32_t inventoryIconLogicalHeight = 0;
     uint8_t inventoryWidth = 1;
     uint8_t inventoryHeight = 1;
     std::array<int, 6> randomTreasureWeights = {};
@@ -152,6 +155,7 @@ struct ItemDefinition
     // Derived from the canonical empty-bottle entry in potion_settings, never from its display name.
     bool isEmptyAlchemyBottle = false;
 
+    void ensureNativeInventoryFootprint();
     bool hasContentFlag(const std::string &flag) const;
     bool availableInWorld(const std::string &worldId) const;
     // A gold heap (equip stat "Gold"): picking it up adds its amount to the party purse.

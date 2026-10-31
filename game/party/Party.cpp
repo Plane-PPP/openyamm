@@ -1955,20 +1955,20 @@ bool Character::addInventoryItem(const InventoryItem &item, const ItemTable *pTa
     {
         std::vector<InventoryItem> candidate = inventory;
         InventoryItem remaining = item;
-        remaining.width = remaining.height = 1;
+        ReagentStacks::applyDefinitionGeometry(remaining, pTable);
         for (InventoryItem &target : candidate)
         {
             if (target.quantity < ReagentStacks::Limit && ReagentStacks::compatible(target, remaining, pTable))
             {
                 const uint32_t moved = std::min(remaining.quantity, ReagentStacks::Limit - target.quantity);
                 target.quantity += moved;
-                target.width = target.height = 1;
+                ReagentStacks::applyDefinitionGeometry(target, pTable);
                 remaining.quantity -= moved;
             }
         }
         while (remaining.quantity > 0)
         {
-            const auto slot = findFirstFreeInventorySlot(candidate, 1, 1);
+            const auto slot = findFirstFreeInventorySlot(candidate, remaining.width, remaining.height);
             if (!slot)
             {
                 return false;
@@ -1986,6 +1986,7 @@ bool Character::addInventoryItem(const InventoryItem &item, const ItemTable *pTa
     InventoryItem placedItem = item;
     placedItem.width = std::max<uint8_t>(1, item.width);
     placedItem.height = std::max<uint8_t>(1, item.height);
+    ReagentStacks::applyDefinitionGeometry(placedItem, pTable);
 
     const std::optional<std::pair<uint8_t, uint8_t>> placement =
         findFirstFreeInventorySlot(inventory, placedItem.width, placedItem.height);
@@ -2004,6 +2005,7 @@ bool Character::addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uin
     InventoryItem placedItem = item;
     placedItem.width = std::max<uint8_t>(1, item.width);
     placedItem.height = std::max<uint8_t>(1, item.height);
+    ReagentStacks::applyDefinitionGeometry(placedItem, pTable);
     placedItem.gridX = gridX;
     placedItem.gridY = gridY;
     if (ReagentStacks::eligible(item, pTable))
@@ -2012,7 +2014,6 @@ bool Character::addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uin
         {
             return false;
         }
-        placedItem.width = placedItem.height = 1;
     }
 
     if (!inventoryItemFitsAt(placedItem, placedItem.gridX, placedItem.gridY))
@@ -2122,17 +2123,9 @@ bool Character::tryPlaceInventoryItemAt(
     InventoryItem placedItem = item;
     placedItem.width = std::max<uint8_t>(1, item.width);
     placedItem.height = std::max<uint8_t>(1, item.height);
+    ReagentStacks::applyDefinitionGeometry(placedItem, pTable);
     placedItem.gridX = gridX;
     placedItem.gridY = gridY;
-    if (ReagentStacks::eligible(item, pTable))
-    {
-        placedItem.width = placedItem.height = 1;
-    }
-
-    if (!inventoryItemFitsAt(placedItem, gridX, gridY))
-    {
-        return false;
-    }
 
     std::optional<size_t> targetItemIndex;
 
@@ -2156,10 +2149,10 @@ bool Character::tryPlaceInventoryItemAt(
         const uint32_t space = target.quantity < ReagentStacks::Limit ? ReagentStacks::Limit - target.quantity : 0;
         const uint32_t moved = std::min(space, item.quantity);
         target.quantity += moved;
-        target.width = target.height = 1;
+        ReagentStacks::applyDefinitionGeometry(target, pTable);
         if (item.quantity > moved)
         {
-            replacedItem = item;
+            replacedItem = placedItem;
             replacedItem->quantity -= moved;
         }
         return true;
@@ -2466,6 +2459,14 @@ void Party::reset()
 void Party::setItemTable(const ItemTable *pItemTable)
 {
     m_pItemTable = pItemTable;
+    for (Character &member : m_members)
+    {
+        InventoryBags::restoreDefinitionGeometry(member, pItemTable, rules().items.bagCount(*this));
+    }
+    for (AdventurersInnMember &member : m_adventurersInnMembers)
+    {
+        InventoryBags::restoreDefinitionGeometry(member.character, pItemTable, rules().items.bagCount(*this));
+    }
 }
 
 void Party::setJournalQuestTable(const JournalQuestTable *pJournalQuestTable)
@@ -2804,6 +2805,7 @@ void Party::restoreSnapshot(const Snapshot &snapshot)
     {
         applyCharacterIdentityFromDollTable(member, m_pCharacterDollTable);
         member.synchronizeInnateAbilitySpells();
+        InventoryBags::restoreDefinitionGeometry(member, m_pItemTable, rules().items.bagCount(*this));
         initializePortraitRuntimeState(member);
     }
 
@@ -2811,6 +2813,7 @@ void Party::restoreSnapshot(const Snapshot &snapshot)
     {
         applyCharacterIdentityFromDollTable(member.character, m_pCharacterDollTable);
         member.character.synchronizeInnateAbilitySpells();
+        InventoryBags::restoreDefinitionGeometry(member.character, m_pItemTable, rules().items.bagCount(*this));
         initializePortraitRuntimeState(member.character);
         member.portraitPictureId = resolveAdventurersInnPortraitPictureId(
             member.character,
@@ -2921,7 +2924,7 @@ void Party::seed(const PartySeed &seed)
 
             if (!placed)
             {
-                continue;
+                member.rulesetState.storedBags[UINT8_MAX].push_back(resolvedItem);
             }
 
             markArtifactItemFoundIfRelevant(resolvedItem);
@@ -5280,10 +5283,7 @@ bool Party::takeItemFromMemberInventoryCell(size_t memberIndex, uint8_t gridX, u
         return false;
     }
 
-    if (ReagentStacks::eligible(item, m_pItemTable))
-    {
-        item.width = item.height = 1;
-    }
+    ReagentStacks::applyDefinitionGeometry(item, m_pItemTable);
     m_lastStatus = "item picked up";
     return true;
 }

@@ -1,4 +1,3 @@
-#include "game/items/ReagentStacks.h"
 #include "game/tables/ItemTable.h"
 #include "engine/ImageAssetLoader.h"
 #include "game/party/SkillData.h"
@@ -507,6 +506,8 @@ bool ItemTable::load(
                 assetFileSystem, directories, paths, dimensions, entry.iconName,
                 iconWidth, iconHeight, entry.iconVirtualPath))
         {
+            entry.inventoryIconLogicalWidth = static_cast<uint32_t>(iconWidth);
+            entry.inventoryIconLogicalHeight = static_cast<uint32_t>(iconHeight);
             entry.inventoryWidth = inventorySlotsFromPixels(iconWidth);
             entry.inventoryHeight = inventorySlotsFromPixels(iconHeight);
         }
@@ -521,6 +522,7 @@ bool ItemTable::load(
             entry.inventoryWidth = static_cast<uint8_t>(std::clamp(authoredInventoryWidth, 1, 14));
             entry.inventoryHeight = static_cast<uint8_t>(std::clamp(authoredInventoryHeight, 1, 9));
         }
+        entry.ensureNativeInventoryFootprint();
     }
 
     for (const std::vector<std::string> &row : randomItemRows)
@@ -541,6 +543,20 @@ bool ItemTable::load(
     }
 
     return true;
+}
+
+void ItemDefinition::ensureNativeInventoryFootprint()
+{
+    if (equipStat != "Reagent" && !isEmptyAlchemyBottle)
+    {
+        return;
+    }
+    // Some HD images outgrew MM's permissive14-pixel footprint rounding. Preserve their native scale and
+    // enlarge only an insufficient definition footprint; this applies equally to singles and stacks.
+    const int width = static_cast<int>(std::ceil(inventoryIconLogicalWidth * inventoryDrawScale / 32.0f));
+    const int height = static_cast<int>(std::ceil(inventoryIconLogicalHeight * inventoryDrawScale / 32.0f));
+    inventoryWidth = std::max(inventoryWidth, static_cast<uint8_t>(std::clamp(width, 1, 14)));
+    inventoryHeight = std::max(inventoryHeight, static_cast<uint8_t>(std::clamp(height, 1, 9)));
 }
 
 bool ItemDefinition::hasContentFlag(const std::string &flag) const
@@ -796,6 +812,10 @@ bool ItemTable::loadVisualRows(const std::vector<std::vector<std::string>> &rows
             return false;
         }
     }
+    for (ItemDefinition &entry : entries)
+    {
+        entry.ensureNativeInventoryFootprint();
+    }
     m_entries = std::move(entries);
     errorMessage.clear();
     return true;
@@ -1005,12 +1025,7 @@ void ItemTable::applyPotionSettings(const MergedPotionSettingTable &potionSettin
         entry.hasPotionPower = false;
         entry.isEmptyAlchemyBottle = emptyBottleId != 0 && entry.itemId == emptyBottleId
             && entry.equipStat == "Bottle";
-        InventoryItem probe;
-        probe.objectDescriptionId = entry.itemId;
-        if (ReagentStacks::eligible(probe, this))
-        {
-            entry.inventoryWidth = entry.inventoryHeight = 1;
-        }
+        entry.ensureNativeInventoryFootprint();
     }
 
     for (const MergedPotionSettingEntry &setting : potionSettingTable.entries())

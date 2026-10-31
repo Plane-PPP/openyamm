@@ -20096,6 +20096,29 @@ void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_mapActorCorpseViews = snapshot.mapActorCorpseViews;
     m_mapActorRevealedLoot = snapshot.mapActorRevealedLoot;
     m_activeCorpseView = snapshot.activeCorpseView;
+    for (auto &view : m_materializedChestViews)
+    {
+        if (view)
+        {
+            restoreChestDefinitionGeometry(*view, m_pItemTable);
+        }
+    }
+    if (m_activeChestView)
+    {
+        restoreChestDefinitionGeometry(*m_activeChestView, m_pItemTable);
+    }
+    for (auto &view : m_mapActorCorpseViews)
+    {
+        if (view)
+        {
+            restoreCorpseDefinitionGeometry(*view, m_pItemTable);
+        }
+    }
+    if (m_activeCorpseView)
+    {
+        restoreCorpseDefinitionGeometry(*m_activeCorpseView, m_pItemTable);
+    }
+
     m_mapActorAiStates = snapshot.mapActorAiStates;
     m_activatedIndoorSectorMask = snapshot.activatedIndoorSectorMask;
     m_fireSpikeTraps = snapshot.fireSpikeTraps;

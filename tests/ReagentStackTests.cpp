@@ -72,7 +72,8 @@ TEST_CASE("Reagent stacks auto merge matrix and 125 units occupy three cells")
         REQUIRE(c.inventory.size() == (row[2] + 49) / 50);
         CHECK(c.inventory[0].quantity == std::min(50u, row[2]));
         if (row[2] > 50) CHECK(c.inventory[1].quantity == row[2] - 50);
-        CHECK(c.usedInventoryCells() == c.inventory.size());
+        CHECK(c.usedInventoryCells() == c.inventory.size()
+            * tables().itemTable.get(217)->inventoryWidth * tables().itemTable.get(217)->inventoryHeight);
     }
     Character c;
     REQUIRE(c.addInventoryItem(reagent(125), &tables().itemTable));
@@ -245,7 +246,7 @@ TEST_CASE("Reagent stacks merchant sale of a split portion preserves the rest an
     InventoryItem portion;
     REQUIRE(party.takeItemFromMemberInventoryCell(0, 0, 0, portion, 25));
     std::optional<InventoryItem> replaced;
-    REQUIRE(party.tryPlaceItemInMemberInventoryCell(0, portion, 1, 0, replaced));
+    REQUIRE(party.tryPlaceItemInMemberInventoryCell(0, portion, 2, 0, replaced));
     HouseEntry shop;
     shop.type = "Alchemist";
     shop.priceMultiplier = 1.0f;
@@ -255,7 +256,7 @@ TEST_CASE("Reagent stacks merchant sale of a split portion preserves the rest an
     const int before = party.gold();
     std::string text;
     REQUIRE(HouseServiceRuntime::trySellInventoryItem(party, data.itemTable, data.standardItemEnchantTable,
-        data.specialItemEnchantTable, shop, 0, 1, 0, text));
+        data.specialItemEnchantTable, shop, 0, 2, 0, text));
     CHECK(party.gold() == before + price);
     CHECK(party.inventoryItemCount(217) == 25);
     CHECK(HouseServiceRuntime::buyPrice(party, data.itemTable, data.standardItemEnchantTable,

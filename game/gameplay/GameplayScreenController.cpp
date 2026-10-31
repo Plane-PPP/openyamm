@@ -71,7 +71,7 @@ void dropBagOverflow(GameplayScreenRuntime &context)
     if (dropped > 0)
     {
         context.setStatusBarEvent(std::to_string(dropped) + (dropped == 1 ? " item" : " items")
-            + " from the old bags did not fit and lie at your feet");
+            + " did not fit in the inventory and lie at your feet");
     }
 }
 

@@ -1,0 +1,5 @@
+Genuine unchanged1.18 mod140 writer, built source fc2c74c (game code d927895).
+Captured2026-10-31 using frozen unit executable and its existing bottle save test.
+9340 bytes, SHA256882ad46e748624caf4defeed0ba078aef0373218144c81cf10a3e530d3ca4003.
+Contains50 empty bottles split25/25 across two bags with legacy1x1 footprints.
+Protected capture run20261031T055012Z-71acee43dc. No player save modified.

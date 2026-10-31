@@ -1883,14 +1883,13 @@ InventoryItemScreenRect computeInventoryItemScreenRect(
     const InventoryGridMetrics &gridMetrics,
     const InventoryItem &item,
     float textureWidth,
-    float textureHeight,
-    bool compactStack = false)
+    float textureHeight)
 {
-    const float spanWidth = (compactStack ? 1 : item.width) * gridMetrics.cellWidth;
-    const float spanHeight = (compactStack ? 1 : item.height) * gridMetrics.cellHeight;
+    const float spanWidth = item.width * gridMetrics.cellWidth;
+    const float spanHeight = item.height * gridMetrics.cellHeight;
     return placeInventoryIcon({gridMetrics.x + item.gridX * gridMetrics.cellWidth,
         gridMetrics.y + item.gridY * gridMetrics.cellHeight, spanWidth, spanHeight},
-        textureWidth, textureHeight, compactStack);
+        textureWidth, textureHeight);
 }
 
 uint32_t equippedItemId(const CharacterEquipment &equipment, EquipmentSlot slot)
@@ -2187,9 +2186,7 @@ void renderBagOverviewDropPreview(
     }
 
     const float iconScale = grid.scale * slot.fraction * pDefinition->inventoryDrawScale;
-    const auto extent = fitInventoryIcon(float(icon->width) * iconScale, float(icon->height) * iconScale,
-        slot.width / Character::InventoryWidth, slot.height / Character::InventoryHeight,
-        ReagentStacks::eligible(held.item, context.itemTable()));
+    const std::pair extent(float(icon->width) * iconScale, float(icon->height) * iconScale);
     const auto [dropX, dropY] = InventoryBagOverview::dropCell(slot, character, bag, held.item,
         extent.first, extent.second, mouseX, mouseY, held.grabOffsetX, held.grabOffsetY);
     const InventoryBags::PlacementPreview preview = dropX >= 0 && dropY >= 0
@@ -6152,18 +6149,6 @@ void GameplayPartyOverlayRenderer::renderHeldInventoryItem(GameplayScreenRuntime
         static_cast<float>(texture->width) * scale * fraction * pItemDefinition->inventoryDrawScale;
     float itemHeight =
         static_cast<float>(texture->height) * scale * fraction * pItemDefinition->inventoryDrawScale;
-    if (ReagentStacks::eligible(heldItem.item, context.itemTable()))
-    {
-        const auto *pGrid = context.findHudLayoutElement("CharacterInventoryGrid");
-        if (pGrid != nullptr)
-        {
-            const auto extent = fitInventoryIcon(itemWidth, itemHeight,
-                pGrid->width / Character::InventoryWidth * scale * fraction,
-                pGrid->height / Character::InventoryHeight * scale * fraction, true);
-            itemWidth = extent.first;
-            itemHeight = extent.second;
-        }
-    }
 
     context.submitHudTexturedQuad(*texture, itemX, itemY, itemWidth, itemHeight);
     submitItemTintOverlay(

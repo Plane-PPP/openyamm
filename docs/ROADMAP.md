@@ -4,10 +4,12 @@ Official stable v1.20: 1add1d374848648887c08707199921335b4ba440, published 2026-
 Backup: backup/minotaur-before-v1.20-2026-10-31 at b776797. Normal merge preserves history.
 Retain upstream search/bag fallback/death explosions and the mod's stack/Minotaur APIs.
 Mod143 wraps upstream142; mod140 explicitly continues to decode upstream139, including the save-list summary path.
-Next: restore definition-sized multi-cell stacks, migrate old layouts without loss, validate and package Windows.
+Native multi-cell geometry and safe layout migration implemented. Linux189/48,755 and native7/159 passed.
+Additional save/inventory selection165/21,008 passed (overlapping). Visual preparation blocked by incomplete
+local terrain resources; no rendered screenshots claimed. Next: Windows CI/package, then user campaign/visual retest.
 [Integration audit](research/openyamm-1.20-stack-geometry.md).
 
-## UI & inventory hotfix — implemented / tested on Linux and Windows / ZIP packaged
+## Historical1.18 UI & inventory hotfix — superseded geometry; other fixes retained
 
 Known-by-rules item names and stack identification compatibility corrected; genuine unknowns preserved.
 Shared bounded stack icon geometry fixes Wasp Wing/Gog Blood overflow. Empty bottles stack to 50;
@@ -34,7 +36,7 @@ Identify Monster, bestiary and teacher flavor/next-teacher hints remain Deferred
 
 ## Reagent stacks — Implemented / automatically tested on Linux and Windows
 
-Up to 50 ordinary same-property reagents per cell; atomic pickup, manual merge/remainder, split controls,
+Up to 50 ordinary same-property reagents per stack; atomic pickup, manual merge/remainder, split controls,
 sorting, single-unit brewing, sale/buy pricing and quantity persistence added.
 21 selected cases /1187 assertions passed. [Current 1.18 notes](minotaur-1.18.md).
 Expanded tooltips and final unit/runtime/Windows packaging checks passed; manual gameplay remains pending.

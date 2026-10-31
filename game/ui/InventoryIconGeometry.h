@@ -11,31 +11,19 @@ struct InventoryIconRect
     float x = 0, y = 0, width = 0, height = 0;
 };
 
-// Only compact stack items are fitted; other item art retains its original extent.
-inline std::pair<float, float> fitInventoryIcon(
-    float width, float height, float cellWidth, float cellHeight, bool compact)
+// Center the original native extent over its definition-owned footprint. Quantity is irrelevant.
+inline InventoryIconRect placeInventoryIcon(InventoryIconRect bounds, float width, float height)
 {
-    if (compact && width > 0 && height > 0)
+    InventoryIconRect rect{std::round(bounds.x + (bounds.width - width) * 0.5f),
+        std::round(bounds.y + (bounds.height - height) * 0.5f), width, height};
+    if (width <= bounds.width)
     {
-        const float ratio = std::min({1.0f, std::max(0.0f, cellWidth) / width,
-            std::max(0.0f, cellHeight) / height});
-        width *= ratio;
-        height *= ratio;
+        rect.x = std::clamp(rect.x, bounds.x, bounds.x + bounds.width - width);
     }
-    return {width, height};
-}
-
-inline InventoryIconRect placeInventoryIcon(
-    InventoryIconRect bounds, float width, float height, bool compact)
-{
-    const auto extent = fitInventoryIcon(width, height, bounds.width, bounds.height, compact);
-    InventoryIconRect result{std::round(bounds.x + (bounds.width - extent.first) * 0.5f),
-        std::round(bounds.y + (bounds.height - extent.second) * 0.5f), extent.first, extent.second};
-    if (compact)
+    if (height <= bounds.height)
     {
-        result.x = std::clamp(result.x, bounds.x, bounds.x + std::max(0.0f, bounds.width - result.width));
-        result.y = std::clamp(result.y, bounds.y, bounds.y + std::max(0.0f, bounds.height - result.height));
+        rect.y = std::clamp(rect.y, bounds.y, bounds.y + bounds.height - height);
     }
-    return result;
+    return rect;
 }
 }

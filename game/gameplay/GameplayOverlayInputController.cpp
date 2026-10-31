@@ -548,14 +548,13 @@ InventoryItemScreenRect computeInventoryItemScreenRect(
     const InventoryGridMetrics &gridMetrics,
     const InventoryItem &item,
     float textureWidth,
-    float textureHeight,
-    bool compactStack = false)
+    float textureHeight)
 {
-    const float spanWidth = (compactStack ? 1 : item.width) * gridMetrics.cellWidth;
-    const float spanHeight = (compactStack ? 1 : item.height) * gridMetrics.cellHeight;
+    const float spanWidth = item.width * gridMetrics.cellWidth;
+    const float spanHeight = item.height * gridMetrics.cellHeight;
     return placeInventoryIcon({gridMetrics.x + item.gridX * gridMetrics.cellWidth,
         gridMetrics.y + item.gridY * gridMetrics.cellHeight, spanWidth, spanHeight},
-        textureWidth, textureHeight, compactStack);
+        textureWidth, textureHeight);
 }
 
 std::optional<std::pair<int, int>> computeHeldInventoryPlacement(
@@ -565,17 +564,8 @@ std::optional<std::pair<int, int>> computeHeldInventoryPlacement(
     float itemWidthPixels,
     float itemHeightPixels,
     float drawX,
-    float drawY,
-    bool compactStack = false)
+    float drawY)
 {
-    if (compactStack)
-    {
-        const auto extent = fitInventoryIcon(itemWidthPixels, itemHeightPixels,
-            gridMetrics.cellWidth, gridMetrics.cellHeight, true);
-        itemWidthPixels = extent.first;
-        itemHeightPixels = extent.second;
-        itemWidthCells = itemHeightCells = 1;
-    }
 
     const float centerX = drawX + itemWidthPixels * 0.5f;
     const float centerY = drawY + itemHeightPixels * 0.5f;
@@ -4252,7 +4242,7 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                                 itemWidth,
                                 itemHeight,
                                 drawX,
-                                drawY, ReagentStacks::eligible(view.heldInventoryItem().item, view.itemTable()));
+                                drawY);
 
                             if (placement
                                 && placement->first >= 0
@@ -4318,8 +4308,7 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                                     static_cast<float>(pItemTexture->height) * gridMetrics.scale
                                         * pItemDefinition->inventoryDrawScale;
                                 const InventoryItemScreenRect itemRect =
-                                    computeInventoryItemScreenRect(gridMetrics, heldItem, itemWidth, itemHeight,
-                                        ReagentStacks::eligible(heldItem, view.itemTable()));
+                                    computeInventoryItemScreenRect(gridMetrics, heldItem, itemWidth, itemHeight);
                                 view.heldInventoryItem().grabOffsetX = chestMouseX - itemRect.x;
                                 view.heldInventoryItem().grabOffsetY = chestMouseY - itemRect.y;
                             }
@@ -4454,7 +4443,7 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                             itemWidth,
                             itemHeight,
                             drawX,
-                            drawY, ReagentStacks::eligible(view.heldInventoryItem().item, view.itemTable()));
+                            drawY);
 
                         if (placement
                             && placement->first >= 0
@@ -4533,8 +4522,7 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                                     chestGridMetrics,
                                     view.heldInventoryItem().item,
                                     itemWidth,
-                                    itemHeight,
-                                        ReagentStacks::eligible(view.heldInventoryItem().item, view.itemTable()));
+                                    itemHeight);
                                 view.heldInventoryItem().grabOffsetX = chestMouseX - itemRect.x;
                                 view.heldInventoryItem().grabOffsetY = chestMouseY - itemRect.y;
                             }

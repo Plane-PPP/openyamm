@@ -148,14 +148,13 @@ InventoryItemScreenRect computeInventoryItemScreenRect(
     const InventoryGridMetrics &gridMetrics,
     const InventoryItem &item,
     float textureWidth,
-    float textureHeight,
-    bool compactStack = false)
+    float textureHeight)
 {
-    const float spanWidth = (compactStack ? 1 : item.width) * gridMetrics.cellWidth;
-    const float spanHeight = (compactStack ? 1 : item.height) * gridMetrics.cellHeight;
+    const float spanWidth = item.width * gridMetrics.cellWidth;
+    const float spanHeight = item.height * gridMetrics.cellHeight;
     return placeInventoryIcon({gridMetrics.x + item.gridX * gridMetrics.cellWidth,
         gridMetrics.y + item.gridY * gridMetrics.cellHeight, spanWidth, spanHeight},
-        textureWidth, textureHeight, compactStack);
+        textureWidth, textureHeight);
 }
 
 bool shouldRenderInCurrentPass(bool renderAboveHud, int hudZThreshold, int zIndex)
@@ -405,8 +404,7 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
                 const float itemWidth = static_cast<float>(goldTexture->width) * gridMetrics.scale;
                 const float itemHeight = static_cast<float>(goldTexture->height) * gridMetrics.scale;
                 const InventoryItemScreenRect itemRect =
-                    computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight,
-                        ReagentStacks::eligible(renderItem, view.itemTable()));
+                    computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight);
                 view.submitHudTexturedQuad(*goldTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
 
                 GameplayRenderedInspectableHudItem inspectableItem = {};
@@ -442,8 +440,7 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
             const float itemHeight =
                 static_cast<float>(itemTexture->height) * gridMetrics.scale * pItemDefinition->inventoryDrawScale;
             const InventoryItemScreenRect itemRect =
-                computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight,
-                    ReagentStacks::eligible(renderItem, view.itemTable()));
+                computeInventoryItemScreenRect(gridMetrics, renderItem, itemWidth, itemHeight);
             GameplayHudOverlaySupport::renderItemRarityGlow(
                 view, item.item, *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height,
                 gridMetrics.scale);

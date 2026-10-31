@@ -55,7 +55,7 @@ TEST_CASE("Bottle stacks use canonical empty bottle data and keep all prepared p
 {
     const auto &table = data().itemTable;
     REQUIRE(table.get(220)->isEmptyAlchemyBottle);
-    CHECK(table.get(220)->inventoryWidth == 1); CHECK(table.get(220)->inventoryHeight == 1);
+    CHECK(table.get(220)->inventoryWidth == 1); CHECK(table.get(220)->inventoryHeight == 2);
     Character c;
     REQUIRE(c.addInventoryItem(stack(220, 45), &table));
     REQUIRE(c.addInventoryItem(stack(220, 10), &table));
@@ -114,16 +114,16 @@ TEST_CASE("Bottle stacks last ingredients at bottom edge hand a tall potion to t
 {
     ItemTable table = data().itemTable;
     std::string error;
-    REQUIRE_MESSAGE(table.loadVisualRows({{"inventory", "221", "", "", "", "", "1", "2", "1", "1"}}, error), error);
+    REQUIRE_MESSAGE(table.loadVisualRows({{"inventory", "221", "", "", "", "", "1", "3", "1", "1"}}, error), error);
     Party party = makeParty(table);
-    REQUIRE(party.member(0)->addInventoryItemAt(stack(220, 1), 13, 8, &table));
+    REQUIRE(party.member(0)->addInventoryItemAt(stack(220, 1), 13, 7, &table));
     fill(party);
     InventoryItem held = stack(217, 1);
     const auto result = brew(party, held, table);
     REQUIRE(result.success);
     REQUIRE(result.heldItemReplacement);
     CHECK(result.heldItemReplacement->objectDescriptionId == 221);
-    CHECK(result.heldItemReplacement->height == 2);
+    CHECK(result.heldItemReplacement->height == 3);
     CHECK(party.inventoryItemCount(220) == 0);
     CHECK(party.inventoryItemCount(221) == 0);
 }

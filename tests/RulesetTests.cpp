@@ -593,14 +593,15 @@ TEST_CASE("the save list reads a save's summary alone, and older saves' summary 
 
     std::vector<uint8_t> bytes = readBytes(path);
     moveSummaryToLegacyPlaces(bytes, save, yawMarker, seedMarker);
-    const uint32_t previousVersion = 139;
+    // The fork's pre-summary140 envelope contains the official139 schema.
+    const uint32_t previousVersion = 140;
     std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
     writeBytes(path, bytes);
     checkSummary(OpenYAMM::Game::loadGameSaveSummaryFromPath(path, error));
 
     // A summary that claims more than the file holds is refused rather than read past the end.
     bytes = readBytes(path);
-    const uint32_t currentVersion = 140;
+    const uint32_t currentVersion = 143;
     std::memcpy(bytes.data() + 8, &currentVersion, sizeof(currentVersion));
     const uint32_t oversizedSummary = uint32_t(bytes.size());
     bytes.insert(bytes.begin() + 12, reinterpret_cast<const uint8_t *>(&oversizedSummary),

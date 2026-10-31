@@ -8735,6 +8735,29 @@ void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_mapActorRevealedLoot = snapshot.mapActorRevealedLoot;
     m_corpseLootPending = true;
     m_activeCorpseView = snapshot.activeCorpseView;
+    for (auto &view : m_materializedChestViews)
+    {
+        if (view)
+        {
+            restoreChestDefinitionGeometry(*view, m_pItemTable);
+        }
+    }
+    if (m_activeChestView)
+    {
+        restoreChestDefinitionGeometry(*m_activeChestView, m_pItemTable);
+    }
+    for (auto &view : m_mapActorCorpseViews)
+    {
+        if (view)
+        {
+            restoreCorpseDefinitionGeometry(*view, m_pItemTable);
+        }
+    }
+    if (m_activeCorpseView)
+    {
+        restoreCorpseDefinitionGeometry(*m_activeCorpseView, m_pItemTable);
+    }
+
     m_worldItems = snapshot.worldItems;
     m_nextWorldItemId = snapshot.nextWorldItemId;
     m_searchableLootPropState.searchedSourceIds = {

@@ -461,6 +461,107 @@ bool sortPartyBags(
     return true;
 }
 
+size_t restoreDefinitionGeometry(Character &character, const ItemTable *pItemTable, int bagCount)
+{
+    if (pItemTable == nullptr)
+    {
+        return 0;
+    }
+    std::vector<InventoryItem> overflow;
+    const auto fits = [](const BagGrid &occupied, const InventoryItem &item)
+    {
+        if (!item.width || !item.height || int(item.gridX) + item.width > Character::InventoryWidth
+            || int(item.gridY) + item.height > Character::InventoryHeight)
+        {
+            return false;
+        }
+        for (int y = item.gridY; y < item.gridY + item.height; ++y)
+        for (int x = item.gridX; x < item.gridX + item.width; ++x)
+        {
+            if (occupied[size_t(y) * Character::InventoryWidth + size_t(x)])
+            {
+                return false;
+            }
+        }
+        return true;
+    };
+    const auto repair = [&](std::vector<InventoryItem> &items)
+    {
+        std::vector<InventoryItem> normalized = items;
+        BagGrid occupied = {};
+        bool valid = true;
+        for (InventoryItem &item : normalized)
+        {
+            ReagentStacks::applyDefinitionGeometry(item, pItemTable);
+            item.width = std::max<uint8_t>(1, item.width);
+            item.height = std::max<uint8_t>(1, item.height);
+            const bool itemFits = fits(occupied, item);
+            valid = valid && itemFits;
+            if (itemFits)
+            {
+                occupy(occupied, item);
+            }
+        }
+        if (valid)
+        {
+            items = std::move(normalized);
+            return;
+        }
+        // Reserve unchanged equipment/quest-item coordinates first; only resized stacks need extra space.
+        // Never combine/delete instances or change quantities during migration.
+        const auto affected = [pItemTable](const InventoryItem &item)
+        {
+            const ItemDefinition *pDefinition = pItemTable->get(item.objectDescriptionId);
+            return ReagentStacks::eligible(item, pItemTable) || (pDefinition && pDefinition->hasPotionPower);
+        };
+        std::stable_sort(normalized.begin(), normalized.end(), [&affected](const auto &left, const auto &right)
+        {
+            return std::tuple(affected(left), -int(left.height), -int(left.width))
+                < std::tuple(affected(right), -int(right.height), -int(right.width));
+        });
+        occupied = {};
+        items.clear();
+        for (InventoryItem item : normalized)
+        {
+            const auto place = fits(occupied, item) ? std::optional(std::pair(item.gridX, item.gridY))
+                : firstFreePlace(occupied, item.width, item.height);
+            if (place)
+            {
+                item.gridX = place->first;
+                item.gridY = place->second;
+                occupy(occupied, item);
+                items.push_back(item);
+            }
+            else
+            {
+                overflow.push_back(item);
+            }
+        }
+    };
+    repair(character.inventory);
+    for (auto &[bag, items] : character.rulesetState.storedBags)
+    {
+        if (reachableBag(bag, bagCount))
+        {
+            repair(items);
+        }
+        else
+        {
+            for (InventoryItem &item : items)
+            {
+                ReagentStacks::applyDefinitionGeometry(item, pItemTable);
+            }
+        }
+    }
+    if (!overflow.empty())
+    {
+        // Native rules use at most25 bags.255 is never an open bag, even while importing an older bag count.
+        auto &stored = character.rulesetState.storedBags[UINT8_MAX];
+        stored.insert(stored.end(), overflow.begin(), overflow.end());
+    }
+    return overflow.size();
+}
+
 size_t fitIntoBagCount(Party &party, int bagCount)
 {
     const int bags = std::max(1, bagCount);

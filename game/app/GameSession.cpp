@@ -1,4 +1,5 @@
 #include "game/app/GameSession.h"
+#include "game/items/ReagentStacks.h"
 #include "game/StringUtils.h"
 
 #include "game/debug/GameplayDebugTrace.h"
@@ -1977,10 +1978,16 @@ void GameSession::restoreHeldInventoryItemFromSaveData(const GameSaveData &saveD
     {
         heldItem.active = true;
         heldItem.item = saveData.heldInventoryItem;
+        const bool restoredGeometry = ReagentStacks::applyDefinitionGeometry(heldItem.item, &data().itemTable());
         heldItem.grabCellOffsetX = saveData.heldInventoryItemGrabCellOffsetX;
         heldItem.grabCellOffsetY = saveData.heldInventoryItemGrabCellOffsetY;
         heldItem.grabOffsetX = saveData.heldInventoryItemGrabOffsetX;
         heldItem.grabOffsetY = saveData.heldInventoryItemGrabOffsetY;
+        if (restoredGeometry)
+        {
+            heldItem.grabCellOffsetX = heldItem.grabCellOffsetY = 0;
+            heldItem.grabOffsetX = heldItem.grabOffsetY = 0;
+        }
     }
 
     auto applyHeldItemQueryState =

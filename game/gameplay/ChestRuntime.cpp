@@ -1,5 +1,7 @@
 #include "game/gameplay/ChestRuntime.h"
 
+#include "game/items/ReagentStacks.h"
+
 #include "game/events/EvtEnums.h"
 #include "game/gameplay/GameplayLootFilter.h"
 #include "game/items/ItemEnchantRuntime.h"
@@ -813,6 +815,63 @@ GameplayChestViewState buildMaterializedChestView(
     placeDeferredItems(randomDeferredItems, false);
 
     return view;
+}
+
+namespace
+{
+void restoreLootItemGeometry(GameplayChestItemState &item, const ItemTable *pItemTable)
+{
+    if (item.isGold)
+    {
+        return;
+    }
+    InventoryItem probe = item.item;
+    probe.objectDescriptionId = probe.objectDescriptionId != 0 ? probe.objectDescriptionId : item.itemId;
+    const ItemDefinition *pDefinition = pItemTable != nullptr ? pItemTable->get(probe.objectDescriptionId) : nullptr;
+    if (pDefinition != nullptr && (ReagentStacks::eligible(probe, pItemTable) || pDefinition->hasPotionPower))
+    {
+        ReagentStacks::applyDefinitionGeometry(probe, pItemTable);
+        item.item.width = item.width = probe.width;
+        item.item.height = item.height = probe.height;
+    }
+}
+}
+
+void restoreCorpseDefinitionGeometry(GameplayCorpseViewState &view, const ItemTable *pItemTable)
+{
+    for (GameplayChestItemState &item : view.items)
+    {
+        restoreLootItemGeometry(item, pItemTable);
+    }
+}
+
+void restoreChestDefinitionGeometry(GameplayChestViewState &view, const ItemTable *pItemTable)
+{
+    if (pItemTable == nullptr)
+    {
+        return;
+    }
+    std::vector<GameplayChestItemState> placed;
+    std::vector<GameplayChestItemState> deferred;
+    for (GameplayChestItemState item : view.items)
+    {
+        restoreLootItemGeometry(item, pItemTable);
+        if (canPlaceChestItem(item, placed, view.gridWidth, view.gridHeight))
+        {
+            placed.push_back(item);
+        }
+        else
+        {
+            deferred.push_back(item);
+        }
+    }
+    view.items = std::move(placed);
+    for (GameplayChestItemState &item : view.hiddenItems)
+    {
+        restoreLootItemGeometry(item, pItemTable);
+    }
+    view.hiddenItems.insert(view.hiddenItems.end(), deferred.begin(), deferred.end());
+    tryPlaceHiddenChestItems(view);
 }
 
 bool takeChestItem(GameplayChestViewState &view, size_t itemIndex, GameplayChestItemState &item)

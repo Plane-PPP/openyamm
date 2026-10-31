@@ -20,6 +20,23 @@ bool eligible(const InventoryItem &item, const ItemTable *pTable)
         && !pDefinition->hasContentFlag("Unique");
 }
 
+bool applyDefinitionGeometry(InventoryItem &item, const ItemTable *pTable)
+{
+    const ItemDefinition *pDefinition = pTable != nullptr ? pTable->get(item.objectDescriptionId) : nullptr;
+    // Earlier conversions could save a prepared potion with the ingredient's compact footprint as well.
+    if (pDefinition == nullptr || (!eligible(item, pTable) && !pDefinition->hasPotionPower))
+    {
+        return false;
+    }
+    const ItemDefinition &definition = *pDefinition;
+    const uint8_t width = std::max<uint8_t>(1, definition.inventoryWidth);
+    const uint8_t height = std::max<uint8_t>(1, definition.inventoryHeight);
+    const bool changed = item.width != width || item.height != height;
+    item.width = width;
+    item.height = height;
+    return changed;
+}
+
 bool compatible(const InventoryItem &left, const InventoryItem &right, const ItemTable *pTable)
 {
     if (!eligible(left, pTable) || !eligible(right, pTable))
@@ -34,6 +51,7 @@ bool compatible(const InventoryItem &left, const InventoryItem &right, const Ite
     {
         a.identified = b.identified = true;
     }
+    // Layout belongs to placement, not stack identity. Only these comparison copies are normalized.
     a.quantity = b.quantity = 1;
     a.gridX = b.gridX = a.gridY = b.gridY = 0;
     a.width = b.width = a.height = b.height = 1;
@@ -47,10 +65,11 @@ bool consolidate(std::vector<InventoryItem> &items, const ItemTable *pTable)
     {
         if (!eligible(item, pTable))
         {
+            applyDefinitionGeometry(item, pTable);
             packed.push_back(item);
             continue;
         }
-        item.width = item.height = 1;
+        applyDefinitionGeometry(item, pTable);
         for (InventoryItem &target : packed)
         {
             if (target.quantity < Limit && compatible(target, item, pTable))

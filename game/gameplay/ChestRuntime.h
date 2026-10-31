@@ -63,6 +63,10 @@ GameplayChestViewState buildMaterializedChestView(
     Party *pParty,
     const std::string &worldId);
 
+// Restore saved compact-stack geometry. Chest overflow remains in its serialized hiddenItems until room opens.
+void restoreChestDefinitionGeometry(GameplayChestViewState &view, const ItemTable *pItemTable);
+void restoreCorpseDefinitionGeometry(GameplayCorpseViewState &view, const ItemTable *pItemTable);
+
 bool takeChestItem(GameplayChestViewState &view, size_t itemIndex, GameplayChestItemState &item);
 bool takeChestItemAt(GameplayChestViewState &view, uint8_t gridX, uint8_t gridY, GameplayChestItemState &item);
 bool tryPlaceChestItemAt(

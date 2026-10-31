@@ -46,6 +46,10 @@ bool sortPartyBags(
 // member's items past `bagCount` bags go to the first free place of the owner's bags, else of another member's; a
 // member whose open bag is gone opens the first. Returns how many fit nowhere: they wait for takeOverflow.
 size_t fitIntoBagCount(Party &party, int bagCount);
+// Restore stack footprints from definitions. Keep valid coordinates; repack only invalid bags. Unplaced items
+// wait in the existing out-of-range bag storage, serialized and later offered at the party's feet by the runtime.
+size_t restoreDefinitionGeometry(Character &character, const ItemTable *pItemTable, int bagCount);
+
 // Takes the items the character holds past `bagCount` bags (what fitIntoBagCount could not place), for the world.
 std::vector<InventoryItem> takeOverflow(Character &character, int bagCount);
 // Items in bags other than the open one.

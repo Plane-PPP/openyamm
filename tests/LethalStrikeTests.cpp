@@ -752,7 +752,7 @@ TEST_CASE("Lethal Strike latest separates technology and named mod skills throug
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     save = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(save, error);
-    CHECK(save->sourceSaveVersion == 139);
+    CHECK(save->sourceSaveVersion == 142);
     const auto &c = save->party.members[0];
     CHECK(c.techPoints == 321);
     CHECK(c.spellbookSchool == 2);
@@ -765,7 +765,7 @@ TEST_CASE("Lethal Strike latest separates technology and named mod skills throug
     std::filesystem::remove(path);
 }
 
-TEST_CASE("Lethal Strike production 1.14 v132 migrates to 1.18 without losing named skills")
+TEST_CASE("Lethal Strike production 1.14 v132 migrates to current schema without losing named skills")
 {
     std::string error;
     auto save = loadGameDataFromPath(std::filesystem::path(OPENYAMM_SOURCE_DIR)
@@ -784,7 +784,7 @@ TEST_CASE("Lethal Strike production 1.14 v132 migrates to 1.18 without losing na
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     auto loaded = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(loaded, error);
-    CHECK(loaded->sourceSaveVersion == 139);
+    CHECK(loaded->sourceSaveVersion == 142);
     CHECK(loaded->party.members.front().inventory == old.inventory);
     CHECK(loaded->party.members.front().techPoints == 321);
     CHECK(loaded->party.members.front().findSkill("LethalStrike")->level == 7);

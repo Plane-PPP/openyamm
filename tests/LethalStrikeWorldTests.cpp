@@ -3,6 +3,7 @@
 #include "game/indoor/IndoorWorldRuntime.h"
 #include "game/outdoor/OutdoorWorldRuntime.h"
 #include "game/gameplay/GameplayActorService.h"
+#include "game/gameplay/GameplayCombatController.h"
 #include "game/party/Party.h"
 #include "game/tables/ChestTable.h"
 #include "game/tables/MonsterProjectileTable.h"
@@ -38,13 +39,14 @@ struct Fixture
     std::optional<EventRuntimeState> events = EventRuntimeState{};
     IndoorMapData indoor;
 
-    Fixture()
+    Fixture(bool exploding = false)
     {
-        std::vector<std::string> row(38);
+        std::vector<std::string> row(39);
         row[0] = "1"; row[1] = "Target"; row[2] = "Target A";
         row[3] = "10"; row[4] = "100"; row[5] = "0"; row[6] = "100";
         row[7] = "0"; row[10] = "Stationary"; row[11] = "Normal";
         row[13] = "0"; row[14] = "100"; row[17] = "Phys"; row[18] = "1d6";
+        if (exploding) row[38] = "explode,1d1+9,Fire";
         REQUIRE(monsters.loadStatsFromRows({row}));
         REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
         items = OpenYAMM::Tests::regressionGameData().itemTable;
@@ -139,4 +141,44 @@ TEST_CASE("Lethal Strike real indoor terminal transition grants XP once and keep
     CHECK(world.drainCombatFeedbackEvents().empty());
     REQUIRE(drops == 1);
     CHECK(f.delta->spriteObjects.size() == drops);
+}
+
+TEST_CASE("Lethal Strike retains upstream death explosions exactly once outdoors and indoors")
+{
+    for (const bool indoor : {false, true})
+    {
+        Fixture f(true);
+        INFO("indoor=" << indoor);
+        REQUIRE(f.monsters.findStatsById(1)->explodesOnDeath);
+        GameplayCombatController combat;
+        OutdoorWorldRuntime outdoor;
+        IndoorWorldRuntime inside;
+        IGameplayWorldRuntime *pWorld = nullptr;
+        if (indoor)
+        {
+            f.map.fileName = "d05.blv";
+            inside.initialize(f.map, f.monsters, f.projectiles, f.objects, f.spells, f.items, f.chests,
+                &f.party, nullptr, &f.delta, &f.events, &f.actors, nullptr, &combat, nullptr, nullptr, &f.indoor);
+            pWorld = &inside;
+        }
+        else
+        {
+            outdoor.initialize(f.map, f.monsters, f.projectiles, f.objects, f.spells, f.items, &f.party, nullptr,
+                f.standard, f.special, &f.chests, std::nullopt, f.delta, std::nullopt, f.events,
+                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                &f.actors, nullptr, &combat);
+            pWorld = &outdoor;
+        }
+        GameplayRuntimeActorState state;
+        REQUIRE(pWorld->actorRuntimeState(0, state));
+        INFO("monster=" << state.monsterId << " x=" << state.preciseX << " y=" << state.preciseY << " z=" << state.preciseZ);
+        REQUIRE(pWorld->killPartyAttackActor(0, {}));
+        pWorld->updateActorAi(0.01f);
+        REQUIRE(combat.pendingCombatEvents().size() == 1);
+        CHECK(combat.pendingCombatEvents().front().affectsAllParty);
+        combat.clear();
+        CHECK_FALSE(pWorld->killPartyAttackActor(0, {}));
+        pWorld->updateActorAi(0.01f);
+        CHECK(combat.pendingCombatEvents().empty());
+    }
 }

@@ -242,14 +242,13 @@ InventoryItemScreenRect computeInventoryItemScreenRect(
     const InventoryGridMetrics &gridMetrics,
     const InventoryItem &item,
     float textureWidth,
-    float textureHeight,
-    bool compactStack = false)
+    float textureHeight)
 {
-    const float spanWidth = (compactStack ? 1 : item.width) * gridMetrics.cellWidth;
-    const float spanHeight = (compactStack ? 1 : item.height) * gridMetrics.cellHeight;
+    const float spanWidth = item.width * gridMetrics.cellWidth;
+    const float spanHeight = item.height * gridMetrics.cellHeight;
     return placeInventoryIcon({gridMetrics.x + item.gridX * gridMetrics.cellWidth,
         gridMetrics.y + item.gridY * gridMetrics.cellHeight, spanWidth, spanHeight},
-        textureWidth, textureHeight, compactStack);
+        textureWidth, textureHeight);
 }
 
 UtilityOverlayLayout computeUtilityOverlayLayout(int screenWidth, int screenHeight)
@@ -437,17 +436,8 @@ std::optional<std::pair<int, int>> computeHeldInventoryPlacement(
     float textureWidth,
     float textureHeight,
     float drawX,
-    float drawY,
-    bool compactStack = false)
+    float drawY)
 {
-    if (compactStack)
-    {
-        const auto extent = fitInventoryIcon(textureWidth, textureHeight,
-            gridMetrics.cellWidth, gridMetrics.cellHeight, true);
-        textureWidth = extent.first;
-        textureHeight = extent.second;
-        itemWidthCells = itemHeightCells = 1;
-    }
 
     if (gridMetrics.cellWidth <= 0.0f || gridMetrics.cellHeight <= 0.0f)
     {
@@ -1976,9 +1966,8 @@ void activateBagOverviewTarget(
             return std::nullopt;
         }
 
-        return fitInventoryIcon(float(texture->width) * metrics.scale * pDefinition->inventoryDrawScale,
-            float(texture->height) * metrics.scale * pDefinition->inventoryDrawScale,
-            metrics.cellWidth, metrics.cellHeight, ReagentStacks::eligible(item, context.itemTable()));
+        return std::pair(float(texture->width) * metrics.scale * pDefinition->inventoryDrawScale,
+            float(texture->height) * metrics.scale * pDefinition->inventoryDrawScale);
     };
 
     if (held.active)
@@ -2048,8 +2037,7 @@ void activateBagOverviewTarget(
     // The grab offsets stay in full-size units, as the full-size grid keeps them; the held item shrinks over a bag.
     if (const std::optional<std::pair<float, float>> size = iconSize(item))
     {
-        const InventoryItemScreenRect rect = computeInventoryItemScreenRect(metrics, item, size->first, size->second,
-            ReagentStacks::eligible(item, context.itemTable()));
+        const InventoryItemScreenRect rect = computeInventoryItemScreenRect(metrics, item, size->first, size->second);
         held.grabOffsetX = (pointerX - rect.x) / slot.fraction;
         held.grabOffsetY = (pointerY - rect.y) / slot.fraction;
     }
@@ -4040,7 +4028,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                         itemWidth,
                         itemHeight,
                         drawX,
-                        drawY, ReagentStacks::eligible(context.heldInventoryItem().item, context.itemTable()));
+                        drawY);
 
                 if (!placement.has_value())
                 {
@@ -4141,8 +4129,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             const float itemHeight =
                 static_cast<float>(itemTexture->height) * gridMetrics.scale * pItemDefinition->inventoryDrawScale;
             const InventoryItemScreenRect itemRect =
-                computeInventoryItemScreenRect(gridMetrics, heldItem, itemWidth, itemHeight,
-                    ReagentStacks::eligible(heldItem, context.itemTable()));
+                computeInventoryItemScreenRect(gridMetrics, heldItem, itemWidth, itemHeight);
             context.heldInventoryItem().grabOffsetX = activationX - itemRect.x;
             context.heldInventoryItem().grabOffsetY = activationY - itemRect.y;
         };
