@@ -22,8 +22,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 140;
-constexpr uint32_t UpstreamSaveVersion = 139;
+constexpr uint32_t SaveVersion = 143;
+constexpr uint32_t UpstreamSaveVersion = 142;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -205,8 +205,36 @@ constexpr uint32_t SaveVersionActorAngeredByParty = 138;
 // Blood splats are saved without their triangles, which the map bakes again when it loads; they were most of a save's
 // size before.
 constexpr uint32_t SaveVersionBloodSplatsWithoutGeometry = 139;
+// The Load and Save screens' summary (GameSaveSummary) leads the save behind its size; a save list reads only that.
+constexpr uint32_t SaveVersionSummaryFirst = 140;
+// History pages are numbered as in the history tables; MMerge events recorded them two pages late before
+// (LegacyLuaExport read MM8's History variables with MM7's numbering).
+constexpr uint32_t SaveVersionHistoryNumbering = 141;
+// Outdoor actors keep MM's Nearby attribute (MapActorState::nearby) for Wizard Eye.
+constexpr uint32_t SaveVersionOutdoorNearby = 142;
 constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
 constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
+
+// Mod and official headers are different namespaces. In particular mod140 predates upstream's summary-first140.
+std::optional<uint32_t> saveSchemaVersion(bool modHeader, uint32_t version)
+{
+    if (!modHeader)
+    {
+        return version <= UpstreamSaveVersion ? std::optional<uint32_t>(version) : std::nullopt;
+    }
+    switch (version)
+    {
+    case 89: return 88;
+    case 94: return 93;
+    case 95: return 94;
+    case 130: return 129;
+    case 132: return 131;
+    case 140: return 139;
+    case SaveVersion: return UpstreamSaveVersion;
+    default: return std::nullopt;
+    }
+}
+
 
 std::string toLowerCopy(const std::string &value)
 {
@@ -3714,6 +3742,7 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.provokedAttackReach);
     writeValue(writer, value.dormant);
     writeValue(writer, value.angeredByParty);
+    writeValue(writer, value.nearby);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
@@ -3875,7 +3904,8 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && (reader.version() < SaveVersionOutdoorProvokedActors || readValue(reader, value.provokedByParty))
         && (reader.version() < SaveVersionOutdoorProvokedAttackReach || readValue(reader, value.provokedAttackReach))
         && (reader.version() < SaveVersionActorDormant || readValue(reader, value.dormant))
-        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty));
+        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty))
+        && (reader.version() < SaveVersionOutdoorNearby || readValue(reader, value.nearby));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)
@@ -4599,10 +4629,28 @@ bool readValue(BinaryReader &reader, RulesetSelection &value)
         && rulesetOptionsValid(value.options);
 }
 
+bool readSummaryFields(BinaryReader &reader, GameSaveSummary &value)
+{
+    return readValue(reader, value.mapFileName)
+        && readValue(reader, value.savedGameMinutes)
+        && readValue(reader, value.ruleset)
+        && readValue(reader, value.saveName)
+        && readValue(reader, value.previewBmp);
+}
+
 void writeValue(BinaryWriter &writer, const GameSaveData &value)
 {
+    BinaryWriter summary;
+    writeValue(summary, value.mapFileName);
+    writeValue(summary, value.savedGameMinutes);
+    writeValue(summary, value.ruleset);
+    writeValue(summary, value.saveName);
+    writeValue(summary, value.previewBmp);
+    const uint32_t summaryByteCount = uint32_t(summary.bytes().size());
+    writeValue(writer, summaryByteCount);
+    writer.writeBytes(summary.bytes().data(), summary.bytes().size());
+
     writeValue(writer, value.currentSceneKind);
-    writeValue(writer, value.mapFileName);
     writeValue(writer, value.party);
     writeValue(writer, value.namedGlobalVars);
     writeValue(writer, value.hasOutdoorRuntimeState);
@@ -4612,7 +4660,6 @@ void writeValue(BinaryWriter &writer, const GameSaveData &value)
     writeValue(writer, value.hasIndoorSceneState);
     writeValue(writer, value.indoorScene);
     writeValue(writer, value.indoorSceneStates);
-    writeValue(writer, value.savedGameMinutes);
     writeValue(writer, value.cameraYawRadians);
     writeValue(writer, value.cameraPitchRadians);
     writeValue(writer, value.heldInventoryItemActive);
@@ -4622,17 +4669,36 @@ void writeValue(BinaryWriter &writer, const GameSaveData &value)
     writeValue(writer, value.heldInventoryItemGrabOffsetX);
     writeValue(writer, value.heldInventoryItemGrabOffsetY);
     writeValue(writer, value.requiredContentPackages);
-    writeValue(writer, value.ruleset);
     writeValue(writer, value.randomRootSeed);
     writeValue(writer, value.mawState);
-    writeValue(writer, value.saveName);
-    writeValue(writer, value.previewBmp);
 }
 
 bool readValue(BinaryReader &reader, GameSaveData &value)
 {
+    const bool summaryFirst = reader.version() >= SaveVersionSummaryFirst;
+    if (summaryFirst)
+    {
+        uint32_t summaryByteCount = 0;
+        GameSaveSummary summary;
+        if (!readValue(reader, summaryByteCount))
+        {
+            return false;
+        }
+        const size_t remainingBeforeSummary = reader.remainingBytes();
+        if (!readSummaryFields(reader, summary)
+            || remainingBeforeSummary - reader.remainingBytes() != summaryByteCount)
+        {
+            return false;
+        }
+        value.mapFileName = std::move(summary.mapFileName);
+        value.savedGameMinutes = summary.savedGameMinutes;
+        value.ruleset = std::move(summary.ruleset);
+        value.saveName = std::move(summary.saveName);
+        value.previewBmp = std::move(summary.previewBmp);
+    }
+
     const bool read = readValue(reader, value.currentSceneKind)
-        && readValue(reader, value.mapFileName)
+        && (summaryFirst || readValue(reader, value.mapFileName))
         && readValue(reader, value.party)
         && (reader.version() < SaveVersionSessionNamedGlobalVars || readValue(reader, value.namedGlobalVars))
         && readValue(reader, value.hasOutdoorRuntimeState)
@@ -4642,7 +4708,7 @@ bool readValue(BinaryReader &reader, GameSaveData &value)
         && readValue(reader, value.hasIndoorSceneState)
         && readValue(reader, value.indoorScene)
         && readValue(reader, value.indoorSceneStates)
-        && readValue(reader, value.savedGameMinutes)
+        && (summaryFirst || readValue(reader, value.savedGameMinutes))
         && readValue(reader, value.cameraYawRadians)
         && readValue(reader, value.cameraPitchRadians)
         && (reader.version() < SaveVersionHeldCursorItem || readValue(reader, value.heldInventoryItemActive))
@@ -4655,11 +4721,11 @@ bool readValue(BinaryReader &reader, GameSaveData &value)
         && (reader.version() < SaveVersionHeldCursorItem || readValue(reader, value.heldInventoryItemGrabOffsetY))
         && (reader.version() < SaveVersionRequiredContentPackages
             || readValue(reader, value.requiredContentPackages))
-        && (reader.version() < SaveVersionRuleset || readValue(reader, value.ruleset))
+        && (summaryFirst || reader.version() < SaveVersionRuleset || readValue(reader, value.ruleset))
         && (reader.version() < SaveVersionRandomRootSeed || readValue(reader, value.randomRootSeed))
         && (reader.version() < SaveVersionActorRulesetFacts || readValue(reader, value.mawState))
-        && readValue(reader, value.saveName)
-        && readValue(reader, value.previewBmp);
+        && (summaryFirst || readValue(reader, value.saveName))
+        && (summaryFirst || readValue(reader, value.previewBmp));
     value.cameraAnglesValid = reader.version() >= SaveVersionIndoorCamera || value.currentSceneKind == SceneKind::Outdoor;
     return read;
 }
@@ -5044,6 +5110,65 @@ void migrateLegacyMapHistory(GameSaveData &data, uint32_t sourceSaveVersion)
     }
 }
 
+// Older events recorded every history page two pages late. Pages 1 and 2 are the forward pages, which no event recorded
+// late, so only pages from 3 move.
+void migrateLegacyHistoryNumbering(GameSaveData &data, uint32_t sourceSaveVersion)
+{
+    if (sourceSaveVersion >= SaveVersionHistoryNumbering)
+    {
+        return;
+    }
+
+    constexpr uint32_t HistoryPageShift = 2;
+    const auto renumber = [](std::unordered_map<uint32_t, int32_t> &historyTimes)
+    {
+        std::unordered_map<uint32_t, int32_t> renumbered;
+
+        for (const auto &[historyId, gameMinutes] : historyTimes)
+        {
+            const uint32_t correctedId = historyId > HistoryPageShift ? historyId - HistoryPageShift : historyId;
+            const auto [iterator, inserted] = renumbered.try_emplace(correctedId, gameMinutes);
+
+            if (!inserted)
+            {
+                iterator->second = std::min(iterator->second, gameMinutes);
+            }
+        }
+
+        historyTimes = std::move(renumbered);
+    };
+    const auto renumberState = [&renumber](std::optional<EventRuntimeState> &state)
+    {
+        if (!state)
+        {
+            return;
+        }
+
+        renumber(state->historyEventTimes);
+
+        for (auto &[continentId, historyTimes] : state->historyEventTimesByContinent)
+        {
+            renumber(historyTimes);
+        }
+    };
+
+    for (auto &[continentId, historyTimes] : data.party.historyEventTimesByContinent)
+    {
+        renumber(historyTimes);
+    }
+
+    renumberState(data.outdoorWorld.eventRuntimeState);
+    renumberState(data.indoorScene.eventRuntimeState);
+    for (auto &[mapFileName, snapshot] : data.outdoorWorldStates)
+    {
+        renumberState(snapshot.eventRuntimeState);
+    }
+    for (auto &[mapFileName, snapshot] : data.indoorSceneStates)
+    {
+        renumberState(snapshot.eventRuntimeState);
+    }
+}
+
 void migrateLegacyMapJournalNotes(GameSaveData &data, uint32_t sourceSaveVersion)
 {
     if (sourceSaveVersion >= SaveVersionPartyJournalMapNotes)
@@ -5365,16 +5490,13 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
         error = "invalid save header";
         return std::nullopt;
     }
-    if ((modHeader && version != 89 && version != 94 && version != 95 && version != 130 && version != 132 && version != SaveVersion)
-        || (legacyHeader && version > UpstreamSaveVersion))
+    const std::optional<uint32_t> schema = saveSchemaVersion(modHeader, version);
+    if (!schema)
     {
         error = SaveFromNewerVersionError;
         return std::nullopt;
     }
-
-    // Mod versions carry a combat-level field beyond their corresponding upstream schema.
-    const uint32_t sourceVersion = !modHeader ? version
-        : version == 89 ? 88 : version == 94 ? 93 : version == 95 ? 94 : version == 130 ? 129 : version == 132 ? 131 : UpstreamSaveVersion;
+    const uint32_t sourceVersion = *schema;
 
     // v0.4 used upstream's magic and v85 before upstream independently assigned v85
     // to the new weather layout. Decode both known layouts and require exact consumption;
@@ -5425,11 +5547,97 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     migrateLegacyNpcRosters(data);
     migrateLegacyMapAutonotes(data, sourceVersion);
     migrateLegacyMapHistory(data, sourceVersion);
+    migrateLegacyHistoryNumbering(data, sourceVersion);
     migrateLegacyMapJournalNotes(data, sourceVersion);
     markLegacyCampFireDecorVars(data, sourceVersion);
     data.sourceSaveVersion = sourceVersion;
 
     return data;
+}
+
+std::optional<GameSaveSummary> loadGameSaveSummaryFromPath(const std::filesystem::path &path, std::string &error)
+{
+    std::ifstream input(path, std::ios::binary);
+
+    if (!input)
+    {
+        error = "save file not found";
+        return std::nullopt;
+    }
+
+    std::vector<uint8_t> header(sizeof(SaveMagic) + 2 * sizeof(uint32_t));
+    input.read(reinterpret_cast<char *>(header.data()), static_cast<std::streamsize>(header.size()));
+    header.resize(static_cast<size_t>(input.gcount()));
+    BinaryReader headerReader(header);
+    char magic[sizeof(SaveMagic)] = {};
+    uint32_t version = 0;
+
+    if (!headerReader.readBytes(magic, sizeof(magic))
+        || !headerReader.read(version))
+    {
+        error = "invalid save header";
+        return std::nullopt;
+    }
+
+    const bool modHeader = std::memcmp(magic, SaveMagic, sizeof(magic)) == 0;
+    if (!modHeader && std::memcmp(magic, LegacySaveMagic, sizeof(magic)) != 0)
+    {
+        error = "invalid save header";
+        return std::nullopt;
+    }
+    const std::optional<uint32_t> schema = saveSchemaVersion(modHeader, version);
+    if (!schema)
+    {
+        error = SaveFromNewerVersionError;
+        return std::nullopt;
+    }
+
+    if (*schema < SaveVersionSummaryFirst)
+    {
+        // Older saves keep the summary behind the game state.
+        input.close();
+        std::optional<GameSaveData> data = loadGameDataFromPath(path, error);
+
+        if (!data)
+        {
+            return std::nullopt;
+        }
+
+        GameSaveSummary summary;
+        summary.mapFileName = std::move(data->mapFileName);
+        summary.savedGameMinutes = data->savedGameMinutes;
+        summary.ruleset = std::move(data->ruleset);
+        summary.saveName = std::move(data->saveName);
+        summary.previewBmp = std::move(data->previewBmp);
+        return summary;
+    }
+
+    uint32_t summaryByteCount = 0;
+    std::error_code sizeError;
+    const uintmax_t fileSize = std::filesystem::file_size(path, sizeError);
+
+    if (!headerReader.read(summaryByteCount) || sizeError || summaryByteCount > fileSize - header.size())
+    {
+        error = "save data is corrupted";
+        return std::nullopt;
+    }
+
+    std::vector<uint8_t> summaryBytes(summaryByteCount);
+    input.read(reinterpret_cast<char *>(summaryBytes.data()), static_cast<std::streamsize>(summaryBytes.size()));
+    BinaryReader reader(summaryBytes);
+    reader.setVersion(*schema);
+    GameSaveSummary summary;
+
+    if (static_cast<size_t>(input.gcount()) != summaryBytes.size()
+        || !readSummaryFields(reader, summary)
+        || reader.failed()
+        || reader.remainingBytes() != 0)
+    {
+        error = "save data is corrupted";
+        return std::nullopt;
+    }
+
+    return summary;
 }
 
 bool compareSavePathsForDisplay(const std::filesystem::path &left, const std::filesystem::path &right)

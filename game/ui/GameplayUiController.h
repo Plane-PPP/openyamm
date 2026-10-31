@@ -276,6 +276,31 @@ public:
         std::string body;
     };
 
+    // Where a looted item went in the bags, so the summary inspects (identifies, repairs) the item itself.
+    struct LootedItemPlace
+    {
+        size_t memberIndex = 0;
+        uint8_t bag = 0;
+        uint8_t gridX = 0;
+        uint8_t gridY = 0;
+    };
+
+    // What MAW's gather key looted on a completed map (lootAllCorpses), until dismissed.
+    struct LootSummaryOverlayState
+    {
+        bool active = false;
+        size_t satchelCount = 0;
+        int goldAmount = 0;
+        // Part of goldAmount the party's followers took.
+        int followerGoldShare = 0;
+        std::vector<InventoryItem> takenItems;
+        // takenItems' places, one each.
+        std::vector<LootedItemPlace> takenItemPlaces;
+        // Items the bags had no room for: left in their satchels, which are gathered in front of the party.
+        std::vector<InventoryItem> leftItems;
+        float scrollOffset = 0.0f;
+    };
+
     struct SpellbookState
     {
         bool active = false;
@@ -504,6 +529,10 @@ public:
         // Several bags (MAW): the open bag fills the grid at full size instead of the four-bag overview (the 1-4
         // buttons and keys zoom, the overview button returns). Not saved.
         bool inventoryBagZoomed = false;
+        // The inventory's item search (ItemSearch): what is typed, kept over every bag and member until Escape or the
+        // screen closes, and whether typing goes to it.
+        std::string inventorySearch;
+        bool inventorySearchActive = false;
         CharacterPage page = CharacterPage::Inventory;
         CharacterScreenSource source = CharacterScreenSource::Party;
         size_t sourceIndex = 0;
@@ -517,8 +546,8 @@ public:
     };
 
     static bool characterScreenSupportsInspection(const CharacterScreenState &screen);
-    // Typing goes to the alchemy bench's recipe search instead of hotkeys.
-    static bool alchemyBenchSearchActive(const CharacterScreenState &screen);
+    // Typing goes to the alchemy bench's recipe search or the inventory's item search instead of hotkeys.
+    static bool characterScreenSearchActive(const CharacterScreenState &screen);
     static bool journalSearchActive(const JournalScreenState &screen);
 
     struct InventoryNestedOverlayState
@@ -526,6 +555,8 @@ public:
         bool active = false;
         InventoryNestedOverlayMode mode = InventoryNestedOverlayMode::None;
         uint32_t houseId = 0;
+        // A shop's party inventory shows one bag at full size rather than the bag overview (several bags, desktop).
+        bool bagZoomed = false;
     };
 
     struct HouseShopOverlayState
@@ -614,6 +645,7 @@ public:
         ActorInspectOverlayState actorInspectOverlay = {};
         SpellInspectOverlayState spellInspectOverlay = {};
         ReadableScrollOverlayState readableScrollOverlay = {};
+        LootSummaryOverlayState lootSummaryOverlay = {};
         SpellbookState spellbook = {};
         RestScreenState restScreen = {};
         MenuScreenState menuScreen = {};
@@ -670,6 +702,9 @@ public:
 
     ReadableScrollOverlayState &readableScrollOverlay();
     const ReadableScrollOverlayState &readableScrollOverlay() const;
+
+    LootSummaryOverlayState &lootSummaryOverlay();
+    const LootSummaryOverlayState &lootSummaryOverlay() const;
 
     SpellbookState &spellbook();
     const SpellbookState &spellbook() const;

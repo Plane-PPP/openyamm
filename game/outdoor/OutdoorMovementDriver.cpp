@@ -131,6 +131,8 @@ void OutdoorMovementDriver::initialize(float x, float y, float footZHint)
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_dashSeconds = 0.0f;
     m_flyingAvailable = false;
     m_levitateActive = false;
@@ -172,6 +174,8 @@ void OutdoorMovementDriver::restoreState(
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_dashSeconds = 0.0f;
     m_movementAccumulatorSeconds = 0.0f;
     m_startedFallingEventSeconds = 0.0f;
@@ -361,21 +365,16 @@ void OutdoorMovementDriver::update(
             : MaxAccumulatedMovementSeconds;
     m_movementAccumulatorSeconds =
         std::min(m_movementAccumulatorSeconds + deltaSeconds, maxAccumulatedMovementSeconds);
-    float impulseVelocityX = 0.0f;
-    float impulseVelocityY = 0.0f;
-    float impulseVelocityZ = 0.0f;
-
     if (m_movementAccumulatorSeconds >= OutdoorMovementStepSeconds)
     {
-        impulseVelocityX = m_pendingImpulseVelocityX;
-        impulseVelocityY = m_pendingImpulseVelocityY;
-        impulseVelocityZ = m_pendingImpulseVelocityZ;
-        const bool hasPendingImpulse =
-            impulseVelocityX != 0.0f || impulseVelocityY != 0.0f || impulseVelocityZ != 0.0f;
+        const bool hasPendingImpulse = m_pendingImpulseVelocityX != 0.0f || m_pendingImpulseVelocityY != 0.0f
+            || m_pendingImpulseVelocityZ != 0.0f;
 
         if (hasPendingImpulse)
         {
-            m_state.verticalVelocity = std::max(m_state.verticalVelocity, impulseVelocityZ);
+            m_state.verticalVelocity = std::max(m_state.verticalVelocity, m_pendingImpulseVelocityZ);
+            m_jumpCarryVelocityX = m_pendingImpulseVelocityX;
+            m_jumpCarryVelocityY = m_pendingImpulseVelocityY;
             m_pendingImpulseVelocityX = 0.0f;
             m_pendingImpulseVelocityY = 0.0f;
             m_pendingImpulseVelocityZ = 0.0f;
@@ -412,8 +411,8 @@ void OutdoorMovementDriver::update(
         m_state = m_movementController.resolveMoveForBody(
             m_state,
             m_bodyDimensions,
-            moveVelocityX + impulseVelocityX + (dashing ? m_dashVelocityX : 0.0f),
-            moveVelocityY + impulseVelocityY + (dashing ? m_dashVelocityY : 0.0f),
+            moveVelocityX + m_jumpCarryVelocityX + (dashing ? m_dashVelocityX : 0.0f),
+            moveVelocityY + m_jumpCarryVelocityY + (dashing ? m_dashVelocityY : 0.0f),
             moveVelocityZ + m_pendingFlyHeightDelta / OutdoorMovementStepSeconds,
             jumpRequestedThisStep,
             input.flyUp,
@@ -440,6 +439,12 @@ void OutdoorMovementDriver::update(
         if (m_partyMovementState.flying)
         {
             m_state.verticalVelocity = 0.0f;
+        }
+
+        if (!m_state.airborne && m_state.verticalVelocity <= 0.0f)
+        {
+            m_jumpCarryVelocityX = 0.0f;
+            m_jumpCarryVelocityY = 0.0f;
         }
 
         m_pendingJumpPress = false;
@@ -639,7 +644,7 @@ void OutdoorMovementDriver::update(
     }
 
     if (!input.turnBasedPhysicsStep
-        && m_state.supportOnWater
+        && m_state.supportOnDeepWater()
         && !m_partyMovementState.waterWalk
         && !m_partyMovementState.flying
         && !m_levitateActive)

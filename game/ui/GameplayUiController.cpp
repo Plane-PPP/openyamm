@@ -37,15 +37,25 @@ const std::vector<std::string> GameplayLayoutFiles = {
     "Data/ui/gameplay/buff_inspect.yml",
     "Data/ui/gameplay/character_detail.yml",
     "Data/ui/gameplay/actor_inspect.yml",
-    "Data/ui/gameplay/spell_inspect.yml"
+    "Data/ui/gameplay/spell_inspect.yml",
+    "Data/ui/gameplay/loot_summary.yml"
 };
 }
 
-bool GameplayUiController::alchemyBenchSearchActive(const CharacterScreenState &screen)
+bool GameplayUiController::characterScreenSearchActive(const CharacterScreenState &screen)
 {
-    return screen.open && screen.alchemyBench.active
-        && (screen.alchemyBench.craftingTab ? screen.alchemyBench.crafting.searchActive
-                                            : screen.alchemyBench.recipeSearchActive);
+    if (!screen.open)
+    {
+        return false;
+    }
+
+    if (screen.alchemyBench.active)
+    {
+        return screen.alchemyBench.craftingTab ? screen.alchemyBench.crafting.searchActive
+                                               : screen.alchemyBench.recipeSearchActive;
+    }
+
+    return screen.page == CharacterPage::Inventory && screen.inventorySearchActive;
 }
 
 bool GameplayUiController::journalSearchActive(const JournalScreenState &screen)
@@ -227,6 +237,16 @@ GameplayUiController::ReadableScrollOverlayState &GameplayUiController::readable
 const GameplayUiController::ReadableScrollOverlayState &GameplayUiController::readableScrollOverlay() const
 {
     return resolvedState().readableScrollOverlay;
+}
+
+GameplayUiController::LootSummaryOverlayState &GameplayUiController::lootSummaryOverlay()
+{
+    return resolvedState().lootSummaryOverlay;
+}
+
+const GameplayUiController::LootSummaryOverlayState &GameplayUiController::lootSummaryOverlay() const
+{
+    return resolvedState().lootSummaryOverlay;
 }
 
 GameplayUiController::SpellbookState &GameplayUiController::spellbook()
@@ -466,6 +486,7 @@ void GameplayUiController::openInventoryNestedOverlay(InventoryNestedOverlayMode
     state.inventoryNestedOverlay.active = true;
     state.inventoryNestedOverlay.mode = mode;
     state.inventoryNestedOverlay.houseId = houseId;
+    state.inventoryNestedOverlay.bagZoomed = false;
 }
 
 void GameplayUiController::closeInventoryNestedOverlay()

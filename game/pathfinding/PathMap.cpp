@@ -14,6 +14,8 @@ namespace
 constexpr float PathEpsilon = 0.0001f;
 constexpr int32_t MaxPathGridCellSpan = 4096;
 constexpr uint64_t PathGridScanCostRatio = 8;
+// The top of a flyer's body is traced this far below its height, clear of a ceiling it touches.
+constexpr float FlyingBodyTopClearance = 4.0f;
 
 PathPoint pointAdd(const PathPoint &left, const PathPoint &right)
 {
@@ -993,7 +995,8 @@ PathTraceResult PathMap::traceLineInternal(
     float radius,
     bool checkBody,
     TraceCandidateCache *pCache,
-    float riserHeight) const
+    float riserHeight,
+    bool probeVerticalMoves) const
 {
     if (!pointIsFinite(from) || !pointIsFinite(to) || !std::isfinite(radius))
     {
@@ -1008,11 +1011,15 @@ PathTraceResult PathMap::traceLineInternal(
 
     const float xyLength = xyDistance(from, to);
 
-    if (checkBody && radius > PathEpsilon && xyLength > PathEpsilon)
+    // A straight climb or drop has no direction across: its probes take the axes (probeVerticalMoves), or its centre
+    // line alone slipped through the seam between two floor faces, a route no body could follow.
+    const bool verticalMove = xyLength <= PathEpsilon;
+
+    if (checkBody && radius > PathEpsilon && (!verticalMove || probeVerticalMoves))
     {
         constexpr float DiagonalOffsetScale = 0.70710678f;
-        const float forwardX = (to.x - from.x) / xyLength;
-        const float forwardY = (to.y - from.y) / xyLength;
+        const float forwardX = verticalMove ? 1.0f : (to.x - from.x) / xyLength;
+        const float forwardY = verticalMove ? 0.0f : (to.y - from.y) / xyLength;
         const float sideX = -forwardY;
         const float sideY = forwardX;
         const std::array<PathPoint, 8> offsets = {{
@@ -1559,11 +1566,28 @@ bool PathMap::traceWalkSegmentInternal(
     return true;
 }
 
+// A flyer's path points are its feet, and its back has to pass as well: traced at its feet alone, a door's opening was
+// clear for a flyer whose back then hit the wall above the door, where it hovered for good.
+PathTraceResult PathMap::traceFlyingBody(const PathPoint &from, const PathPoint &to, const PathObject &object) const
+{
+    TraceCandidateCache cache;
+    PathTraceResult result = traceLineInternal(from, to, object.radius, true, &cache, 0.0f, true);
+    const float topOffset = object.height - FlyingBodyTopClearance;
+
+    if (result.blocked || topOffset <= PathEpsilon)
+    {
+        return result;
+    }
+
+    return traceLineInternal(pointAdd(from, {0.0f, 0.0f, topOffset}), pointAdd(to, {0.0f, 0.0f, topOffset}),
+        object.radius, true, &cache, 0.0f, true);
+}
+
 bool PathMap::canReachDirectly(const PathPoint &from, const PathPoint &to, const PathObject &object) const
 {
     if (object.canFly)
     {
-        return !traceLine(from, to, object.radius, true).blocked;
+        return !traceFlyingBody(from, to, object).blocked;
     }
 
     return traceWalkSegment(from, to, object);

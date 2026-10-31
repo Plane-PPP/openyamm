@@ -58,6 +58,16 @@ struct GameSaveData
     uint32_t sourceSaveVersion = 0;
 };
 
+// What the Load and Save screens list about a save: the same fields of its GameSaveData.
+struct GameSaveSummary
+{
+    std::string mapFileName;
+    float savedGameMinutes = 0.0f;
+    RulesetSelection ruleset;
+    std::string saveName;
+    std::vector<uint8_t> previewBmp;
+};
+
 // MAW games carry four bags a member from this version on; older saves fit theirs into four when loaded
 // (InventoryBags::fitIntoBagCount).
 constexpr uint32_t SaveVersionFourMawBags = 121;
@@ -66,6 +76,8 @@ void migrateLegacyConsumedCorpseMarkers(GameSaveData &data, uint32_t sourceSaveV
 void migrateLegacyNpcRosters(GameSaveData &data);
 void migrateLegacyMapAutonotes(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapHistory(GameSaveData &data, uint32_t sourceSaveVersion);
+// Saves before version 141 recorded MMerge history pages two pages late: moves pages from 3 down by two.
+void migrateLegacyHistoryNumbering(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapJournalNotes(GameSaveData &data, uint32_t sourceSaveVersion);
 // Saves before version 129 numbered the decoration states with the legacy campfire keys: marks every saved map state
 // (EventRuntimeState::legacyCampFireDecorVars) for the map to renumber when it is next entered.
@@ -76,6 +88,8 @@ bool saveGameDataToPath(const std::filesystem::path &path, const GameSaveData &d
 inline constexpr const char *SaveFromNewerVersionError = "written by a newer version of OpenYAMM";
 
 std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &path, std::string &error);
+// Reads only the summary of current saves; older ones keep it behind the game state and are read whole.
+std::optional<GameSaveSummary> loadGameSaveSummaryFromPath(const std::filesystem::path &path, std::string &error);
 std::unordered_map<std::string, uint32_t> collectRequiredContentPackages(
     const GameSaveData &data,
     const ItemTable &itemTable,

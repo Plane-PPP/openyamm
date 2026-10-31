@@ -38,7 +38,8 @@ constexpr GraphicsQualityOption GraphicsQualityOptions[] = {
     {"view_distance", {"default", "default", "default"}},
 };
 constexpr std::array<int, 3> GraphicsQualityTerrainSubdivisions = {2, 4, 4};
-constexpr std::array<bool, 3> GraphicsQualityTerrainAntiTiling = {false, true, true};
+// Anti-tiling costs about 0.1 ms of GPU time at ground level (Harmondale, 1600x900), so only High keeps it.
+constexpr std::array<bool, 3> GraphicsQualityTerrainAntiTiling = {false, false, true};
 constexpr std::array<float, 3> GraphicsQualitySkyResolutionScales = {0.5f, 1.0f, 1.0f};
 }
 
@@ -167,6 +168,18 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     if (id == "terrain_specular")
     {
         return settings.terrainSpecular ? "true" : "false";
+    }
+    if (id == "surface_materials")
+    {
+        return settings.surfaceMaterials ? "true" : "false";
+    }
+    if (id == "surface_parallax")
+    {
+        return settings.surfaceParallax ? "true" : "false";
+    }
+    if (id == "surface_reflections")
+    {
+        return settings.surfaceReflections ? "true" : "false";
     }
     if (id == "rain_ripples")
     {
@@ -559,14 +572,18 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
     {
         return parseLightGridQualityValue(value, settings.lightGrid);
     }
-    if (id == "wet_surfaces" || id == "rain_ripples" || id == "terrain_specular")
+    if (id == "wet_surfaces" || id == "rain_ripples" || id == "terrain_specular" || id == "surface_materials"
+        || id == "surface_parallax" || id == "surface_reflections")
     {
         if (value != "true" && value != "false")
         {
             return false;
         }
         (id == "wet_surfaces" ? settings.wetSurfaces
-            : id == "rain_ripples" ? settings.rainRipples : settings.terrainSpecular) = value == "true";
+            : id == "rain_ripples" ? settings.rainRipples
+            : id == "terrain_specular" ? settings.terrainSpecular
+            : id == "surface_materials" ? settings.surfaceMaterials
+            : id == "surface_parallax" ? settings.surfaceParallax : settings.surfaceReflections) = value == "true";
         return true;
     }
     if (id == "water_reflection_size")

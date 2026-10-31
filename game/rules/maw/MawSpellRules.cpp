@@ -1169,8 +1169,23 @@ std::optional<AuraCastResult> MawSpellRules::castAura(Party &party, size_t caste
     return AuraCastResult::Held;
 }
 
-void MawSpellRules::updateAuras(Party &party, float) const
+void MawSpellRules::updateAuras(Party &party, float deltaSeconds) const
 {
+    // MAW applies its auras on a half-second timer (mawBuffApply, zzMaw-Timers.lua:95); a zero step (a cast, a toggle,
+    // a pedestal) applies them at once.
+    constexpr float AuraTickSeconds = 0.5f;
+
+    if (deltaSeconds > 0.0f)
+    {
+        m_auraSeconds += deltaSeconds;
+
+        if (m_auraSeconds < AuraTickSeconds)
+        {
+            return;
+        }
+    }
+
+    m_auraSeconds = 0.0f;
     std::unordered_map<uint32_t, uint32_t> &holders = m_rules.state().auraHolders;
     std::unordered_map<uint32_t, std::string> &fixedMaps = m_rules.state().fixedAuraMaps;
     std::unordered_map<uint32_t, MawAuraSource> sources;

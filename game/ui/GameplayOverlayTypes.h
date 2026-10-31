@@ -300,6 +300,7 @@ enum class GameplayChestPointerTargetType
     None,
     TakeAllButton,
     TakeGoldButton,
+    InventoryButton,
     CloseButton
 };
 
@@ -384,6 +385,7 @@ enum class GameplayCharacterPointerTargetType
     DismissButton,
     AlchemyButton,
     InventorySortButton,
+    InventoryDropButton,
     InventoryBagButton,
     // The bag overview: its button, an item in a bag and a free cell under a held item.
     InventoryBagOverviewButton,
@@ -881,5 +883,7 @@ struct GameplayRenderedInspectableHudItem
     float width = 0.0f;
     float height = 0.0f;
     bool rotatedCounterClockwise = false;
+    // The whole rectangle answers, not only the texture's opaque pixels (a list row: icon and name).
+    bool wholeAreaHits = false;
 };
 } // namespace OpenYAMM::Game

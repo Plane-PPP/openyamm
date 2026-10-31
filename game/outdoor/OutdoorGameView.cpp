@@ -3,6 +3,7 @@
 #include "game/outdoor/OutdoorSunlight.h"
 
 #include "game/app/GameSession.h"
+#include "game/content/WorldDecorations.h"
 #include "engine/BgfxContext.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/FaceEnums.h"
@@ -47,7 +48,6 @@
 #include "game/ui/GameplayUiSkin.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "engine/ImageAssetLoader.h"
-#include "engine/TextTable.h"
 
 #include <bx/math.h>
 
@@ -175,11 +175,6 @@ private:
     uint64_t m_startTickNanoseconds = 0;
     uint64_t m_lastTickNanoseconds = 0;
 };
-
-std::string engineDataTablePath(std::string_view fileName)
-{
-    return "engine/data_tables/" + std::string(fileName);
-}
 
 bool usesBlackTransparencyKey(std::string_view textureName)
 {
@@ -1606,28 +1601,13 @@ std::optional<OutdoorPartyStartPoint> resolveOutdoorPartyStartPoint(
     const OutdoorMapData &outdoorMapData,
     std::string_view startPointName)
 {
-    const std::optional<std::string> decorationTableText =
-        assetFileSystem.readTextFile(engineDataTablePath("decoration_data.txt"));
-
-    if (!decorationTableText)
-    {
-        return std::nullopt;
-    }
-
-    const std::optional<Engine::TextTable> parsedDecorationTable =
-        Engine::TextTable::parseTabSeparated(*decorationTableText);
-
-    if (!parsedDecorationTable)
-    {
-        return std::nullopt;
-    }
-
     std::vector<std::vector<std::string>> decorationRows;
-    decorationRows.reserve(parsedDecorationTable->getRowCount());
+    std::string decorationError;
 
-    for (size_t rowIndex = 0; rowIndex < parsedDecorationTable->getRowCount(); ++rowIndex)
+    if (!loadDecorationTableRows(assetFileSystem, decorationRows, decorationError))
     {
-        decorationRows.push_back(parsedDecorationTable->getRow(rowIndex));
+        std::cerr << "Failed to load the decoration table: " << decorationError << '\n';
+        return std::nullopt;
     }
 
     DecorationTable decorationTable;
@@ -2646,6 +2626,14 @@ bool OutdoorGameView::initialize(
             m_bakedSunDirectSamplerHandle = bgfx::createUniform("s_texBakedSunDirect", bgfx::UniformType::Sampler);
             m_bakedLightingUniformHandle = bgfx::createUniform("u_bakedLighting", bgfx::UniformType::Vec4, 2);
             m_bakedTerrainBoundsUniformHandle = bgfx::createUniform("u_bakedTerrainBounds", bgfx::UniformType::Vec4);
+            m_surfaceNormalSamplerHandle = bgfx::createUniform("s_surfaceNormal", bgfx::UniformType::Sampler);
+            m_surfaceDetailSamplerHandle = bgfx::createUniform("s_surfaceDetail", bgfx::UniformType::Sampler);
+            m_surfaceMaterialUniformHandle = bgfx::createUniform("u_surfaceMaterial", bgfx::UniformType::Vec4);
+            m_surfaceSunUniformHandle = bgfx::createUniform("u_surfaceSun", bgfx::UniformType::Vec4);
+            if (!m_surfaceReflectionBinding.create())
+            {
+                std::cerr << "OutdoorGameView: failed to create the surface reflection binding\n";
+            }
         }
     }
     m_outdoorBillboardAmbientUniformHandle = bgfx::createUniform("u_billboardAmbient", bgfx::UniformType::Vec4);
@@ -3290,6 +3278,15 @@ void OutdoorGameView::shutdown()
         m_outdoorBModelLightmapProgramHandle = BGFX_INVALID_HANDLE;
         m_outdoorBModelLightmapArrayProgramHandle = BGFX_INVALID_HANDLE;
         m_outdoorBModelShadowArrayProgramHandle = BGFX_INVALID_HANDLE;
+        m_outdoorBModelMaterialProgramHandle = BGFX_INVALID_HANDLE;
+        m_outdoorBModelMaterialArrayProgramHandle = BGFX_INVALID_HANDLE;
+        m_outdoorBModelMaterialShadowProgramHandle = BGFX_INVALID_HANDLE;
+        m_outdoorBModelMaterialShadowArrayProgramHandle = BGFX_INVALID_HANDLE;
+        m_surfaceNormalSamplerHandle = BGFX_INVALID_HANDLE;
+        m_surfaceDetailSamplerHandle = BGFX_INVALID_HANDLE;
+        m_surfaceMaterialUniformHandle = BGFX_INVALID_HANDLE;
+        m_surfaceSunUniformHandle = BGFX_INVALID_HANDLE;
+        m_surfaceReflectionBinding.destroy(false);
         m_outdoorTexturedFogArrayProgramHandle = BGFX_INVALID_HANDLE;
         m_outdoorTexturedFogShadowArrayProgramHandle = BGFX_INVALID_HANDLE;
         m_terrainShadowProgramHandle = BGFX_INVALID_HANDLE;
@@ -3403,7 +3400,8 @@ void OutdoorGameView::shutdown()
     for (bgfx::ProgramHandle *pProgram : {&m_outdoorTexturedFogShadowProgramHandle, &m_outdoorBModelShadowProgramHandle,
         &m_outdoorBModelLightmapArrayProgramHandle, &m_outdoorBModelShadowArrayProgramHandle,
         &m_outdoorTexturedFogArrayProgramHandle, &m_outdoorTexturedFogShadowArrayProgramHandle,
-        &m_terrainShadowProgramHandle})
+        &m_terrainShadowProgramHandle, &m_outdoorBModelMaterialProgramHandle, &m_outdoorBModelMaterialArrayProgramHandle,
+        &m_outdoorBModelMaterialShadowProgramHandle, &m_outdoorBModelMaterialShadowArrayProgramHandle})
     {
         if (bgfx::isValid(*pProgram))
         {
@@ -3459,7 +3457,8 @@ void OutdoorGameView::shutdown()
 
     for (bgfx::UniformHandle *pHandle :
         {&m_bakedSkySamplerHandle, &m_bakedSunDirectSamplerHandle,
-            &m_bakedLightingUniformHandle, &m_bakedTerrainBoundsUniformHandle})
+            &m_bakedLightingUniformHandle, &m_bakedTerrainBoundsUniformHandle, &m_surfaceNormalSamplerHandle,
+            &m_surfaceDetailSamplerHandle, &m_surfaceMaterialUniformHandle, &m_surfaceSunUniformHandle})
     {
         if (bgfx::isValid(*pHandle))
         {
@@ -3467,6 +3466,7 @@ void OutdoorGameView::shutdown()
             *pHandle = BGFX_INVALID_HANDLE;
         }
     }
+    m_surfaceReflectionBinding.destroy();
 
     if (bgfx::isValid(m_bmodelLightmapSamplerHandle))
     {
@@ -3604,16 +3604,29 @@ void OutdoorGameView::shutdown()
             }
         }
 
+        for (bgfx::TextureHandle textureHandle : {animation.materialNormal, animation.materialDetail})
+        {
+            if (bgfx::isValid(textureHandle))
+            {
+                bgfx::destroy(textureHandle);
+            }
+        }
+
         animation.frameTextureHandles.clear();
         animation.frameLengthTicks.clear();
         animation.animationLengthTicks = 0;
+        animation.materialNormal = BGFX_INVALID_HANDLE;
+        animation.materialDetail = BGFX_INVALID_HANDLE;
     }
 
     for (const BModelTextureArray &array : m_bmodelTextureArrays)
     {
-        if (bgfx::isValid(array.handle))
+        for (bgfx::TextureHandle textureHandle : {array.handle, array.materialNormal, array.materialDetail})
         {
-            bgfx::destroy(array.handle);
+            if (bgfx::isValid(textureHandle))
+            {
+                bgfx::destroy(textureHandle);
+            }
         }
     }
     m_bmodelTextureArrays.clear();
@@ -3747,6 +3760,7 @@ void OutdoorGameView::shutdown()
     screenRuntime.actorInspectOverlay() = {};
     screenRuntime.spellInspectOverlay() = {};
     screenRuntime.readableScrollOverlay() = {};
+    screenRuntime.lootSummaryOverlay() = {};
     screenRuntime.spellbook() = {};
     utilitySpellOverlay() = {};
     pendingSpellCast = {};
@@ -4994,10 +5008,12 @@ void OutdoorGameView::LightmappedBModelVertex::init()
     ms_layout.begin()
         .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
         .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
-        .add(bgfx::Attrib::TexCoord1, 2, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord1, 3, bgfx::AttribType::Float)
         .add(bgfx::Attrib::TexCoord3, 4, bgfx::AttribType::Float)
         .add(bgfx::Attrib::TexCoord4, 2, bgfx::AttribType::Float)
         .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+        .add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Bitangent, 3, bgfx::AttribType::Float)
         .end();
 }
 

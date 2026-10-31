@@ -943,8 +943,9 @@ void GameSession::updateGameplay(
             m_gameplayScreenRuntime.utilitySpellOverlayReadOnly().active
             && m_gameplayScreenRuntime.utilitySpellOverlayReadOnly().mode
                 != GameplayUiController::UtilitySpellOverlayMode::InventoryTarget;
-        const bool isReadableScrollOverlayActive =
-            m_gameplayScreenRuntime.readableScrollOverlayReadOnly().active;
+        const bool isModalOverlayActive =
+            m_gameplayScreenRuntime.readableScrollOverlayReadOnly().active
+            || m_gameplayScreenRuntime.lootSummaryOverlayReadOnly().active;
 
         const uint64_t sharedInputBeginTickCount = collectPerformanceDiagnostics ? SDL_GetTicksNS() : 0;
         m_sharedInputFrameResult =
@@ -965,7 +966,7 @@ void GameSession::updateGameplay(
                     .hasReadyMember = hasReadyMember,
                     .canBeginQuickCast = true,
                     .isUtilitySpellModalActive = isUtilitySpellModalActive,
-                    .isReadableScrollOverlayActive = isReadableScrollOverlayActive,
+                    .isModalOverlayActive = isModalOverlayActive,
                     .processSharedGameplayHotkeys = true,
                     .processQuickCast = true,
                 });

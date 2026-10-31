@@ -10,7 +10,7 @@ namespace
 {
 // The edge distance of a living, visible hostile actor that has seen the party; none for the others.
 std::optional<float> alertingActorDistance(
-    const GameplayRuntimeActorState &actor,
+    const GameplayActorRulesView &actor,
     float partyX,
     float partyY,
     float partyFootZ)
@@ -35,9 +35,10 @@ bool partyHasAlertWithin(const IGameplayWorldRuntime &worldRuntime, float distan
 
     for (size_t actorIndex = 0; actorIndex < worldRuntime.mapActorCount(); ++actorIndex)
     {
-        GameplayRuntimeActorState actor = {};
+        // The rules view, not the full runtime state: this pass runs over every actor each frame.
+        GameplayActorRulesView actor = {};
 
-        if (worldRuntime.actorRuntimeState(actorIndex, actor))
+        if (worldRuntime.actorRulesView(actorIndex, actor))
         {
             const std::optional<float> edgeDistance = alertingActorDistance(actor, partyX, partyY, partyFootZ);
 
@@ -53,7 +54,7 @@ bool partyHasAlertWithin(const IGameplayWorldRuntime &worldRuntime, float distan
 }
 
 bool actorRaisesPartyYellowAlert(
-    const GameplayRuntimeActorState &actor,
+    const GameplayActorRulesView &actor,
     float partyX,
     float partyY,
     float partyFootZ)

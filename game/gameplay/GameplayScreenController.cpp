@@ -1,4 +1,5 @@
 #include "game/gameplay/GameplayScreenController.h"
+#include "game/ui/GameplayLootSummaryRenderer.h"
 
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameMechanics.h"
@@ -75,7 +76,7 @@ void dropBagOverflow(GameplayScreenRuntime &context)
 }
 
 // The bag buttons on a chest and over a shop's or chest's party inventory (rulesets with several bags): a click opens
-// that bag of the active member.
+// that bag of the active member (GameplayPartyOverlayInputController::openNestedInventoryBag).
 void handleNestedInventoryBagButtons(GameplayScreenRuntime &context, const GameplayInputFrame &input)
 {
     Party *pParty = context.party();
@@ -100,11 +101,7 @@ void handleNestedInventoryBagButtons(GameplayScreenRuntime &context, const Gamep
         if (button && input.pointerX >= button->x && input.pointerX < button->x + button->width
             && input.pointerY >= button->y && input.pointerY < button->y + button->height)
         {
-            if (InventoryBags::openBag(*pParty->activeMember(), uint8_t(bag), bagCount))
-            {
-                context.setStatusBarEvent("Bag " + std::to_string(bag + 1));
-            }
-
+            GameplayPartyOverlayInputController::openNestedInventoryBag(context, bag);
             return;
         }
     }
@@ -308,6 +305,7 @@ bool GameplayScreenController::canUpdateStandardWorldInspectOverlayFromMouse(
         || config.hasHeldItem
         || config.hasPendingSpellTarget
         || config.hasActiveLootView
+        || context.lootSummaryOverlayReadOnly().active
         || context.activeEventDialog().isActive
         || context.characterScreenReadOnly().open
         || context.spellbookReadOnly().active
@@ -369,8 +367,8 @@ bool GameplayScreenController::canEnableGameplayMouseLook(
         return false;
     }
 
-    // The quick item ring needs the cursor.
-    if (GameplayQuickItems::ringOpen(context))
+    // The quick item ring and the loot summary need the cursor.
+    if (GameplayQuickItems::ringOpen(context) || context.lootSummaryOverlayReadOnly().active)
     {
         return false;
     }
@@ -746,6 +744,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleSharedOverlayInput(
     const GameplayInputFrame &input,
     const GameplayUiOverlayInputConfig &config)
 {
+    GameplayPartyOverlayInputController::openFirstBagsInOverview(context);
     handleNestedInventoryBagButtons(context, input);
     GameplayUiOverlayInputResult result = GameplayUiOverlayOrchestrator::handleStandardOverlayInput(
         context,
@@ -872,6 +871,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
 
     const bool canUsePartyNumberHotkeys =
         !config.blockPortraitInput
+        && !GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
         && !spellbookActive
         && !restActive
         && !menuActive
@@ -997,6 +997,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !houseBankInputActive
         && !context.inventoryNestedOverlay().active
         && !context.readableScrollOverlayReadOnly().active
+        && !context.lootSummaryOverlayReadOnly().active
         && !context.utilitySpellOverlayReadOnly().active
         && !context.pendingSpellTargetActive();
 
@@ -1027,8 +1028,9 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !houseBankInputActive
         && !config.blockJournalToggle;
 
-    // Keys typed into the journal search are text, not journal shortcuts.
-    const bool journalTyping = GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly());
+    // Keys typed into the journal or inventory search are text, not journal shortcuts.
+    const bool journalTyping = GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly())
+        || GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly());
     const bool mapShortcutPressed = !journalTyping
         && (input.isScancodeHeld(SDL_SCANCODE_M) || input.action(KeyboardAction::MapBook).held)
         && !(input.action(KeyboardAction::SkillManaShield).held
@@ -1078,6 +1080,17 @@ GameplayStandardWorldInputGateResult GameplayScreenController::gateStandardWorld
     GameplayScreenRuntime &context,
     const GameplayStandardWorldInputGateConfig &config)
 {
+    if (context.lootSummaryOverlayReadOnly().active)
+    {
+        if (config.pInputFrame != nullptr)
+        {
+            GameplayLootSummaryRenderer::handleInput(
+                context, *config.pInputFrame, config.pInputFrame->screenWidth, config.pInputFrame->screenHeight);
+        }
+
+        return {.blocked = true};
+    }
+
     if (config.blockOnDialogue && context.activeEventDialog().isActive)
     {
         return {.blocked = true};

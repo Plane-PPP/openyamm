@@ -1215,16 +1215,16 @@ void MawSkillRules::updateRegeneration(Party &party, const IGameplayWorldRuntime
     applySoloMasteries(party);
 
     constexpr float RecentLossSeconds = 20.0f;
+    // MAW regenerates on a 0.1 second timer (zzMaw-Timers.lua:87); the rates read every member's full HP, SP and
+    // skill bonuses, too dear for every frame.
+    constexpr float RegenerationTickSeconds = 0.1f;
 
     if (deltaSeconds <= 0.0f)
     {
         return;
     }
 
-    const bool enemiesNear = partyHasYellowAlert(world);
-    // A dimension map's slower regeneration (zzMAW-Skills.lua:1388-1390).
-    const double mapRegeneration = 1 - m_rules.mapAffix(MawMapAffix::PlayerRegeneration).value_or(0) / 100;
-
+    // Losses are seen every frame, so a hit healed within the same tick still restarts the wait.
     for (size_t index = 0; index < party.members().size(); ++index)
     {
         Character &member = *party.member(index);
@@ -1252,6 +1252,25 @@ void MawSkillRules::updateRegeneration(Party &party, const IGameplayWorldRuntime
         }
 
         track.lastSpellPoints = member.spellPoints;
+    }
+
+    m_regenerationSeconds += deltaSeconds;
+
+    if (m_regenerationSeconds < RegenerationTickSeconds)
+    {
+        return;
+    }
+
+    const float elapsedSeconds = m_regenerationSeconds;
+    m_regenerationSeconds = 0.0f;
+    const bool enemiesNear = partyHasYellowAlert(world);
+    // A dimension map's slower regeneration (zzMAW-Skills.lua:1388-1390).
+    const double mapRegeneration = 1 - m_rules.mapAffix(MawMapAffix::PlayerRegeneration).value_or(0) / 100;
+
+    for (size_t index = 0; index < party.members().size(); ++index)
+    {
+        Character &member = *party.member(index);
+        CharacterRulesRuntime &track = member.rulesetState.runtime;
 
         if (member.conditions.test(size_t(CharacterCondition::Dead))
             || member.conditions.test(size_t(CharacterCondition::Petrified))
@@ -1262,9 +1281,9 @@ void MawSkillRules::updateRegeneration(Party &party, const IGameplayWorldRuntime
 
         // HP and SP each double after 20 seconds without a loss of their own (S:1395-1446).
         const double multiplier = mawRegenerationMultiplier(track.secondsSinceHealthLoss < RecentLossSeconds,
-            enemiesNear) * deltaSeconds * mapRegeneration;
+            enemiesNear) * elapsedSeconds * mapRegeneration;
         const double spellMultiplier = mawRegenerationMultiplier(track.secondsSinceSpellLoss < RecentLossSeconds,
-            enemiesNear) * deltaSeconds * mapRegeneration;
+            enemiesNear) * elapsedSeconds * mapRegeneration;
         const auto [healthPerSecond, spellPerSecond] = regenerationPerSecond(party, index);
 
         track.healthCarry += healthPerSecond * multiplier;

@@ -509,7 +509,7 @@ PathPlanResult PathPlanner::plan(const PathMap &map, const PathPlanRequest &requ
 
             if (request.object.canFly)
             {
-                if (map.traceLine(currentPoint, candidate, request.object.radius, true).blocked)
+                if (!map.canReachDirectly(currentPoint, candidate, request.object))
                 {
                     ++result.debug.rejectedWalkSegment;
                     return;

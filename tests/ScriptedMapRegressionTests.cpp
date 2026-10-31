@@ -8,6 +8,7 @@
 #include "game/events/ISceneEventContext.h"
 #include "game/FaceEnums.h"
 #include "game/gameplay/CorpseLootRuntime.h"
+#include "game/items/InventoryBags.h"
 #include "game/gameplay/GameplayActorHitFeedback.h"
 #include "game/gameplay/GameplayActorService.h"
 #include "game/gameplay/JournalArcomageRuntime.h"
@@ -19,6 +20,7 @@
 #include "game/outdoor/OutdoorPartyRuntime.h"
 #include "game/outdoor/OutdoorWorldRuntime.h"
 #include "game/party/Party.h"
+#include "game/tables/CharacterDollTable.h"
 
 #include "tests/RegressionGameData.h"
 #include "tests/RegressionMapLoader.h"
@@ -32,6 +34,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -944,14 +947,52 @@ public:
     {
     }
 
+    // Satchels the loot tests add, one an actor index; a satchel emptied is gone, as a consumed corpse.
+    void addSatchel(OpenYAMM::Game::GameplayCorpseViewState satchel)
+    {
+        satchel.sourceIndex = uint32_t(m_satchels.size());
+        m_satchels.push_back(std::move(satchel));
+    }
+
+    const std::vector<OpenYAMM::Game::GameplayCorpseViewState> &satchels() const
+    {
+        return m_satchels;
+    }
+
+    std::vector<size_t> lootableCorpseActorIndices() const override
+    {
+        std::vector<size_t> actorIndices;
+
+        for (size_t index = 0; index < m_satchels.size(); ++index)
+        {
+            if (!m_satchels[index].items.empty())
+            {
+                actorIndices.push_back(index);
+            }
+        }
+
+        return actorIndices;
+    }
+
+    bool openActorCorpseView(size_t actorIndex) override
+    {
+        if (actorIndex >= m_satchels.size() || m_satchels[actorIndex].items.empty())
+        {
+            return false;
+        }
+
+        m_activeCorpseView = m_satchels[actorIndex];
+        return true;
+    }
+
     OpenYAMM::Game::GameplayCorpseViewState *activeCorpseView() override
     {
-        return nullptr;
+        return m_activeCorpseView ? &*m_activeCorpseView : nullptr;
     }
 
     const OpenYAMM::Game::GameplayCorpseViewState *activeCorpseView() const override
     {
-        return nullptr;
+        return m_activeCorpseView ? &*m_activeCorpseView : nullptr;
     }
 
     void commitActiveCorpseView() override
@@ -960,16 +1001,31 @@ public:
 
     bool takeActiveCorpseItem(size_t itemIndex, OpenYAMM::Game::GameplayChestItemState &item) override
     {
-        (void)itemIndex;
-        (void)item;
-        return false;
+        if (!m_activeCorpseView || itemIndex >= m_activeCorpseView->items.size())
+        {
+            return false;
+        }
+
+        item = m_activeCorpseView->items[itemIndex];
+        m_activeCorpseView->items.erase(m_activeCorpseView->items.begin() + std::ptrdiff_t(itemIndex));
+        m_satchels[m_activeCorpseView->sourceIndex] = *m_activeCorpseView;
+
+        if (m_activeCorpseView->items.empty())
+        {
+            m_activeCorpseView.reset();
+        }
+
+        return true;
     }
 
     void closeActiveCorpseView() override
     {
+        m_activeCorpseView.reset();
     }
 
 private:
+    std::vector<OpenYAMM::Game::GameplayCorpseViewState> m_satchels;
+    std::optional<OpenYAMM::Game::GameplayCorpseViewState> m_activeCorpseView;
     OpenYAMM::Game::GameplayActorHitFeedback m_actorHitFeedback;
     std::string m_mapName = "out01.odm";
     OpenYAMM::Game::Party m_party = {};
@@ -1043,6 +1099,21 @@ OpenYAMM::Game::Party makeScriptedRegressionParty()
     OpenYAMM::Game::Party party = {};
     party.seed(seed);
     return party;
+}
+
+// Character 25, a dragon, on the creature paperdoll (doll type 5), which cannot wear armour.
+OpenYAMM::Game::CharacterDollTable makeDragonDollTable()
+{
+    std::vector<std::string> dragon(24);
+    dragon[0] = "25";
+    dragon[1] = "5";
+    std::vector<std::string> creatureDoll(28, "0");
+    creatureDoll[0] = "5";
+    std::fill(creatureDoll.begin() + 1, creatureDoll.begin() + 8, "-");
+    OpenYAMM::Game::CharacterDollTable table;
+    REQUIRE(table.loadCharacterRows({{}, dragon}));
+    REQUIRE(table.loadDollTypeRows({{}, creatureDoll}));
+    return table;
 }
 
 const OpenYAMM::Game::EventRuntimeState::PendingMapMove *pendingMapMove(
@@ -5327,8 +5398,9 @@ TEST_CASE("mm7 global mmmerge supplement applies remaining original quest fixups
         sceneContext.setCurrentGameMinutes(360.0f);
         REQUIRE(eventRuntime.executeEventById(
             std::nullopt, globalEventProgram, 783, runtimeState, &party, &sceneContext));
-        CHECK_EQ(party.historyEventTimes(2).at(3), 360);
-        CHECK_EQ(party.historyEventTimes(2).at(4), 360);
+        // Its pages 1 and 2 are the forward pages, known from the start; the castle pages come later.
+        CHECK_FALSE(party.historyEventTimes(2).contains(3));
+        CHECK_FALSE(party.historyEventTimes(2).contains(4));
         CHECK_EQ(sceneContext.currentGameMinutes(), 360.0f + 14 * 24 * 60);
         CHECK_FALSE(party.hasQuestBit(528));
         CHECK_EQ(runtimeState.npcHouseOverrides[340], 215u);
@@ -5710,6 +5782,142 @@ TEST_CASE("mm7 lincoln mmmerge exit requires each active member to have a wetsui
     CHECK_EQ(*allowedState.pendingDialogueContext->transitionMapMove->mapName, "7out15.odm");
 }
 
+TEST_CASE("looting every satchel takes all the gold and each item that fits, and leaves the rest")
+{
+    // Bags with room for one more item.
+    RecordingGameplayWorldContext world;
+    *world.party() = makeScriptedRegressionParty();
+
+    while (world.party()->tryGrantInventoryItemStartingAt(0, makeScriptedInventoryItem(1406)))
+    {
+    }
+
+    world.party()->member(0)->inventory.pop_back();
+    const auto gold = [](uint32_t amount)
+    {
+        OpenYAMM::Game::GameplayChestItemState item = {};
+        item.isGold = true;
+        item.goldAmount = amount;
+        return item;
+    };
+    const auto lootItem = [](uint32_t itemId)
+    {
+        OpenYAMM::Game::GameplayChestItemState item = {};
+        item.itemId = itemId;
+        item.quantity = 1;
+        return item;
+    };
+    OpenYAMM::Game::GameplayCorpseViewState first = {};
+    first.items = {gold(100), lootItem(1406)};
+    OpenYAMM::Game::GameplayCorpseViewState second = {};
+    second.items = {lootItem(1407), gold(50)};
+    world.addSatchel(first);
+    world.addSatchel(second);
+    const int goldBefore = world.party()->gold();
+    world.party()->clearPendingAudioRequests();
+
+    const OpenYAMM::Game::GameplayUiController::LootSummaryOverlayState summary =
+        OpenYAMM::Game::lootAllCorpses(world, *world.party());
+
+    CHECK(summary.active);
+    CHECK_EQ(summary.satchelCount, 2u);
+    CHECK_EQ(summary.goldAmount, 150);
+    CHECK_EQ(world.party()->gold() - goldBefore, 150);
+    // One gold sound for the whole sweep, not one per satchel.
+    size_t goldSounds = 0;
+
+    for (const OpenYAMM::Game::Party::PendingAudioRequest &request : world.party()->pendingAudioRequests())
+    {
+        goldSounds += request.soundId == OpenYAMM::Game::SoundId::Gold ? 1 : 0;
+    }
+
+    CHECK_EQ(goldSounds, 1u);
+    REQUIRE_EQ(summary.takenItems.size(), 1u);
+    CHECK_EQ(summary.takenItems[0].objectDescriptionId, 1406u);
+    // Where it went, for the summary to inspect (identify, repair) the item itself.
+    REQUIRE_EQ(summary.takenItemPlaces.size(), 1u);
+    const OpenYAMM::Game::GameplayUiController::LootedItemPlace &place = summary.takenItemPlaces[0];
+    const OpenYAMM::Game::Character *pRecipient = world.party()->member(place.memberIndex);
+    REQUIRE(pRecipient != nullptr);
+    const OpenYAMM::Game::InventoryItem *pPlaced =
+        OpenYAMM::Game::InventoryBags::itemInBagAt(*pRecipient, place.bag, place.gridX, place.gridY);
+    REQUIRE(pPlaced != nullptr);
+    CHECK_EQ(pPlaced->objectDescriptionId, 1406u);
+    REQUIRE_EQ(summary.leftItems.size(), 1u);
+    CHECK_EQ(summary.leftItems[0].objectDescriptionId, 1407u);
+    // The first satchel is empty and gone; the second keeps the item that did not fit.
+    CHECK(world.satchels()[0].items.empty());
+    REQUIRE_EQ(world.satchels()[1].items.size(), 1u);
+    CHECK_EQ(world.satchels()[1].items[0].itemId, 1407u);
+    CHECK_EQ(world.lootableCorpseActorIndices(), std::vector<size_t>{1});
+}
+
+TEST_CASE("mm7 shoals let a dragon in with a carried wetsuit and still want the others worn")
+{
+    const OpenYAMM::Game::CharacterDollTable dolls = makeDragonDollTable();
+    const auto makeParty =
+        [&](bool dragon, bool carried)
+        {
+            OpenYAMM::Game::Party party = makeScriptedRegressionParty();
+            party.setCharacterDollTable(&dolls);
+            party.setQuestBit(642, true);
+            OpenYAMM::Game::Character &member = *party.member(0);
+            member.characterDataId = dragon ? 25 : 0;
+            member.health = 40;
+
+            if (carried)
+            {
+                member.inventory.push_back(makeScriptedInventoryItem(1406));
+            }
+
+            return party;
+        };
+
+    std::string error;
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> lincoln =
+        loadMm7MapOverlayProgram(OPENYAMM_SOURCE_DIR, "7d23", "7d23_mmmerge", error);
+    REQUIRE_MESSAGE(lincoln.has_value(), error.c_str());
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> avlee =
+        loadMm7MapOverlayProgram(OPENYAMM_SOURCE_DIR, "out14", "out14_mmmerge", error);
+    REQUIRE_MESSAGE(avlee.has_value(), error.c_str());
+    const std::optional<OpenYAMM::Game::ScriptedEventProgram> shoals =
+        loadMm7MapOverlayProgram(OPENYAMM_SOURCE_DIR, "7out15", "7out15_mmmerge", error);
+    REQUIRE_MESSAGE(shoals.has_value(), error.c_str());
+    OpenYAMM::Game::EventRuntime eventRuntime = {};
+
+    for (const auto &[dragon, carried, suited] :
+         std::vector<std::tuple<bool, bool, bool>>{{true, true, true}, {true, false, false}, {false, true, false}})
+    {
+        CAPTURE(dragon);
+        CAPTURE(carried);
+
+        OpenYAMM::Game::Party lincolnParty = makeParty(dragon, carried);
+        OpenYAMM::Game::EventRuntimeState lincolnState = {};
+        REQUIRE(eventRuntime.executeEventById(lincoln, std::nullopt, 501, lincolnState, &lincolnParty));
+        CHECK_EQ(pendingMapMove(lincolnState) != nullptr, suited);
+
+        OpenYAMM::Game::Party avleeParty = makeParty(dragon, carried);
+        OpenYAMM::Game::EventRuntimeState avleeState = {};
+        OpenYAMM::Game::EventRuntimeState::ActiveHookContext hookContext = {};
+        hookContext.kind = OpenYAMM::Game::EventRuntimeHookKind::MapTransition;
+        hookContext.boundaryEdge = static_cast<uint32_t>(OpenYAMM::Game::MapBoundaryEdge::West);
+        hookContext.destinationMapName = "7out15.odm";
+        avleeState.activeHookContext = hookContext;
+        REQUIRE(eventRuntime.executeHooks(
+            avlee, std::nullopt, OpenYAMM::Game::EventRuntimeHookKind::MapTransition, avleeState, &avleeParty));
+        REQUIRE(avleeState.activeHookContext.has_value());
+        CHECK_EQ(avleeState.activeHookContext->blocked, !suited);
+
+        OpenYAMM::Game::Party shoalsParty = makeParty(dragon, carried);
+        RecordingGameplayWorldContext shoalsWorldContext;
+        shoalsWorldContext.setPartyPosition(0.0f, 0.0f, 0.0f);
+        OpenYAMM::Game::EventRuntimeState shoalsState = {};
+        REQUIRE(eventRuntime.executeEventById(
+            shoals, std::nullopt, 65017, shoalsState, &shoalsParty, &shoalsWorldContext));
+        CHECK_EQ(shoalsParty.member(0)->health, suited ? 40 : 0);
+    }
+}
+
 TEST_CASE("mm7 stone city mmmerge throne room and dwarf king cleanup")
 {
     std::string error;
@@ -5764,10 +5972,10 @@ TEST_CASE("mm7 colony zod releases Roland and restores the open pathway")
     freshState.activeHistoryContinentId = 2;
     freshState.variables[static_cast<uint32_t>(OpenYAMM::Game::EvtVariable::Hour)] = 6;
     REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 376, freshState, &freshParty));
-    CHECK_EQ(freshParty.historyEventTimes(2).at(26), 360);
+    CHECK_EQ(freshParty.historyEventTimes(2).at(24), 360);
     freshState.variables[static_cast<uint32_t>(OpenYAMM::Game::EvtVariable::Hour)] = 7;
     REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 376, freshState, &freshParty));
-    CHECK_EQ(freshParty.historyEventTimes(2).at(26), 360);
+    CHECK_EQ(freshParty.historyEventTimes(2).at(24), 360);
     REQUIRE_EQ(freshState.grantedItems.size(), 1u);
     CHECK_EQ(freshState.grantedItems.front().objectDescriptionId, 1463u);
     CHECK(freshParty.hasQuestBit(752));

@@ -36,9 +36,13 @@ class LoadGameScreen : public MenuDesignScreen
                    GameAudioSystem *pAudio = nullptr, std::string loadWarning = {});
 
     AppMode mode() const override;
+    // The layout, and the saves folder's first read on a worker thread (startSaveScan).
     void prepareForFirstFrame();
     void onEnter() override;
-    static void invalidateCachedSaveSlots();
+    // Reads the saves folder on a worker thread, so the list is ready when a Load or Save screen opens.
+    static void startSaveScan();
+    // Ends a scan still running at its current save, and forgets the saves read.
+    static void stopSaveScan();
     static std::optional<std::filesystem::path> mostRecentSave(std::string &mapFileName);
     void configureSave(SaveAction action, const std::string &location, float gameMinutes,
                        const std::vector<uint8_t> &previewBmp, SaveFoodCost foodCost = {});
@@ -82,12 +86,10 @@ class LoadGameScreen : public MenuDesignScreen
     void refreshRulesetFilters();
     // The slots the ruleset filter lets through, as indices into m_slots.
     std::vector<size_t> shownSlots() const;
-    // The cached list while the saves folder is unchanged, else a fresh read.
-    void loadSaveSlots();
+    // The list from the saves read so far, reading only those that are new or changed.
     void refreshSaveSlots();
     bool tryLoadSelectedSlot();
     void cancel();
-    void loadCachedSaveSlots();
 
     const GameDataRepository *m_pGameData = nullptr;
     LoadAction m_loadAction;
@@ -135,10 +137,5 @@ class LoadGameScreen : public MenuDesignScreen
         std::optional<std::filesystem::path> folder;
     };
     std::shared_ptr<FolderPick> m_folderPick;
-
-    static std::vector<SaveSlotSummary> s_cachedSlots;
-    static bool s_cachedSlotsValid;
-    static uint64_t s_cachedSignature;
-    static size_t s_cachedNewerSaveCount;
 };
 } // namespace OpenYAMM::Game

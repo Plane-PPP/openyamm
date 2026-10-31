@@ -1,4 +1,5 @@
 #include "game/gameplay/GameplayInputController.h"
+#include "game/ui/GameplayLootSummaryRenderer.h"
 
 #include "game/audio/SoundIds.h"
 #include "game/gameplay/GameplayActionController.h"
@@ -173,8 +174,9 @@ void GameplayInputController::handleStandardUiHotkeys(
     GameplayScreenRuntime &context,
     const GameplayStandardUiHotkeyConfig &config)
 {
-    // Letters typed into the alchemy bench or journal search are text, not hotkeys; both handle Escape themselves.
-    if (GameplayUiController::alchemyBenchSearchActive(context.characterScreenReadOnly())
+    // Letters typed into the alchemy bench, inventory or journal search are text, not hotkeys; each handles Escape
+    // itself.
+    if (GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
         || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly()))
     {
         return;
@@ -217,6 +219,7 @@ void GameplayInputController::handleStandardUiHotkeys(
         && !quickReferenceActive
         && !context.inventoryNestedOverlay().active
         && !context.readableScrollOverlayReadOnly().active
+        && !context.lootSummaryOverlayReadOnly().active
         && !context.utilitySpellOverlayReadOnly().active
         && !houseShopActive
         && !houseBankInputActive;
@@ -236,6 +239,13 @@ void GameplayInputController::handleStandardUiHotkeys(
             return;
         }
 
+        if (context.lootSummaryOverlayReadOnly().active)
+        {
+            GameplayLootSummaryRenderer::close(context);
+            context.interactionState().menuToggleLatch = true;
+            return;
+        }
+
         if (spellbookActive)
         {
             context.closeSpellbookOverlay();
@@ -250,8 +260,13 @@ void GameplayInputController::handleStandardUiHotkeys(
             return;
         }
 
-        // An open alchemy bench takes this Escape itself and leaves the character screen open.
-        if (characterScreenOpen && !context.characterScreenReadOnly().alchemyBench.active)
+        // An open alchemy bench, and an inventory item search (cleared by it), take this Escape themselves and leave
+        // the character screen open.
+        const GameplayUiController::CharacterScreenState &characterScreen = context.characterScreenReadOnly();
+
+        if (characterScreenOpen && !characterScreen.alchemyBench.active
+            && !(characterScreen.page == GameplayUiController::CharacterPage::Inventory
+                && !characterScreen.inventorySearch.empty()))
         {
             context.closeCharacterScreen();
             context.interactionState().menuToggleLatch = true;
@@ -411,6 +426,13 @@ void GameplayInputController::handleStandardUiHotkeys(
         }
     }
 
+    // The gather key closes the loot summary it opened.
+    if (context.lootSummaryOverlayReadOnly().active
+        && isActionNewlyPressed(context, KeyboardAction::GatherLoot, config.pInputFrame, config.pKeyboardState))
+    {
+        GameplayLootSummaryRenderer::close(context);
+    }
+
     // MAW's keys (devdocs/maw/GAPS.md §11 D.18), listed in the key bindings of a MAW game only.
     if (Party *pParty = context.party(); gameplayIdle && pParty != nullptr && pWorldRuntime != nullptr)
     {
@@ -426,9 +448,16 @@ void GameplayInputController::handleStandardUiHotkeys(
 
         if (isActionNewlyPressed(context, KeyboardAction::GatherLoot, config.pInputFrame, config.pKeyboardState))
         {
-            if (const std::optional<std::string> status = GameplayActionController::gatherLoot(*pParty, *pWorldRuntime))
+            GameplayActionController::GatherLootResult result =
+                GameplayActionController::gatherLoot(*pParty, *pWorldRuntime);
+
+            if (result.summary.active)
             {
-                context.setStatusBarEvent(*status);
+                context.lootSummaryOverlay() = std::move(result.summary);
+            }
+            else if (result.statusText)
+            {
+                context.setStatusBarEvent(*result.statusText);
             }
         }
     }
@@ -439,7 +468,7 @@ void GameplayInputController::handleStandardUiHotkeys(
     {
         if (isActionNewlyPressed(context, KeyboardAction::FollowerPanel, config.pInputFrame, config.pKeyboardState))
         {
-            context.interactionState().followerPanelOpen = !context.interactionState().followerPanelOpen;
+            context.toggleFollowerPanel();
         }
 
         constexpr std::array<KeyboardAction, 4> FollowerActions = {KeyboardAction::Follower1,
@@ -508,6 +537,7 @@ void GameplayInputController::handleStandardUiHotkeys(
         && !journalActive
         && !context.inventoryNestedOverlay().active
         && !context.readableScrollOverlayReadOnly().active
+        && !context.lootSummaryOverlayReadOnly().active
         && !context.utilitySpellOverlayReadOnly().active
         && !houseShopActive
         && !houseBankInputActive;
@@ -555,7 +585,7 @@ void GameplayInputController::handleSharedGameplayHotkeys(
     const GameplaySharedGameplayHotkeyConfig &config)
 {
     if (config.pKeyboardState == nullptr
-        || GameplayUiController::alchemyBenchSearchActive(context.characterScreenReadOnly())
+        || GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
         || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly()))
     {
         context.interactionState().alwaysRunToggleLatch = false;
@@ -675,7 +705,7 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
     const GameplayUiController::HeldInventoryItemState &heldInventoryItem = context.heldInventoryItem();
     const bool blocksUnderlyingMouseInput =
         context.currentHudScreenState() != GameplayHudScreenState::Gameplay
-        || config.isReadableScrollOverlayActive;
+        || config.isModalOverlayActive;
     const bool gameplayMouseLookAllowed =
         context.settingsSnapshot().controlScheme == ControlScheme::Modern
         && GameplayScreenController::canEnableGameplayMouseLook(
@@ -739,7 +769,7 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
                             .rightPressUsesHeldItem = !frameResult.mouseLookPolicy.cursorModeActive,
                             .mouseWheelDelta = config.mouseWheelDelta,
                             .blockPortraitInput =
-                                config.isUtilitySpellModalActive || config.isReadableScrollOverlayActive,
+                                config.isUtilitySpellModalActive || config.isModalOverlayActive,
                             .blockHudButtonInput = blocksUnderlyingMouseInput || config.isUtilitySpellModalActive,
                             .blockJournalToggle =
                                 hasPendingSpellCast
@@ -796,7 +826,7 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
         && !hasPendingSpellCast
         && !hasActiveLootView
         && !config.isUtilitySpellModalActive
-        && !config.isReadableScrollOverlayActive
+        && !config.isModalOverlayActive
         && context.currentHudScreenState() == GameplayHudScreenState::Gameplay)
     {
         GameplayHudInputController::useHeldItemOnPortraitAtPointer(

@@ -274,11 +274,14 @@ private:
     void cancelLoadingOverlay();
     void closeTransientGameplayUiForMapMove();
     std::filesystem::path settingsFilePath() const;
+    bool saveSettings(const GameSettings &settings, std::string &error) const;
     void loadOrCreateSettings();
     void applyCurrentSettingsToActiveRuntime();
     void applyStartupDebugSettingsToActiveRuntime();
     void requestApplicationQuit() const;
     void reportQuickSaveStatus(const std::string &status);
+    // Writes the next rendered frame to screenshots/<local date and time>.png.
+    void requestScreenshotFile();
     void handleSdlEvent(const SDL_Event &event);
     bool handlePendingInputPromptSdlEvent(const SDL_Event &event);
     bool pendingInputPromptActive() const;

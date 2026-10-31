@@ -145,6 +145,7 @@ public:
     GameplayUiController::ActorInspectOverlayState &actorInspectOverlay() const;
     GameplayUiController::SpellInspectOverlayState &spellInspectOverlay() const;
     GameplayUiController::ReadableScrollOverlayState &readableScrollOverlay() const;
+    GameplayUiController::LootSummaryOverlayState &lootSummaryOverlay() const;
     GameplayUiController::SpellbookState &spellbook() const;
     GameplayUiController::UtilitySpellOverlayState &utilitySpellOverlay() const;
     GameplayUiController::InventoryNestedOverlayState &inventoryNestedOverlay() const;
@@ -168,6 +169,7 @@ public:
     const GameplayUiController::ActorInspectOverlayState &actorInspectOverlayReadOnly() const;
     const GameplayUiController::SpellInspectOverlayState &spellInspectOverlayReadOnly() const;
     const GameplayUiController::ReadableScrollOverlayState &readableScrollOverlayReadOnly() const;
+    const GameplayUiController::LootSummaryOverlayState &lootSummaryOverlayReadOnly() const;
     const GameplayUiController::SpellbookState &spellbookReadOnly() const;
     const GameplayUiController::UtilitySpellOverlayState &utilitySpellOverlayReadOnly() const;
     const GameplayUiController::JournalScreenState &journalScreenStateReadOnly() const;
@@ -350,7 +352,10 @@ public:
     void preloadReferencedAssets();
     bool ensurePortraitRuntimeLoaded();
     void resetPortraitFxStates(size_t memberCount);
-    void resetOverlayInteractionState(bool followerPanelOpen = false);
+    // Opens the follower panel on a map load when the party has followers and the player left it open.
+    void resetOverlayInteractionState(bool hasFollowers = false);
+    // The panel button and key: the choice is remembered in the settings.
+    void toggleFollowerPanel();
     bool initializeHouseVideoPlayer();
     void shutdownHouseVideoPlayer();
     void stopHouseVideoPlayback();
@@ -526,6 +531,8 @@ public:
     bool renderHouseVideoFrame(float x, float y, float quadWidth, float quadHeight) const;
 
 private:
+    void rememberGameplayMinimapZoom();
+
     CombatLog m_combatLog;
     GameplayCombatLogPanel m_combatLogPanel;
     struct DelayedSpeechReaction

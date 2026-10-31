@@ -7,11 +7,13 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <future>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
@@ -198,6 +200,93 @@ uint64_t saveFolderSignature()
     return signature;
 }
 
+// A save file as the list read it, kept while the file's size and time are unchanged.
+struct ScannedSave
+{
+    std::filesystem::path path;
+    uintmax_t fileSize = 0;
+    std::optional<std::filesystem::file_time_type> modified;
+    std::optional<GameSaveSummary> summary;
+    bool newerVersion = false;
+    int previewWidth = 0;
+    int previewHeight = 0;
+    std::vector<uint8_t> previewPixelsBgra;
+};
+
+// Set while LoadGameScreen::stopSaveScan waits for the worker; the scan stops at its next save.
+std::atomic<bool> g_saveScanStopping = false;
+
+// The saves folder's save files, reading only those that are not in `known` at the same size and time. It touches
+// nothing but the files, so it runs on any thread.
+std::vector<ScannedSave> scanSaves(std::vector<ScannedSave> known)
+{
+    std::unordered_map<std::string, size_t> knownIndices;
+
+    for (size_t index = 0; index < known.size(); ++index)
+    {
+        knownIndices.emplace(known[index].path.string(), index);
+    }
+
+    std::vector<ScannedSave> scanned;
+    std::error_code error;
+    std::filesystem::create_directories("saves", error);
+
+    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator("saves", error))
+    {
+        if (g_saveScanStopping)
+        {
+            break;
+        }
+
+        std::error_code entryError;
+
+        if (!entry.is_regular_file(entryError) || toLowerCopy(entry.path().extension().string()) != ".oysav")
+        {
+            continue;
+        }
+
+        ScannedSave save;
+        save.path = entry.path();
+        save.fileSize = entry.file_size(entryError);
+        const std::filesystem::file_time_type modified = entry.last_write_time(entryError);
+
+        if (!entryError)
+        {
+            save.modified = modified;
+        }
+
+        const auto knownIndex = knownIndices.find(save.path.string());
+
+        if (knownIndex != knownIndices.end() && known[knownIndex->second].fileSize == save.fileSize
+            && known[knownIndex->second].modified == save.modified)
+        {
+            scanned.push_back(std::move(known[knownIndex->second]));
+            continue;
+        }
+
+        std::string loadError;
+        save.summary = loadGameSaveSummaryFromPath(save.path, loadError);
+        save.newerVersion = !save.summary && loadError == SaveFromNewerVersionError;
+
+        if (save.summary && !save.summary->previewBmp.empty())
+        {
+            decodeBmpBytesToBgra(save.summary->previewBmp, save.previewWidth, save.previewHeight,
+                save.previewPixelsBgra);
+            save.summary->previewBmp = std::vector<uint8_t>();
+        }
+
+        scanned.push_back(std::move(save));
+    }
+
+    return scanned;
+}
+
+// Every list of the session reads from these: a save is read once, and again only after it changes.
+std::vector<ScannedSave> g_scannedSaves;
+// The first read of the folder, on a worker thread (LoadGameScreen::startSaveScan): saves older than
+// SaveVersionSummaryFirst are read whole, which takes seconds for a folder of late saves.
+std::future<std::vector<ScannedSave>> g_pendingSaveScan;
+
 } // namespace
 
 LoadGameScreen::LoadGameScreen(const Engine::AssetFileSystem &assetFileSystem, const GameDataRepository &gameData,
@@ -209,15 +298,25 @@ LoadGameScreen::LoadGameScreen(const Engine::AssetFileSystem &assetFileSystem, c
 {
 }
 
-std::vector<LoadGameScreen::SaveSlotSummary> LoadGameScreen::s_cachedSlots;
-bool LoadGameScreen::s_cachedSlotsValid = false;
-uint64_t LoadGameScreen::s_cachedSignature = 0;
-size_t LoadGameScreen::s_cachedNewerSaveCount = 0;
-
-void LoadGameScreen::invalidateCachedSaveSlots()
+void LoadGameScreen::startSaveScan()
 {
-    s_cachedSlots.clear();
-    s_cachedSlotsValid = false;
+    if (!g_pendingSaveScan.valid())
+    {
+        g_pendingSaveScan = std::async(std::launch::async, scanSaves, std::move(g_scannedSaves));
+    }
+}
+
+void LoadGameScreen::stopSaveScan()
+{
+    if (g_pendingSaveScan.valid())
+    {
+        g_saveScanStopping = true;
+        g_pendingSaveScan.wait();
+        g_pendingSaveScan = {};
+        g_saveScanStopping = false;
+    }
+
+    g_scannedSaves.clear();
 }
 
 AppMode LoadGameScreen::mode() const
@@ -229,20 +328,7 @@ void LoadGameScreen::prepareForFirstFrame()
 {
     loadDesign("gameplay/load_game");
     preloadLayoutAssets(m_designLayouts);
-
-    loadSaveSlots();
-}
-
-void LoadGameScreen::loadSaveSlots()
-{
-    if (s_cachedSlotsValid && !m_saveAction && s_cachedSignature == saveFolderSignature())
-    {
-        loadCachedSaveSlots();
-    }
-    else
-    {
-        refreshSaveSlots();
-    }
+    startSaveScan();
 }
 
 void LoadGameScreen::onEnter()
@@ -250,7 +336,7 @@ void LoadGameScreen::onEnter()
     // The folder may have changed since the list was read: saves copied in, or written by another game.
     if (!m_slotsLoaded || m_slotsSignature != saveFolderSignature())
     {
-        loadSaveSlots();
+        refreshSaveSlots();
     }
 }
 
@@ -321,9 +407,9 @@ std::optional<std::filesystem::path> LoadGameScreen::mostRecentSave(std::string 
     for (const auto &entry : entries)
     {
         std::string message;
-        if (const std::optional<GameSaveData> data = loadGameDataFromPath(entry.path(), message))
+        if (const std::optional<GameSaveSummary> summary = loadGameSaveSummaryFromPath(entry.path(), message))
         {
-            mapFileName = data->mapFileName;
+            mapFileName = summary->mapFileName;
             return entry.path();
         }
     }
@@ -399,11 +485,7 @@ void LoadGameScreen::commitSave()
     }
     const auto save = [this, path, name]()
     {
-        if (m_saveAction(path, name))
-        {
-            invalidateCachedSaveSlots();
-        }
-        else
+        if (!m_saveAction(path, name))
         {
             m_error = "Saving failed or is not allowed in this location.";
         }
@@ -468,7 +550,6 @@ void LoadGameScreen::finishImportSaves()
     }
 
     const Engine::SaveImportResult result = Engine::importSaveFiles(*folder, "saves");
-    invalidateCachedSaveSlots();
     refreshSaveSlots();
     m_revealSelection = true;
 
@@ -517,7 +598,6 @@ void LoadGameScreen::requestDelete()
                     return;
                 }
 
-                invalidateCachedSaveSlots();
                 refreshSaveSlots();
                 if (m_saveAction)
                 {
@@ -799,70 +879,69 @@ void LoadGameScreen::refreshSaveSlots()
     m_slots.clear();
     m_slotsLoaded = false;
     m_newerSaveCount = 0;
-    std::filesystem::create_directories("saves");
+
+    // The scan started with the menu has read most of the folder; this one reads only what changed since.
+    if (g_pendingSaveScan.valid())
+    {
+        g_scannedSaves = g_pendingSaveScan.get();
+    }
+
+    g_scannedSaves = scanSaves(std::move(g_scannedSaves));
     m_slotsSignature = saveFolderSignature();
     std::unordered_map<std::string, std::string> rulesetNames;
 
-    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator("saves"))
+    for (const ScannedSave &save : g_scannedSaves)
     {
-        if (!entry.is_regular_file() || toLowerCopy(entry.path().extension().string()) != ".oysav")
+        if (m_saveAction && (toLowerCopy(save.path.stem().string()) == "autosave" ||
+                             toLowerCopy(save.path.stem().string()) == "quicksave"))
         {
             continue;
         }
 
-        if (m_saveAction && (toLowerCopy(entry.path().stem().string()) == "autosave" ||
-                             toLowerCopy(entry.path().stem().string()) == "quicksave"))
+        if (!save.summary)
         {
-            continue;
-        }
-        std::string error;
-        const std::optional<GameSaveData> saveData = loadGameDataFromPath(entry.path(), error);
-
-        if (!saveData)
-        {
-            if (error == SaveFromNewerVersionError)
+            if (save.newerVersion)
             {
                 ++m_newerSaveCount;
             }
             continue;
         }
 
+        const GameSaveSummary &summary = *save.summary;
         SaveSlotSummary slot = {};
-        slot.path = entry.path();
-        slot.fileLabel = !saveData->saveName.empty() ? saveData->saveName : friendlySaveFileLabel(entry.path());
-        slot.locationName = saveData->mapFileName;
+        slot.path = save.path;
+        slot.fileLabel = !summary.saveName.empty() ? summary.saveName : friendlySaveFileLabel(save.path);
+        slot.locationName = summary.mapFileName;
         slot.populated = true;
-        slot.rulesetId = saveData->ruleset.id;
+        slot.rulesetId = summary.ruleset.id;
 
-        if (!saveData->ruleset.isStandard())
+        if (!summary.ruleset.isStandard())
         {
-            auto rulesetName = rulesetNames.find(saveData->ruleset.id);
+            auto rulesetName = rulesetNames.find(summary.ruleset.id);
 
             if (rulesetName == rulesetNames.end())
             {
                 std::string rulesetError;
                 const std::optional<RulesetDefinition> ruleset =
-                    loadRulesetDefinition(assetFileSystem(), saveData->ruleset.id, rulesetError);
+                    loadRulesetDefinition(assetFileSystem(), summary.ruleset.id, rulesetError);
                 rulesetName = rulesetNames.emplace(
-                    saveData->ruleset.id,
-                    ruleset ? ruleset->name : saveData->ruleset.id + " (not installed)").first;
+                    summary.ruleset.id,
+                    ruleset ? ruleset->name : summary.ruleset.id + " (not installed)").first;
             }
 
-            slot.rulesetBadge = describeRulesetSelection(saveData->ruleset, rulesetName->second);
+            slot.rulesetBadge = describeRulesetSelection(summary.ruleset, rulesetName->second);
         }
 
-        const CivilTime civilTime = civilTimeFromGameMinutes(saveData->savedGameMinutes);
+        const CivilTime civilTime = civilTimeFromGameMinutes(summary.savedGameMinutes);
         slot.weekdayClockText = formatClock(civilTime);
         slot.dateText = formatDate(civilTime);
-        std::error_code timestampError;
-        const std::filesystem::file_time_type modified = entry.last_write_time(timestampError);
-        if (!timestampError)
+        if (save.modified)
         {
-            slot.modified = modified;
+            slot.modified = *save.modified;
             const std::time_t timestamp =
                 std::chrono::system_clock::to_time_t(
                     std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                        std::chrono::file_clock::to_sys(modified)));
+                        std::chrono::file_clock::to_sys(*save.modified)));
             if (const std::tm *pLocal = std::localtime(&timestamp))
             {
                 std::ostringstream formatted;
@@ -875,8 +954,8 @@ void LoadGameScreen::refreshSaveSlots()
         {
             for (const MapStatsEntry &entryMap : m_pGameData->mapEntries())
             {
-                if (toLowerCopy(entryMap.canonicalId) == toLowerCopy(saveData->mapFileName) ||
-                    toLowerCopy(entryMap.fileName) == toLowerCopy(saveData->mapFileName))
+                if (toLowerCopy(entryMap.canonicalId) == toLowerCopy(summary.mapFileName) ||
+                    toLowerCopy(entryMap.fileName) == toLowerCopy(summary.mapFileName))
                 {
                     slot.locationName = entryMap.name;
                     slot.worldName = entryMap.worldId;
@@ -894,41 +973,12 @@ void LoadGameScreen::refreshSaveSlots()
             }
         }
 
-        if (!saveData->previewBmp.empty())
-        {
-            decodeBmpBytesToBgra(saveData->previewBmp, slot.previewWidth, slot.previewHeight, slot.previewPixelsBgra);
-        }
-
+        slot.previewWidth = save.previewWidth;
+        slot.previewHeight = save.previewHeight;
+        slot.previewPixelsBgra = save.previewPixelsBgra;
         m_slots.push_back(std::move(slot));
     }
 
-    sortSlots();
-
-    if (m_selectedIndex >= m_slots.size())
-    {
-        m_selectedIndex = 0;
-    }
-
-    m_scrollOffset = 0;
-    m_lastClickedSlotIndex = static_cast<size_t>(-1);
-    m_lastClickedSlotTicks = 0;
-    m_newSave = bool(m_saveAction);
-    m_slotsLoaded = true;
-    refreshRulesetFilters();
-    if (!m_saveAction)
-    {
-        s_cachedSlots = m_slots;
-        s_cachedNewerSaveCount = m_newerSaveCount;
-        s_cachedSignature = m_slotsSignature;
-        s_cachedSlotsValid = true;
-    }
-}
-
-void LoadGameScreen::loadCachedSaveSlots()
-{
-    m_slots = s_cachedSlots;
-    m_newerSaveCount = s_cachedNewerSaveCount;
-    m_slotsSignature = s_cachedSignature;
     sortSlots();
 
     if (m_selectedIndex >= m_slots.size())

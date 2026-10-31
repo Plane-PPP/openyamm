@@ -32,9 +32,15 @@ public:
     // held, which it says.
     static bool openWorkbench(GameplayScreenRuntime &context);
     // MAW's multibag keys (the Bag 1-4 actions, zzMaw-MultiBag.lua:38-67): on the inventory page the bag zooms (again,
-    // back to the overview); in a shop's or chest's inventory the active member's bag opens. True when the key acted
+    // back to the overview); in a shop's or chest's inventory as openNestedInventoryBag. True when the key acted
     // there, so it does not also select a party member.
     static bool openBagForKey(GameplayScreenRuntime &context, int bag);
+    // A bag's button or key over a chest's or shop's party inventory: the active member's bag opens. A shop zooms it
+    // from its bag overview, and the zoomed bag's button or key goes back to the overview.
+    static void openNestedInventoryBag(GameplayScreenRuntime &context, int bag);
+    // While a bag overview shows (the inventory page's or a shop's), every member's first bag is the open one, so what
+    // is put into a member fills the bags in order.
+    static void openFirstBagsInOverview(GameplayScreenRuntime &context);
     // Whether a chest or a shop's or chest's party inventory shows the bag buttons (ChestInventoryBag1-4) now.
     static bool partyBagButtonsShown(const GameplayScreenRuntime &context);
     // Whether the bag keys act now: several bags, and a chest, a shop's or chest's inventory or the inventory page.

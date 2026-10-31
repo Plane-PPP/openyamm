@@ -472,6 +472,45 @@ size_t findValue(const std::vector<uint8_t> &bytes, const T &value)
     CHECK(std::search(found + 1, bytes.end(), std::begin(pattern), std::end(pattern)) == bytes.end());
     return static_cast<size_t>(found - bytes.begin());
 }
+
+// Saves from version 140 lead with the summary block (its size, the map, the time, the ruleset, the name and the
+// preview); older ones keep the map after the scene kind, the time before the camera yaw, the ruleset before the
+// random root seed and the name and preview at the end. Moves them back, for a save then stamped with an older version.
+void moveSummaryToLegacyPlaces(
+    std::vector<uint8_t> &bytes, const OpenYAMM::Game::GameSaveData &save, float yawMarker, uint64_t seedMarker)
+{
+    constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
+    uint32_t summarySize = 0;
+    std::memcpy(&summarySize, bytes.data() + HeaderSize, sizeof(summarySize));
+    const std::vector<uint8_t> summary(
+        bytes.begin() + static_cast<std::ptrdiff_t>(HeaderSize + sizeof(summarySize)),
+        bytes.begin() + static_cast<std::ptrdiff_t>(HeaderSize + sizeof(summarySize) + summarySize));
+    eraseBytes(bytes, HeaderSize, sizeof(summarySize) + summarySize);
+
+    const size_t mapSize = sizeof(uint64_t) + save.mapFileName.size();
+    const size_t minutesSize = sizeof(float);
+    const size_t nameAndPreviewSize =
+        sizeof(uint64_t) + save.saveName.size() + sizeof(uint64_t) + save.previewBmp.size();
+    REQUIRE(summary.size() > mapSize + minutesSize + nameAndPreviewSize);
+    const auto piece = [&summary](size_t offset, size_t size)
+    {
+        return std::vector<uint8_t>(summary.begin() + static_cast<std::ptrdiff_t>(offset),
+            summary.begin() + static_cast<std::ptrdiff_t>(offset + size));
+    };
+    const std::vector<uint8_t> map = piece(0, mapSize);
+    const std::vector<uint8_t> minutes = piece(mapSize, minutesSize);
+    const size_t rulesetOffset = mapSize + minutesSize;
+    const std::vector<uint8_t> ruleset = piece(rulesetOffset, summary.size() - rulesetOffset - nameAndPreviewSize);
+    const std::vector<uint8_t> nameAndPreview = piece(summary.size() - nameAndPreviewSize, nameAndPreviewSize);
+
+    bytes.insert(bytes.end(), nameAndPreview.begin(), nameAndPreview.end());
+    const size_t seedOffset = findValue(bytes, seedMarker);
+    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(seedOffset), ruleset.begin(), ruleset.end());
+    const size_t yawOffset = findValue(bytes, yawMarker);
+    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(yawOffset), minutes.begin(), minutes.end());
+    const size_t sceneKindEnd = HeaderSize + sizeof(OpenYAMM::Game::SceneKind);
+    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(sceneKindEnd), map.begin(), map.end());
+}
 }
 
 TEST_CASE("saves written before rulesets load as the Standard ruleset")
@@ -485,11 +524,14 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
     save.randomRootSeed = seedMarker;
     const float heldItemMarker = 12345.678f;
     save.heldInventoryItem.temporaryBonusRemainingSeconds = heldItemMarker;
+    const float yawMarker = 2.71828f;
+    save.cameraYawRadians = yawMarker;
     const std::filesystem::path path = makeTemporaryRoot("ruleset_legacy").replace_extension(".oysav");
     std::string error;
     REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
 
     std::vector<uint8_t> bytes = readBytes(path);
+    moveSummaryToLegacyPlaces(bytes, save, yawMarker, seedMarker);
     // The seed directly follows the ruleset and the MAW state's presence byte follows the seed, so cut them first.
     eraseBytes(bytes, findValue(bytes, seedMarker), sizeof(seedMarker) + 1);
     const std::string marker = "rulesetmarker";
@@ -514,6 +556,58 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
     CHECK_EQ(restored->randomRootSeed, 0u);
     CHECK_EQ(restored->heldInventoryItem.temporaryBonusRemainingSeconds, heldItemMarker);
     CHECK_EQ(restored->saveName, "ruleset check");
+}
+
+TEST_CASE("the save list reads a save's summary alone, and older saves' summary from the whole save")
+{
+    OpenYAMM::Game::GameSaveData save = minimalSave();
+    save.savedGameMinutes = 98765.0f;
+    save.ruleset.id = "maw";
+    save.ruleset.options.difficulty = RulesetDifficulty::Hell;
+    save.previewBmp = {'B', 'M', 1, 2, 3};
+    const float yawMarker = 2.71828f;
+    save.cameraYawRadians = yawMarker;
+    const uint64_t seedMarker = 0x1122334455667788ull;
+    save.randomRootSeed = seedMarker;
+    const std::filesystem::path path = makeTemporaryRoot("save_summary").replace_extension(".oysav");
+    std::string error;
+    REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
+
+    const auto checkSummary = [&save](const std::optional<OpenYAMM::Game::GameSaveSummary> &summary)
+    {
+        REQUIRE(summary.has_value());
+        CHECK_EQ(summary->mapFileName, save.mapFileName);
+        CHECK_EQ(summary->savedGameMinutes, save.savedGameMinutes);
+        CHECK(summary->ruleset == save.ruleset);
+        CHECK_EQ(summary->saveName, save.saveName);
+        CHECK(summary->previewBmp == save.previewBmp);
+    };
+    checkSummary(OpenYAMM::Game::loadGameSaveSummaryFromPath(path, error));
+
+    const std::optional<OpenYAMM::Game::GameSaveData> restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
+    REQUIRE_MESSAGE(restored.has_value(), error);
+    CHECK_EQ(restored->cameraYawRadians, yawMarker);
+    CHECK_EQ(restored->randomRootSeed, seedMarker);
+    checkSummary(OpenYAMM::Game::GameSaveSummary{restored->mapFileName, restored->savedGameMinutes,
+        restored->ruleset, restored->saveName, restored->previewBmp});
+
+    std::vector<uint8_t> bytes = readBytes(path);
+    moveSummaryToLegacyPlaces(bytes, save, yawMarker, seedMarker);
+    const uint32_t previousVersion = 139;
+    std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
+    writeBytes(path, bytes);
+    checkSummary(OpenYAMM::Game::loadGameSaveSummaryFromPath(path, error));
+
+    // A summary that claims more than the file holds is refused rather than read past the end.
+    bytes = readBytes(path);
+    const uint32_t currentVersion = 140;
+    std::memcpy(bytes.data() + 8, &currentVersion, sizeof(currentVersion));
+    const uint32_t oversizedSummary = uint32_t(bytes.size());
+    bytes.insert(bytes.begin() + 12, reinterpret_cast<const uint8_t *>(&oversizedSummary),
+        reinterpret_cast<const uint8_t *>(&oversizedSummary) + sizeof(oversizedSummary));
+    writeBytes(path, bytes);
+    CHECK_FALSE(OpenYAMM::Game::loadGameSaveSummaryFromPath(path, error).has_value());
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("saves keep a character's experience past 32 bits")

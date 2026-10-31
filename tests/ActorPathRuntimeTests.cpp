@@ -1158,6 +1158,33 @@ TEST_CASE("actor path runtime follows valid routes while a direct check waits fo
     CHECK_FALSE(deferred.planned);
 }
 
+TEST_CASE("actor path runtime passes a reached waypoint without waiting for the reachability budget")
+{
+    // Crowded indoor maps spend the frame's budget early; an actor on a reached waypoint must still head on to the next
+    // one instead of jittering on it until a check is granted.
+    PathMap map;
+    map.setFacets({
+        makeRuntimeFloor(-48.0f, 192.0f, -120.0f, 120.0f, 0.0f),
+        makeRuntimeWall(72.0f, -60.0f, 60.0f, 0.0f, 120.0f)
+    });
+    ActorPathResolveRequest request = makeRuntimeRequest();
+    request.target = {144.0f, 0.0f, 0.0f};
+    request.mapRevision = map.revision();
+    request.allowDirect = false;
+    ActorPathRuntime runtime;
+    const ActorPathResolveResult planned = runtime.resolveWaypoint(map, request);
+    REQUIRE(planned.pathActive);
+    REQUIRE(planned.waypointCount > planned.waypointIndex + 1);
+
+    request.source = planned.waypoint;
+    request.nowSeconds = 0.01;
+    runtime.beginReachabilityFrame(0);
+    const ActorPathResolveResult advanced = runtime.resolveWaypoint(map, request);
+    CHECK(advanced.pathActive);
+    CHECK(advanced.reachedWaypointCount > 0);
+    CHECK(advanced.waypointIndex > planned.waypointIndex);
+}
+
 TEST_CASE("actor path runtime discards inactive reachability requests without starving later actors")
 {
     PathMap map;

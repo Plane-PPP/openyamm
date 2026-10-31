@@ -1,5 +1,7 @@
 #include "doctest/doctest.h"
 #include "game/party/Party.h"
+#include "game/party/PartySpellSystem.h"
+#include "game/party/SpellIds.h"
 #include "game/rules/GameRules.h"
 #include "game/rules/maw/MawAuras.h"
 #include "game/rules/maw/MawRules.h"
@@ -191,4 +193,48 @@ TEST_CASE("MAW's aura report: Death Knights reserve nothing, utility auras reser
     REQUIRE_EQ(torch.effects.size(), 1u);
     CHECK_EQ(torch.effects[0].kind, AuraValueKind::Text);
     CHECK_EQ(torch.state, AuraState::Active);
+}
+
+TEST_CASE("A quick-cast heal measures a legendary 32 wearer against the hit points its auras leave")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    Party party = makeAuraParty(gameData);
+    party.setRules(&rules.gameRules());
+    party.member(0)->skills["BodyMagic"] = {"BodyMagic", 10, SkillMastery::Grandmaster};
+
+    for (size_t index = 0; index < party.members().size(); ++index)
+    {
+        party.member(index)->maxHealth = 1000;
+        party.member(index)->health = 1000;
+    }
+
+    // Cedric's Stone Skin holds hit points; he is full on what is left. Daria lacks 10.
+    Character &cedric = *party.member(2);
+    cedric.equipment.amulet = 1;
+    cedric.equipmentRuntime.amulet.rulesetFields.legendaryAffixId = 32;
+    rules.state().auraHolders = {{38, 2}};
+    const int reserved = rules.gameRules().spells.reservedHitPoints(party, 2);
+    REQUIRE_GT(reserved, 0);
+    cedric.health = Party::effectiveMaximumHealth(cedric) - reserved;
+    party.member(3)->health -= 10;
+    CHECK_EQ(PartySpellSystem::quickCastCharacterTarget(party, 0, spellIdValue(SpellId::Heal), &gameData.spellTable),
+        std::optional<size_t>(3));
+
+    // Nobody else wounded: nobody to heal.
+    party.member(3)->health += 10;
+    CHECK_FALSE(
+        PartySpellSystem::quickCastCharacterTarget(party, 0, spellIdValue(SpellId::Heal), &gameData.spellTable));
+
+    // Regeneration and heals stop where the auras' share begins, so the clamp never pulls HP back (the gauge
+    // flickered).
+    CHECK_EQ(party.reachableMaximumHealth(2), cedric.health);
+    cedric.health -= 5;
+    cedric.healthRegenPerSecond = 100.0f;
+    party.updateRecovery(1.0f);
+    CHECK_EQ(cedric.health, party.reachableMaximumHealth(2));
+    cedric.health -= 5;
+    CHECK(party.healMember(2, 1000));
+    CHECK_EQ(cedric.health, party.reachableMaximumHealth(2));
 }

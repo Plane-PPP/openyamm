@@ -1,3 +1,12 @@
+## OpenYAMM 1.20 integration — merged; validation in progress
+
+Official stable v1.20: 1add1d374848648887c08707199921335b4ba440, published 2026-10-30.
+Backup: backup/minotaur-before-v1.20-2026-10-31 at b776797. Normal merge preserves history.
+Retain upstream search/bag fallback/death explosions and the mod's stack/Minotaur APIs.
+Mod143 wraps upstream142; mod140 explicitly continues to decode upstream139, including the save-list summary path.
+Next: restore definition-sized multi-cell stacks, migrate old layouts without loss, validate and package Windows.
+[Integration audit](research/openyamm-1.20-stack-geometry.md).
+
 ## UI & inventory hotfix — implemented / tested on Linux and Windows / ZIP packaged
 
 Known-by-rules item names and stack identification compatibility corrected; genuine unknowns preserved.

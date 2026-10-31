@@ -384,6 +384,14 @@ TEST_CASE("graphics quality presets match the default profile and report custom 
     CHECK(settings.viewDistance == "default");
     CHECK(settings.sharpening == 40); // Taste options are not part of a preset.
     CHECK(settings.cinematicGrading);
+    CHECK(settings.terrainAntiTiling);
+
+    REQUIRE(setMenuSettingValue(settings, "graphics_quality", "medium"));
+    CHECK(settings.terrainSubdivision == 4);
+    CHECK_FALSE(settings.terrainAntiTiling);
+    CHECK(menuSettingValue(settings, "graphics_quality") == "medium");
+    settings.terrainAntiTiling = true; // INI-only options count too.
+    CHECK(menuSettingValue(settings, "graphics_quality") == "custom");
 
     REQUIRE(setMenuSettingValue(settings, "graphics_quality", "low"));
     CHECK(settings.terrainSubdivision == 2);

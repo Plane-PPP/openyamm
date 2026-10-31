@@ -204,6 +204,19 @@ TEST_CASE("multibag: an item the party gets goes into any bag with room before t
     CHECK_EQ(recipient, 1u);
 }
 
+TEST_CASE("multibag: an item put on a member's portrait goes into their next bag with room (user, 2026-10-29)")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    Party party = mawParty(rules, 2);
+    REQUIRE(party.member(1)->addInventoryItem(packItem(100, Character::InventoryWidth, Character::InventoryHeight)));
+
+    REQUIRE(party.tryAutoPlaceItemInMemberInventory(1, packItem(200, 2, 4)));
+    CHECK_EQ(party.member(1)->rulesetState.currentBag, 0);
+    REQUIRE(party.member(1)->rulesetState.storedBags.contains(1));
+    CHECK_EQ(party.member(1)->rulesetState.storedBags.at(1).front().objectDescriptionId, 200u);
+    CHECK(party.member(0)->inventory.empty());
+}
+
 TEST_CASE("multibag: event item checks see every bag (user, 2026-10-26: Markham's Contestant's Shield)")
 {
     MawRules rules(RulesetOptions{}, MawMapLevels{});

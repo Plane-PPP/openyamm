@@ -2863,7 +2863,7 @@ GameApplication::GameApplication(const Engine::ApplicationConfig &config)
             m_settings = settings;
             std::string error;
 
-            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            if (!saveSettings(m_settings, error))
             {
                 std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
             }
@@ -4478,7 +4478,7 @@ void GameApplication::registerDebugConsoleCommands()
                 applyCurrentSettingsToActiveRuntime();
                 m_outdoorGameView.reloadTerrainMaterials();
                 std::string error;
-                if (action != "reload" && !saveGameSettings(settingsFilePath(), m_settings, error))
+                if (action != "reload" && !saveSettings(m_settings, error))
                 {
                     return commandResult(false, "Applied, but could not save settings.ini: " + error);
                 }
@@ -4616,6 +4616,8 @@ void GameApplication::registerDebugConsoleCommands()
                 {"ao", &m_settings.ambientOcclusion}, {"grading", &m_settings.cinematicGrading},
                 {"model_lods", &m_settings.modelLods}, {"lightmaps", &m_settings.lightmaps},
                 {"creature_outlines", &m_settings.creatureOutlines}, {"light_grid", &m_settings.lightGridEnabled},
+                {"surface_materials", &m_settings.surfaceMaterials}, {"surface_parallax", &m_settings.surfaceParallax},
+                {"surface_reflections", &m_settings.surfaceReflections},
                 {"freeze", &m_renderFreezeWorld}, {"hud", &m_renderHud}};
             const auto describe = [&]()
             {
@@ -6428,7 +6430,7 @@ void GameApplication::registerDebugConsoleCommands()
                     return commandResult(false, error);
                 }
                 applyCurrentSettingsToActiveRuntime();
-                if (!saveGameSettings(settingsFilePath(), m_settings, error))
+                if (!saveSettings(m_settings, error))
                 {
                     return commandResult(false, "Applied, but could not save settings.ini: " + error);
                 }
@@ -6535,7 +6537,7 @@ void GameApplication::registerDebugConsoleCommands()
 
                 std::string error;
 
-                if (!saveGameSettings(settingsFilePath(), m_settings, error))
+                if (!saveSettings(m_settings, error))
                 {
                     std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
                 }
@@ -7192,6 +7194,15 @@ bool GameApplication::processPendingDebugMapJump()
 
 void GameApplication::handleSdlEvent(const SDL_Event &event)
 {
+#if !defined(__ANDROID__) && !defined(OPENYAMM_IOS)
+    // PrintScreen saves the frame on every screen, the debug console included.
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.scancode == SDL_SCANCODE_PRINTSCREEN)
+    {
+        requestScreenshotFile();
+        return;
+    }
+#endif
+
     if (m_debugConsoleRendererInitialized)
     {
         ImGui_ImplSDL3_ProcessEvent(&event);
@@ -7314,7 +7325,7 @@ bool GameApplication::applicationTextInputActive() const
 
     return (saveGameScreen.active && saveGameScreen.editActive)
         || gameplayScreenRuntime.houseBankState().inputActive()
-        || GameplayUiController::alchemyBenchSearchActive(gameplayScreenRuntime.characterScreenReadOnly())
+        || GameplayUiController::characterScreenSearchActive(gameplayScreenRuntime.characterScreenReadOnly())
         || GameplayUiController::journalSearchActive(gameplayScreenRuntime.journalScreenStateReadOnly());
 }
 
@@ -7656,6 +7667,11 @@ std::filesystem::path GameApplication::settingsFilePath() const
     return std::filesystem::path("settings.ini");
 }
 
+bool GameApplication::saveSettings(const GameSettings &settings, std::string &error) const
+{
+    return !m_config.saveSettings || saveGameSettings(settingsFilePath(), settings, error);
+}
+
 void GameApplication::loadOrCreateSettings()
 {
     m_settings = GameSettings::createDefault();
@@ -7690,7 +7706,7 @@ void GameApplication::loadOrCreateSettings()
 
     m_settings.startWorldId = normalizeWorldId(m_config.activeWorldId);
 
-    if (!loadFailed && !saveGameSettings(path, m_settings, error))
+    if (!loadFailed && !saveSettings(m_settings, error))
     {
         std::cerr << "GameApplication: failed to write " << path.string() << ": " << error << '\n';
     }
@@ -7766,6 +7782,7 @@ bool GameApplication::syncActorModels(IGameplayWorldRuntime &world, float deltaS
 void GameApplication::applyCurrentSettingsToActiveRuntime()
 {
     m_gameDataLoader.setActorModels(m_settings.actorModels, m_settings.actorModelsManifest);
+    m_gameDataLoader.setSurfaceMaterials(m_settings.surfaceMaterials);
     m_gameSession.gameplayUiRuntime().bindSpriteAtlasCache(m_spriteAtlasCache);
     m_gameSession.gameplayUiRuntime().bindActorModelPreview(m_actorModelPreview);
     configureGameplayDebugTrace(m_settings.gameplayTrace, m_settings.gameplayTraceFile, m_settings.gameplayTraceAppend);
@@ -7846,6 +7863,7 @@ void GameApplication::shutdownApplication()
 {
     setGameplayProfilingEnabled(false);
     m_screenManager.setActiveScreen(nullptr);
+    LoadGameScreen::stopSaveScan();
     m_pLoadingOverlayScreen.reset();
     m_gameSession.gameplayScreenRuntime().clearSharedUiRuntime();
     shutdownRenderer();
@@ -9749,7 +9767,8 @@ void GameApplication::prepareGameplayRendering()
         const bool grading = m_cinematicGrading.begin(
             width, height, m_settings.cinematicGrading, m_settings.cinematicStrength,
             m_settings.ambientOcclusion, m_settings.ambientOcclusionStrength, m_settings.sharpening,
-            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength);
+            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength,
+            m_settings.surfaceMaterials && m_settings.surfaceReflections);
         if (m_pMapSceneRuntime->kind() == SceneKind::Outdoor)
         {
             m_outdoorGameView.render(width, height, idleInput, 0.0f, true);
@@ -10373,7 +10392,6 @@ bool GameApplication::quickSaveToPath(
     }
 
     m_gameSession.setCurrentSavePath(path);
-    LoadGameScreen::invalidateCachedSaveSlots();
     GAMEPLAY_DEBUG_TRACE(
         "save_game_written path=\"" + path.string() + "\""
         + " map=\"" + saveData->mapFileName + "\""
@@ -10632,7 +10650,7 @@ bool GameApplication::applyMenuSettings(const GameSettings &settings, bool persi
                                                  previous.verticalSync, restoreError);
         return false;
     }
-    if (persist && !saveGameSettings(settingsFilePath(), settings, error))
+    if (persist && !saveSettings(settings, error))
     {
         if (displayChanged)
         {
@@ -10711,6 +10729,10 @@ void GameApplication::openMenuScreen(bool paused)
         actions.applyRuleset = [this](const RulesetOptions &options, std::string &error)
         { return applyRulesetOptions(options, error); };
     }
+    if (!paused)
+    {
+        LoadGameScreen::startSaveScan();
+    }
     std::unique_ptr<MainMenuScreen> pScreen =
         std::make_unique<MainMenuScreen>(*m_pAssetFileSystem, m_gameDataRepository, &m_gameAudioSystem, m_settings,
                                         std::move(actions), m_settingsMenuSection, paused, location, date,
@@ -10765,7 +10787,7 @@ void GameApplication::openSaveGameScreen()
             m_settings.saveListNewestFirst = newestFirst;
             std::string error;
 
-            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            if (!saveSettings(m_settings, error))
             {
                 std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
             }
@@ -10810,7 +10832,7 @@ void GameApplication::openLoadGameScreen(bool returnToGameplayMenu, const std::s
             m_settings.saveListNewestFirst = newestFirst;
             std::string error;
 
-            if (!saveGameSettings(settingsFilePath(), m_settings, error))
+            if (!saveSettings(m_settings, error))
             {
                 std::cerr << "GameApplication: failed to write settings.ini: " << error << '\n';
             }
@@ -11281,6 +11303,32 @@ void GameApplication::reportQuickSaveStatus(const std::string &status)
     }
 }
 
+void GameApplication::requestScreenshotFile()
+{
+    SDL_Time now = 0;
+    SDL_DateTime localTime = {};
+
+    if (!SDL_GetCurrentTime(&now) || !SDL_TimeToDateTime(now, &localTime, true))
+    {
+        std::cerr << "Screenshot failed: no local time: " << SDL_GetError() << '\n';
+        return;
+    }
+
+    // Local time to the millisecond, so files sort by date and quick presses do not overwrite each other.
+    std::ostringstream name;
+    name << std::setfill('0') << std::setw(4) << localTime.year << '-' << std::setw(2) << localTime.month << '-'
+         << std::setw(2) << localTime.day << '_' << std::setw(2) << localTime.hour << '-' << std::setw(2)
+         << localTime.minute << '-' << std::setw(2) << localTime.second << '_' << std::setw(3)
+         << localTime.nanosecond / 1000000 << ".png";
+    m_screenshotCaptureService.requestCapture(
+        std::filesystem::path("screenshots") / name.str(),
+        [this](bool success, const std::string &message)
+        {
+            (success ? std::cout : std::cerr) << "Screenshot: " << message << '\n';
+            reportQuickSaveStatus(success ? "Screenshot saved" : "Screenshot failed");
+        });
+}
+
 void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, float deltaSeconds)
 {
     deltaSeconds *= m_settings.timeScale;
@@ -11526,7 +11574,8 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
                 }
                 m_cinematicGrading.begin(width, height, m_settings.cinematicGrading, m_settings.cinematicStrength,
                     m_settings.ambientOcclusion, m_settings.ambientOcclusionStrength, m_settings.sharpening,
-                    m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength);
+                    m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength,
+                    m_settings.surfaceMaterials && m_settings.surfaceReflections);
                 pWorldRuntime->renderWorld(width, height, backgroundInput, 0.0f);
                 m_cinematicGrading.submit();
                 m_gameSession.renderGameplayUi(width, height);
@@ -11760,7 +11809,8 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
         const float worldRenderDeltaSeconds = gameplayWorldPaused ? deltaSeconds : scaledGameplayDeltaSeconds;
         m_cinematicGrading.begin(width, height, m_settings.cinematicGrading, m_settings.cinematicStrength,
             m_settings.ambientOcclusion, m_settings.ambientOcclusionStrength, m_settings.sharpening,
-            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength);
+            m_settings.antialiasing, m_settings.bloom, m_settings.bloomStrength,
+            m_settings.surfaceMaterials && m_settings.surfaceReflections);
         pWorldRuntime->renderWorld(width, height, m_gameInputSystem.frame(), worldRenderDeltaSeconds);
         m_cinematicGrading.submit();
         recordFrameDiagnostics(m_framePerformanceDiagnostics.renderWorldNanoseconds, renderWorldBeginTickCount);
@@ -12598,6 +12648,7 @@ void GameApplication::closeTransientGameplayUiForMapMove()
     screenRuntime.closeInventoryNestedOverlay();
     screenRuntime.closeActiveDialogForMapMove();
     screenRuntime.resetLootOverlayInteractionState();
+    screenRuntime.lootSummaryOverlay() = {};
 }
 
 bool GameApplication::processPendingArcomageGame()
@@ -12617,9 +12668,9 @@ bool GameApplication::processPendingArcomageGame()
 
     Party *pParty = nullptr;
 
-    if (m_pOutdoorPartyRuntime != nullptr)
+    if (m_pMapSceneRuntime != nullptr)
     {
-        pParty = &m_pOutdoorPartyRuntime->party();
+        pParty = &m_pMapSceneRuntime->party();
     }
     else if (m_gameSession.partyState().has_value())
     {
@@ -13175,9 +13226,10 @@ void GameApplication::handleCompletedArcomageScreen()
     const bool finished = state.result.finished;
     Party *pParty = nullptr;
 
-    if (m_pOutdoorPartyRuntime != nullptr)
+    // The scene runtime owns the live party indoors and outdoors; the session copy is overwritten from it.
+    if (m_pMapSceneRuntime != nullptr)
     {
-        pParty = &m_pOutdoorPartyRuntime->party();
+        pParty = &m_pMapSceneRuntime->party();
     }
     else if (m_gameSession.partyState().has_value())
     {
@@ -13215,7 +13267,7 @@ void GameApplication::handleCompletedArcomageScreen()
             arcomageStatusText = "You lost!";
         }
 
-        if (m_pOutdoorPartyRuntime != nullptr)
+        if (m_pMapSceneRuntime != nullptr)
         {
             synchronizeSessionFromRuntime();
         }

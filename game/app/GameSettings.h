@@ -212,6 +212,13 @@ struct GameSettings
     bool wetSurfaces = true;
     // Sun and point-light highlights on smooth and wet ground (the materials terrain).
     bool terrainSpecular = true;
+    // Building and dungeon faces drawn with their material maps (relief, roughness, metal, glow;
+    // devdocs/SURFACE_MATERIALS_PLAN.md), and the parallax depth of their height maps up close. Experimental,
+    // off by default and outside the graphics presets; off, map loads read none of the maps.
+    bool surfaceMaterials = false;
+    bool surfaceParallax = false;
+    // Screen-space reflections in smooth surface materials (marble, glass, metal, puddles); experimental.
+    bool surfaceReflections = false;
     int waterReflectionSize = 512;
     std::string terrainFiltering = "anisotropic";
     // Level of every anisotropic sampler (terrain when enabled, buildings, models). 4x: at 16x the materials terrain
@@ -345,9 +352,13 @@ struct GameSettings
     // Small camera turn along the blow on critical hits and kills.
     bool meleeCameraKick = false;
     // A glow in the item's rarity colour around its icon in the inventory, chest and shop grids (rulesets with item
-    // rarities, such as MAW; Common items have none): "off", "hold" (while the Show Item Rarity key, Left Alt, is held)
-    // or "always".
+    // rarities, such as MAW; Common items have none; artifacts, relics and special items glow teal): "off", "hold"
+    // (while the Show Item Rarity key, Left Alt, is held) or "always".
     std::string rarityGlow = "always";
+    // HUD state the game remembers across map loads and saves: the follower panel beside the minimap (shown when the
+    // party has followers) and the minimap zoom step (0 zoomed out, 1 default, 2 zoomed in).
+    bool followerPanel = true;
+    int minimapZoom = 1;
 #if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     bool contextActionPopup = true;
 #else

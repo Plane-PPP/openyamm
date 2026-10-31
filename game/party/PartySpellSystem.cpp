@@ -3317,9 +3317,10 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
     uint32_t spellId,
     const SpellTable *pSpellTable)
 {
-    const auto share = [](const Character &member)
+    // Measured against the HP a member can reach: what its auras hold back (MAW's legendary 32) never fills.
+    const auto share = [&party](size_t memberIndex)
     {
-        return double(member.health) / std::max(1, Party::effectiveMaximumHealth(member));
+        return double(party.members()[memberIndex].health) / party.reachableMaximumHealth(memberIndex);
     };
     const auto has = [](const Character &member, std::initializer_list<CharacterCondition> conditions)
     {
@@ -3344,7 +3345,7 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
             const Character &member = party.members()[memberIndex];
 
             if (has(member, conditions) && !(skipBeyondHealing && has(member, beyondHealing))
-                && (!target || share(member) < share(party.members()[*target])))
+                && (!target || share(memberIndex) < share(*target)))
             {
                 target = memberIndex;
             }
@@ -3382,14 +3383,14 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
         for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
         {
             const Character &member = party.members()[memberIndex];
-            const int missing = Party::effectiveMaximumHealth(member) - member.health;
+            const int missing = party.reachableMaximumHealth(memberIndex) - member.health;
 
             if (missing <= 0 || has(member, beyondHealing))
             {
                 continue;
             }
 
-            if (share(member) <= 1.0 / 3.0 && (!endangered || share(member) < share(party.members()[*endangered])))
+            if (share(memberIndex) <= 1.0 / 3.0 && (!endangered || share(memberIndex) < share(*endangered)))
             {
                 endangered = memberIndex;
             }
@@ -3397,7 +3398,7 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
             const int gain = std::min(*heal, missing);
 
             if (!bestGain || gain > bestGainAmount
-                || (gain == bestGainAmount && share(member) < share(party.members()[*bestGain])))
+                || (gain == bestGainAmount && share(memberIndex) < share(*bestGain)))
             {
                 bestGain = memberIndex;
                 bestGainAmount = gain;
@@ -3439,7 +3440,7 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
     {
         const Character &member = party.members()[memberIndex];
 
-        if (member.health >= Party::effectiveMaximumHealth(member) || has(member, beyondHealing))
+        if (member.health >= party.reachableMaximumHealth(memberIndex) || has(member, beyondHealing))
         {
             continue;
         }

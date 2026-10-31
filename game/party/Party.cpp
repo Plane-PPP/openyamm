@@ -3870,6 +3870,18 @@ int Party::effectiveMaximumSpellPoints(const Character &member)
     return GameMechanics::calculateEffectiveCharacterMaxSpellPoints(member);
 }
 
+int Party::reachableMaximumHealth(size_t memberIndex) const
+{
+    return std::max(1,
+        effectiveMaximumHealth(m_members[memberIndex]) - rules().spells.reservedHitPoints(*this, memberIndex));
+}
+
+int Party::reachableMaximumSpellPoints(size_t memberIndex) const
+{
+    return std::max(0,
+        effectiveMaximumSpellPoints(m_members[memberIndex]) - rules().spells.reservedSpellPoints(*this, memberIndex));
+}
+
 bool Party::needsHealing() const
 {
     for (const Character &member : m_members)
@@ -5285,7 +5297,7 @@ bool Party::tryAutoPlaceItemInMemberInventory(size_t memberIndex, const Inventor
         return false;
     }
 
-    if (!pMember->addInventoryItem(item, m_pItemTable))
+    if (!addToAnyBag(*pMember, item, rules().items.bagCount(*this), m_pItemTable))
     {
         m_lastStatus = "inventory full";
         return false;
@@ -5461,7 +5473,9 @@ bool Party::tryEquipItemOnMember(
         || !ItemRuntime::characterMeetsClassRestriction(*pMember, *pItemDefinition)
         || !ItemRuntime::characterMeetsRaceRestriction(*pMember, *pItemDefinition))
     {
-        m_lastStatus = "cannot equip";
+        m_lastStatus = pItemDefinition != nullptr
+            ? ItemRuntime::wearRequirementText(*pItemDefinition).value_or("cannot equip")
+            : "cannot equip";
         return false;
     }
 
@@ -5606,6 +5620,17 @@ uint32_t Party::equippedItemId(size_t memberIndex, EquipmentSlot slot) const
 {
     const Character *pMember = member(memberIndex);
     return pMember != nullptr ? ::OpenYAMM::Game::equippedItemId(pMember->equipment, slot) : 0;
+}
+
+bool Party::memberCanWearArmor(size_t memberIndex) const
+{
+    const Character *pMember = member(memberIndex);
+    const CharacterDollEntry *pDollEntry = pMember != nullptr && m_pCharacterDollTable != nullptr
+        ? m_pCharacterDollTable->getCharacter(pMember->characterDataId)
+        : nullptr;
+    const CharacterDollTypeEntry *pDollType =
+        pDollEntry != nullptr ? m_pCharacterDollTable->getDollType(pDollEntry->dollTypeId) : nullptr;
+    return pDollType == nullptr || pDollType->canEquipArmor;
 }
 
 namespace
@@ -6730,8 +6755,9 @@ void Party::advanceTimedStates(float deltaSeconds)
 
     if (regenerationTicks > 0)
     {
-        for (Character &member : m_members)
+        for (size_t memberIndex = 0; memberIndex < m_members.size(); ++memberIndex)
         {
+            Character &member = m_members[memberIndex];
             const int spellPointsPerTick = rules().skills.meditationSpellPointsPerTick(member);
 
             if (spellPointsPerTick <= 0
@@ -6742,8 +6768,8 @@ void Party::advanceTimedStates(float deltaSeconds)
                 continue;
             }
 
-            member.spellPoints = std::min(
-                currentMaximumSpellPoints(member), member.spellPoints + regenerationTicks * spellPointsPerTick);
+            member.spellPoints = std::min(std::max(member.spellPoints, reachableMaximumSpellPoints(memberIndex)),
+                member.spellPoints + regenerationTicks * spellPointsPerTick);
         }
     }
 
@@ -6955,10 +6981,12 @@ void Party::updateRecovery(float deltaSeconds, float progressScale)
             member.healthRegenAccumulator += member.healthRegenPerSecond * deltaSeconds;
             const int healthAmount = static_cast<int>(member.healthRegenAccumulator);
 
+            // Regeneration stops at what the auras leave, or the next reservation clamp would take it back.
             if (healthAmount > 0)
             {
                 member.healthRegenAccumulator -= static_cast<float>(healthAmount);
-                member.health = std::min(currentMaximumHealth(member), member.health + healthAmount);
+                member.health = std::min(
+                    std::max(member.health, reachableMaximumHealth(memberIndex)), member.health + healthAmount);
             }
             else if (healthAmount < 0)
             {
@@ -6975,7 +7003,9 @@ void Party::updateRecovery(float deltaSeconds, float progressScale)
             if (spellAmount > 0)
             {
                 member.spellRegenAccumulator -= static_cast<float>(spellAmount);
-                member.spellPoints = std::min(currentMaximumSpellPoints(member), member.spellPoints + spellAmount);
+                member.spellPoints = std::min(
+                    std::max(member.spellPoints, reachableMaximumSpellPoints(memberIndex)),
+                    member.spellPoints + spellAmount);
             }
             else if (spellAmount < 0)
             {
@@ -7341,9 +7371,10 @@ bool Party::healMember(size_t memberIndex, int amount)
 
     // A heal keeps negative HP: a member knocked below zero wakes only once the whole deficit is healed, as in the
     // original games (SKL-1, FSPS-2-2).
-    const int maxHealth = effectiveMaximumHealth(*pMember);
+    // Up to what the member's auras leave (MAW's legendary 32), never lowering HP the clamp has not caught up with.
     const int previousHealth = pMember->health;
-    pMember->health = std::min(pMember->health + amount, maxHealth);
+    pMember->health =
+        std::min(pMember->health + amount, std::max(previousHealth, reachableMaximumHealth(memberIndex)));
     updateMemberIncapacitatedCondition(
         *pMember,
         m_characterBuffs[memberIndex][static_cast<size_t>(CharacterBuffId::Preservation)].active(),

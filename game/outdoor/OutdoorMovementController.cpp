@@ -1952,7 +1952,8 @@ OutdoorMoveState OutdoorMovementController::resolveMoveForBody(
     }
 
     const float bodyRadius = std::max(1.0f, body.radius);
-    const float bodyHeight = std::max(bodyRadius * 2.0f + 2.0f, body.height);
+    // A body shorter than it is wide checks only its low sphere (checkHi), like the original.
+    const float bodyHeight = std::max(1.0f, body.height);
     const float maxStepHeight = std::max(CollisionEpsilon, body.maxStepHeight);
     const bool bModelGround = outdoorMapUsesBModelGround(*m_pOutdoorMapData);
     const bool retainBModelEdgeSupport =
@@ -2053,7 +2054,7 @@ OutdoorMoveState OutdoorMovementController::resolveMoveForBody(
     }
     else if ((!partyAtHighSlope || currentFloor.fromBModel) &&
              (!partyNotTouchingFloor || (partyCloseToGround && partyInputSpeed.z <= 0.0f)) &&
-             !state.supportOnWater &&
+             !state.supportOnDeepWater() &&
              !state.supportOnBurning &&
              jumpRequested)
     {
@@ -3002,7 +3003,7 @@ OutdoorMoveState OutdoorMovementController::resolveOutdoorActorMove(
 ) const
 {
     const float bodyRadius = std::max(1.0f, body.radius);
-    const float bodyHeight = std::max(bodyRadius * 2.0f + 2.0f, body.height);
+    const float bodyHeight = std::max(1.0f, body.height);
     const bool bModelGround = outdoorMapUsesBModelGround(*m_pOutdoorMapData);
     const float maxStepHeight = std::max(CollisionEpsilon, body.maxStepHeight);
     std::vector<size_t> candidateFaceIndices;

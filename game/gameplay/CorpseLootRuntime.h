@@ -66,4 +66,8 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
     Party &party,
     const ItemTable *pItemTable,
     GameplayUiController::HeldInventoryItemState *pHeldInventoryItem = nullptr);
+
+// Loots every satchel on the map into the party's bags (MAW's gather key on a completed map): all the gold, and each
+// item that fits; the rest stays in its satchel. The result opens the loot summary.
+GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRuntime &worldRuntime, Party &party);
 }

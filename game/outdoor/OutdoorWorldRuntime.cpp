@@ -2440,16 +2440,12 @@ float actorCollisionRadius(
     return OeNonFlyingActorRadius;
 }
 
+// The actor's own height, even below its width (indoorActorCollisionHeight explains why).
 float actorCollisionHeight(
     const OutdoorWorldRuntime::MapActorState &actor,
     float collisionRadius)
 {
-    if (actor.height > 0)
-    {
-        return std::max(static_cast<float>(actor.height), collisionRadius * 2.0f + 2.0f);
-    }
-
-    return collisionRadius * 2.0f + 2.0f;
+    return actor.height > 0 ? static_cast<float>(actor.height) : collisionRadius * 2.0f + 2.0f;
 }
 
 bool isActorUnavailableForCombat(const OutdoorWorldRuntime::MapActorState &actor);
@@ -4765,7 +4761,7 @@ bool OutdoorWorldRuntime::attemptOpenChest(uint32_t chestId, bool openedByTeleki
 
     if (trapResult.trapDischarged)
     {
-        spawnChestTrapVisual(visualPoint, trapResult);
+        spawnObjectBurstVisual(visualPoint, trapResult.trapObjectId, trapResult.damageType);
     }
 
     return trapResult.shouldOpenChest;
@@ -4848,11 +4844,12 @@ void OutdoorWorldRuntime::applyChestTrapState(uint32_t chestId, const ChestTrapO
     }
 }
 
-void OutdoorWorldRuntime::spawnChestTrapVisual(
+void OutdoorWorldRuntime::spawnObjectBurstVisual(
     const GameplayWorldPoint &point,
-    const ChestTrapOpenResult &trapResult)
+    uint16_t objectId,
+    CombatDamageType damageType)
 {
-    if (trapResult.trapObjectId == 0)
+    if (objectId == 0)
     {
         return;
     }
@@ -4863,10 +4860,10 @@ void OutdoorWorldRuntime::spawnChestTrapVisual(
     }
 
     const std::optional<uint16_t> objectDescriptionId =
-        m_pObjectTable->findDescriptionIdByObjectId(static_cast<int16_t>(trapResult.trapObjectId));
-    const ObjectEntry *pTrapObject = m_pObjectTable->findByObjectId(static_cast<int16_t>(trapResult.trapObjectId));
+        m_pObjectTable->findDescriptionIdByObjectId(static_cast<int16_t>(objectId));
+    const ObjectEntry *pObject = m_pObjectTable->findByObjectId(static_cast<int16_t>(objectId));
 
-    if (!objectDescriptionId || pTrapObject == nullptr)
+    if (!objectDescriptionId || pObject == nullptr)
     {
         return;
     }
@@ -4874,9 +4871,9 @@ void OutdoorWorldRuntime::spawnChestTrapVisual(
     ProjectileState projectile = {};
     projectile.sourceKind = ProjectileState::SourceKind::Event;
     projectile.sourceId = EventSpellSourceId;
-    // The trap is the burst's source, so it plays the trap's named effect (engine/effects/projectiles.yml).
-    projectile.objectName = pTrapObject->internalName;
-    projectile.objectSpriteName = pTrapObject->spriteName;
+    // The object is the burst's source, so it plays the object's named effect (engine/effects/projectiles.yml).
+    projectile.objectName = pObject->internalName;
+    projectile.objectSpriteName = pObject->spriteName;
     projectile.impactObjectDescriptionId = *objectDescriptionId;
     projectile.impactSoundIdOverride = static_cast<uint32_t>(SoundId::Fireball);
     projectile.sourceX = point.x;
@@ -4885,9 +4882,65 @@ void OutdoorWorldRuntime::spawnChestTrapVisual(
     projectile.x = point.x;
     projectile.y = point.y;
     projectile.z = point.z;
-    projectile.damageType = trapResult.damageType;
+    projectile.damageType = damageType;
 
     spawnProjectileImpact(projectile, point.x, point.y, point.z, true);
+}
+
+void OutdoorWorldRuntime::beginOutdoorActorDeath(size_t actorIndex)
+{
+    MapActorState &actor = m_mapActors[actorIndex];
+    beginDyingState(actor, m_pActorSpriteFrameTable);
+    queueMonsterKilledEvent(actorIndex, actor.monsterId);
+    activateOutdoorActorCorpsePhysics(actorIndex);
+    spawnMonsterDeathDropsForActor(actorIndex, actor);
+
+    if (std::optional<PendingMonsterDeathExplosion> explosion = monsterDeathExplosionFor(*this, actorIndex))
+    {
+        m_pendingDeathExplosions.push_back(*explosion);
+    }
+}
+
+void OutdoorWorldRuntime::detonatePendingDeathExplosions()
+{
+    if (m_pendingDeathExplosions.empty() || m_pGameplayActorService == nullptr)
+    {
+        m_pendingDeathExplosions.clear();
+        return;
+    }
+
+    // A blast that kills records the next one, detonated on the next update.
+    const std::vector<PendingMonsterDeathExplosion> pending = std::move(m_pendingDeathExplosions);
+    m_pendingDeathExplosions.clear();
+
+    for (const PendingMonsterDeathExplosion &explosion : pending)
+    {
+        std::mt19937 rng(explosion.actorId * 2654435761u ^ m_sessionChestSeed);
+        const MonsterDeathExplosion result =
+            resolveMonsterDeathExplosion(*this, *this, *m_pGameplayActorService, explosion, rng);
+        spawnObjectBurstVisual(explosion.point, MonsterDeathExplosionObjectId, result.actorDamageType);
+
+        if (result.hitsParty && m_pGameplayCombatController != nullptr)
+        {
+            m_pGameplayCombatController->recordPartyProjectileImpact(
+                explosion.actorId,
+                result.partyDamage,
+                0,
+                0,
+                true,
+                result.partyDamageType,
+                GameplayActorAttackAbility::Attack1);
+        }
+
+        for (const MonsterDeathExplosionActorHit &hit : result.actorHits)
+        {
+            applyMonsterAttackToMapActor(
+                hit.actorIndex,
+                hit.damage,
+                explosion.actorId,
+                shieldAttackTierForDamageType(result.actorDamageType, false));
+        }
+    }
 }
 
 void OutdoorWorldRuntime::initialize(
@@ -4938,6 +4991,7 @@ void OutdoorWorldRuntime::initialize(
     m_actorBehaviors.reset();
     m_monsterKilledHooksEnabled = false;
     m_pendingMonsterKilledEvents.clear();
+    m_pendingDeathExplosions.clear();
     m_mm9FoundPlayerActorIndices.clear();
     m_mm9FoundPlayerEventAttempted.clear();
     m_mm9CivilianActorIndices.clear();
@@ -5086,6 +5140,7 @@ void OutdoorWorldRuntime::initialize(
             outdoorActorCollisionSet,
             outdoorSpriteObjectCollisionSet);
         syncOutdoorFaceGeometryAttributesFromMapDelta();
+        resyncOutdoorModelMechanismGeometry();
     }
     m_nextActorId = 0;
     projectileService().clear();
@@ -7333,6 +7388,56 @@ void OutdoorWorldRuntime::placeMapActor(size_t actorIndex, float x, float y, flo
     }
 }
 
+std::vector<size_t> OutdoorWorldRuntime::lootableCorpseActorIndices() const
+{
+    std::vector<size_t> actorIndices;
+
+    for (size_t actorIndex = 0; actorIndex < m_mapActors.size(); ++actorIndex)
+    {
+        const MapActorState &actor = m_mapActors[actorIndex];
+
+        if (actor.isDead && !actor.isInvisible && actorShouldLeaveCorpse(m_pMonsterTable, actor)
+            && !outdoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex))
+        {
+            actorIndices.push_back(actorIndex);
+        }
+    }
+
+    return actorIndices;
+}
+
+bool OutdoorWorldRuntime::openActorCorpseView(size_t actorIndex)
+{
+    return openMapActorCorpseView(actorIndex);
+}
+
+bx::Vec3 OutdoorWorldRuntime::lootGatherSpot() const
+{
+    constexpr float SightHeight = 48.0f;
+    constexpr float MaxRise = 64.0f;
+    constexpr float MaxDrop = 256.0f;
+    const float partyFoot = partyFootZ();
+    const float yaw = gameplayCameraYawRadians();
+
+    if (m_pOutdoorMapData != nullptr)
+    {
+        for (const float distance : LootGatherDistances)
+        {
+            const float x = partyX() + std::cos(yaw) * distance;
+            const float y = partyY() + std::sin(yaw) * distance;
+            const float z = sampleOutdoorActorPlacementFloorHeight(*m_pOutdoorMapData, x, y, partyFoot + MaxRise, 0.0f);
+
+            if (z <= partyFoot + MaxRise && z >= partyFoot - MaxDrop
+                && hasLineOfSight(partyX(), partyY(), partyFoot + SightHeight, x, y, z + SightHeight))
+            {
+                return {x, y, z};
+            }
+        }
+    }
+
+    return {partyX(), partyY(), partyFoot};
+}
+
 size_t OutdoorWorldRuntime::gatherCorpsesToParty(size_t maxCount)
 {
     if (m_pPartyRuntime == nullptr)
@@ -7340,19 +7445,17 @@ size_t OutdoorWorldRuntime::gatherCorpsesToParty(size_t maxCount)
         return 0;
     }
 
+    const bx::Vec3 spot = lootGatherSpot();
     size_t moved = 0;
 
-    for (size_t actorIndex = 0; actorIndex < m_mapActors.size() && moved < maxCount; ++actorIndex)
+    for (size_t actorIndex : lootableCorpseActorIndices())
     {
-        const MapActorState &actor = m_mapActors[actorIndex];
-
-        if (!actor.isDead || actor.isInvisible || !actorShouldLeaveCorpse(m_pMonsterTable, actor)
-            || outdoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex))
+        if (moved >= maxCount)
         {
-            continue;
+            break;
         }
 
-        placeMapActor(actorIndex, partyX(), partyY(), partyFootZ());
+        placeMapActor(actorIndex, spot.x, spot.y, spot.z);
         ++moved;
     }
 
@@ -7368,6 +7471,7 @@ size_t OutdoorWorldRuntime::gatherWorldItemsToParty(
         return 0;
     }
 
+    const bx::Vec3 spot = lootGatherSpot();
     size_t moved = 0;
 
     for (WorldItemState &worldItem : m_worldItems)
@@ -7382,9 +7486,9 @@ size_t OutdoorWorldRuntime::gatherWorldItemsToParty(
             continue;
         }
 
-        worldItem.x = partyX();
-        worldItem.y = partyY();
-        worldItem.z = partyFootZ();
+        worldItem.x = spot.x;
+        worldItem.y = spot.y;
+        worldItem.z = spot.z;
         worldItem.velocityX = 0.0f;
         worldItem.velocityY = 0.0f;
         worldItem.velocityZ = 0.0f;
@@ -8546,6 +8650,7 @@ OutdoorWorldRuntime::Snapshot OutdoorWorldRuntime::snapshot() const
 void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
 {
     m_pendingMonsterKilledEvents.clear();
+    m_pendingDeathExplosions.clear();
     m_actorSightCache.clear();
     m_actorShields.clear();
     m_actorModifiers.clear();
@@ -8670,6 +8775,7 @@ void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
         ++m_pOutdoorMapDeltaData->surfaceRevision;
         syncOutdoorFaceGeometryAttributesFromMapDelta();
     }
+    resyncOutdoorModelMechanismGeometry();
     m_openedChests.clear();
     m_openedChests.reserve(snapshot.openedChestFlags.size());
 
@@ -9734,11 +9840,22 @@ std::vector<bool> OutdoorWorldRuntime::selectOutdoorActiveActors(float partyX, f
         activeActorCandidates.push_back(candidate);
     }
 
-    return selectOutdoorActiveActorMask(
+    std::vector<bool> activeActorMask = selectOutdoorActiveActorMask(
         activeActorCandidates,
         m_mapActors.size(),
         MaxActiveActorUpdates,
         ActiveActorUpdateRange);
+
+    // MM8's full AI update sets Nearby on every actor it runs (0x4020de).
+    for (size_t actorIndex = 0; actorIndex < activeActorMask.size(); ++actorIndex)
+    {
+        if (activeActorMask[actorIndex])
+        {
+            m_mapActors[actorIndex].nearby = true;
+        }
+    }
+
+    return activeActorMask;
 }
 
 bool OutdoorWorldRuntime::cachedActorLineOfSight(
@@ -12258,6 +12375,8 @@ void OutdoorWorldRuntime::updateMapActors(float deltaSeconds, float partyX, floa
         return;
     }
 
+    detonatePendingDeathExplosions();
+
     updateMm9FoundPlayerEvents(deltaSeconds, partyX, partyY, partyZ);
     refreshHiddenDecorationEntities();
 
@@ -13566,10 +13685,28 @@ void OutdoorWorldRuntime::refreshOutdoorModelMechanismGeometry()
         m_pPartyRuntime->updateFaceGeometries(updatedGeometries);
     }
 
-    if (m_pOutdoorMapData->sceneProfile != OutdoorSceneProfile::BModelWorld || navigationEndpointChanged)
+    // Actor paths follow a mechanism's endpoints, not its motion: the path map is rebuilt once a mechanism settles,
+    // and a rebuilt map starts its own revision sequence, so the routes planned on the old one are dropped.
+    if (navigationEndpointChanged)
     {
-        invalidateOutdoorPathMaps(false);
+        invalidateOutdoorPathMaps(true);
     }
+}
+
+void OutdoorWorldRuntime::resyncOutdoorModelMechanismGeometry()
+{
+    if (m_pOutdoorMapData == nullptr || !m_eventRuntimeState || m_eventRuntimeState->outdoorModelMechanisms.empty())
+    {
+        return;
+    }
+
+    // Restored or initially open mechanisms: place every mechanism's collision at its current state without
+    // carrying anything standing on it, then rebuild the actor path map once.
+    m_outdoorMechanismOffsets.clear();
+    m_outdoorNavigationMechanismMovingStates.clear();
+    refreshOutdoorModelMechanismGeometry();
+    m_outdoorMechanismGeometryRefreshAccumulatorSeconds = 0.0f;
+    invalidateOutdoorPathMaps(true);
 }
 
 void OutdoorWorldRuntime::initializeOutdoorModelMechanismsFromMapData()
@@ -13584,8 +13721,7 @@ void OutdoorWorldRuntime::initializeOutdoorModelMechanismsFromMapData()
 
     m_eventRuntimeState->outdoorModelMechanisms.clear();
 
-    if (m_pOutdoorMapData == nullptr
-        || m_pOutdoorMapData->sceneProfile != OutdoorSceneProfile::BModelWorld)
+    if (m_pOutdoorMapData == nullptr)
     {
         return;
     }
@@ -16530,10 +16666,7 @@ bool OutdoorWorldRuntime::applyReflectedDamageToActor(
         if (actor.currentHp <= 0)
         {
             actor.killedByParty = true;
-            beginDyingState(actor, m_pActorSpriteFrameTable);
-            queueMonsterKilledEvent(actorIndex, actor.monsterId);
-            activateOutdoorActorCorpsePhysics(actorIndex);
-            spawnMonsterDeathDropsForActor(actorIndex, actor);
+            beginOutdoorActorDeath(actorIndex);
             const bx::Vec3 knockback = actorKnockbackVelocity(
                 actor.preciseX,
                 actor.preciseY,
@@ -17196,10 +17329,7 @@ bool OutdoorWorldRuntime::applyMonsterAttackToMapActor(
 
     if (actor.currentHp <= 0)
     {
-        beginDyingState(actor, m_pActorSpriteFrameTable);
-        queueMonsterKilledEvent(actorIndex, actor.monsterId);
-        activateOutdoorActorCorpsePhysics(actorIndex);
-        spawnMonsterDeathDropsForActor(actorIndex, actor);
+        beginOutdoorActorDeath(actorIndex);
         const float sourceX = pSourceActor != nullptr ? pSourceActor->preciseX : actor.preciseX;
         const float sourceY = pSourceActor != nullptr ? pSourceActor->preciseY : actor.preciseY;
         const float sourceZ =
@@ -17768,6 +17898,8 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     actor.currentHp = lethalStrike ? 0 : std::max(0, actor.currentHp - damage);
     int experienceReward = 0;
     faceMapActorReaction(actor, partyX - actor.preciseX, partyY - actor.preciseY);
+    // Every party hit sets Nearby, from any distance (MM8 0x4379b8).
+    actor.nearby = true;
 
     const bool died = actor.currentHp <= 0;
 
@@ -17801,10 +17933,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     if (died)
     {
         actor.killedByParty = true;
-        beginDyingState(actor, m_pActorSpriteFrameTable);
-        queueMonsterKilledEvent(actorIndex, actor.monsterId);
-        activateOutdoorActorCorpsePhysics(actorIndex);
-        spawnMonsterDeathDropsForActor(actorIndex, actor);
+        beginOutdoorActorDeath(actorIndex);
         const bx::Vec3 knockback = actorKnockbackVelocity(
             actor.preciseX,
             actor.preciseY,
@@ -20177,6 +20306,24 @@ bool OutdoorWorldRuntime::summonEventObject(
     return summonEventPayload(objectId, true, x, y, z, speed, count, randomRotate);
 }
 
+bool OutdoorWorldRuntime::summonEventInventoryItem(
+    const InventoryItem &item,
+    int32_t x,
+    int32_t y,
+    int32_t z,
+    int32_t speed,
+    bool randomRotate
+)
+{
+    if (!summonEventPayload(item.objectDescriptionId, false, x, y, z, speed, 1, randomRotate))
+    {
+        return false;
+    }
+
+    m_worldItems.back().item = item;
+    return true;
+}
+
 bool OutdoorWorldRuntime::summonEventPayload(
     uint32_t payloadId,
     bool payloadIsObjectId,
@@ -20534,6 +20681,7 @@ std::vector<size_t> OutdoorWorldRuntime::spawnMonsters(const GameplayMonsterSpaw
         {
             actor.hostileToParty = true;
             actor.hasDetectedParty = true;
+            actor.nearby = true;
             actor.hostilityType = std::max<uint8_t>(actor.hostilityType, 4);
         }
 
@@ -20640,6 +20788,7 @@ bool OutdoorWorldRuntime::summonHostileMonsterById(
 
         actor.hostileToParty = true;
         actor.hasDetectedParty = true;
+        actor.nearby = true;
         actor.hostilityType = std::max<uint8_t>(actor.hostilityType, 4);
         applyOeOutdoorActorFloorCorrection(actor, *pStats);
         m_mapActors.push_back(std::move(actor));
@@ -22098,8 +22247,7 @@ void OutdoorWorldRuntime::collectGameplayMinimapMarkers(std::vector<GameplayMini
         if (!wizardEyeShowsActorMarker(
                 pActor->isDead,
                 outdoorMapActorCorpseWasConsumed(m_mapActorCorpseViews, actorIndex),
-                pActor->hasDetectedParty,
-                hostileToParty))
+                pActor->nearby))
         {
             continue;
         }

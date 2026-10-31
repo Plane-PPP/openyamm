@@ -52,6 +52,13 @@ struct OutdoorMoveState
     bool landedThisFrame = false;
     float fallStartZ = 0.0f;
     float fallDistance = 0.0f;
+
+    // Deep water that drowns the party and stops its jumps: water terrain only. Fluid BModel floors (fountains,
+    // pools before dungeon entrances) are shallow: they splash but never drown, as in the original games.
+    bool supportOnDeepWater() const
+    {
+        return supportOnWater && supportKind == OutdoorSupportKind::Terrain;
+    }
 };
 
 struct OutdoorBodyDimensions

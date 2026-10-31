@@ -65,7 +65,7 @@ public:
         bool fromSpellbook) const override;
     std::optional<bool> toggleSpellRotation(Character &member) const override;
     // Applies every aura whose holder is conscious through the party's buffs, with MAW's strengths, and keeps each
-    // holder's mana below its unreserved pool.
+    // holder's mana below its unreserved pool: every half second of play, and at once for a zero step.
     void updateAuras(Party &party, float deltaSeconds) const override;
     // cost / (class SP factor + Enlightenment mastery / 2) percent of the maximum mana per aura held; Death Knights
     // and the Thief line reserve nothing.
@@ -118,5 +118,7 @@ private:
     mutable bool m_preservationAuraApplied = false;
     // The map the last update ran on, to end the fixed auras a map change ends.
     mutable std::string m_auraMap;
+    // Time since the last timed aura update.
+    mutable float m_auraSeconds = 0.0f;
 };
 }

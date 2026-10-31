@@ -1432,14 +1432,11 @@ PreparedFont prepareFont(const Engine::AssetFileSystem &assetFileSystem, const F
         return font;
     }
 
-    const Engine::FontAtlas &atlas = font.image->atlas;
+    Engine::FontAtlas &atlas = font.image->atlas;
     const TextureFilterProfile filter = fontFilter(atlas, font.independentFont);
     const uint16_t width = static_cast<uint16_t>(atlas.atlasWidth);
     const uint16_t height = static_cast<uint16_t>(atlas.atlasHeight);
-    const std::vector<uint8_t> &mainPixels = atlas.mainAtlasPixels;
-    const std::vector<uint8_t> &shadowPixels = font.image->shadowPixels;
-    font.main = prepareBgraTexture2D(width, height, mainPixels.data(), uint32_t(mainPixels.size()), filter);
-    font.shadow = prepareBgraTexture2D(width, height, shadowPixels.data(), uint32_t(shadowPixels.size()), filter);
+    std::vector<uint8_t> &mainPixels = atlas.mainAtlasPixels;
 
     // Tinting multiplies the atlas, so coloured or black glyphs need one white copy; most atlases already are white.
     bool whiteGlyphs = true;
@@ -1458,8 +1455,11 @@ PreparedFont prepareFont(const Engine::AssetFileSystem &assetFileSystem, const F
             whitePixels[pixelIndex + 1] = 255;
             whitePixels[pixelIndex + 2] = 255;
         }
-        font.tint = prepareBgraTexture2D(width, height, whitePixels.data(), uint32_t(whitePixels.size()), filter);
+        font.tint = prepareBgraTexture2D(width, height, std::move(whitePixels), filter);
     }
+    // The atlas pixels only feed these textures (the outline atlases are 10-40 MB each), so they move into them.
+    font.main = prepareBgraTexture2D(width, height, std::move(mainPixels), filter);
+    font.shadow = prepareBgraTexture2D(width, height, std::move(font.image->shadowPixels), filter);
     return font;
 }
 
@@ -1478,10 +1478,10 @@ std::optional<GameplayHudFontData> finishFont(PreparedFont &prepared)
     fontHandle.rasterPixelHeight = prepared.pixelHeight;
     fontHandle.smooth = fontHandle.atlasScale > 1 || prepared.independentFont;
     const TextureFilterProfile filter = fontFilter(fontHandle, prepared.independentFont);
-    fontHandle.mainTextureHandle = createPreparedBgraTexture2D(prepared.main, filter);
-    fontHandle.shadowTextureHandle = createPreparedBgraTexture2D(prepared.shadow, filter);
+    fontHandle.mainTextureHandle = createPreparedBgraTexture2D(std::move(prepared.main), filter);
+    fontHandle.shadowTextureHandle = createPreparedBgraTexture2D(std::move(prepared.shadow), filter);
     fontHandle.tintTextureHandle = prepared.tint
-        ? createPreparedBgraTexture2D(*prepared.tint, filter) : fontHandle.mainTextureHandle;
+        ? createPreparedBgraTexture2D(std::move(*prepared.tint), filter) : fontHandle.mainTextureHandle;
 
     if (!bgfx::isValid(fontHandle.mainTextureHandle) || !bgfx::isValid(fontHandle.shadowTextureHandle)
         || !bgfx::isValid(fontHandle.tintTextureHandle))
@@ -1492,8 +1492,6 @@ std::optional<GameplayHudFontData> finishFont(PreparedFont &prepared)
         return std::nullopt;
     }
 
-    // The atlas pixels only feed the textures above; the TrueType atlases are 10-15 MB each.
-    fontHandle.mainAtlasPixels = std::vector<uint8_t>();
     return fontHandle;
 }
 }

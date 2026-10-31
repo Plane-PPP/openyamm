@@ -1,12 +1,14 @@
 #include "game/ui/GameplayUiSkin.h"
 #include "game/ui/GameplayDialogueRenderer.h"
 #include "game/ui/GameplayHudCommon.h"
+#include "game/ui/GameplayHudOverlaySupport.h"
 #include "game/ui/HouseShopLayout.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 
 #include "game/gameplay/HouseServiceRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
+#include "game/items/InventoryBags.h"
 #include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/StringUtils.h"
@@ -762,75 +764,55 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
         if (pHostHouseEntry != nullptr && view.party() != nullptr && view.itemTable() != nullptr)
         {
             const Character *pActiveCharacter = view.party()->activeMember();
-            const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedInventoryGrid =
-                view.resolveInventoryNestedOverlayGridArea(width, height);
+            // The open bag's cell under the pointer, or any bag's while the shop shows the bag overview.
+            const std::optional<GameplayHudOverlaySupport::InventoryCell> cell =
+                GameplayHudOverlaySupport::nestedInventoryCellAt(view, width, height, dialogMouseX, dialogMouseY);
 
-            if (pActiveCharacter != nullptr && resolvedInventoryGrid)
+            if (pActiveCharacter != nullptr && cell)
             {
-                const InventoryGridMetrics gridMetrics = computeInventoryGridMetrics(
-                    resolvedInventoryGrid->x,
-                    resolvedInventoryGrid->y,
-                    resolvedInventoryGrid->width,
-                    resolvedInventoryGrid->height,
-                    Character::InventoryWidth,
-                    Character::InventoryHeight);
+                const InventoryItem *pItem =
+                    InventoryBags::itemInBagAt(*pActiveCharacter, cell->bag, cell->gridX, cell->gridY);
 
-                if (dialogMouseX >= resolvedInventoryGrid->x
-                    && dialogMouseX < resolvedInventoryGrid->x + resolvedInventoryGrid->width
-                    && dialogMouseY >= resolvedInventoryGrid->y
-                    && dialogMouseY < resolvedInventoryGrid->y + resolvedInventoryGrid->height)
+                if (pItem != nullptr)
                 {
-                    const uint8_t gridX = static_cast<uint8_t>(std::clamp(
-                        static_cast<int>((dialogMouseX - resolvedInventoryGrid->x) / gridMetrics.cellWidth),
-                        0,
-                        Character::InventoryWidth - 1));
-                    const uint8_t gridY = static_cast<uint8_t>(std::clamp(
-                        static_cast<int>((dialogMouseY - resolvedInventoryGrid->y) / gridMetrics.cellHeight),
-                        0,
-                        Character::InventoryHeight - 1));
-                    const InventoryItem *pItem = pActiveCharacter->inventoryItemAt(gridX, gridY);
-
-                    if (pItem != nullptr)
+                    if (view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
                     {
-                        if (view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
-                        {
-                            hoveredHouseServiceTopicText = HouseServiceRuntime::buildSellHoverText(
-                                *view.party(),
-                                *view.itemTable(),
-                                *view.standardItemEnchantTable(),
-                                *view.specialItemEnchantTable(),
-                                *pHostHouseEntry,
-                                *pItem,
-                                effectiveReputationForView(view));
-                        }
-                        else if (view.inventoryNestedOverlay().mode
-                            == GameplayUiController::InventoryNestedOverlayMode::ShopIdentify)
-                        {
-                            hoveredHouseServiceTopicText = HouseServiceRuntime::buildIdentifyHoverText(
-                                *view.party(),
-                                *view.itemTable(),
-                                *view.standardItemEnchantTable(),
-                                *view.specialItemEnchantTable(),
-                                *pHostHouseEntry,
-                                *pItem,
-                                effectiveReputationForView(view));
-                        }
-                        else if (view.inventoryNestedOverlay().mode
-                            == GameplayUiController::InventoryNestedOverlayMode::ShopRepair)
-                        {
-                            const std::string hoverText = HouseServiceRuntime::buildRepairHoverText(
-                                *view.party(),
-                                *view.itemTable(),
-                                *view.standardItemEnchantTable(),
-                                *view.specialItemEnchantTable(),
-                                *pHostHouseEntry,
-                                *pItem,
-                                effectiveReputationForView(view));
+                        hoveredHouseServiceTopicText = HouseServiceRuntime::buildSellHoverText(
+                            *view.party(),
+                            *view.itemTable(),
+                            *view.standardItemEnchantTable(),
+                            *view.specialItemEnchantTable(),
+                            *pHostHouseEntry,
+                            *pItem,
+                            effectiveReputationForView(view));
+                    }
+                    else if (view.inventoryNestedOverlay().mode
+                        == GameplayUiController::InventoryNestedOverlayMode::ShopIdentify)
+                    {
+                        hoveredHouseServiceTopicText = HouseServiceRuntime::buildIdentifyHoverText(
+                            *view.party(),
+                            *view.itemTable(),
+                            *view.standardItemEnchantTable(),
+                            *view.specialItemEnchantTable(),
+                            *pHostHouseEntry,
+                            *pItem,
+                            effectiveReputationForView(view));
+                    }
+                    else if (view.inventoryNestedOverlay().mode
+                        == GameplayUiController::InventoryNestedOverlayMode::ShopRepair)
+                    {
+                        const std::string hoverText = HouseServiceRuntime::buildRepairHoverText(
+                            *view.party(),
+                            *view.itemTable(),
+                            *view.standardItemEnchantTable(),
+                            *view.specialItemEnchantTable(),
+                            *pHostHouseEntry,
+                            *pItem,
+                            effectiveReputationForView(view));
 
-                            if (!hoverText.empty())
-                            {
-                                hoveredHouseServiceTopicText = hoverText;
-                            }
+                        if (!hoverText.empty())
+                        {
+                            hoveredHouseServiceTopicText = hoverText;
                         }
                     }
                 }

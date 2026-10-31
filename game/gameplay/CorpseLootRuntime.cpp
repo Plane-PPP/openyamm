@@ -5,6 +5,8 @@
 #include "game/audio/SoundIds.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayLootFilter.h"
+#include "game/gameplay/GameplayWorldItemPolicy.h"
+#include "game/items/InventoryBags.h"
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
@@ -552,7 +554,7 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
         const InventoryItem inventoryItem = normalizedCorpseInventoryItem(item);
         const std::string itemName = corpseLootItemName(item, pItemTable);
 
-        if (party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), inventoryItem))
+        if (const std::optional<StoredPickup> stored = storePickedUpItem(party, inventoryItem, pItemTable))
         {
             GameplayChestItemState removedItem = {};
 
@@ -567,7 +569,7 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
                 + gameplayDebugTraceItemSummary(inventoryItem.objectDescriptionId, pItemTable)
                 + " corpse_index=" + std::to_string(pCorpseView->sourceIndex)
                 + " loot_item_index=0"
-                + " member_index=" + std::to_string(party.activeMemberIndex()));
+                + " member_index=" + std::to_string(stored->memberIndex));
 
             if (result.firstItemName.empty())
             {
@@ -641,5 +643,132 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
 
     worldRuntime.closeActiveCorpseView();
     return result;
+}
+
+namespace
+{
+// How many items each member's bags hold, to find where a granted item went.
+std::vector<std::vector<size_t>> memberBagSizes(const Party &party, int bagCount)
+{
+    std::vector<std::vector<size_t>> sizes(party.members().size());
+
+    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+    {
+        for (int bag = 0; bag < bagCount; ++bag)
+        {
+            sizes[memberIndex].push_back(InventoryBags::itemsInBag(party.members()[memberIndex], uint8_t(bag)).size());
+        }
+    }
+
+    return sizes;
+}
+
+// The bag of the recipient that gained an item, and the cell of that item: a placed item ends its bag's list.
+GameplayUiController::LootedItemPlace grantedItemPlace(
+    const Party &party,
+    size_t recipientIndex,
+    int bagCount,
+    const std::vector<std::vector<size_t>> &bagSizesBefore)
+{
+    GameplayUiController::LootedItemPlace place = {};
+    place.memberIndex = recipientIndex;
+
+    if (recipientIndex >= party.members().size() || recipientIndex >= bagSizesBefore.size())
+    {
+        return place;
+    }
+
+    const Character &recipient = party.members()[recipientIndex];
+
+    for (int bag = 0; bag < bagCount && size_t(bag) < bagSizesBefore[recipientIndex].size(); ++bag)
+    {
+        const std::vector<InventoryItem> &items = InventoryBags::itemsInBag(recipient, uint8_t(bag));
+
+        if (items.size() > bagSizesBefore[recipientIndex][size_t(bag)])
+        {
+            place.bag = uint8_t(bag);
+            place.gridX = items.back().gridX;
+            place.gridY = items.back().gridY;
+            break;
+        }
+    }
+
+    return place;
+}
+}
+
+GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRuntime &worldRuntime, Party &party)
+{
+    GameplayUiController::LootSummaryOverlayState summary = {};
+    const int bagCount = party.rules().items.bagCount(party);
+    // Added once after the sweep: each addGold queues the gold sound.
+    int partyGold = 0;
+
+    for (size_t actorIndex : worldRuntime.lootableCorpseActorIndices())
+    {
+        if (!worldRuntime.openActorCorpseView(actorIndex))
+        {
+            continue;
+        }
+
+        ++summary.satchelCount;
+        size_t itemIndex = 0;
+
+        // Taking a satchel's last item closes its view.
+        for (const GameplayCorpseViewState *pView = worldRuntime.activeCorpseView();
+             pView != nullptr && itemIndex < pView->items.size();
+             pView = worldRuntime.activeCorpseView())
+        {
+            const GameplayChestItemState &item = pView->items[itemIndex];
+            GameplayChestItemState taken = {};
+
+            if (item.isGold)
+            {
+                if (!worldRuntime.takeActiveCorpseItem(itemIndex, taken))
+                {
+                    break;
+                }
+
+                const FoundGold foundGold = resolveFoundGold(taken.goldAmount, worldRuntime.eventRuntimeState());
+                partyGold += static_cast<int>(foundGold.partyAmount);
+                summary.goldAmount += static_cast<int>(foundGold.amount);
+                summary.followerGoldShare += static_cast<int>(foundGold.followerShare);
+                continue;
+            }
+
+            const InventoryItem inventoryItem = normalizedCorpseInventoryItem(item);
+            const std::vector<std::vector<size_t>> bagSizes = memberBagSizes(party, bagCount);
+            const std::optional<StoredPickup> stored = storePickedUpItem(party, inventoryItem, party.itemTable());
+
+            if (!stored)
+            {
+                summary.leftItems.push_back(inventoryItem);
+                ++itemIndex;
+                continue;
+            }
+
+            if (!worldRuntime.takeActiveCorpseItem(itemIndex, taken))
+            {
+                break;
+            }
+
+            summary.takenItems.push_back(inventoryItem);
+            summary.takenItemPlaces.push_back(grantedItemPlace(party, stored->memberIndex, bagCount, bagSizes));
+        }
+
+        worldRuntime.closeActiveCorpseView();
+    }
+
+    if (partyGold > 0)
+    {
+        party.addGold(partyGold);
+    }
+    else if (!summary.takenItems.empty())
+    {
+        party.requestSound(SoundId::Gold);
+    }
+
+    summary.active = summary.satchelCount > 0;
+    return summary;
 }
 }

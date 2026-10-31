@@ -16,6 +16,7 @@
 #include "game/gameplay/GameplayCombatController.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/gameplay/MonsterDeathExplosion.h"
 #include "game/gameplay/SearchableLootPropRuntime.h"
 #include "game/maps/MapAssetLoader.h"
 #include "game/maps/MapDeltaData.h"
@@ -310,6 +311,9 @@ public:
         bool alertStatusBit = false;
         bool bloodSplatSpawned = false;
         bool hasDetectedParty = false;
+        // MM's Nearby attribute, which indoor actors keep in their attributes: set for good once the party's AI range
+        // (5632) reaches it or the party hits it, whether or not it noticed the party. Wizard Eye shows it from then on.
+        bool nearby = false;
         // The party made it hostile (hit it or its faction), so a hit on it still alerts its friendly faction; an
         // actor hostile on its own (map, template, event) alerts none.
         bool angeredByParty = false;
@@ -927,9 +931,14 @@ public:
     // After a load: dead actors whose corpse loot was never rolled (older saves, map deltas) get it on the first update,
     // once the event state that adds guaranteed items is bound.
     void rollPendingCorpseLoot();
+    // An actor whose HP reached 0: its dying animation, killed event, corpse physics, drops and death blast.
+    void beginOutdoorActorDeath(size_t actorIndex);
+    void detonatePendingDeathExplosions();
     bool openMapActorCorpseView(size_t actorIndex);
     bool takeActiveCorpseItem(size_t itemIndex, ChestItemState &item) override;
     void closeActiveCorpseView() override;
+    // On the ground a little ahead of the party and in its sight (LootGatherDistances), else at its feet.
+    bx::Vec3 lootGatherSpot() const;
     const std::vector<AudioEvent> &pendingAudioEvents() const;
     void clearPendingAudioEvents();
     const std::vector<CombatEvent> &pendingCombatEvents() const;
@@ -1128,6 +1137,14 @@ public:
         uint32_t count,
         bool randomRotate
     ) override;
+    bool summonEventInventoryItem(
+        const InventoryItem &item,
+        int32_t x,
+        int32_t y,
+        int32_t z,
+        int32_t speed,
+        bool randomRotate
+    ) override;
     bool summonEventObject(
         uint32_t objectId,
         int32_t x,
@@ -1160,6 +1177,8 @@ public:
     bool dashParty(float directionX, float directionY, float distance) override;
     size_t gatherCorpsesToParty(size_t maxCount) override;
     size_t gatherWorldItemsToParty(size_t maxCount, const std::function<bool(const InventoryItem &)> &gathers) override;
+    std::vector<size_t> lootableCorpseActorIndices() const override;
+    bool openActorCorpseView(size_t actorIndex) override;
     const GameplayProjectileService *projectileServiceView() const override
     {
         return &projectileService();
@@ -1382,7 +1401,8 @@ private:
     GameplayWorldPoint chestTrapSourcePoint() const;
     GameplayWorldPoint chestTrapVisualPoint(const GameplayWorldPoint &sourcePoint) const;
     void applyChestTrapState(uint32_t chestId, const ChestTrapOpenResult &trapResult);
-    void spawnChestTrapVisual(const GameplayWorldPoint &point, const ChestTrapOpenResult &trapResult);
+    // The impact of object objectId at point, with the fireball's sound: a chest trap or a monster's death blast.
+    void spawnObjectBurstVisual(const GameplayWorldPoint &point, uint16_t objectId, CombatDamageType damageType);
     void pushAudioEvent(
         uint32_t soundId,
         uint32_t sourceId,
@@ -1470,6 +1490,7 @@ private:
     void applyOutdoorDestructibleDeathOutput(const OutdoorDestructible &definition);
     void updateOutdoorMechanismOpenAwayDirections();
     void refreshOutdoorModelMechanismGeometry();
+    void resyncOutdoorModelMechanismGeometry();
     bool setOutdoorFaceGeometry(const OutdoorFaceGeometryData &geometry);
     bool materializeTreasureSpawnFromSpawnPoint(size_t spawnPointIndex);
     bool resolveWorldItemVisual(
@@ -1641,6 +1662,8 @@ private:
     std::vector<MapActorState> m_mapActors;
     bool m_monsterKilledHooksEnabled = false;
     std::vector<MonsterKilledEvent> m_pendingMonsterKilledEvents;
+    // Deaths of exploding monsters, detonated on the next actor update (MonsterDeathExplosion.h).
+    std::vector<PendingMonsterDeathExplosion> m_pendingDeathExplosions;
     std::vector<size_t> m_mm9FoundPlayerActorIndices;
     std::vector<bool> m_mm9FoundPlayerEventAttempted;
     std::vector<size_t> m_mm9CivilianActorIndices;

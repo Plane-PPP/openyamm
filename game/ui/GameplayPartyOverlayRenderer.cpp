@@ -545,11 +545,15 @@ const JournalMapNote *activeJournalMapNote(
     return findVisibleRuntimeMapNote(pParty, normalizedCurrentMapFileName, journalScreen.selectedMapNoteId);
 }
 
-void renderJournalNotesSearch(
+// A search field (the journal's notes, the inventory's items): a dark well, its border lit while typing goes to it, the
+// text with a caret, or the placeholder while it is empty.
+void renderSearchField(
     GameplayScreenRuntime &context,
     const GameplayScreenRuntime::HudLayoutElement &style,
     const GameplayScreenRuntime::ResolvedHudLayoutElement &area,
-    const GameplayUiController::JournalScreenState &journalScreen)
+    const std::string &text,
+    bool active,
+    const std::string &placeholder)
 {
     constexpr uint32_t SearchFillColor = 0x60000000u;
     constexpr uint32_t SearchHoverColor = 0x18ffffffu;
@@ -561,7 +565,7 @@ void renderJournalNotesSearch(
         {
             const std::optional<GameplayScreenRuntime::HudTextureHandle> texture =
                 context.gameplayUiRuntime().ensureSolidHudTextureLoaded(
-                    "__journal_search_" + std::to_string(colorAbgr) + "__",
+                    "__search_field_" + std::to_string(colorAbgr) + "__",
                     colorAbgr);
 
             if (texture && rectWidth > 0.0f && rectHeight > 0.0f)
@@ -572,12 +576,12 @@ void renderJournalNotesSearch(
     const GameplayInputFrame *pInput = context.currentGameplayInputFrame();
     const bool hovered = pInput != nullptr
         && GameplayHudCommon::isPointerInsideResolvedElement(area, pInput->pointerX, pInput->pointerY);
-    const uint32_t borderColor = journalScreen.notesSearchActive ? SearchActiveBorderColor : SearchBorderColor;
+    const uint32_t borderColor = active ? SearchActiveBorderColor : SearchBorderColor;
     const float line = std::max(1.0f, std::round(area.scale * 0.75f));
 
     fill(area.x, area.y, area.width, area.height, SearchFillColor);
 
-    if (hovered && !journalScreen.notesSearchActive)
+    if (hovered && !active)
     {
         fill(area.x, area.y, area.width, area.height, SearchHoverColor);
     }
@@ -589,16 +593,15 @@ void renderJournalNotesSearch(
 
     GameplayScreenRuntime::HudLayoutElement textStyle = style;
 
-    if (journalScreen.notesSearch.empty() && !journalScreen.notesSearchActive)
+    if (text.empty() && !active)
     {
         textStyle.textColorAbgr = SearchPlaceholderColor;
-        context.renderLayoutLabel(textStyle, area, "Search notes", false);
+        context.renderLayoutLabel(textStyle, area, placeholder, false);
     }
     else
     {
         // A steady caret, as in the alchemy bench search.
-        context.renderLayoutLabel(
-            textStyle, area, journalScreen.notesSearch + (journalScreen.notesSearchActive ? "_" : ""), false);
+        context.renderLayoutLabel(textStyle, area, text + (active ? "_" : ""), false);
     }
 }
 
@@ -2132,9 +2135,6 @@ std::string skillPageMasteryDisplayName(SkillMastery mastery)
     return displayName;
 }
 
-using BagOverviewItemsRenderer =
-    std::function<void(const std::vector<InventoryItem> &, const InventoryBagOverview::Slot &, float, uint8_t)>;
-
 // The size of the overview's bag under the point against the full-size grid, or 1 elsewhere.
 float bagOverviewFractionAt(GameplayScreenRuntime &context, int width, int height, float x, float y)
 {
@@ -2230,83 +2230,6 @@ void renderBagOverviewDropPreview(
         context.submitHudTexturedQuad(*gold, x, y + height - line, width, line);
         context.submitHudTexturedQuad(*gold, x, y, line, height);
         context.submitHudTexturedQuad(*gold, x + width - line, y, line, height);
-    }
-}
-
-// The bag overview (InventoryBagOverview): the four bags on half-size grids, a bronze divider between them.
-void renderBagOverview(
-    GameplayScreenRuntime &context,
-    const GameplayResolvedHudLayoutElement &grid,
-    const Character &character,
-    float mouseX,
-    float mouseY,
-    const BagOverviewItemsRenderer &renderItems)
-{
-    GameplayUiRuntime &ui = context.gameplayUiRuntime();
-    const float scale = grid.scale;
-    const std::optional<GameplayHudTextureHandle> backdrop =
-        ui.ensureSolidHudTextureLoaded("__bag_overview_backdrop__", 0xff121714u);
-    const std::optional<GameplayHudTextureHandle> bronze =
-        ui.ensureSolidHudTextureLoaded("__bag_overview_divider__", 0xff4f7d98u);
-    const std::optional<GameplayHudTextureHandle> edge =
-        ui.ensureSolidHudTextureLoaded("__bag_overview_edge__", 0xff2c3a40u);
-    const std::optional<GameplayHudTextureHandle> surface = ui.ensureHudTextureLoaded("obsidian_inventory_surface");
-
-    if (backdrop)
-    {
-        context.submitHudTexturedQuad(*backdrop, grid.x, grid.y, grid.width, grid.height);
-    }
-
-    // The grid part of the inventory page's surface (CharacterInventoryGrid at 7,8 on the 468 x 346 page).
-    constexpr float PageWidth = 468.0f;
-    constexpr float PageHeight = 346.0f;
-    constexpr float GridLeft = 7.0f;
-    constexpr float GridTop = 8.0f;
-    constexpr float GridWidth = 448.0f;
-    constexpr float GridHeight = 288.0f;
-    const float line = std::max(1.0f, std::round(scale));
-
-    for (int bag = 0; bag < InventoryBagOverview::Bags; ++bag)
-    {
-        const InventoryBagOverview::Slot slot = InventoryBagOverview::slot(grid, bag);
-
-        if (surface)
-        {
-            ui.submitHudTexturedQuad(surface->textureHandle, slot.x, slot.y, slot.width, slot.height,
-                GridLeft / PageWidth, GridTop / PageHeight, (GridLeft + GridWidth) / PageWidth,
-                (GridTop + GridHeight) / PageHeight);
-        }
-
-        if (edge)
-        {
-            context.submitHudTexturedQuad(*edge, slot.x - line, slot.y - line, slot.width + 2 * line, line);
-            context.submitHudTexturedQuad(*edge, slot.x - line, slot.y + slot.height, slot.width + 2 * line, line);
-            context.submitHudTexturedQuad(*edge, slot.x - line, slot.y, line, slot.height);
-            context.submitHudTexturedQuad(*edge, slot.x + slot.width, slot.y, line, slot.height);
-        }
-
-        renderItems(InventoryBags::itemsInBag(character, uint8_t(bag)), slot, scale, uint8_t(bag));
-        // The bag's tags in its bottom right corner, the place a bag fills last.
-        const float tagSize = std::round(16.0f * scale);
-        const float tagInset = std::round(2.0f * scale);
-        GameplayHudOverlaySupport::renderBagTagMarks(context, character, uint8_t(bag),
-            slot.x + slot.width - 2 * tagSize - tagInset, slot.y + slot.height - tagSize - tagInset, 2 * tagSize,
-            tagSize);
-        renderBagOverviewDropPreview(context, grid, slot, character, uint8_t(bag), mouseX, mouseY);
-    }
-
-    // The dividers: a bronze rule down the middle of each gap between the bags.
-    if (bronze)
-    {
-        const InventoryBagOverview::Slot first = InventoryBagOverview::slot(grid, 0);
-        const InventoryBagOverview::Slot last = InventoryBagOverview::slot(grid, InventoryBagOverview::Bags - 1);
-        const float rule = std::max(2.0f, std::round(2.0f * scale));
-        const float middleX = std::round((first.x + first.width + last.x - rule) * 0.5f);
-        const float middleY = std::round((first.y + first.height + last.y - rule) * 0.5f);
-        const float right = last.x + last.width;
-        const float bottom = last.y + last.height;
-        context.submitHudTexturedQuad(*bronze, middleX, first.y, rule, bottom - first.y);
-        context.submitHudTexturedQuad(*bronze, first.x, middleY, right - first.x, rule);
     }
 }
 
@@ -4974,7 +4897,8 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
 
             if (pSearchLayout != nullptr && searchResolved)
             {
-                renderJournalNotesSearch(context, *pSearchLayout, *searchResolved, journalScreen);
+                renderSearchField(context, *pSearchLayout, *searchResolved, journalScreen.notesSearch,
+                    journalScreen.notesSearchActive, "Search notes");
             }
 
             const std::string search = toLowerCopy(journalScreen.notesSearch);
@@ -9870,7 +9794,26 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
         {
             if (!context.isAdventurersInnCharacterSourceActive())
             {
-                GameplayUiSkin::renderButton(context, pLayout->id, width, height);
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
+                // Touch drops the held item from here (GameplayCharacterPointerTargetType::InventoryDropButton).
+                const std::string dropLabel = "Drop";
+                const std::string *pLabel = context.heldInventoryItem().active ? &dropLabel : nullptr;
+#else
+                const std::string *pLabel = nullptr;
+#endif
+                GameplayUiSkin::renderButton(context, pLayout->id, width, height, false, true, pLabel);
+            }
+
+            continue;
+        }
+
+        // The item search's field (ItemSearch); the inventory dims what it leaves out.
+        if (normalizedLayoutId == "characterinventorysearch")
+        {
+            if (!context.isAdventurersInnCharacterSourceActive())
+            {
+                renderSearchField(context, *pLayout, *resolved, characterScreen.inventorySearch,
+                    characterScreen.inventorySearchActive, "Search items (ring might luck|speed)");
             }
 
             continue;
@@ -10410,9 +10353,13 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
 
             label = replaceAllText(label, "{gold}", std::to_string(party.gold()));
             label = replaceAllText(label, "{food}", std::to_string(party.food()));
+            // The inventory page's item search takes the right of the bar from the death count.
             if (label.find("{run_deaths}") != std::string::npos)
             {
-                const std::optional<int> deaths = party.rules().experience.runDeaths();
+                const std::optional<int> deaths = characterScreen.page == GameplayUiController::CharacterPage::Inventory
+                        && !context.isAdventurersInnCharacterSourceActive()
+                    ? std::nullopt
+                    : party.rules().experience.runDeaths();
                 label = replaceAllText(label, "{run_deaths}",
                     deaths ? "Death Count: " + std::to_string(*deaths) : std::string());
             }
@@ -10603,9 +10550,12 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                     pInventoryGridLayout->width,
                     pInventoryGridLayout->height);
 
+            // The item search dims the items it leaves out, in every bag.
+            const std::optional<ItemSearch::Query> searchQuery =
+                GameplayHudOverlaySupport::inventorySearchQuery(context);
             // One bag's items on its grid, each inspected with its actions in the bag it lies in.
             const auto renderBagItems =
-                [&context, characterSourceIndex, inspectedCharacterCanAct](
+                [&context, &searchQuery, pCharacter, characterSourceIndex, inspectedCharacterCanAct](
                     const std::vector<InventoryItem> &items,
                     const InventoryGridMetrics &gridMetrics,
                     uint8_t bag)
@@ -10634,21 +10584,31 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                             static_cast<float>(itemTexture->height) * gridMetrics.scale
                                 * pItemDefinition->inventoryDrawScale;
                         const InventoryItemScreenRect itemRect =
-                            computeInventoryItemScreenRect(gridMetrics, item, itemWidth, itemHeight,
-                                ReagentStacks::eligible(item, context.itemTable()));
-                        GameplayHudOverlaySupport::renderItemRarityGlow(context, item, *itemTexture, itemRect.x,
-                            itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
-                        context.submitHudTexturedQuad(
-                            *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
-                        submitItemTintOverlay(
-                            context,
-                            *itemTexture,
-                            itemRect.x,
-                            itemRect.y,
-                            itemRect.width,
-                            itemRect.height,
-                            false,
-                            itemTintColorAbgr(&item, pItemDefinition, ItemTintContext::CharacterScreen));
+                            computeInventoryItemScreenRect(gridMetrics, item, itemWidth, itemHeight);
+
+                        if (searchQuery
+                            && !ItemSearch::matches(*searchQuery,
+                                GameplayHudOverlaySupport::itemSearchText(context, item, pCharacter)))
+                        {
+                            GameplayHudOverlaySupport::renderSearchDimmedItem(
+                                context, *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
+                        }
+                        else
+                        {
+                            GameplayHudOverlaySupport::renderItemRarityGlow(context, item, *itemTexture, itemRect.x,
+                                itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
+                            context.submitHudTexturedQuad(
+                                *itemTexture, itemRect.x, itemRect.y, itemRect.width, itemRect.height);
+                            submitItemTintOverlay(
+                                context,
+                                *itemTexture,
+                                itemRect.x,
+                                itemRect.y,
+                                itemRect.width,
+                                itemRect.height,
+                                false,
+                                itemTintColorAbgr(&item, pItemDefinition, ItemTintContext::CharacterScreen));
+                        }
 
                         GameplayHudOverlaySupport::renderReagentQuantity(context, item,
                             itemRect.x, itemRect.y, itemRect.width, itemRect.height, gridMetrics.scale);
@@ -10679,15 +10639,21 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
 
             if (resolvedInventoryGrid.has_value() && GameplayHudOverlaySupport::bagOverviewActive(context))
             {
-                renderBagOverview(context, *resolvedInventoryGrid, *pCharacter, characterMouseX, characterMouseY,
-                    [&renderBagItems](const std::vector<InventoryItem> &items, const InventoryBagOverview::Slot &slot,
-                        float gridScale, uint8_t bag)
+                const GameplayResolvedHudLayoutElement &grid = *resolvedInventoryGrid;
+                GameplayHudOverlaySupport::renderBagOverview(context, grid, *pCharacter,
+                    [&](const InventoryBagOverview::Slot &slot, uint8_t bag)
                     {
-                        renderBagItems(items,
+                        renderBagItems(InventoryBags::itemsInBag(*pCharacter, bag),
                             computeInventoryGridMetrics(slot.x, slot.y, slot.width, slot.height,
-                                gridScale * slot.fraction),
+                                grid.scale * slot.fraction),
                             bag);
                     });
+
+                for (int bag = 0; bag < InventoryBagOverview::Bags; ++bag)
+                {
+                    renderBagOverviewDropPreview(context, grid, InventoryBagOverview::slot(grid, bag), *pCharacter,
+                        uint8_t(bag), characterMouseX, characterMouseY);
+                }
             }
             else if (resolvedInventoryGrid.has_value())
             {

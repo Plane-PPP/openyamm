@@ -673,6 +673,47 @@ TEST_CASE("outdoor water damage tick reports drowning status text")
     CHECK_EQ(partyRuntime.movementStatusText(), "You are drowning!");
 }
 
+TEST_CASE("outdoor fluid BModel floors do not drown the party")
+{
+    // Fountains and the pools before dungeon entrances are Fluid BModel floors: the original drowns only on water
+    // terrain, so standing in them must neither damage the party nor stop its jumps.
+    SyntheticOutdoorWaterBoundaryScenario scenario = createSyntheticOutdoorWaterBoundaryScenario();
+    constexpr int PoolZ = 32;
+    OpenYAMM::Game::OutdoorBModel pool = {};
+    pool.name = "fluid_pool_test";
+    pool.vertices = {
+        {static_cast<int>(scenario.landX) - 192, static_cast<int>(scenario.landY) - 192, PoolZ},
+        {static_cast<int>(scenario.landX) + 192, static_cast<int>(scenario.landY) - 192, PoolZ},
+        {static_cast<int>(scenario.landX) + 192, static_cast<int>(scenario.landY) + 192, PoolZ},
+        {static_cast<int>(scenario.landX) - 192, static_cast<int>(scenario.landY) + 192, PoolZ}
+    };
+    OpenYAMM::Game::OutdoorBModelFace face = {};
+    face.vertexIndices = {0, 1, 2, 3};
+    face.polygonType = 0x3;
+    face.attributes = OpenYAMM::Game::faceAttributeBit(OpenYAMM::Game::FaceAttribute::Fluid);
+    pool.faces.push_back(face);
+    scenario.mapData.bmodels.push_back(std::move(pool));
+
+    OpenYAMM::Game::OutdoorMovementDriver movementDriver(
+        scenario.mapData,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt);
+    OpenYAMM::Game::ItemTable itemTable = {};
+    OpenYAMM::Game::OutdoorPartyRuntime partyRuntime(std::move(movementDriver), itemTable);
+    partyRuntime.initialize(scenario.landX, scenario.landY, PoolZ + 1.0f, true);
+
+    REQUIRE_EQ(partyRuntime.movementState().supportKind, OpenYAMM::Game::OutdoorSupportKind::BModelFace);
+    REQUIRE(partyRuntime.movementState().supportIsFluid);
+    CHECK_FALSE(partyRuntime.movementState().supportOnDeepWater());
+
+    partyRuntime.update(OpenYAMM::Game::OutdoorMovementInput{}, 2.0f);
+
+    CHECK_EQ(partyRuntime.party().waterDamageTicks(), 0u);
+    CHECK(partyRuntime.movementStatusText().empty());
+}
+
 TEST_CASE("outdoor Levitate keeps the party off lava and water damage")
 {
     // The original MM8 skips both damages while any member levitates; Levitate here also gives Water Walk, so
@@ -11398,7 +11439,7 @@ TEST_CASE("minotaur damage trace reports actual combat hit without changing HP")
 
 TEST_CASE("party yellow alert counts only detected hostile actors within the original alert range")
 {
-    OpenYAMM::Game::GameplayRuntimeActorState actor = {};
+    OpenYAMM::Game::GameplayActorRulesView actor = {};
     actor.hostileToParty = true;
     actor.hasDetectedParty = true;
     actor.radius = 100;
