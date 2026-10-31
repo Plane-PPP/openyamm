@@ -1,9 +1,10 @@
-## Current OpenYAMM1.20 integration — Windows validation pending
+## Current OpenYAMM1.20 — Windows ZIP packaged
 
 Official1.20 merged; Minotaur balance unchanged. Reagent/bottle stacks50 retain native multi-cell geometry.
 Only insufficient HD footprints are enlarged, per user approval; icons are never shrunk for stacking.
 Safe old-layout repair retains overflow. Mod143 reads prior mod140/132 and official schemas.
 [Integration, compatibility and test scope](research/openyamm-1.20-stack-geometry.md).
+[Successful Windows ZIP and installation](research/windows-1.20-build.md). Manual campaign/visual retest pending.
 
 ## Historical1.18 package
 

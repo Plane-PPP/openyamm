@@ -1,4 +1,4 @@
-## OpenYAMM 1.20 integration — merged; validation in progress
+## OpenYAMM 1.20 — implemented / Linux and Windows tested / ZIP packaged
 
 Official stable v1.20: 1add1d374848648887c08707199921335b4ba440, published 2026-10-30.
 Backup: backup/minotaur-before-v1.20-2026-10-31 at b776797. Normal merge preserves history.
@@ -6,7 +6,9 @@ Retain upstream search/bag fallback/death explosions and the mod's stack/Minotau
 Mod143 wraps upstream142; mod140 explicitly continues to decode upstream139, including the save-list summary path.
 Native multi-cell geometry and safe layout migration implemented. Linux189/48,755 and native7/159 passed.
 Additional save/inventory selection165/21,008 passed (overlapping). Visual preparation blocked by incomplete
-local terrain resources; no rendered screenshots claimed. Next: Windows CI/package, then user campaign/visual retest.
+local terrain resources; no rendered screenshots claimed. Windows189/48,755 and7/159 passed.
+[Successful254.81MiB ZIP and installation](research/windows-1.20-build.md),47 changed/119 reused resource packs.
+Confirmed next-update baseline advanced. Next: user campaign and native-scale visual retest; no balance change.
 [Integration audit](research/openyamm-1.20-stack-geometry.md).
 
 ## Historical1.18 UI & inventory hotfix — superseded geometry; other fixes retained

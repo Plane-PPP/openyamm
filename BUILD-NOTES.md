@@ -2,7 +2,9 @@
 
 Official v1.20:1add1d374848648887c08707199921335b4ba440. Native definition-sized stacks, safe old-layout repair.
 Local compilation/tests exclusively safe-heavy-run jobs4 at16/18GiB +1GiB swap; no OOM/limit change.
-Linux189 unit cases/48,755 assertions;7 native cases/159 assertions passed. Windows package pending.
+Linux and Windows189 unit cases/48,755 assertions;7 native cases/159 assertions passed.
+Successful Windows run41192833570,source c80ebaa9634d23faa9f389d662fcd03daa482326.
+[Windows ZIP254.81MiB, installation and resource metrics](docs/research/windows-1.20-build.md).
 [Audit, save compatibility and visual limits](docs/research/openyamm-1.20-stack-geometry.md).
 
 # UI & Inventory Hotfix on1.18 — Windows ZIP packaged

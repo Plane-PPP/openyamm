@@ -1,6 +1,6 @@
 # OpenYAMM 1.20 and definition-sized inventory stacks
 
-Status: merged and implemented; Linux validation in progress; Windows package pending.
+Status: merged and implemented; Linux/Windows automatic tests passed; Windows ZIP packaged; manual retest pending.
 Starting fork HEAD b776797b71cc3835ff80bfc762d1b5366458ac2e; installed package minotaur-1.18-fc2c74c256c9-24-1.
 The existing uncommitted windows-ci-optimization.md is preserved separately (SHA256
 99f2c6467a07c13f3fb07b30d16a7cfae1ea0f33a84cf34511467a43ce6ba6d9). Its intent-to-add marker was temporarily
@@ -64,7 +64,7 @@ snapshots normalize when their world loads; visited maps retain their serialized
 
 Valid bag layouts retain coordinates/order. Invalid bags reserve unchanged equipment/quest coordinates first,
 then repack alchemy items by native dimensions, without combining or deleting instances. A full14x9 bag can hold
-56 vertical1x2 bottle stacks, not63: the ninth row cannot fit another vertical pair. In the126-stack stress fixture,
+56 vertical1x2 bottle stacks, not63: the ninth row cannot fit another vertical pair. In the126-stack full-inventory fixture,
 70 stacks remain in serialized overflow bag255; all6300 bottles survive. Existing world overflow handling puts
 items at the party's feet and posts a notice. A failed world drop keeps the item serialized for a later attempt.
 Pick these items up before leaving the map. The load itself never writes over the source save.
@@ -108,9 +108,13 @@ at4:3,16:9 and ultrawide. Full MAW/world/Android visual compatibility is not cla
 
 ## E. Windows release
 
-Pending actual Windows CI. Build metadata must record official1.20 and full upstream SHA; retain existing adaptive
-runner jobs and monitoring. The package baseline remains minotaur-1.18-fc2c74c256c9-24-1 until a new run succeeds.
+[Successful Windows package, resources and installation](windows-1.20-build.md).
+Run41192833570 built c80ebaa9634d23faa9f389d662fcd03daa482326, package minotaur-1.20-c80ebaa9634d-25-1.
+Windows repeated189/48,755 and7/159 successfully. ZIP254.81MiB,47 changed/119 reused packs.
+The next-update baseline is advanced only after this success. Metadata records official1.20 and full upstreamSHA.
+Existing adaptive jobs4 on4vCPU/16GiB and monitoring are retained; no Ubuntu limits transferred to Windows.
+
 [Local protected-run measurements](openyamm-1.20-local-resources.csv) retain failed setup attempts too.
-The full successful native build took380.5seconds, peak4,579,549,184bytes (4.27GiB), swap0,
+The full successful native build took380.5seconds, peak4,579,549,184bytes (4.27GiB),swap0,
 no cgroup OOM/high/max events or sampled memory pressure. CPU seconds/average busy cores are in the CSV.
-No main/upstream writes, force-push, system-limit changes or simultaneous heavy operations.
+No main/upstream writes, force-push, system-limit changes or simultaneous local heavy operations.

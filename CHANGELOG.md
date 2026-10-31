@@ -1,11 +1,13 @@
 # OpenYAMM1.20 / native stack geometry (2026-10-31)
 
-Implemented / Linux automatically tested; Windows packaging and manual retest pending.
+Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual campaign/visual retest pending.
 Official1.20 merged with history preserved. Stacks use definition geometry/native image scale; only insufficient
 HD footprints enlarged with user approval. Old layouts safely repack with serialized overflow; quantity unchanged.
 Save143 wraps official142 and explicitly reads prior mod140/132. Current Minotaur balance and previous UI,
 identification, Alchemy/Mind/Levitate fixes retained.
+189 unit cases/48,755 assertions and7 native cases/159 assertions passed on Linux and Windows.
 [Details and test limits](docs/research/openyamm-1.20-stack-geometry.md).
+[Windows254.81MiB ZIP, resource report and install guide](docs/research/windows-1.20-build.md).
 
 # UI & inventory hotfix — Windows ZIP packaged (2026-10-29)
 
