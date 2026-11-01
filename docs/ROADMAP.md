@@ -1,3 +1,11 @@
+## MM8 night-window glow — research complete; content coverage pending
+
+Investigated Windows1.20 report in Alvar/Ravenshore/Shadowspire. No Minotaur renderer regression or missing
+surface-pack delta found: upstream1.20 contains only11 MM8 material pairs; Alvar matches only solid01.
+[Coverage, renderer/settings/package checks and hardware limits](research/surface-materials-mm8-window-glow.md).
+No code/resources/build/push change. Next, separately scoped: author/cook missing MM8 material maps and visually
+validate day/night; use covered MM6 New Sorpigal to distinguish any independent driver/runtime issue.
+
 ## Undead condition immunities — research complete; fixes pending
 
 User reproduced Naga poison on a quest-promoted MM8 Lich and a Vampire. Vampire poison is compatible with its
