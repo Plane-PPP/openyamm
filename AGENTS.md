@@ -477,3 +477,10 @@ Codex and Claude Code take turns in this one checkout. These rules apply to both
 - A review reports confirmed defects, likely defects, risks and preferences separately, with `file:line` and a way to verify.
 - End a task with this handoff: what changed, which tests ran with their exact commands and results, what was not verified,
   and open decisions. Put a durable decision in `docs/ROADMAP.md` or the relevant design document, not only in chat.
+
+### Git author identity
+
+- Always use the repository's configured Git `user.name` and `user.email` for commits.
+- Never replace the configured author with Codex, Claude, or another AI agent identity.
+- Do not change Git identity settings without explicit user approval.
+- AI contributions may be described in task reports, but do not add AI co-author trailers automatically.
