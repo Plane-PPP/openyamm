@@ -289,6 +289,6 @@ with thanks due to:
 ## Minotaur Rebalance
 
 This fork's `feature/minotaur-rebalance` branch develops passive physical resistance and Axe rebalancing for MM8.
-Russian documentation: [mechanics and diagnostics](docs/MINOTAUR_REBALANCE.md),
-[roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md), and [next Windows build notes](BUILD-NOTES.md).
+Documentation, in English and Russian: [index](docs/README.en.md), [mechanics and diagnostics](docs/MINOTAUR_REBALANCE.en.md),
+[roadmap](docs/ROADMAP.en.md). Also: [changelog](CHANGELOG.md) and [next Windows build notes](BUILD-NOTES.md).
 Automatic test results and pending manual gameplay checks are tracked separately in these documents.

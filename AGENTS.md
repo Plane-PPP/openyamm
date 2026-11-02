@@ -457,3 +457,23 @@ missing world hooks. Prefer fixing the shared path or the world hook over adding
 - For a Windows build, record its actual commit SHA and changes relative to the previous confirmed build in
   `BUILD-NOTES.md`. Do not invent a previous package SHA or treat an uncommitted worktree as a packaged revision.
 - Windows packaging, push and release require separate authorization for the current task.
+- An upstream merge that changes the save version needs a new row in `saveSchemaVersion` (`game/maps/SaveGame.cpp`) and a
+  frozen fixture of the previous production format.
+- Documentation index, RU/EN rules and the translation backlog: [docs/README](docs/README.en.md). A change to a main document
+  updates both language versions. Run `python3 tools/check_doc_i18n.py` before committing documentation.
+
+### Working in two agents
+
+Codex and Claude Code take turns in this one checkout. These rules apply to both.
+
+- Start with `git status`. Uncommitted changes may be another agent's unfinished work: keep them, and never use `git reset`,
+  `git clean`, `git sparse-checkout reapply`, or a branch switch unless the user asks for that.
+- Commit only when asked, and only the changes of the current task. Report anything left uncommitted.
+- This is a sparse checkout. Read hidden files with `git show HEAD:<path>`; a missing file on disk does not mean it does not
+  exist. A test that fails on missing data has not passed: name the missing files in the handoff. Paths outside the sparse
+  patterns, including all of `docs/` and `.gitignore`, are staged with `git add --sparse <path>`; a plain `git add` refuses them.
+- Ask for an independent review from the other agent for changes to combat formulas, save formats, migrations, inventory
+  transactions and upstream merges. Typos, documentation, focused tests and small UI text need no second reviewer.
+- A review reports confirmed defects, likely defects, risks and preferences separately, with `file:line` and a way to verify.
+- End a task with this handoff: what changed, which tests ran with their exact commands and results, what was not verified,
+  and open decisions. Put a durable decision in `docs/ROADMAP.md` or the relevant design document, not only in chat.

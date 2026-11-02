@@ -17,9 +17,6 @@
 __pycache__/
 /tools/upscaling/.mm6-x4-state/
 *.pyc
-/docs/*
-!/docs/MINOTAUR_REBALANCE.md
-!/docs/ROADMAP.md
 /_codex/
 /reference/
 /saves/

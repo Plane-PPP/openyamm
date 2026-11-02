@@ -1,3 +1,5 @@
+**Русский** | [English](surface-materials-mm8-window-glow.en.md)
+
 # Ночное свечение окон: OpenYAMM1.20, MM8 и Minotaur Rebalance
 
 Дата:2026-11-01. Статус: исследование; игровые изменения не выполнялись.
