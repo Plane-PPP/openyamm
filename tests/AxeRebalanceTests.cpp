@@ -150,6 +150,66 @@ TEST_CASE("Axe Master off-hand follows weapon restrictions and save load")
     }
 }
 
+TEST_CASE("Axe with Mace is allowed only with Mace in the main hand")
+{
+    const uint32_t axe = weapon("Axe", "Weapon");
+    const uint32_t mace = weapon("Mace", "Weapon");
+    Character member = fighter(SkillMastery::Master);
+    member.skills["Mace"] = {"Mace", 10, SkillMastery::Grandmaster};
+
+    member.equipment.mainHand = mace;
+    const std::optional<CharacterEquipPlan> axeInOffHand = GameMechanics::resolveCharacterEquipPlan(
+        member, *data().itemTable.get(axe), &data().itemTable, nullptr, std::nullopt, true);
+    REQUIRE(axeInOffHand);
+    CHECK(axeInOffHand->targetSlot == EquipmentSlot::OffHand);
+
+    member.equipment.mainHand = axe;
+    const std::optional<CharacterEquipPlan> maceInOffHand = GameMechanics::resolveCharacterEquipPlan(
+        member, *data().itemTable.get(mace), &data().itemTable, nullptr, std::nullopt, true);
+    CHECK((!maceInOffHand || maceInOffHand->targetSlot != EquipmentSlot::OffHand));
+}
+
+TEST_CASE("Axe in the off hand leads Mace recovery and adds no Master Axe damage")
+{
+    const uint32_t axe = weapon("Axe", "Weapon");
+    const uint32_t mace = weapon("Mace", "Weapon");
+    for (uint32_t level : {10u, 20u, 30u})
+    {
+        Character member = fighter(SkillMastery::Grandmaster, level);
+        member.skills["Mace"] = {"Mace", 10, SkillMastery::Master};
+        member.equipment.mainHand = mace;
+        member.equipment.offHand = axe;
+        const CharacterAttackProfile grandmaster = profile(member);
+        CHECK(grandmaster.axe.relevant);
+        CHECK_FALSE(grandmaster.axe.twoHanded);
+        CHECK_EQ(grandmaster.axe.recoveryBonus, int(level));
+        CHECK_EQ(grandmaster.axe.recoveryBefore, 100 - int(level));
+        CHECK_EQ(ticks(grandmaster.meleeRecoverySeconds), 100 - 2 * int(level));
+
+        member.skills["Axe"].mastery = SkillMastery::Master;
+        const CharacterAttackProfile master = profile(member);
+        CHECK_EQ(master.axe.recoveryBonus, 0);
+        CHECK_EQ(ticks(master.meleeRecoverySeconds), 100 - int(level));
+    }
+
+    Character lowAxe = fighter(SkillMastery::Master, 10);
+    Character highAxe = fighter(SkillMastery::Master, 30);
+    for (Character *pMember : {&lowAxe, &highAxe})
+    {
+        pMember->skills["Mace"] = {"Mace", 10, SkillMastery::Master};
+        pMember->equipment.mainHand = mace;
+        pMember->equipment.offHand = axe;
+    }
+    CHECK_EQ(profile(lowAxe).axe.weaponSkillBonus, profile(highAxe).axe.weaponSkillBonus);
+
+    Character maceOnly = fighter(SkillMastery::Grandmaster, 20);
+    maceOnly.skills["Mace"] = {"Mace", 10, SkillMastery::Master};
+    maceOnly.equipment.mainHand = mace;
+    const CharacterAttackProfile maceProfile = profile(maceOnly);
+    CHECK_EQ(maceProfile.axe.recoveryBonus, 0);
+    CHECK_EQ(ticks(maceProfile.meleeRecoverySeconds), 80);
+}
+
 TEST_CASE("Axe GM one-handed recovery is once per melee action in either hand")
 {
     const uint32_t axe = weapon("Axe", "Weapon");

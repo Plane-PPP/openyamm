@@ -681,6 +681,35 @@ TEST_CASE("Lethal Strike v0.4 campaign progress inventory quests and visited map
     std::filesystem::remove(target);
 }
 
+TEST_CASE("Lethal Strike Luck counts a worn Luck item exactly as Stats shows it")
+{
+    constexpr uint16_t LuckEnchantId = 7;
+    constexpr uint32_t BronzeRingItemId = 137;
+    Party party;
+    party.setItemTable(&data().itemTable);
+    party.setItemEnchantTables(&data().standardItemEnchantTable, &data().specialItemEnchantTable);
+    PartySeed seed;
+    seed.members.push_back(minotaur());
+    party.seed(seed);
+    Character *pMember = party.member(0);
+    REQUIRE(pMember != nullptr);
+    pMember->luck = 80;
+    CHECK_EQ(GameMechanics::lethalStrikeLuck(*pMember), 80);
+
+    InventoryItem ring;
+    ring.objectDescriptionId = BronzeRingItemId;
+    ring.standardEnchantId = LuckEnchantId;
+    ring.standardEnchantPower = 10;
+    std::optional<InventoryItem> replaced;
+    REQUIRE(party.tryEquipItemOnMember(0, EquipmentSlot::Ring1, ring, std::nullopt, false, replaced));
+
+    const CharacterSheetSummary sheet = GameMechanics::buildCharacterSheetSummary(*pMember, &data().itemTable,
+        &data().standardItemEnchantTable, &data().specialItemEnchantTable);
+    CHECK_EQ(sheet.luck.actual, 90);
+    CHECK_EQ(GameMechanics::lethalStrikeLuck(*pMember), sheet.luck.actual);
+    CHECK(GameMechanics::lethalStrikeLuckBonus(*pMember) == doctest::Approx(4.5));
+}
+
 TEST_CASE("Lethal Strike Luck adds half a percentage point per complete ten at every rank")
 {
     Character c = minotaur();
