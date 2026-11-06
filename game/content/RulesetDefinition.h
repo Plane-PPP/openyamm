@@ -68,6 +68,24 @@ struct RulesetTableContribution
     size_t headerRow = 0;
 };
 
+// One card of the new-game start choice (`newGame.starts` in ruleset.yml). A ruleset with start cards shows them on
+// the continent screen instead of the three continents; choosing one opens party creation for the
+// `new_game_continents` entry of its key in character_selection.yml (the engine's, or the ruleset's replacement).
+struct RulesetStartCard
+{
+    std::string continentKey;
+    std::string title;
+    // The small line above the title, where a continent card names its game.
+    std::string subtitle;
+    // The line below the title ("Begin in ..."), also shown on the party creation screen.
+    std::string startText;
+    // A picture name resolved like a menu texture (a Data/icons name or a hud_x2/ path); empty for none.
+    std::string illustration;
+};
+
+// At most this many start cards fit the continent screen.
+inline constexpr size_t MaxRulesetStartCards = 3;
+
 // A ruleset package, engine/rulesets/<id>/ruleset.yml (devdocs/maw/HANDOFF.md §3.2). The Standard ruleset has no
 // package.
 struct RulesetDefinition
@@ -87,8 +105,12 @@ struct RulesetDefinition
     std::vector<RulesetTableContribution> tables;
     // Skills the ruleset shows under another name (`skillNames`: canonical skill name -> display name).
     std::map<std::string, std::string> skillNames;
+    // The ruleset's own new-game starts; empty keeps the three continents.
+    std::vector<RulesetStartCard> startCards;
 
     bool isStandard() const;
+    // Whether the new game offers any rules choice for the Rules panel.
+    bool hasRulesChoices() const;
     RulesetOptions defaultOptions() const;
     // Whether these options are among the choices and agree with the chosen challenge mode (preferences are always
     // allowed).
@@ -112,7 +134,8 @@ std::optional<RulesetDefinition> loadRulesetDefinition(
     const Engine::AssetFileSystem &assetFileSystem,
     const std::string &rulesetId,
     std::string &errorMessage);
-// Standard first, then every mounted ruleset package by id.
+// Standard first, then every valid mounted ruleset package by id. False, with the reasons in errorMessage, when a
+// package was left out because it is invalid; `rulesets` still holds the valid ones.
 bool loadAvailableRulesets(
     const Engine::AssetFileSystem &assetFileSystem,
     std::vector<RulesetDefinition> &rulesets,

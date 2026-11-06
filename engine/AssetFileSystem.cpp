@@ -1634,6 +1634,26 @@ const std::filesystem::path &AssetFileSystem::getEditorDevelopmentRoot() const
     return m_editorDevelopmentRoot;
 }
 
+void AssetFileSystem::setRulesetIconRoot(const std::string &packageRoot)
+{
+    std::string root = normalizeVirtualPath(packageRoot);
+    while (root.ends_with('/'))
+    {
+        root.pop_back();
+    }
+    if (root == m_rulesetIconRoot)
+    {
+        return;
+    }
+    m_rulesetIconRoot = std::move(root);
+    refreshLookupCache();
+}
+
+const std::string &AssetFileSystem::getRulesetIconRoot() const
+{
+    return m_rulesetIconRoot;
+}
+
 const std::string &AssetFileSystem::getActiveWorldId() const
 {
     return m_activeWorldId;
@@ -1694,6 +1714,7 @@ void AssetFileSystem::shutdown()
     m_assetScaleProfile = createUniformAssetScaleProfile(AssetScaleTier::X1);
     m_installedContentOptions = {};
     m_iconPackages.clear();
+    m_rulesetIconRoot.clear();
     m_searchMounts.clear();
     m_androidApkAssetRoot = false;
 }
@@ -1891,6 +1912,16 @@ std::vector<std::string> AssetFileSystem::resolveVirtualPathCandidates(const std
                     continue;
                 }
                 resolvedPaths.push_back(root + "/icons" + assetScaleTierDirectorySuffix(tier) + suffix);
+            }
+            if (!m_rulesetIconRoot.empty() && (package.empty() || package == "engine"))
+            {
+                const auto engine = std::find_if(m_iconPackages.begin(), m_iconPackages.end(),
+                                                 [](const auto &entry) { return entry.first == "engine"; });
+                if (engine != m_iconPackages.end())
+                {
+                    resolvedPaths.push_back(
+                        m_rulesetIconRoot + "/icons" + assetScaleTierDirectorySuffix(engine->second) + suffix);
+                }
             }
             // No native or other-package fallback for a qualified icon request.
             return resolvedPaths;

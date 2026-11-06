@@ -4,7 +4,9 @@
 #include "game/ui/UiLayoutManager.h"
 
 #include <functional>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace OpenYAMM::Game
 {
@@ -21,7 +23,8 @@ class MenuDesignScreen : public MenuScreenBase
   protected:
     void loadDesign(const std::string &path);
     void beginDesign(const std::string &screen);
-    void drawDesign();
+    // Draws the screen's static elements; elements whose id starts with a hidden prefix are left to the screen.
+    void drawDesign(const std::vector<std::string> &hiddenPrefixes = {});
     Rect designRect(const std::string &id) const;
     Rect canvasRect(float x, float y, float width, float height) const;
     float designScale() const;

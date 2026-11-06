@@ -8016,6 +8016,8 @@ bool GameApplication::activateRuleset(const std::string &rulesetId, std::string 
     }
 
     m_gameDataLoader.setActiveRuleset(*ruleset);
+    // A ruleset package brings its own icons (Project Medusa's portraits); Standard has none.
+    m_pAssetFileSystem->setRulesetIconRoot(ruleset->isStandard() ? std::string() : rulesetPackageRoot(ruleset->id));
 
     if (ensureCommonGameDataLoaded())
     {
@@ -8025,6 +8027,7 @@ bool GameApplication::activateRuleset(const std::string &rulesetId, std::string 
     // A broken ruleset package must not leave the game without data: report it and return to the Standard tables.
     error = "the " + ruleset->name + " ruleset tables could not be loaded";
     m_gameDataLoader.setActiveRuleset(standardRulesetDefinition());
+    m_pAssetFileSystem->setRulesetIconRoot(std::string());
     m_commonGameDataLoadFailed = false;
     ensureCommonGameDataLoaded();
     return false;

@@ -1167,6 +1167,48 @@ TEST_CASE("AssetFileSystem authoritative icon packages isolate restored and reta
     std::filesystem::remove_all(temporaryRoot);
 }
 
+TEST_CASE("AssetFileSystem adds the active ruleset's icons after the declared icon packages")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assets = temporaryRoot / "assets";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm6 x2\n"},
+        {"icons_x2/pc02-01.png", "engine portrait"},
+        {"rulesets/medusa/icons_x2/med01-01.png", "medusa portrait"},
+        {"rulesets/medusa/icons_x2/pc02-01.png", "must not replace"}
+    });
+    writeZipFile(assets / "packs/mm6.core.zip", {{"icons_x2/npc1.png", "mm6 portrait"}});
+    writeCorePackIndex(assets, {"engine", "mm6"});
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assets, AssetScaleTier::X1, AssetScaleProfile{}, "mm6"));
+        CHECK_FALSE(fs.readTextFile("Data/icons/med01-01.png"));
+
+        const uint64_t generation = fs.contentGeneration();
+        fs.setRulesetIconRoot("engine/rulesets/medusa/");
+        CHECK_EQ(fs.getRulesetIconRoot(), "engine/rulesets/medusa");
+        CHECK(fs.contentGeneration() > generation);
+        CHECK(fs.readTextFile("Data/icons/med01-01.png") == std::optional<std::string>("medusa portrait"));
+        CHECK(fs.readTextFile("engine/icons/med01-01.png") == std::optional<std::string>("medusa portrait"));
+        CHECK_FALSE(fs.readTextFile("worlds/mm6/icons/med01-01.png"));
+        // The ruleset adds icons; it never replaces the engine's or a world's.
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
+        CHECK(fs.readTextFile("Data/icons/npc1.png") == std::optional<std::string>("mm6 portrait"));
+        const std::vector<std::string> icons = fs.enumerate("Data/icons");
+        CHECK(std::find(icons.begin(), icons.end(), "med01-01.png") != icons.end());
+        const std::optional<std::string> resolved = fs.resolveExistingFilePath("Data/icons/med01-01.png");
+        REQUIRE(resolved);
+        CHECK(assetScaleTierFromResolvedPath(*resolved) == AssetScaleTier::X2);
+
+        fs.setRulesetIconRoot("");
+        CHECK(fs.getRulesetIconRoot().empty());
+        CHECK_FALSE(fs.readTextFile("Data/icons/med01-01.png"));
+        CHECK(fs.enumerate("Data/icons").size() == icons.size() - 1);
+    }
+    std::filesystem::remove_all(temporaryRoot);
+}
+
 TEST_CASE("AssetFileSystem cached lookups refresh and follow changed mounts")
 {
     using namespace OpenYAMM::Engine;

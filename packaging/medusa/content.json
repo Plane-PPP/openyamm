@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "repository": "Plane-PPP/project-medusa",
+  "commit": "887b0fd46d9ceba89fdd37f626a08c7147b980fe",
+  "package": "content/engine/rulesets/medusa",
+  "medusa_version": "0.1",
+  "base_version": "minotaur-1.20-c80ebaa9634d-25-1"
+}

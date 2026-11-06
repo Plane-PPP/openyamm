@@ -1,0 +1,293 @@
+name: Project Medusa Windows build
+
+# The Minotaur Windows build (minotaur-windows.yml) with the Project Medusa ruleset package installed from a pinned
+# commit of Plane-PPP/project-medusa (packaging/medusa/content.json). It produces the same verified incremental update
+# over the installed Minotaur base, named Project-Medusa-Alpha-<version>-Windows-Patch.zip.
+
+on:
+  push:
+    branches:
+      - feature/project-medusa
+    paths:
+      - ".github/workflows/medusa-windows.yml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "engine/**"
+      - "game/**"
+      - "packaging/**"
+      - "tests/**"
+      - "tools/**"
+      - "assets_dev/**"
+  workflow_dispatch:
+    inputs:
+      content_sha:
+        description: "Plane-PPP/project-medusa commit; empty uses packaging/medusa/content.json"
+        type: string
+        required: false
+      package_mode:
+        description: "Incremental patch for the installed Minotaur base, full install, or both"
+        type: choice
+        options: [update, full, both]
+        default: update
+
+permissions:
+  contents: read
+
+concurrency:
+  group: medusa-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 Medusa patch
+    env:
+      MINOTAUR_UPSTREAM_VERSION: "1.20"
+      MINOTAUR_UPSTREAM_SHA: 1add1d374848648887c08707199921335b4ba440
+      MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
+    runs-on: windows-latest
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Preserve repository line endings
+        shell: pwsh
+        run: git config --global core.autocrlf input
+
+      - name: Check out engine sources
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /README.md
+            /CHANGELOG.md
+            /BUILD-NOTES.md
+            /docs/
+            /CMakeLists.txt
+            /LICENSE
+            /COPYRIGHT
+            /cmake/
+            /engine/
+            /game/
+            /packaging/
+            /tools/
+            /tests/
+            /third_party/doctest/
+            /assets_dev/_legacy/sprites_original/
+            /assets_dev/engine/
+            /assets_dev/worlds/mm6/
+            /assets_dev/worlds/mm7/
+            /assets_dev/worlds/mm8/
+
+      - name: Select the pinned Project Medusa content
+        shell: bash
+        env:
+          REQUESTED_CONTENT_SHA: ${{ inputs.content_sha }}
+        run: |
+          content_sha="$REQUESTED_CONTENT_SHA"
+          if [ -z "$content_sha" ]; then
+            content_sha=$(python -c "import json; print(json.load(open('packaging/medusa/content.json'))['commit'])")
+          fi
+          [[ "$content_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Content commit must be a full SHA: $content_sha"; exit 1; }
+          [ "$content_sha" != "0000000000000000000000000000000000000000" ] || { echo "content.json is not pinned"; exit 1; }
+          base_version=$(python -c "import json; print(json.load(open('packaging/medusa/content.json'))['base_version'])")
+          medusa_version=$(python -c "import json; print(json.load(open('packaging/medusa/content.json'))['medusa_version'])")
+          printf 'MEDUSA_CONTENT_SHA=%s\nMEDUSA_BASE_VERSION=%s\nMEDUSA_VERSION=%s\n' \
+            "$content_sha" "$base_version" "$medusa_version" >> "$GITHUB_ENV"
+
+      - name: Check out Project Medusa content
+        uses: actions/checkout@v7
+        with:
+          repository: Plane-PPP/project-medusa
+          ref: ${{ env.MEDUSA_CONTENT_SHA }}
+          path: medusa-content
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-yaml
+
+      - name: Copy the Medusa ruleset package into the engine assets
+        run: |
+          /ucrt64/bin/python.exe packaging/medusa/install_content.py --source medusa-content --assets assets_dev
+          test "$(git -C medusa-content rev-parse HEAD)" = "$MEDUSA_CONTENT_SHA"
+
+      - name: Select update base and unique app version
+        run: |
+          base_path="packaging/minotaur/bases/$MEDUSA_BASE_VERSION.json"
+          read -r checked_version base_sha <<< "$(/ucrt64/bin/python.exe tools/minotaur_updates.py check-base "$base_path")"
+          test "$checked_version" = "$MEDUSA_BASE_VERSION"
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.20-medusa-%s-%s-%s-%s\n' \
+            "$base_path" "$base_sha" "$MEDUSA_VERSION" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+
+      - name: Detect actual runner resources and compilation parallelism
+        run: /ucrt64/bin/python.exe tools/measure_windows_build.py --probe
+
+      - name: Configure release build
+        run: >-
+          cmake -S . -B build-windows -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DPython3_EXECUTABLE="$(cygpath -m /ucrt64/bin/python.exe)"
+          -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=ON
+          -DOPENYAMM_BUILD_TESTS=ON
+          -DOPENYAMM_COOK_ON_BUILD=OFF
+          -DOPENYAMM_RELEASE_VERSION=${MINOTAUR_RELEASE_VERSION}
+          -DOPENYAMM_RELEASE_THIN=ON
+          -DOPENYAMM_RELEASE_CONTENT_DIR="$(cygpath -m "$PWD/build-windows/minotaur-content")"
+          -DOPENYAMM_BUILD_EDITOR=OFF
+          -DOPENYAMM_BUILD_TOOLS=OFF
+
+      - name: Record package revision and changes
+        run: |
+          revision_file="BUILD-REVISION.txt"
+          printf 'Commit SHA: %s\nRepository: %s\nRef: %s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_REF" > "$revision_file"
+          printf 'Upstream release: v%s\nUpstream SHA: %s\n' "$MINOTAUR_UPSTREAM_VERSION" "$MINOTAUR_UPSTREAM_SHA" >> "$revision_file"
+          printf 'Project Medusa: Alpha %s, content Plane-PPP/project-medusa@%s\n' "$MEDUSA_VERSION" "$MEDUSA_CONTENT_SHA" >> "$revision_file"
+          printf '\nUpdate base: %s (source %s)\nChanged files since the base:\n' "$MEDUSA_BASE_VERSION" "$MINOTAUR_BASE_SHA" >> "$revision_file"
+          git fetch --no-tags --depth=1 origin "$MINOTAUR_BASE_SHA"
+          git diff --no-renames --name-status "$MINOTAUR_BASE_SHA" "$GITHUB_SHA" -- ':!docs' >> "$revision_file"
+          printf '\n## Фактическая ревизия Actions-пакета\n\n```text\n' >> BUILD-NOTES.md
+          cat "$revision_file" >> BUILD-NOTES.md
+          printf '\n```\n' >> BUILD-NOTES.md
+
+      - name: Build Windows program, shaders and cooker
+        run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase program --
+          cmake --build build-windows
+          --target openyamm openyamm_launcher openyamm_runtime_shaders openyamm_sprite_atlas_cook
+          --parallel "$MINOTAUR_BUILD_JOBS"
+
+      - name: Build and test Medusa, Minotaur combat and save compatibility
+        run: |
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests openyamm_runtime_tests --parallel "$MINOTAUR_BUILD_JOBS"
+          # Project Medusa: start cards, the installed package's tables and portraits, saves, ruleset icons.
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase medusa-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*Medusa*,*start card*,*ruleset*,*Ruleset*,AssetFileSystem adds the active ruleset*'
+          # MM9 is not shipped by this MM6/MM7/MM8 package; Bloodaxe is not an Axe mechanic test.
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inventory hotfix*,Bottle stacks*,Inspect *,*potion*,*bag*,technology skills are appended*,*summary*,*summaries*,*history*,item search*,*steal*' --test-case-exclude='MM9*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*,Inventory hotfix*,*steal*,party creation offers*'
+
+      - name: Prepare indexed content (not included in unchanged update payloads)
+        run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content --
+          /ucrt64/bin/python.exe tools/package_runtime_assets.py
+          --assets-root assets_dev --output build-windows/minotaur-content
+          --profile desktop --cooker build-windows/game/openyamm_sprite_atlas_cook.exe
+          --release "${MINOTAUR_RELEASE_VERSION}" --build "${GITHUB_SHA}"
+
+      - name: Package and verify the small program archive
+        run: |
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
+          /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
+            build-windows/release/OpenYAMM-windows-x64-Release.zip \
+            --stage build-windows/release/Release/OpenYAMM \
+            --thin --content-dir build-windows/minotaur-content
+
+      - name: Create the Medusa patch over the Minotaur base
+        run: |
+          patch="build-windows/medusa-patch/Project-Medusa-Alpha-${MEDUSA_VERSION}-Windows-Patch.zip"
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase update-zip -- \
+            /ucrt64/bin/python.exe tools/minotaur_updates.py build \
+            --stage build-windows/release/Release/OpenYAMM \
+            --content build-windows/minotaur-content \
+            --base "${MINOTAUR_BASE_PATH}" --source-sha "${GITHUB_SHA}" \
+            --output "$patch" \
+            --baseline-output build-windows/medusa-patch/minotaur-baseline.json
+          /ucrt64/bin/python.exe packaging/medusa/finish_patch.py --zip "$patch" \
+            --engine-sha "$GITHUB_SHA" --content-sha "$MEDUSA_CONTENT_SHA"
+          # The patch must carry exactly the program and the changed packs: the Medusa ruleset pack among them.
+          /ucrt64/bin/python.exe - "$patch" <<'EOF'
+          import json, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              names = archive.namelist()
+              manifest = json.loads(archive.read(next(n for n in names if n.endswith("/minotaur-update.json"))))
+              assert "engine.rulesets" in manifest["changed_packs"], manifest["changed_packs"]
+              pack = next(n for n in names if "/payload/packs/engine.rulesets-" in n)
+              with zipfile.ZipFile(archive.open(pack)) as rulesets:
+                  inner = set(rulesets.namelist())
+              for required in ["medusa/ruleset.yml", "medusa/content/character_data.append.txt",
+                               "medusa/content/continent_settings.patch.txt", "medusa/icons_x2/med01-01.png",
+                               "medusa/icons_x2/med01-56.png", "maw/ruleset.yml"]:
+                  assert required in inner, required
+              assert any(n.endswith("/README-MEDUSA-RU.txt") for n in names)
+              assert any(n.endswith("/payload/app/openyamm.exe") for n in names)
+          print("Medusa patch contents verified")
+          EOF
+
+      - name: Write the step summary
+        if: always()
+        run: |
+          {
+            echo "## Project Medusa Alpha ${MEDUSA_VERSION:-?}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Engine | \`${GITHUB_SHA}\` |"
+            echo "| Content | Plane-PPP/project-medusa@\`${MEDUSA_CONTENT_SHA:-?}\` |"
+            echo "| Base (required install) | \`${MEDUSA_BASE_VERSION:-?}\` |"
+            echo "| New app version | \`${MINOTAUR_RELEASE_VERSION:-?}\` |"
+            for report in build-windows/medusa-patch/*.json; do
+              [ -f "$report" ] && [ "$(basename "$report")" != minotaur-baseline.json ] || continue
+              /ucrt64/bin/python.exe -c "import json,sys; r=json.load(open(sys.argv[1])); print(f\"| Patch | {r['archive_bytes']:,} bytes, sha256 \`{r['archive_sha256']}\`, {r['changed_packs']} changed / {r['reused_packs']} reused packs |\")" "$report"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the Medusa patch
+        if: env.MINOTAUR_PACKAGE_MODE != 'full'
+        uses: actions/upload-artifact@v7
+        with:
+          name: project-medusa-alpha-patch-${{ github.sha }}-windows-x64
+          path: build-windows/medusa-patch/*.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload baseline and size/checksum report
+        uses: actions/upload-artifact@v7
+        with:
+          name: project-medusa-metadata-${{ github.sha }}
+          path: build-windows/medusa-patch/*.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create optional full installation
+        if: env.MINOTAUR_PACKAGE_MODE != 'update'
+        run: |
+          cmake -S . -B build-windows -DOPENYAMM_RELEASE_THIN=OFF
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase full-package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
+          /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
+            build-windows/release/OpenYAMM-windows-x64-Release.zip \
+            --stage build-windows/release/Release/OpenYAMM
+
+      - name: Upload optional full installation
+        if: env.MINOTAUR_PACKAGE_MODE != 'update'
+        uses: actions/upload-artifact@v7
+        with:
+          name: openyamm-medusa-${{ github.sha }}-windows-x64
+          path: build-windows/release/OpenYAMM-windows-x64-Release.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload runner resource measurements even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: medusa-build-resources-${{ github.sha }}
+          path: build-resources/
+          if-no-files-found: warn
+          retention-days: 90

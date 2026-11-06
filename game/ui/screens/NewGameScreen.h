@@ -91,6 +91,8 @@ public:
         uint32_t id = 1;
         std::string key = "jadame";
         std::string name = "Jadam";
+        // "Begin in ..." for the party creation title; empty uses the continent card's line from the layout.
+        std::string startText;
     };
 
     struct CreationState
@@ -111,6 +113,9 @@ public:
 
     void drawScreen(float deltaSeconds) override;
     void drawContinentSelection(float deltaSeconds);
+    // The chosen ruleset's own start cards (ruleset.yml newGame.starts) in place of the continents; returns the
+    // chosen card's continent key, or empty.
+    std::string drawStartCards(const std::vector<RulesetStartCard> &cards);
     void drawRulesetSwitch();
     void drawRulesPanel();
     // One rule setting: name and control on a line, description below; returns the y after it.

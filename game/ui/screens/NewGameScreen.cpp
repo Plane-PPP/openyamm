@@ -2143,6 +2143,13 @@ void NewGameScreen::selectContinent(const std::string &continentKey)
         .key = pContinent->key,
         .name = pContinent->name,
     };
+    for (const RulesetStartCard &card : chosenRulesetDefinition().startCards)
+    {
+        if (card.continentKey == pContinent->key)
+        {
+            m_selectedContinent.startText = card.startText;
+        }
+    }
     GAMEPLAY_DEBUG_TRACE(
         "new_game_continent_selected continent_id=" + std::to_string(m_selectedContinent.id)
         + " continent_key=\"" + m_selectedContinent.key + "\""
@@ -2205,8 +2212,8 @@ void NewGameScreen::loadRulesets()
     std::string error;
     if (!loadAvailableRulesets(assetFileSystem(), m_rulesets, error))
     {
+        // The broken packages are left out; Standard and the valid ones remain.
         std::cerr << "New game: " << error << '\n';
-        m_rulesets = {standardRulesetDefinition()};
     }
     const bool installed = std::any_of(m_rulesets.begin(), m_rulesets.end(),
                                        [this](const RulesetDefinition &ruleset) { return ruleset.id == m_ruleset.id; });
@@ -2288,10 +2295,11 @@ void NewGameScreen::drawRulesetSwitch()
     }
     const RulesetDefinition &ruleset = chosenRulesetDefinition();
     const std::string summary = ruleset.panel.summary.empty() ? ruleset.description : ruleset.panel.summary;
-    if (ruleset.isStandard())
+    if (!ruleset.hasRulesChoices())
     {
+        // No Rules panel: the summary stands beside the switch, as Standard's does.
         label("ContinentSelectionRulesetSummary", summary);
-        label("ContinentSelectionFooterNote", ContinentHint);
+        label("ContinentSelectionFooterNote", ruleset.isStandard() ? ContinentHint : summary);
         return;
     }
     label("ContinentSelectionRulesetOptions", rulesetOptionsSummary(m_ruleset.options));
@@ -2638,26 +2646,37 @@ void NewGameScreen::drawContinentSelection(float deltaSeconds)
     }
     loadDesign("gameplay/continent_selection");
     beginDesign("ContinentSelection");
-    drawDesign();
+    const std::vector<RulesetStartCard> &startCards = chosenRulesetDefinition().startCards;
+    static const std::vector<std::string> ContinentCardPrefixes = {
+        "ContinentSelectionEnroth", "ContinentSelectionAntagarich", "ContinentSelectionJadame"};
+    drawDesign(startCards.empty() ? std::vector<std::string>() : ContinentCardPrefixes);
     drawRulesetSwitch();
     std::string chosenContinent;
-    for (const std::string key : {"enroth", "antagarich", "jadame"})
+    if (!startCards.empty())
     {
-        std::string name = key;
-        name[0] = char(std::toupper(name[0]));
-        const std::string prefix = "ContinentSelection" + name;
-        const bool available = findNewGameContinent(m_pGameData->mergedCharacterSelectionTable(), key) != nullptr;
-        const Rect rect = designRect(prefix + "Button");
-        if (button(prefix, rect, "", "world_card", available, available && pointerInside(rect)))
+        chosenContinent = drawStartCards(startCards);
+    }
+    else
+    {
+        for (const std::string key : {"enroth", "antagarich", "jadame"})
         {
-            chosenContinent = key;
+            std::string name = key;
+            name[0] = char(std::toupper(name[0]));
+            const std::string prefix = "ContinentSelection" + name;
+            const bool available =
+                findNewGameContinent(m_pGameData->mergedCharacterSelectionTable(), key) != nullptr;
+            const Rect rect = designRect(prefix + "Button");
+            if (button(prefix, rect, "", "world_card", available, available && pointerInside(rect)))
+            {
+                chosenContinent = key;
+            }
+            // Cards draw their pictures and lettering above their blank selectable skin.
+            const UiLayoutManager::LayoutElement *pImage = m_designLayouts.findElement(prefix + "Illustration");
+            drawTexture(pImage->primaryAsset, designRect(prefix + "Illustration"));
+            label(prefix + "Name", name);
+            label(prefix + "Game", m_designLayouts.findElement(prefix + "Game")->labelText);
+            label(prefix + "Start", m_designLayouts.findElement(prefix + "Start")->labelText);
         }
-        // Cards draw their pictures and lettering above their blank selectable skin.
-        const UiLayoutManager::LayoutElement *pImage = m_designLayouts.findElement(prefix + "Illustration");
-        drawTexture(pImage->primaryAsset, designRect(prefix + "Illustration"));
-        label(prefix + "Name", name);
-        label(prefix + "Game", m_designLayouts.findElement(prefix + "Game")->labelText);
-        label(prefix + "Start", m_designLayouts.findElement(prefix + "Start")->labelText);
     }
     if (action("ContinentSelectionCancelButton") || m_escapePressed)
     {
@@ -2669,6 +2688,60 @@ void NewGameScreen::drawContinentSelection(float deltaSeconds)
     {
         selectContinent(chosenContinent);
     }
+}
+
+std::string NewGameScreen::drawStartCards(const std::vector<RulesetStartCard> &cards)
+{
+    // The cards take the continent cards' look and are centred in their row: one card sits where Antagarich does.
+    const std::string slot = "ContinentSelectionAntagarich";
+    const Rect left = designRect("ContinentSelectionEnrothButton");
+    const Rect right = designRect("ContinentSelectionJadameButton");
+    const Rect middle = designRect(slot + "Button");
+    const float gap = middle.x - (left.x + left.width);
+    const float count = float(cards.size());
+    const float rowWidth = count * middle.width + (count - 1) * gap;
+    const float rowLeft = (left.x + right.x + right.width - rowWidth) / 2;
+    std::string chosen;
+    for (size_t index = 0; index < cards.size(); ++index)
+    {
+        const RulesetStartCard &card = cards[index];
+        const float shift = rowLeft + float(index) * (middle.width + gap) - middle.x;
+        const auto shifted = [this, shift](const std::string &id)
+        {
+            Rect rect = designRect(id);
+            rect.x += shift;
+            return rect;
+        };
+        // Every line spans the title's width: a ruleset's own lines are longer than a continent's.
+        const Rect titleRect = shifted(slot + "Name");
+        const auto text = [this, &shifted, &titleRect](const std::string &id, const std::string &value)
+        {
+            const UiLayoutManager::LayoutElement *pElement = m_designLayouts.findElement(id);
+            if (value.empty() || pElement == nullptr || pElement->fontName.empty())
+            {
+                return;
+            }
+            Rect rect = shifted(id);
+            rect.x = titleRect.x;
+            rect.width = titleRect.width;
+            textInRect(rect, value, pElement->fontName, fontHeight(pElement->fontName) * pElement->textScale,
+                       pElement->textColorAbgr, pElement->textAlignX == UiLayoutManager::TextAlignX::Center);
+        };
+        const std::string id = "start_card_" + card.continentKey;
+        const Rect cardRect = shifted(slot + "Button");
+        if (button(id, cardRect, "", "world_card", true, pointerInside(cardRect)))
+        {
+            chosen = card.continentKey;
+        }
+        if (!card.illustration.empty() && textureSize(card.illustration))
+        {
+            drawTexture(card.illustration, shifted(slot + "Illustration"));
+        }
+        text(slot + "Game", card.subtitle);
+        text(slot + "Name", card.title);
+        text(slot + "Start", card.startText);
+    }
+    return chosen;
 }
 
 void NewGameScreen::drawScreen(float deltaSeconds)
@@ -2703,11 +2776,17 @@ void NewGameScreen::drawScreen(float deltaSeconds)
     }
     m_returnPressed = false;
     m_escapePressed = false;
-    std::string continentKey = m_selectedContinent.key;
-    continentKey[0] = char(std::toupper(continentKey[0]));
-    const UiLayoutManager::LayoutElement *pStart =
-        m_designLayouts.findElement("ContinentSelection" + continentKey + "Start");
-    label("CharacterCreationContinent", m_selectedContinent.name + " - " + pStart->labelText);
+    std::string startText = m_selectedContinent.startText;
+    if (startText.empty() && !m_selectedContinent.key.empty())
+    {
+        std::string continentKey = m_selectedContinent.key;
+        continentKey[0] = char(std::toupper(continentKey[0]));
+        const UiLayoutManager::LayoutElement *pStart =
+            m_designLayouts.findElement("ContinentSelection" + continentKey + "Start");
+        startText = pStart != nullptr ? pStart->labelText : std::string();
+    }
+    label("CharacterCreationContinent",
+          startText.empty() ? m_selectedContinent.name : m_selectedContinent.name + " - " + startText);
     const Rect nameRect = designRect("CharacterCreationNameField");
     if (m_state.nameEditing && (keyPressed(SDL_SCANCODE_TAB) || (leftMouseJustPressed() && !pointerInside(nameRect))))
     {

@@ -17,6 +17,7 @@ add_executable(openyamm_unit_tests
     ContentManifestTests.cpp
     WorldDecorationTests.cpp
     RulesetTests.cpp
+    ProjectMedusaTests.cpp
     QuickItemSlotTests.cpp
     EffectSystemTests.cpp
     EnergyShieldTests.cpp

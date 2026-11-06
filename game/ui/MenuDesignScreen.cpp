@@ -212,7 +212,7 @@ void MenuDesignScreen::scrollViewport(const Rect &viewport, float contentHeight,
                   (interactive && m_scrollDragOffset) || pointerInside(track) ? 0xff90bedau : 0xff6a8dacu);
 }
 
-void MenuDesignScreen::drawDesign()
+void MenuDesignScreen::drawDesign(const std::vector<std::string> &hiddenPrefixes)
 {
     if (m_overGameplay)
     {
@@ -246,7 +246,9 @@ void MenuDesignScreen::drawDesign()
             clipped = clipped || pAncestor->parentId.find("Viewport") != std::string::npos;
             pAncestor = m_designLayouts.findElement(pAncestor->parentId);
         }
-        if (!element.visible || element.interactive || clipped || id.ends_with("Background"))
+        const bool hidden = std::any_of(hiddenPrefixes.begin(), hiddenPrefixes.end(),
+                                        [&id](const std::string &prefix) { return id.starts_with(prefix); });
+        if (!element.visible || element.interactive || clipped || hidden || id.ends_with("Background"))
         {
             continue;
         }

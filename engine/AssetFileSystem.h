@@ -85,6 +85,10 @@ public:
         const InstalledContentOptions &installedContentOptions
     );
     bool switchActiveWorld(const std::string &activeWorldId);
+    // The active ruleset package ("engine/rulesets/<id>"): its icons folder (the engine's icon tier) adds icons after
+    // the declared icon packages, so a ruleset brings its own portraits without replacing any. Empty for none.
+    void setRulesetIconRoot(const std::string &packageRoot);
+    const std::string &getRulesetIconRoot() const;
     bool mountDevelopmentRoot(const std::filesystem::path &assetRoot);
     bool exists(const std::string &virtualPath) const;
     // Returns the selected virtual file path, including its actual scale directory, also inside archives.
@@ -192,6 +196,7 @@ private:
     InstalledContentOptions m_installedContentOptions;
     // Package-owned icon roots override user scale preferences after a content migration.
     std::vector<std::pair<std::string, AssetScaleTier>> m_iconPackages;
+    std::string m_rulesetIconRoot;
     std::vector<SearchMount> m_searchMounts;
     bool m_androidApkAssetRoot;
     std::unique_ptr<LookupCache> m_pLookupCache;
