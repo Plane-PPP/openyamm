@@ -835,6 +835,14 @@ void finishHealthyStart(AppInstallation &installation, const std::string &versio
         return;
     }
 
+    // Offline mod updates retain their previous executable and referenced packs for explicit rollback.
+    // Official numeric releases retain upstream's normal cleanup policy.
+    if (version.starts_with("minotaur-"))
+    {
+        log << "Update: retained previous Minotaur version and content for rollback\n";
+        return;
+    }
+
     installation.forgetPreviousVersion();
     std::error_code error;
 

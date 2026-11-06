@@ -186,7 +186,12 @@ class WindowsInstallerTests(Fixture):
         self.assertEqual(self.current(), manifest['target']['version'])
         self.assertEqual((self.install / 'app/previous').read_text().strip(), self.base['version'])
         self.assertTrue((self.install / 'app' / self.base['version'] / 'openyamm.exe').is_file())
+        backups = list((self.install / 'backups/minotaur').iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / 'settings.ini').read_bytes(), b'player-settings')
+        self.assertEqual((backups[0] / 'saves/precious.oysav').read_bytes(), b'player-progress')
         self.apply(directory)
+        self.assertEqual(len(list((self.install / 'backups/minotaur').iterdir())), 1)
 
     def test_auto_detect_when_unpacked_in_game_root(self):
         manifest, _, directory = self.update()

@@ -1,9 +1,18 @@
 **Русский** | [English](MINOTAUR_REBALANCE.en.md)
 
-> **Актуально на 2026-11-02.** База OpenYAMM v1.20, формат сохранения мода 143 (официальный 142), Lethal Strike имеет ID 49.
+
+## Обновление 1.21 — интеграция
+
+Официальный `c24a0aaa6bb6f7956c84beed1bd44c88e62453c4`; баланс сохранён. Формат mod155/official154,
+исторический mod143 читается как official142. Новый экран показывает врождённый Lethal Strike.
+[Аудит, конфликты и область проверок](research/openyamm-1.21-integration.md).
+Локально: unit258/258,49 850 проверок; runtime7/7,163 проверки. Windows ZIP пока в работе;
+ручная проверка личных сохранений не выполнена.
+
+> **Историческая сводка на 2026-11-02.** База OpenYAMM v1.20, формат сохранения мода 143 (официальный 142), Lethal Strike имеет ID 49.
 > Разделы ниже писались поэтапно, более ранние значения относятся к своей версии. Состояние функций: [ROADMAP](ROADMAP.md).
 
-## Current OpenYAMM1.20 — Windows ZIP packaged
+## Historical OpenYAMM1.20 — Windows ZIP packaged
 
 Official1.20 merged; Minotaur balance unchanged. Reagent/bottle stacks50 retain native multi-cell geometry.
 Only insufficient HD footprints are enlarged, per user approval; icons are never shrunk for stacking.

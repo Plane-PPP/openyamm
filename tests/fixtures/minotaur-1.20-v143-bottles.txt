@@ -1,0 +1,8 @@
+Frozen genuine previous-production writer fixture, captured 2026-11-06.
+Writer: build/tests/openyamm_unit_tests, before merging v1.21, mod143/upstream142.
+Source game code: c80ebaa9634d23faa9f389d662fcd03daa482326 (1.20 production); later test-only changes.
+Capture: old Bottle stacks old v140 saves load unchanged and bottle splits bags sorting value round trip test,
+ptrace pauses immediately before its temporary-save unlink; payload is unchanged old writer output.
+9346 bytes; SHA256 fa4ab7f14c4cbbb961e5b95d60f1ac088c5090bb81c3334668c5635881c71c60.
+Contains 50 empty bottles split between inventory and stored bag; older fixture world state retained.
+Not a private player campaign save. No header relabelling or new-writer backdating.

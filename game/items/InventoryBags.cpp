@@ -63,14 +63,40 @@ bool reachableBag(int bag, int bagCount)
     return bag >= 0 && bag < std::max(1, bagCount);
 }
 
-// The items of the open bag, or of every bag.
-std::vector<InventoryItem> bagItems(const Character &character, bool allBags, int bagCount)
+// The `bagCount` bags from `firstBag` that a sort of every bag covers: all of them, or with several tabs (a party of
+// one) the open bag's tab.
+struct BagRange
+{
+    int firstBag = 0;
+    int bagCount = 1;
+
+    bool contains(int bag) const
+    {
+        return bag >= firstBag && bag < firstBag + bagCount;
+    }
+};
+
+BagRange sortedBagRange(const Character &character, int bagCount)
+{
+    const int count = std::max(1, bagCount);
+
+    if (count <= InventoryBags::TabBags)
+    {
+        return {0, count};
+    }
+
+    const int first = InventoryBags::tabFirstBag(character.rulesetState.currentBag);
+    return {first, std::clamp(count - first, 1, InventoryBags::TabBags)};
+}
+
+// The items of the open bag, or of every bag in the range.
+std::vector<InventoryItem> bagItems(const Character &character, bool allBags, const BagRange &range)
 {
     std::vector<InventoryItem> items = character.inventory;
 
     for (const auto &[bag, stored] : character.rulesetState.storedBags)
     {
-        if (allBags && reachableBag(bag, bagCount))
+        if (allBags && range.contains(bag))
         {
             items.insert(items.end(), stored.begin(), stored.end());
         }
@@ -182,17 +208,18 @@ std::vector<InventoryItem> packIntoBags(
 // first bag of its order with room (pickups route by the tags the same way, placeInTaggedBag).
 std::vector<InventoryItem> packIntoTaggedBags(
     const std::vector<InventoryItem> &items,
-    int bagCount,
+    const BagRange &range,
     const Character &character,
     const std::function<std::optional<BagTag>(const InventoryItem &)> &bagTagOf,
     std::vector<std::vector<InventoryItem>> &bags)
 {
-    const int count = std::max(1, bagCount);
-    const auto tagOfBag = [&character](int bag) -> std::optional<BagTag>
+    const int count = std::max(1, range.bagCount);
+    // Packed bag `bag` is the range's bag firstBag + bag.
+    const auto tagOfBag = [&character, &range](int bag) -> std::optional<BagTag>
     {
         for (const BagTag tag : {BagTag::Crafting, BagTag::Alchemy})
         {
-            if (InventoryBags::hasTag(character, uint8_t(bag), tag))
+            if (InventoryBags::hasTag(character, uint8_t(range.firstBag + bag), tag))
             {
                 return tag;
             }
@@ -264,9 +291,9 @@ std::vector<InventoryItem> packIntoTaggedBags(
     return leftovers;
 }
 
-// Puts packed bags back: the first is the open bag when only it was sorted; else packed bag i is bag i, the same one
-// open.
-void storeBags(Character &character, std::vector<std::vector<InventoryItem>> bags, bool allBags, int bagCount)
+// Puts packed bags back: the first is the open bag when only it was sorted; else packed bag i is the range's bag
+// firstBag + i, the same one open.
+void storeBags(Character &character, std::vector<std::vector<InventoryItem>> bags, bool allBags, const BagRange &range)
 {
     CharacterRulesetState &state = character.rulesetState;
 
@@ -277,15 +304,15 @@ void storeBags(Character &character, std::vector<std::vector<InventoryItem>> bag
     }
 
     std::erase_if(state.storedBags,
-        [bagCount](const auto &entry)
+        [&range](const auto &entry)
         {
-            return reachableBag(entry.first, bagCount);
+            return range.contains(entry.first);
         });
     character.inventory.clear();
 
     for (size_t index = 0; index < bags.size(); ++index)
     {
-        const uint8_t bag = uint8_t(index);
+        const uint8_t bag = uint8_t(range.firstBag + int(index));
 
         if (bag == state.currentBag)
         {
@@ -330,16 +357,17 @@ bool openBag(Character &character, uint8_t bag, int bagCount)
 
 bool sortAllBags(Character &character, int bagCount, const ItemTable *pItemTable)
 {
-    std::vector<InventoryItem> items = bagItems(character, true, bagCount);
+    const BagRange range = {0, std::max(1, bagCount)};
+    std::vector<InventoryItem> items = bagItems(character, true, range);
     sortByMawOrder(items, pItemTable);
     std::vector<std::vector<InventoryItem>> bags;
 
-    if (!packIntoBags(items, std::max(1, bagCount), bags).empty())
+    if (!packIntoBags(items, range.bagCount, bags).empty())
     {
         return false;
     }
 
-    storeBags(character, std::move(bags), true, bagCount);
+    storeBags(character, std::move(bags), true, range);
     return true;
 }
 
@@ -353,7 +381,6 @@ bool sortPartyBags(
     const std::function<std::optional<BagTag>(const InventoryItem &)> &bagTagOf)
 {
     const ItemTable *pItemTable = party.itemTable();
-    const int bags = allBags ? std::max(1, bagCount) : 1;
     std::vector<size_t> sorted = members;
 
     if (alchemist && std::find(sorted.begin(), sorted.end(), *alchemist) == sorted.end())
@@ -374,7 +401,7 @@ bool sortPartyBags(
             return false;
         }
 
-        for (const InventoryItem &item : bagItems(*pMember, allBags, bagCount))
+        for (const InventoryItem &item : bagItems(*pMember, allBags, sortedBagRange(*pMember, bagCount)))
         {
             if (alchemist && alchemyRank(item))
             {
@@ -396,8 +423,10 @@ bool sortPartyBags(
     // Sorting every bag honours the member's bag tags; the open bag alone has nowhere else to send an item.
     const auto packMember = [&](size_t memberIndex, const std::vector<InventoryItem> &items)
     {
-        return allBags ? packIntoTaggedBags(items, bags, *party.member(memberIndex), bagTagOf, packed[memberIndex])
-                       : packIntoBags(items, bags, packed[memberIndex]);
+        const Character &member = *party.member(memberIndex);
+        return allBags
+            ? packIntoTaggedBags(items, sortedBagRange(member, bagCount), member, bagTagOf, packed[memberIndex])
+            : packIntoBags(items, 1, packed[memberIndex]);
     };
 
     if (alchemist)
@@ -455,7 +484,8 @@ bool sortPartyBags(
 
     for (const size_t memberIndex : sorted)
     {
-        storeBags(*party.member(memberIndex), std::move(packed[memberIndex]), allBags, bagCount);
+        Character &member = *party.member(memberIndex);
+        storeBags(member, std::move(packed[memberIndex]), allBags, sortedBagRange(member, bagCount));
     }
 
     return true;
@@ -556,7 +586,7 @@ size_t restoreDefinitionGeometry(Character &character, const ItemTable *pItemTab
     if (!overflow.empty())
     {
         // Native rules use at most25 bags.255 is never an open bag, even while importing an older bag count.
-        auto &stored = character.rulesetState.storedBags[UINT8_MAX];
+        auto &stored = character.rulesetState.storedBags[OverflowBag];
         stored.insert(stored.end(), overflow.begin(), overflow.end());
     }
     return overflow.size();
@@ -647,10 +677,10 @@ size_t fitIntoBagCount(Party &party, int bagCount)
             placed = memberIndex != owner && place(memberIndex, item);
         }
 
-        // What fits nowhere waits past the last bag for takeOverflow.
+        // What fits nowhere waits for takeOverflow.
         if (!placed)
         {
-            party.member(owner)->rulesetState.storedBags[uint8_t(bags)].push_back(item);
+            party.member(owner)->rulesetState.storedBags[InventoryBags::OverflowBag].push_back(item);
             ++left;
         }
     }
@@ -658,20 +688,15 @@ size_t fitIntoBagCount(Party &party, int bagCount)
     return left;
 }
 
-std::vector<InventoryItem> takeOverflow(Character &character, int bagCount)
+std::vector<InventoryItem> takeOverflow(Character &character)
 {
     std::vector<InventoryItem> items;
+    const auto overflow = character.rulesetState.storedBags.find(OverflowBag);
 
-    for (auto entry = character.rulesetState.storedBags.begin(); entry != character.rulesetState.storedBags.end();)
+    if (overflow != character.rulesetState.storedBags.end())
     {
-        if (reachableBag(entry->first, bagCount))
-        {
-            ++entry;
-            continue;
-        }
-
-        items.insert(items.end(), entry->second.begin(), entry->second.end());
-        entry = character.rulesetState.storedBags.erase(entry);
+        items = std::move(overflow->second);
+        character.rulesetState.storedBags.erase(overflow);
     }
 
     return items;

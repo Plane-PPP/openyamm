@@ -301,15 +301,15 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
     const std::optional<uint32_t> heldReagentResult = reagentSettingTable.resultItemIdForReagent(heldItemId);
     const std::optional<uint32_t> targetReagentResult = reagentSettingTable.resultItemIdForReagent(targetItemId);
     const auto mixReagentIntoBottle =
-        [&targetItem, alchemyLevel, alchemyMastery](
+        [alchemyLevel, alchemyMastery](InventoryItem &bottle,
             uint32_t resultItemId, const ItemDefinition &reagentDefinition, const InventoryItem &reagent)
         {
             const uint32_t power = alchemyLevel
                 + uint32_t(std::max(0,
                     boundGameRules().potions.reagentPower(reagentDefinition, reagent, alchemyMastery, alchemyLevel)));
-            targetItem.objectDescriptionId = resultItemId;
-            targetItem.standardEnchantPower = static_cast<uint16_t>(std::min<uint32_t>(0xFFFFu, power));
-            targetItem.identified = true;
+            bottle.objectDescriptionId = resultItemId;
+            bottle.standardEnchantPower = static_cast<uint16_t>(std::min<uint32_t>(0xFFFFu, power));
+            bottle.identified = true;
 
             InventoryItemMixResult result = {};
             result.handled = true;
@@ -327,15 +327,23 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
     {
         const InventoryItem original = targetItem;
         const InventoryItem reagent = heldIsReagent ? heldItem : original;
-        InventoryItemMixResult result = mixReagentIntoBottle(
+        InventoryItem potion = heldIsReagent ? original : heldItem;
+        InventoryItemMixResult result = mixReagentIntoBottle(potion,
             heldIsReagent ? *heldReagentResult : *targetReagentResult,
             heldIsReagent ? *pHeldDefinition : *pTargetDefinition, reagent);
-        InventoryItem potion = targetItem;
         potion.quantity = 1;
         if (const ItemDefinition *pPotion = itemTable.get(potion.objectDescriptionId))
         {
             potion.width = pPotion->inventoryWidth;
             potion.height = pPotion->inventoryHeight;
+        }
+        // Preserve upstream's hand result for a single held bottle: the reagent slot may be too small.
+        if (targetIsReagent && original.quantity == 1 && heldItem.quantity == 1)
+        {
+            result.targetItemChanged = false;
+            result.targetItemRemoved = true;
+            result.heldItemReplacement = potion;
+            return result;
         }
         targetItem = potion;
         if (heldItem.quantity > 1)
@@ -481,7 +489,8 @@ InventoryItemMixResult InventoryItemMixingRuntime::tryApplyHeldItemToInventoryIt
             const uint8_t x = pTargetItem->gridX;
             const uint8_t y = pTargetItem->gridY;
             candidate.takeInventoryItemAt(x, y, removed);
-            bool placed = candidate.addInventoryItemAt(targetAfter, x, y, &itemTable)
+            bool placed = result.targetItemRemoved
+                || candidate.addInventoryItemAt(targetAfter, x, y, &itemTable)
                 || candidate.addInventoryItem(targetAfter, &itemTable);
             if (!placed && !result.heldItemReplacement && !result.producedItem)
             {

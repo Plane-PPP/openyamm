@@ -61,6 +61,8 @@ for normal builds.
 - `saves/`, `settings.ini`, logs and other player files are outside the payload and are not replaced.
 - Root BUILD-REVISION.txt is managed release metadata; it is refreshed after activation. Release notes are in
   the patch folder. The old root launcher starts the new app; the new app updates the launcher after becoming healthy.
-- The existing upstream rollback is available until the first healthy launch. After that the engine prunes previous
-  app versions and unused packs. This is not a promise of backwards-compatible saves or permanent rollback.
+- Before switching, the installer copies saves and settings.ini into backups/minotaur/<old-version>-<unique-id>.
+  Minotaur healthy starts retain previous app versions, packs and app/previous. Official releases keep their cleanup.
+  To roll back, close the game, copy the previous version name into app/current and restore the pre-update save copy.
+  New-format saves are not promised readable by the old executable.
 - No manual Windows gameplay claim follows from filesystem installer tests.

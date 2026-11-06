@@ -116,3 +116,6 @@ Topic Id	Notes	NPC Id	Autonote Id	NPC	A	NPC	A
 414	Expert Learning	587	307	548	307	190	203
 415	Master Learning	549	385	191	204
 416	Grand Master Learning 	550	386	192	205
+29000	Expert Lethal Strike	184	176
+29001	Master Lethal Strike	131	108
+29002	Grandmaster Lethal Strike	117	100

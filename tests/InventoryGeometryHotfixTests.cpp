@@ -155,7 +155,7 @@ TEST_CASE("Inventory hotfix legacy collisions repack only affected bags and pres
     CHECK(InventoryBags::restoreDefinitionGeometry(legacy, &table(), 1) == 0);
     CHECK(legacy.inventory == inventory);
     CHECK(legacy.rulesetState.storedBags == stored);
-    const auto recovered = InventoryBags::takeOverflow(legacy, 1);
+    const auto recovered = InventoryBags::takeOverflow(legacy);
     CHECK(recovered.size() == 70);
     for (const auto &item : recovered)
     {
@@ -168,7 +168,7 @@ TEST_CASE("Inventory hotfix legacy collisions repack only affected bags and pres
 TEST_CASE("Inventory hotfix genuine old mod saves summarize restore and round trip under the new schema")
 {
     for (const char *name : {"minotaur-1.14-v132.oysav", "minotaur-1.18-v140-stacks.oysav",
-             "minotaur-1.18-v140-bottles.oysav"})
+             "minotaur-1.18-v140-bottles.oysav", "minotaur-1.20-v143-bottles.oysav"})
     {
         std::string error;
         const auto path = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures" / name;
@@ -199,10 +199,38 @@ TEST_CASE("Inventory hotfix genuine old mod saves summarize restore and round tr
         REQUIRE_MESSAGE(saveGameDataToPath(next, *old, error), error);
         auto loaded = loadGameDataFromPath(next, error);
         REQUIRE_MESSAGE(loaded, error);
-        CHECK(loaded->sourceSaveVersion == 142);
+        CHECK(loaded->sourceSaveVersion == 154);
         CHECK(loaded->party.members[0].inventory == old->party.members[0].inventory);
         CHECK(loaded->party.members[0].rulesetState.storedBags == old->party.members[0].rulesetState.storedBags);
         CHECK(loaded->party.questBits == old->party.questBits);
+        CHECK(loaded->party.members.size() == old->party.members.size());
+        for (size_t i = 0; i < old->party.members.size(); ++i)
+        {
+            const auto &before = old->party.members[i];
+            const auto &after = loaded->party.members[i];
+            CHECK(after.name == before.name);
+            CHECK(after.className == before.className);
+            CHECK(after.level == before.level);
+            CHECK(after.experience == before.experience);
+            CHECK(after.health == before.health);
+            CHECK(after.spellPoints == before.spellPoints);
+            CHECK(after.equipment == before.equipment);
+            CHECK(after.knownSpellIds == before.knownSpellIds);
+            REQUIRE(after.skills.size() == before.skills.size());
+            for (const auto &[name, skill] : before.skills)
+            {
+                const auto *restored = after.findSkill(name);
+                REQUIRE(restored);
+                CHECK(restored->level == skill.level);
+                CHECK(restored->mastery == skill.mastery);
+            }
+            CHECK(after.inventory == before.inventory);
+        }
+        CHECK(loaded->party.gold == old->party.gold);
+        CHECK(loaded->party.autonotes == old->party.autonotes);
+        CHECK(loaded->savedGameMinutes == old->savedGameMinutes);
+        CHECK(loaded->outdoorWorldStates.size() == old->outdoorWorldStates.size());
+        CHECK(loaded->indoorSceneStates.size() == old->indoorSceneStates.size());
         CHECK(loaded->mapFileName == old->mapFileName);
         CHECK(loaded->cameraYawRadians == old->cameraYawRadians);
         const auto newSummary = loadGameSaveSummaryFromPath(next, error);
@@ -287,7 +315,7 @@ TEST_CASE("Inventory hotfix overflow is serialized and restored before a world c
     CHECK(restored.hasQuestBit(1234));
     CHECK(loaded->savedGameMinutes == 12345);
     CHECK(loaded->cameraYawRadians == 1.25f);
-    CHECK(InventoryBags::takeOverflow(*restored.member(0), 1).size() == 70);
+    CHECK(InventoryBags::takeOverflow(*restored.member(0)).size() == 70);
     std::filesystem::remove(path);
 }
 

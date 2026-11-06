@@ -296,6 +296,16 @@ try {
         $marker = Safe-Path $targetPath $name
         if (Test-Path -LiteralPath $marker) { Remove-Item -LiteralPath $marker -Force }
     }
+    # Complete a separate user-data backup before switching the active executable. Originals stay untouched.
+    $backupPath = Safe-Path $InstallationRoot ('backups/minotaur/' + $current + '-' + [guid]::NewGuid().ToString('N'))
+    [void][IO.Directory]::CreateDirectory($backupPath)
+    foreach ($name in @('saves','settings.ini')) {
+        $source = Safe-Path $InstallationRoot $name
+        if (Test-Path -LiteralPath $source) {
+            Copy-Item -LiteralPath $source -Destination (Join-Path $backupPath $name) -Recurse -ErrorAction Stop
+        }
+    }
+    Write-Host ('Резервная копия сохранений и настроек: ' + $backupPath)
     Atomic-Text (Safe-Path $InstallationRoot 'app/previous') ($current + "`n")
     Atomic-Text $currentPath ($patch.target.version + "`n")
     try {

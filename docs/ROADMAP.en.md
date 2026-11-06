@@ -2,7 +2,15 @@
 
 # Minotaur Rebalance — Roadmap
 
-Summary as of 2026-11-02. Base: official OpenYAMM v1.20, last confirmed package
+## 1.21 integration in progress
+
+Official `c24a0aaa6bb6f7956c84beed1bd44c88e62453c4`; balance preserved. Save mod155/official154,
+historical mod143 maps to official142. The new creation sheet shows innate Lethal Strike.
+[Audit, conflicts and verification scope](research/openyamm-1.21-integration.md).
+Local unit258/258,49,850assertions; runtime7/7,163assertions passed. Windows ZIP pending;
+private campaign saves have not been manually tested.
+
+Previous summary as of 2026-11-02. Base: official OpenYAMM v1.20, last confirmed package
 `minotaur-1.20-c80ebaa9634d-25-1`, mod save format 143. The v0.4 + Luck balance has not changed.
 The detailed chronology is kept below under "History". Document index: [docs/README](README.en.md).
 
@@ -30,7 +38,7 @@ The MAW ruleset is out of its scope, and compatibility with it is not required.
 | Tooltips with real stat thresholds and Recovery | Yes | Pending |
 | Levitate protection from water and lava | Yes | Pending |
 | Alchemy and Mind Resistance fixes from upstream | Yes | Pending |
-| Saves: mod 143 reads mods 140, 132, 95, 94, 89 and official formats | Yes | The user's real save on 1.20 is not claimed |
+| Saves: mod 155 reads mod 143 and mods 140, 132, 95, 94, 89 and official formats | Yes | The user's real save on 1.20 is not claimed |
 | ZIP updates and Windows CI | Yes | The user ran the 1.20 package (window glow report); the documents record no separate installation check |
 
 ## In Progress

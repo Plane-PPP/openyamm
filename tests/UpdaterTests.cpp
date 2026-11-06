@@ -832,3 +832,21 @@ TEST_CASE("Minotaur offline channel cannot be replaced by an official signed upd
     }
     std::filesystem::remove_all(root);
 }
+
+TEST_CASE("Minotaur healthy launch retains previous app packs and rollback pointer")
+{
+    const auto root = makeTemporaryRoot();
+    writeFile(root / "app/current", "minotaur-new\n");
+    writeFile(root / "app/previous", "minotaur-old\n");
+    writeFile(root / "app/minotaur-new/index.json", "{}");
+    writeFile(root / "app/minotaur-old/openyamm.exe", "old-executable");
+    writeFile(root / "assets/packs/old.zip", "old-content");
+    AppInstallation installation(root);
+    std::ostringstream log;
+    OpenYAMM::Engine::finishHealthyStart(installation, "minotaur-new", log);
+    CHECK(installation.isHealthy("minotaur-new"));
+    CHECK(installation.previousVersion() == "minotaur-old");
+    CHECK(readFile(root / "app/minotaur-old/openyamm.exe") == "old-executable");
+    CHECK(readFile(root / "assets/packs/old.zip") == "old-content");
+    std::filesystem::remove_all(root);
+}

@@ -2,8 +2,12 @@
 
 #include "game/gameplay/GameMechanics.h"
 #include "game/party/Party.h"
+#include "game/StringUtils.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <tuple>
 
 namespace OpenYAMM::Game
 {
@@ -16,6 +20,11 @@ uint32_t SkillRules::skillRaiseCost(const Character &character, const std::strin
 std::string SkillRules::skillDisplayName(const Character &, const std::string &canonicalSkill) const
 {
     return displaySkillName(canonicalSkill);
+}
+
+std::vector<std::pair<std::string, std::array<uint32_t, 3>>> SkillRules::teacherlessMasteryLadders() const
+{
+    return {};
 }
 
 std::vector<std::string> SkillRules::extraHouseSkills(const std::string &) const
@@ -126,11 +135,95 @@ SkillTooltipText SkillRules::skillTooltip(
     return table;
 }
 
-std::string SkillRules::statTooltip(const Party &party, const Character &character,
-    const std::string &statName, const std::string &table, bool russian) const
+std::string SkillRules::statTooltip(
+    const Party &party,
+    const Character &character,
+    const std::string &statName,
+    const std::string &table, bool russian) const
 {
     const std::string supplement = GameMechanics::buildPrimaryStatInspectSupplement(party, character, statName, russian);
-    return supplement.empty() ? table : table + "\n\n" + supplement;
+    const CharacterSheetSummary sheet = GameMechanics::buildCharacterSheetSummary(character, party.itemTable(),
+        party.standardItemEnchantTable(), party.specialItemEnchantTable());
+    const int luckBonus = GameMechanics::primaryStatBonus(sheet.luck.actual);
+    const auto percentText = [](float share) { return std::to_string(int(std::lround(100.0f * share))) + "%"; };
+    // A monster effect's save adds Luck to the stat bonus or resistance against it.
+    const auto resistText = [&percentText, luckBonus](const std::string &effects, int bonus)
+    {
+        return "\nChance to resist " + effects + ": "
+            + percentText(GameMechanics::monsterEffectResistChance(bonus + luckBonus));
+    };
+    std::string text = table.empty() ? std::string() : table + "\n";
+    // The lines below start with a line break: none before the first without a table text.
+    const auto finish = [](std::string body) { return !body.empty() && body.front() == '\n' ? body.substr(1) : body; };
+
+    // A resistance row: the damage it takes off with Luck, and the monster effects it resists.
+    const std::tuple<const char *, const char *, const CharacterSheetValue *, const char *> resistances[] = {
+        {"FireResistance", "Fire", &sheet.fireResistance, nullptr},
+        {"AirResistance", "Air", &sheet.airResistance, nullptr},
+        {"WaterResistance", "Water", &sheet.waterResistance, nullptr},
+        {"EarthResistance", "Earth", &sheet.earthResistance, "petrification"},
+        {"MindResistance", "Mind", &sheet.mindResistance, "insanity, paralysis and fear"},
+        {"BodyResistance", "Body", &sheet.bodyResistance, "poison and death"},
+    };
+
+    for (const auto &[pRow, pDamage, pValue, pEffects] : resistances)
+    {
+        if (statName != pRow)
+        {
+            continue;
+        }
+
+        if (pValue->infinite)
+        {
+            return finish(text + "\nImmune to " + toLowerCopy(pDamage) + " damage"
+                + (pEffects != nullptr ? std::string(" and to ") + pEffects : std::string()));
+        }
+
+        text += "\n" + std::string(pDamage) + " damage taken: "
+            + percentText(GameMechanics::averageResistedDamageShare(pValue->actual + luckBonus))
+            + " less on average (Luck included)";
+        return finish(pEffects != nullptr ? text + resistText(pEffects, pValue->actual) : text);
+    }
+
+    const std::pair<const char *, int> stats[] = {
+        {"Might", sheet.might.actual},
+        {"Intellect", sheet.intellect.actual},
+        {"Personality", sheet.personality.actual},
+        {"Endurance", sheet.endurance.actual},
+        {"Accuracy", sheet.accuracy.actual},
+        {"Speed", sheet.speed.actual},
+        {"Luck", sheet.luck.actual},
+    };
+    const auto stat = std::find_if(std::begin(stats), std::end(stats),
+        [&statName](const std::pair<const char *, int> &entry) { return statName == entry.first; });
+
+    if (stat == std::end(stats))
+    {
+        return table;
+    }
+
+    // Keep the mod's compact, localized Current/Next inspection and add the new upstream saving-throw facts.
+    text = table.empty() ? supplement : table + "\n\n" + supplement;
+    const int bonus = GameMechanics::primaryStatBonus(stat->second);
+    if (statName == "Intellect" || statName == "Personality")
+    {
+        if (statName == "Personality") text += resistText("curses", bonus);
+        const int manaDrainBonus = (GameMechanics::primaryStatBonus(sheet.intellect.actual)
+            + GameMechanics::primaryStatBonus(sheet.personality.actual)) / 2;
+        text += resistText("mana drain", manaDrainBonus);
+    }
+    else if (statName == "Endurance")
+    {
+        text += resistText("disease, sleep, weakness and aging", bonus);
+    }
+    else if (statName == "Luck")
+    {
+        text += "\nPhysical damage taken: " + percentText(GameMechanics::averageResistedDamageShare(bonus))
+            + " less on average\nAlso improves every resistance and every chance to resist curses, poison, disease and "
+              "other monster effects";
+    }
+
+    return finish(text);
 }
 
 std::string SkillRules::teacherSpeech(
@@ -171,6 +264,16 @@ bool SkillRules::followerSkillBonusesStack() const
     return true;
 }
 
+int SkillRules::followerSkillBonus(uint32_t, const std::string &, int tableBonus) const
+{
+    return tableBonus;
+}
+
+bool SkillRules::followerSkillBonusNeedsSkill(const std::string &) const
+{
+    return false;
+}
+
 std::optional<CharacterStatRowText> SkillRules::statRowText(const Party &, const Character &, const std::string &) const
 {
     return std::nullopt;
@@ -191,6 +294,11 @@ bool SkillRules::compactStatPowerRows() const
 
 std::optional<CharacterResistanceCut> SkillRules::resistanceCut(const Party &, const Character &,
     const std::string &) const
+{
+    return std::nullopt;
+}
+
+std::optional<uint32_t> SkillRules::statLabelRgb(const std::string &) const
 {
     return std::nullopt;
 }

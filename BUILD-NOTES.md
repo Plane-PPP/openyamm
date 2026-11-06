@@ -1,3 +1,14 @@
+# OpenYAMM1.21 integration — checks underway (2026-11-06)
+
+Pre-merge HEAD0c172ed04667abbb504df54dd37a8f9056cdd206; official target
+c24a0aaa6bb6f7956c84beed1bd44c88e62453c4. Baseline minotaur-1.20-c80ebaa9634d-25-1.
+Save155/official154; frozen previous writer143 fixture. Native stack geometry/balance retained.
+New creation sheet exposes innate LS; offline patch backs up saves/settings and retains old executable/packs.
+[Integration matrix, save scope and installation](docs/research/openyamm-1.21-integration.md).
+Linux unit258/258 (49,850assertions),runtime7/7 (163assertions) passed; save fixtures132/140/143 roundtrip.
+Protected mainbuild565.679s,4.682GiBpeak,3.761CPUcores on average,swap0,memoryPSI0,OOM0.
+Windows artifact and exact source SHA will be recorded after actual successful CI; manual playthrough pending.
+
 # Current1.20 integration
 
 Official v1.20:1add1d374848648887c08707199921335b4ba440. Native definition-sized stacks, safe old-layout repair.

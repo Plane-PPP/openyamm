@@ -28,6 +28,7 @@ __pycache__/
 /output/
 /logs/
 /openyamm.log
+/ai_trace.log
 /.codex
 /.codex-log/
 /.openyamm-editor.ini

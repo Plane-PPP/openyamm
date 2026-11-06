@@ -1,3 +1,13 @@
+# OpenYAMM1.21 compatibility integration (2026-11-06)
+
+Implemented; Linux258unit/49,850assertions +7runtime/163assertions passed; Windows pending; not manually tested.
+Merge officialv1.21: new party creation/mastery sheet, quick potion/scroll lists, teacher ledgers,
+AI and indoor rendering changes. Preserve current Minotaur balance, native multi-cell stacks and one-unit brewing.
+Explicit save155→official154 plus prior143→142 mapping and genuine previous-writer fixture.
+Expose fixed innate LS in the new creation sheet. Keep compact Current/Next tooltips plus official resistance facts.
+ZIP installer backs up saves/settings before switching; Minotaur retains previous app and resources for rollback.
+[Audit and verification boundaries](docs/research/openyamm-1.21-integration.md).
+
 # OpenYAMM1.20 / native stack geometry (2026-10-31)
 
 Implemented / Automatically tested on Linux and Windows / ZIP packaged; manual campaign/visual retest pending.
