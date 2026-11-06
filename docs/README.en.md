@@ -9,6 +9,7 @@ Everything in `docs/`, plus `CHANGELOG.md` and `BUILD-NOTES.md`, belongs to the 
 
 | Document | Purpose | Language |
 |---|---|---|
+| [Windows 1.21 update](research/windows-1.21-build.md) | ZIP, base version, save checks, resources and rollback | EN |
 | [ROADMAP](ROADMAP.en.md) | Current state, plans, history | [RU](ROADMAP.md), EN |
 | [Mod description](MINOTAUR_REBALANCE.en.md) | Mechanics, formulas, diagnostics, testing | [RU](MINOTAUR_REBALANCE.md), EN |
 | [Lethal Strike v0.4](design/death-strike.en.md) | The current skill contract | [RU](design/death-strike.md), EN |

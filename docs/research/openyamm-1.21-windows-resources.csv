@@ -1,0 +1,11 @@
+phase,seconds,cpus,jobs,scope,peak_used_bytes,minimum_available_bytes,mean_cpu_percent,peak_cpu_percent,exit_code,reason
+content,159.60704680000026,4,4,whole Windows runner; sampled every second,3297738752,13876621312,18.798335780714634,29.296875,0,completed
+gameplay-tests,5.29471199999989,4,4,whole Windows runner; sampled every second,2818445312,14355914752,34.29203539823009,51.953125,0,completed
+package,6.631005499999901,4,4,whole Windows runner; sampled every second,2953449472,14220910592,17.275943396226417,26.923076923076923,0,completed
+program,956.8044941999999,4,4,whole Windows runner; sampled every second,8403279872,8771080192,92.13154241855148,100.0,0,completed
+unit-build,844.9200942000002,4,4,whole Windows runner; sampled every second,8852123648,8322236416,98.73139158576052,100.0,0,completed
+update-zip,8.039078299999801,4,4,whole Windows runner; sampled every second,4279013376,12895346688,27.62135922330097,33.203125,0,completed
+updater-engine-tests,2.249096500000178,4,4,whole Windows runner; sampled every second,2741841920,14432518144,4.6875,7.8125,0,completed
+upstream-ai-tests,0.38741780000009385,4,4,whole Windows runner; sampled every second,2754723840,14419636224,25.0,25.0,0,completed
+upstream-indoor-tests,12.747616200000266,4,4,whole Windows runner; sampled every second,2856726528,14317633536,35.692401960784316,60.546875,0,completed
+world-tests,0.7141211000002841,4,4,whole Windows runner; sampled every second,2736627712,14437732352,29.444444444444443,29.444444444444443,0,completed

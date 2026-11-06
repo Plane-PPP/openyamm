@@ -2,13 +2,14 @@
 
 # Minotaur Rebalance — Roadmap
 
-## 1.21 integration in progress
+## OpenYAMM 1.21 — Windows ZIP ready
 
 Official `c24a0aaa6bb6f7956c84beed1bd44c88e62453c4`; balance preserved. Save mod155/official154,
 historical mod143 maps to official142. The new creation sheet shows innate Lethal Strike.
 [Audit, conflicts and verification scope](research/openyamm-1.21-integration.md).
-Local unit258/258,49,851assertions; runtime7/7,163assertions passed. Windows ZIP pending;
-private campaign saves have not been manually tested.
+Local unit258/258,49,851assertions; runtime7/7,163assertions passed. Windows CI passed; private campaign saves have not been manually tested.
+Package `minotaur-1.21-c9949bbc7301-28-1`, source `c9949bbc7301240adda39e1503ff2985729d470b`.
+[ZIP, measured resources and installation](research/windows-1.21-build.md).
 
 Previous summary as of 2026-11-02. Base: official OpenYAMM v1.20, last confirmed package
 `minotaur-1.20-c80ebaa9634d-25-1`, mod save format 143. The v0.4 + Luck balance has not changed.

@@ -1,3 +1,18 @@
+# Verified Windows 1.21 ZIP — 2026-11-06
+
+Source c9949bbc7301240adda39e1503ff2985729d470b; official c24a0aaa6bb6f7956c84beed1bd44c88e62453c4.
+Run42215979271 succeeded; package minotaur-1.21-c9949bbc7301-28-1.
+Exact update base: minotaur-1.20-c80ebaa9634d-25-1. Actual next baseline captured only after successful CI.
+Windows/Linux gameplay258cases/49,851assertions, native7/163, AI147/2204 and indoor18/1097 passed.
+Updater15cases:145assertions on Windows,146on Linux. Actual Windows installer17/17; package and monitor checks passed.
+ZIP1,932,865,419bytes (1.80GiB),53changed/113reused packs (3.69GiB reused).
+Windows4vCPU/15.995GiB/jobs4: job45m48s, peakwhole-runner8.244GiB; program15m56.8s, testsbuild14m04.9s.
+[ZIP, checksum, actual verification scope and install/rollback](docs/research/windows-1.21-build.md).
+[Semantic merge/save compatibility/Medusa isolation](docs/research/openyamm-1.21-integration.md).
+Private campaign, GPU/aspect ratios and Android visuals need manual checks; no full-suite claim.
+
+## Earlier integration checkpoints
+
 # OpenYAMM1.21 integration — checks underway (2026-11-06)
 
 Pre-merge HEAD0c172ed04667abbb504df54dd37a8f9056cdd206; official target

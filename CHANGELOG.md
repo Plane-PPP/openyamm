@@ -1,3 +1,15 @@
+# OpenYAMM 1.21 — verified Windows update (2026-11-06)
+
+Implemented / Linux and Windows automatic checks passed / ZIP packaged / manual campaign check pending.
+Minotaur balance and native stack geometry retained. Save155 reads previous mod143 through explicit142 mapping.
+Creation UI displays innate LS; new teacher directory discovers its existing teachers. Brewing uses bottle geometry
+and consumes one from each stack, including singletons. ZIP backs up saves/settings and retains rollback data while
+updating the root launcher. Official1.21 fixes and UI/AI improvements integrated without duplicating earlier hotfixes.
+Source c9949bbc7301240adda39e1503ff2985729d470b, successful run42215979271.
+[ZIP, installation and resource report](docs/research/windows-1.21-build.md).
+
+## Integration checkpoints
+
 # 1.21 launcher follow-up
 
 Retain old mod executables/packs for rollback while still refreshing the root launcher on a healthy start.

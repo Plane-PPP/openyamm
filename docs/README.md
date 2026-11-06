@@ -9,6 +9,7 @@
 
 | Документ | Назначение | Язык |
 |---|---|---|
+| [Windows-патч 1.21](research/windows-1.21-build.md) | ZIP, исходная версия, сейвы, ресурсы и откат | EN |
 | [ROADMAP](ROADMAP.md) | Текущее состояние, планы, история | RU, [EN](ROADMAP.en.md) |
 | [Описание мода](MINOTAUR_REBALANCE.md) | Механики, формулы, диагностика, тестирование | RU, [EN](MINOTAUR_REBALANCE.en.md) |
 | [Lethal Strike v0.4](design/death-strike.md) | Действующий контракт навыка | RU, [EN](design/death-strike.en.md) |
