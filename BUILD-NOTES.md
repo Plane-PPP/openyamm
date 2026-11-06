@@ -5,7 +5,7 @@ c24a0aaa6bb6f7956c84beed1bd44c88e62453c4. Baseline minotaur-1.20-c80ebaa9634d-25
 Save155/official154; frozen previous writer143 fixture. Native stack geometry/balance retained.
 New creation sheet exposes innate LS; offline patch backs up saves/settings and retains old executable/packs.
 [Integration matrix, save scope and installation](docs/research/openyamm-1.21-integration.md).
-Linux unit258/258 (49,850assertions),runtime7/7 (163assertions) passed; save fixtures132/140/143 roundtrip.
+Linux unit258/258 (49,851assertions),runtime7/7 (163assertions) passed; save fixtures132/140/143 roundtrip.
 Protected mainbuild565.679s,4.682GiBpeak,3.761CPUcores on average,swap0,memoryPSI0,OOM0.
 Windows artifact and exact source SHA will be recorded after actual successful CI; manual playthrough pending.
 

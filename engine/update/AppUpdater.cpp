@@ -835,53 +835,54 @@ void finishHealthyStart(AppInstallation &installation, const std::string &versio
         return;
     }
 
-    // Offline mod updates retain their previous executable and referenced packs for explicit rollback.
-    // Official numeric releases retain upstream's normal cleanup policy.
-    if (version.starts_with("minotaur-"))
+    const bool retainPrevious = version.starts_with("minotaur-");
+    std::error_code error;
+    if (retainPrevious)
     {
         log << "Update: retained previous Minotaur version and content for rollback\n";
-        return;
     }
-
-    installation.forgetPreviousVersion();
-    std::error_code error;
-
-    for (const std::string &other : installation.otherVersions())
+    else
     {
-        std::filesystem::remove_all(installation.appDirectory(other), error);
-        log << "Update: removed version " << other << '\n';
-    }
+        installation.forgetPreviousVersion();
 
-    std::string indexError;
-    const std::optional<AssetPackIndex> index =
-        loadAssetPackIndex(installation.appDirectory(version) / AssetPackIndexFileName, indexError);
-
-    if (index)
-    {
-        std::unordered_set<std::string> referenced;
-
-        for (const AssetPackRecord &pack : index->packs)
+        for (const std::string &other : installation.otherVersions())
         {
-            referenced.insert(pack.file);
+            std::filesystem::remove_all(installation.appDirectory(other), error);
+            log << "Update: removed version " << other << '\n';
         }
 
-        size_t removed = 0;
+        std::string indexError;
+        const std::optional<AssetPackIndex> index =
+            loadAssetPackIndex(installation.appDirectory(version) / AssetPackIndexFileName, indexError);
 
-        for (const std::filesystem::directory_entry &entry :
-             std::filesystem::directory_iterator(installation.packStore(), error))
+        if (index)
         {
-            const std::string name = entry.path().filename().string();
+            std::unordered_set<std::string> referenced;
 
-            if (entry.is_regular_file(error) && entry.path().extension() == ".zip" && !referenced.contains(name))
+            for (const AssetPackRecord &pack : index->packs)
             {
-                removed += std::filesystem::remove(entry.path(), error) ? 1 : 0;
+                referenced.insert(pack.file);
+            }
+
+            size_t removed = 0;
+
+            for (const std::filesystem::directory_entry &entry :
+                 std::filesystem::directory_iterator(installation.packStore(), error))
+            {
+                const std::string name = entry.path().filename().string();
+
+                if (entry.is_regular_file(error) && entry.path().extension() == ".zip" && !referenced.contains(name))
+                {
+                    removed += std::filesystem::remove(entry.path(), error) ? 1 : 0;
+                }
+            }
+
+            if (removed > 0)
+            {
+                log << "Update: removed " << removed << " content packs no version uses\n";
             }
         }
 
-        if (removed > 0)
-        {
-            log << "Update: removed " << removed << " content packs no version uses\n";
-        }
     }
 
     const std::filesystem::path launcher = installation.appDirectory(version) / LauncherCopyName;
@@ -903,6 +904,9 @@ void finishHealthyStart(AppInstallation &installation, const std::string &versio
             << '\n';
     }
 
-    removeLegacyRelease(installation, log);
+    if (!retainPrevious)
+    {
+        removeLegacyRelease(installation, log);
+    }
 }
 }

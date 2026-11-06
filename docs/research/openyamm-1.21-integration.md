@@ -80,3 +80,31 @@ share their already existing teacher location/discovery autonotes176/108/100. No
 Local source asset restoration initially fetched per file; stopped own runner normally (exit130, no pressure) and
 replaced with a batch of canonical upstream blobs. This is fixture preparation, not a gameplay fallback.
 New upstream saving-throw/resistance supplemental text remains English; compact mod stat inspection is RU/EN.
+
+
+## Published source and CI
+
+Merge source:8ee68e726b190564e9f33aaeb948497a34165463; both parents0c172ed and officialc24a0aa.
+[Windows run42209078766](https://github.com/Plane-PPP/openyamm/actions/runs/42209078766), attempt1,
+version minotaur-1.21-8ee68e726b19-27-1. Build still in progress; no artifact success claimed yet.
+Windows PowerShell5.1 job succeeded:17/17installer/planner tests, package-validator regression,
+3/3resource-monitor tests. This exercises actual backup and repeated installation on disposable Windows fixtures.
+Separate Linux updater coverage:15/15cases,145assertions; Python7passed,10Windows-onlyskipped there.
+The broad Linux updater wildcard initially selected an unrelated missing-MM6-map test; the final run uses
+`--source-file='*UpdaterTests.cpp'`. Canonical public keys restored before checking manifest-key consistency.
+Four preexisting research documents remain unchanged and uncommitted. Medusa head advanced independently under
+Claude from0c172ed to2c1ae605467a08af411e4f5a424a1fe37b34a11c; no Codex writes/ref updates there.
+
+
+Follow-up before final packaging: initial retention early-return also skipped root launcher refresh. Restrict the
+retention guard to obsolete app/pack/legacy-data cleanup, preserve the shared launcher refresh path, and assert both
+retained rollback data AND new root launcher bytes. First CI source8ee68e7 is superseded by this tested follow-up.
+Additional world-unit coverage:147/147,2204assertions. Optional18native MM6detection/flying/faction tests initially
+failed on missing sparse MM6map binaries, not gameplay assertions; not counted as passing pending fixture restoration.
+
+
+Final follow-up local checks:258unit/49,851assertions;7runtime/163;15updater/146;
+147AI/path/bolster/stats units/2204assertions and18indoor detection/flying/faction native cases/1097assertions.
+The missing MM6map fixtures were restored from canonical Git objects; all18now pass (no test weakened).
+Windows workflow now runs the same extra updater, AI and indoor source-file sets. Independent read-only review
+accepted the launcher follow-up. First run42209078766 succeeded but is superseded; use the follow-up source artifact.

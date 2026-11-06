@@ -841,10 +841,13 @@ TEST_CASE("Minotaur healthy launch retains previous app packs and rollback point
     writeFile(root / "app/minotaur-new/index.json", "{}");
     writeFile(root / "app/minotaur-old/openyamm.exe", "old-executable");
     writeFile(root / "assets/packs/old.zip", "old-content");
+    writeFile(root / LauncherExecutableName, "old-launcher");
+    writeFile(root / "app/minotaur-new" / LauncherCopyName, "new-launcher");
     AppInstallation installation(root);
     std::ostringstream log;
     OpenYAMM::Engine::finishHealthyStart(installation, "minotaur-new", log);
     CHECK(installation.isHealthy("minotaur-new"));
+    CHECK(readFile(installation.launcherPath()) == "new-launcher");
     CHECK(installation.previousVersion() == "minotaur-old");
     CHECK(readFile(root / "app/minotaur-old/openyamm.exe") == "old-executable");
     CHECK(readFile(root / "assets/packs/old.zip") == "old-content");

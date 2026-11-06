@@ -1,6 +1,12 @@
+# 1.21 launcher follow-up
+
+Retain old mod executables/packs for rollback while still refreshing the root launcher on a healthy start.
+Regression checks both behaviors; official numeric-release cleanup stays unchanged. Added Windows coverage of
+all updater-engine tests and targeted upstream AI/indoor tests. Final Linux results recorded in the integration report.
+
 # OpenYAMM1.21 compatibility integration (2026-11-06)
 
-Implemented; Linux258unit/49,850assertions +7runtime/163assertions passed; Windows pending; not manually tested.
+Implemented; Linux258unit/49,851assertions +7runtime/163assertions passed; Windows pending; not manually tested.
 Merge officialv1.21: new party creation/mastery sheet, quick potion/scroll lists, teacher ledgers,
 AI and indoor rendering changes. Preserve current Minotaur balance, native multi-cell stacks and one-unit brewing.
 Explicit save155→official154 plus prior143→142 mapping and genuine previous-writer fixture.

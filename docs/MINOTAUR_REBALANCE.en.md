@@ -6,7 +6,7 @@
 Official `c24a0aaa6bb6f7956c84beed1bd44c88e62453c4`; balance preserved. Save mod155/official154,
 historical mod143 maps to official142. The new creation sheet shows innate Lethal Strike.
 [Audit, conflicts and verification scope](research/openyamm-1.21-integration.md).
-Local unit258/258,49,850assertions; runtime7/7,163assertions passed. Windows ZIP pending;
+Local unit258/258,49,851assertions; runtime7/7,163assertions passed. Windows ZIP pending;
 private campaign saves have not been manually tested.
 
 > **Previous summary as of 2026-11-02.** Base OpenYAMM v1.20, mod save format 143 (official 142), Lethal Strike has ID 49.

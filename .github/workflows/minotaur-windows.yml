@@ -201,6 +201,12 @@ jobs:
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inventory hotfix*,Bottle stacks*,Inspect *,*potion*,*bag*,technology skills are appended*,*summary*,*summaries*,*history*,item search*,*steal*,*creation*,*quick item*,*party item*,*teacher*,*trainer*,*completion*,*basebar*,*carried*,*world completion*,resistance and monster effect*,*lich immunit*,*Lich*immun*,*condition immun*,undead and vampires*' --test-case-exclude='MM9*,*MM9 RUDE*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*,Inventory hotfix*,*steal*'
 
+      - name: Test official updater and upstream world regressions
+        run: |
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase updater-engine-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*UpdaterTests.cpp'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase upstream-ai-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*GameplayActorAiSystemTests.cpp,*ActorPathRuntimeTests.cpp,*GameplayBolsterRuntimeTests.cpp,*CharacterSheetRegressionTests.cpp' --test-case-exclude='*MM9*'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase upstream-indoor-tests -- build-windows/tests/openyamm_runtime_tests.exe --source-file='*IndoorActorFlyingRuntimeTests.cpp,*IndoorActorDetectionRuntimeTests.cpp,*IndoorActorFactionRuntimeTests.cpp'
+
       - name: Prepare indexed content (not included in unchanged update payloads)
         run: >-
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content --
