@@ -53,7 +53,8 @@ The publication runner downloaded the **complete original ZIP**, checked its siz
 unchanged to a draft, verified all four release asset sizes/digests, and only then published the release.
 The release tag points to executable source `c9949bbc7301240adda39e1503ff2985729d470b`.
 The ZIP, `SHA256SUMS.txt`, update report and baseline are persistent Release attachments.
-The mod was not rebuilt. Medusa's release and the repository's Latest selection were not changed.
+The mod was not rebuilt. Medusa's release was not edited. Publication requests `make_latest=false`;
+GitHub's latest-stable lookup can still select Minotaur when the other release is a prerelease.
 The first publication attempt left a draft because GitHub's by-tag REST lookup excludes drafts; ID-based verification
 completed the same draft successfully in the workflow linked above.
 
