@@ -1793,5 +1793,7 @@ void DebugConsole::renderHelpText() const
     ImGui::BulletText("gold get|add|set <amount>");
     ImGui::BulletText("food get|add|set <amount>");
     ImGui::BulletText("tp <x> <y> <z>");
+    ImGui::BulletText("face list | face <name|id> [member|all]");
+    ImGui::BulletText("condition set|clear|show <name> [member|all]");
 }
 }

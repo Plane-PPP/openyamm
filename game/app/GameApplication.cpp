@@ -1542,6 +1542,94 @@ std::string trimCopy(std::string_view value)
     return std::string(value.substr(first, last - first));
 }
 
+constexpr std::array<std::pair<std::string_view, CharacterCondition>, 18> DebugConditionNames = {{
+    {"cursed", CharacterCondition::Cursed},
+    {"weak", CharacterCondition::Weak},
+    {"asleep", CharacterCondition::Asleep},
+    {"fear", CharacterCondition::Fear},
+    {"drunk", CharacterCondition::Drunk},
+    {"insane", CharacterCondition::Insane},
+    {"poisonweak", CharacterCondition::PoisonWeak},
+    {"diseaseweak", CharacterCondition::DiseaseWeak},
+    {"poisonmedium", CharacterCondition::PoisonMedium},
+    {"diseasemedium", CharacterCondition::DiseaseMedium},
+    {"poisonsevere", CharacterCondition::PoisonSevere},
+    {"diseasesevere", CharacterCondition::DiseaseSevere},
+    {"paralyzed", CharacterCondition::Paralyzed},
+    {"unconscious", CharacterCondition::Unconscious},
+    {"dead", CharacterCondition::Dead},
+    {"petrified", CharacterCondition::Petrified},
+    {"eradicated", CharacterCondition::Eradicated},
+    {"zombie", CharacterCondition::Zombie},
+}};
+
+std::optional<CharacterCondition> debugConditionFromName(const std::string &name)
+{
+    const std::string lowered = toLowerCopy(name);
+
+    // Short names of the portrait frames: Sleep (04), Poisoned (08), Diseased (09), Stoned (12).
+    if (lowered == "sleep")
+    {
+        return CharacterCondition::Asleep;
+    }
+
+    if (lowered == "poisoned" || lowered == "poison")
+    {
+        return CharacterCondition::PoisonWeak;
+    }
+
+    if (lowered == "diseased" || lowered == "disease")
+    {
+        return CharacterCondition::DiseaseWeak;
+    }
+
+    if (lowered == "stoned" || lowered == "stone")
+    {
+        return CharacterCondition::Petrified;
+    }
+
+    for (const auto &[entryName, condition] : DebugConditionNames)
+    {
+        if (entryName == lowered)
+        {
+            return condition;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::string debugConditionName(CharacterCondition condition)
+{
+    for (const auto &[entryName, entryCondition] : DebugConditionNames)
+    {
+        if (entryCondition == condition)
+        {
+            return std::string(entryName);
+        }
+    }
+
+    return "unknown";
+}
+
+std::string debugConditionNameList()
+{
+    std::string text;
+
+    for (const auto &[entryName, condition] : DebugConditionNames)
+    {
+        text += (text.empty() ? "" : " ") + std::string(entryName);
+    }
+
+    return text;
+}
+
+// Party members named by a console argument: absent = the active member, "all", or 1..party size.
+std::optional<std::vector<size_t>> debugTargetMemberIndices(
+    const Party &party,
+    const std::vector<std::string> &args,
+    size_t argumentIndex);
+
 std::optional<int32_t> parseInt32Argument(const std::string &value)
 {
     if (value.empty())
@@ -1558,6 +1646,44 @@ std::optional<int32_t> parseInt32Argument(const std::string &value)
     }
 
     return static_cast<int32_t>(parsed);
+}
+
+std::optional<std::vector<size_t>> debugTargetMemberIndices(
+    const Party &party,
+    const std::vector<std::string> &args,
+    size_t argumentIndex)
+{
+    std::vector<size_t> indices;
+
+    if (args.size() <= argumentIndex)
+    {
+        if (party.memberCount() > 0)
+        {
+            indices.push_back(party.activeMemberIndex());
+        }
+
+        return indices;
+    }
+
+    if (toLowerCopy(args[argumentIndex]) == "all")
+    {
+        for (size_t memberIndex = 0; memberIndex < party.memberCount(); ++memberIndex)
+        {
+            indices.push_back(memberIndex);
+        }
+
+        return indices;
+    }
+
+    const std::optional<int32_t> memberNumber = parseInt32Argument(args[argumentIndex]);
+
+    if (!memberNumber || *memberNumber < 1 || static_cast<size_t>(*memberNumber) > party.memberCount())
+    {
+        return std::nullopt;
+    }
+
+    indices.push_back(static_cast<size_t>(*memberNumber - 1));
+    return indices;
 }
 
 std::optional<float> parseFloatArgument(const std::string &value)
@@ -5840,6 +5966,252 @@ void GameApplication::registerDebugConsoleCommands()
 
             pParty->reviveAndRestoreAll();
             return commandResult(true, "Party restored.");
+        }});
+
+    m_debugConsole.registerCommand({
+        .name = "face",
+        .description = "Play a portrait expression or animation (No, Yes, Talk, AvoidDamage ...) on party members.",
+        .usage = "face list | face <name|id> [member|all] | face event <face-animation-name|id> [member|all]",
+        .callback = [this, activeParty, commandResult](const DebugConsole::CommandContext &context)
+        {
+            const std::string usage = "Usage: face list | face <name|id> [member|all]"
+                " | face event <face-animation-name|id> [member|all]";
+
+            if (context.args.empty())
+            {
+                return commandResult(false, usage);
+            }
+
+            const std::string action = toLowerCopy(context.args[0]);
+
+            if (action == "list")
+            {
+                std::string text;
+
+                for (uint32_t value = 1; value <= static_cast<uint32_t>(PortraitId::Eradicated); ++value)
+                {
+                    const std::string name = portraitIdName(static_cast<PortraitId>(value));
+
+                    if (name != "Unknown")
+                    {
+                        text += (text.empty() ? "" : " ") + std::to_string(value) + ":" + name;
+                    }
+                }
+
+                return commandResult(true, text);
+            }
+
+            Party *pParty = activeParty();
+
+            if (pParty == nullptr)
+            {
+                return commandResult(false, "No active party.");
+            }
+
+            const bool isEvent = action == "event";
+            const size_t nameIndex = isEvent ? 1 : 0;
+
+            if (context.args.size() <= nameIndex || context.args.size() > nameIndex + 2)
+            {
+                return commandResult(false, usage);
+            }
+
+            const std::optional<std::vector<size_t>> members =
+                debugTargetMemberIndices(*pParty, context.args, nameIndex + 1);
+
+            if (!members)
+            {
+                return commandResult(
+                    false,
+                    "Member must be 1.." + std::to_string(pParty->memberCount()) + " or all.");
+            }
+
+            const std::string &name = context.args[nameIndex];
+            const std::optional<int32_t> number = parseInt32Argument(name);
+            GameplayScreenRuntime &runtime = m_gameSession.gameplayScreenRuntime();
+
+            if (isEvent)
+            {
+                const std::optional<FaceAnimationId> animationId = number
+                    ? std::optional<FaceAnimationId>(static_cast<FaceAnimationId>(*number))
+                    : faceAnimationIdFromName(name);
+
+                if (!animationId || (number && (*number < 1 || *number > 0xffff)))
+                {
+                    return commandResult(false, "Unknown face animation: " + name);
+                }
+
+                for (size_t memberIndex : *members)
+                {
+                    runtime.triggerPortraitFaceAnimation(memberIndex, *animationId);
+                }
+
+                return commandResult(true, "Face animation " + name + " triggered.");
+            }
+
+            std::optional<PortraitId> portraitId = portraitIdFromName(name);
+
+            if (number)
+            {
+                portraitId = std::nullopt;
+
+                if (*number >= 1 && *number <= static_cast<int32_t>(PortraitId::Eradicated)
+                    && portraitIdName(static_cast<PortraitId>(*number)) != "Unknown")
+                {
+                    portraitId = static_cast<PortraitId>(*number);
+                }
+            }
+
+            if (!portraitId)
+            {
+                return commandResult(false, "Unknown portrait: " + name + " (see face list).");
+            }
+
+            std::string blocked;
+
+            for (size_t memberIndex : *members)
+            {
+                runtime.playPortraitExpression(memberIndex, *portraitId, std::nullopt);
+                const Character *pMember = pParty->member(memberIndex);
+
+                if (pMember != nullptr && pMember->portraitState != *portraitId)
+                {
+                    blocked += (blocked.empty() ? "" : ", ") + std::to_string(memberIndex + 1);
+                }
+            }
+
+            std::string message = "Portrait " + portraitIdName(*portraitId) + " played.";
+
+            if (!blocked.empty())
+            {
+                message += " Blocked by a condition for member(s) " + blocked + " (see condition show).";
+            }
+
+            return commandResult(true, message);
+        }});
+
+    m_debugConsole.registerCommand({
+        .name = "condition",
+        .description = "Show, set or clear party members' conditions (the portrait follows the condition).",
+        .usage = "condition list | condition show [member|all] | condition set <name> [member|all]"
+                 " | condition clear <name|all> [member|all]",
+        .callback = [activeParty, commandResult](const DebugConsole::CommandContext &context)
+        {
+            const std::string usage = "Usage: condition list | condition show [member|all]"
+                " | condition set <name> [member|all] | condition clear <name|all> [member|all]";
+            const std::string action = context.args.empty() ? std::string() : toLowerCopy(context.args[0]);
+
+            if (action == "list")
+            {
+                return commandResult(
+                    true,
+                    debugConditionNameList() + " (also: sleep, poisoned, diseased, stoned)");
+            }
+
+            Party *pParty = activeParty();
+
+            if (pParty == nullptr)
+            {
+                return commandResult(false, "No active party.");
+            }
+
+            const auto describeMember = [pParty](size_t memberIndex)
+            {
+                const Character *pMember = pParty->member(memberIndex);
+                std::string active;
+
+                for (size_t index = 0; index < CharacterConditionCount; ++index)
+                {
+                    if (pMember->conditions.test(index))
+                    {
+                        active += (active.empty() ? "" : " ")
+                            + debugConditionName(static_cast<CharacterCondition>(index));
+                    }
+                }
+
+                const std::optional<CharacterCondition> displayed = GameMechanics::displayedCondition(*pMember);
+                return std::to_string(memberIndex + 1) + " " + pMember->name + ": "
+                    + (active.empty() ? std::string("good") : active)
+                    + (displayed ? " (portrait: " + debugConditionName(*displayed) + ")" : std::string());
+            };
+
+            if (action == "show")
+            {
+                if (context.args.size() > 2)
+                {
+                    return commandResult(false, usage);
+                }
+
+                const std::optional<std::vector<size_t>> members =
+                    debugTargetMemberIndices(*pParty, context.args, 1);
+
+                if (!members)
+                {
+                    return commandResult(
+                        false,
+                        "Member must be 1.." + std::to_string(pParty->memberCount()) + " or all.");
+                }
+
+                std::string text;
+
+                for (size_t memberIndex : *members)
+                {
+                    text += (text.empty() ? "" : "; ") + describeMember(memberIndex);
+                }
+
+                return commandResult(true, text);
+            }
+
+            if ((action != "set" && action != "clear") || context.args.size() < 2 || context.args.size() > 3)
+            {
+                return commandResult(false, usage);
+            }
+
+            const std::optional<std::vector<size_t>> members = debugTargetMemberIndices(*pParty, context.args, 2);
+
+            if (!members)
+            {
+                return commandResult(
+                    false,
+                    "Member must be 1.." + std::to_string(pParty->memberCount()) + " or all.");
+            }
+
+            const bool clearAll = action == "clear" && toLowerCopy(context.args[1]) == "all";
+            const std::optional<CharacterCondition> condition = debugConditionFromName(context.args[1]);
+
+            if (!clearAll && !condition)
+            {
+                return commandResult(false, "Unknown condition: " + context.args[1] + " (see condition list).");
+            }
+
+            std::string text;
+
+            for (size_t memberIndex : *members)
+            {
+                bool changed = true;
+
+                if (clearAll)
+                {
+                    for (size_t index = 0; index < CharacterConditionCount; ++index)
+                    {
+                        pParty->clearMemberCondition(memberIndex, static_cast<CharacterCondition>(index));
+                    }
+                }
+                else if (action == "set")
+                {
+                    changed = pParty->applyMemberCondition(memberIndex, *condition);
+                }
+                else
+                {
+                    changed = pParty->member(memberIndex)->conditions.test(static_cast<size_t>(*condition));
+                    pParty->clearMemberCondition(memberIndex, *condition);
+                }
+
+                text += (text.empty() ? "" : "; ") + describeMember(memberIndex)
+                    + (changed ? "" : " [unchanged: immune or not present]");
+            }
+
+            return commandResult(true, text);
         }});
 
     m_debugConsole.registerCommand({

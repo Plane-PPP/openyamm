@@ -61,6 +61,24 @@ Project Medusa Alpha 0.2 — установка на Minotaur Rebalance (Windows
   7. Новая игра Standard (любой континент) и MAW: всё как раньше.
   Найденные проблемы: снимок экрана + файл лога из папки игры.
 
+Проверка портретов через консоль
+  Консоль открывается клавишей ` (Ё). Если не открывается: закройте игру, в settings.ini в разделе [debug]
+  впишите строку console = true и запустите снова. Номер персонажа — его место в партии слева (1-5);
+  без номера команда действует на выбранного персонажа, all — на всех.
+  face list                      список всех выражений и анимаций с номерами
+  face Blink 1                   моргание; так же Wink, LookUp, LookRight, LookLeft, LookDown
+  face Talk 1                    речь; так же MouthOpenWide, MouthOpenA, MouthOpenO
+  face No 1 / face Yes 1         покачивание «нет» (кадры 25-29) и кивок «да» (30-33)
+  face AvoidDamage 1             уклонение (кадры 34-36)
+  face DamageReceivedMinor 1     урон; так же DamageReceivedModerate, DamageReceivedMajor
+  face Smile 1                   эмоции: Smile, WideSmile, Sad, CastSpell, Scared, Portrait41 ... Portrait57
+  face event Hello 1             игровое событие (Hello, LevelUp, TavernGotDrunk ...): игра сама выберет кадр
+  condition set Poisoned 1       состояние (кадры 02-12): Cursed, Weak, Sleep, Fear, Drunk, Insane, Poisoned,
+                                 Diseased, Paralyzed, Unconscious, Petrified; список — condition list
+  condition show all             состояния партии
+  condition clear all 1          снять все состояния (или condition clear Poisoned 1)
+  Пока действует состояние, оно показывается вместо выражений face (как в игре). Снимите его перед face.
+
 Графика
   Кадры героини med01-01 ... med01-56 — черновой набор, не окончательный портрет. Известные недочёты:
   кадр взгляда в сторону 18 смотрит не туда, кивок 32–33 заметно отличается от остальных.

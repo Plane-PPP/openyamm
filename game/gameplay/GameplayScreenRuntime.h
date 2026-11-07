@@ -310,6 +310,7 @@ public:
     void updatePartyPortraitAnimations(float deltaSeconds);
     uint32_t animationTicks() const;
     void triggerPortraitEventFxWithoutSpeech(size_t memberIndex, PortraitFxEventKind eventKind);
+    void playPortraitExpression(size_t memberIndex, PortraitId portraitId, std::optional<uint32_t> durationTicks);
     void triggerPortraitFaceAnimation(size_t memberIndex, FaceAnimationId animationId);
     void triggerPortraitFaceAnimationForAllLivingMembers(FaceAnimationId animationId);
     bool canPlaySpeechReaction(size_t memberIndex, SpeechId speechId, uint32_t nowTicks);
@@ -547,7 +548,6 @@ private:
     GameplayUiRuntime &uiRuntime() const;
     GameplayDialogUiFlowState dialogUiFlowState();
     void updatePortraitAnimation(Character &member, size_t memberIndex, uint32_t deltaTicks);
-    void playPortraitExpression(size_t memberIndex, PortraitId portraitId, std::optional<uint32_t> durationTicks);
     GameplayDialogController::Context buildDialogContext(EventRuntimeState &eventRuntimeState);
     void returnToHouseBankMainDialogShared();
     void leaveHouseEntryAudio(bool playDoorSound);
