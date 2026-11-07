@@ -665,8 +665,17 @@ bool AssetFileSystem::switchActiveWorld(const std::string &activeWorldId)
     const AssetScaleTier assetScaleTier = m_assetScaleTier;
     const AssetScaleProfile assetScaleProfile = m_assetScaleProfile;
     const InstalledContentOptions installedContentOptions = m_installedContentOptions;
+    // The active ruleset's icons (Project Medusa's portraits) belong to the game, not to the world: initialize()
+    // forgets them, so a map in another world would lose them (Medusa Alpha 0.2 showed an empty HUD portrait).
+    const std::string rulesetIconRoot = m_rulesetIconRoot;
 
-    return initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions);
+    if (!initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions))
+    {
+        return false;
+    }
+
+    setRulesetIconRoot(rulesetIconRoot);
+    return true;
 }
 
 bool AssetFileSystem::mountDevelopmentRoot(const std::filesystem::path &assetRoot)

@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cctype>
 #include <functional>
+#include <iostream>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -427,6 +428,7 @@ void GameplayUiRuntime::clear()
     m_flyBuffIconAnimationState = {};
     m_actorInspectClock = {};
     m_assetLoadCache = {};
+    m_reportedMissingPortraitTextures.clear();
     m_performanceFrameEnabled = false;
     m_performanceAssetLoadEvents.clear();
     m_performanceAssetLoadEventOverflowCount = 0;
@@ -1046,6 +1048,21 @@ std::optional<GameplayHudTextureHandle> GameplayUiRuntime::ensureHudTextureLoade
     result.height = pTexture->height;
     result.textureHandle = pTexture->textureHandle;
     return result;
+}
+
+void GameplayUiRuntime::reportMissingPortraitTexture(const std::string &textureName)
+{
+    if (textureName.empty() || !m_reportedMissingPortraitTextures.insert(toLowerCopy(textureName)).second)
+    {
+        return;
+    }
+
+    std::cerr << "GameplayUiRuntime: party portrait texture not found: " << textureName
+              << " (Data/icons; ruleset icons: "
+              << (m_pAssetFileSystem != nullptr && !m_pAssetFileSystem->getRulesetIconRoot().empty()
+                      ? m_pAssetFileSystem->getRulesetIconRoot() : std::string("none"))
+              << ", world: " << (m_pAssetFileSystem != nullptr ? m_pAssetFileSystem->getActiveWorldId() : "")
+              << ")\n";
 }
 
 std::optional<GameplayHudTextureHandle> GameplayUiRuntime::ensureItemIconTextureLoaded(const std::string &textureName)

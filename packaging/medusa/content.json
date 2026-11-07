@@ -3,6 +3,6 @@
   "repository": "Plane-PPP/project-medusa",
   "commit": "d3fb636d54c6a5b3bc5492265e2503db0203daa8",
   "package": "content/engine/rulesets/medusa",
-  "medusa_version": "0.2",
-  "base_version": "minotaur-1.20-c80ebaa9634d-25-1"
+  "medusa_version": "0.2.1",
+  "base_version": "minotaur-medusa-ba85f7ac-3-1"
 }

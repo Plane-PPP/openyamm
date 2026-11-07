@@ -239,14 +239,18 @@ jobs:
           with zipfile.ZipFile(sys.argv[1]) as archive:
               names = archive.namelist()
               manifest = json.loads(archive.read(next(n for n in names if n.endswith("/minotaur-update.json"))))
-              assert "engine.rulesets" in manifest["changed_packs"], manifest["changed_packs"]
-              pack = next(n for n in names if "/payload/packs/engine.rulesets-" in n)
-              with zipfile.ZipFile(archive.open(pack)) as rulesets:
-                  inner = set(rulesets.namelist())
-              for required in ["medusa/ruleset.yml", "medusa/content/character_data.append.txt",
-                               "medusa/content/continent_settings.patch.txt", "medusa/icons_x2/med01-01.png",
-                               "medusa/icons_x2/med01-56.png", "maw/ruleset.yml"]:
-                  assert required in inner, required
+              # Over a Minotaur base the patch ships the ruleset pack; over an installed Medusa version it may reuse it.
+              base_is_medusa = manifest["base"]["version"].startswith("minotaur-medusa-")
+              assert "engine.rulesets" in manifest["changed_packs"] or base_is_medusa, manifest["changed_packs"]
+              pack = next((n for n in names if "/payload/packs/engine.rulesets-" in n), None)
+              if pack is not None:
+                  with zipfile.ZipFile(archive.open(pack)) as rulesets:
+                      inner = set(rulesets.namelist())
+                  frames = [f"medusa/icons_x2/med01-{frame:02d}.png" for frame in range(1, 57)]
+                  for required in ["medusa/ruleset.yml", "medusa/content/character_data.append.txt",
+                                   "medusa/content/continent_settings.patch.txt", "maw/ruleset.yml", *frames]:
+                      assert required in inner, required
+              print("engine.rulesets:", "shipped, 56 portrait frames checked" if pack else "reused from the base")
               assert any(n.endswith("/README-MEDUSA-RU.txt") for n in names)
               assert any(n.endswith("/payload/app/openyamm.exe") for n in names)
               # The launcher of the installed base reads app/current: at most 32 characters (AppInstallation.cpp).

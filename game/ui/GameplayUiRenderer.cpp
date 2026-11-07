@@ -463,8 +463,13 @@ void GameplayUiRenderer::renderGameplayHudArt(GameplayScreenRuntime &context, in
         const std::string id = std::string(isLimitedOverlayHud ? "ObsidianOverlayPc" : "ObsidianPc")
             + std::to_string(i + 1);
         const std::optional<GameplayResolvedHudLayoutElement> face = context.resolvePartyPortraitRect(width, height, i);
+        const std::string portraitTextureName = context.resolvePortraitTextureName(member);
         const std::optional<GameplayHudTextureHandle> portrait =
-            context.gameplayUiRuntime().ensureHudTextureLoaded(context.resolvePortraitTextureName(member));
+            context.gameplayUiRuntime().ensureHudTextureLoaded(portraitTextureName);
+        if (!portrait)
+        {
+            context.gameplayUiRuntime().reportMissingPortraitTexture(portraitTextureName);
+        }
         if (portrait && face)
         {
             bgfx::TextureHandle texture = portrait->textureHandle;

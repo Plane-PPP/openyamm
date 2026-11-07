@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace OpenYAMM::Game
@@ -238,6 +239,8 @@ public:
         float fallbackWidth,
         float fallbackHeight) const;
     std::optional<GameplayHudTextureHandle> ensureHudTextureLoaded(const std::string &textureName);
+    // Logs a party portrait the HUD cannot load, once per texture name and session.
+    void reportMissingPortraitTexture(const std::string &textureName);
     std::optional<GameplayHudTextureHandle> ensureItemIconTextureLoaded(const std::string &textureName);
     std::optional<std::string> iconAnimationFrameTextureName(
         const std::string &animationName,
@@ -434,6 +437,7 @@ private:
     GameplayUiOverlayFramePerformanceDiagnostics m_lastOverlayFramePerformanceDiagnostics = {};
     const GameDataRepository *m_pDataRepository = nullptr;
     GameplayAssetLoadCache m_assetLoadCache;
+    std::unordered_set<std::string> m_reportedMissingPortraitTextures;
     UiLayoutManager m_layoutManager;
     GameplayHudLayoutCache m_gameplayHudLayoutCache;
     mutable std::unordered_map<std::string, const UiLayoutManager::LayoutElement *> m_hudLayoutElementLookupCache;

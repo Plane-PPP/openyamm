@@ -1,6 +1,7 @@
 #include "engine/AssetFileSystem.h"
 #include "tests/ContentPackTestSupport.h"
 #include "engine/AssetScaleTier.h"
+#include "engine/ImageAssetLoader.h"
 
 #include <doctest/doctest.h>
 
@@ -1205,6 +1206,61 @@ TEST_CASE("AssetFileSystem adds the active ruleset's icons after the declared ic
         CHECK(fs.getRulesetIconRoot().empty());
         CHECK_FALSE(fs.readTextFile("Data/icons/med01-01.png"));
         CHECK(fs.enumerate("Data/icons").size() == icons.size() - 1);
+    }
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("AssetFileSystem keeps the active ruleset's icons when a map switches the active world")
+{
+    // Medusa Alpha 0.2: the portrait showed on the party creation screen (mm8, the menu's world) but the gameplay
+    // HUD was empty on Mount Nighon, because loading an MM7 map switched the active world and forgot the icons.
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assets = temporaryRoot / "assets";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm7 x2\nworlds/mm8 x2\n"},
+        {"icons_x2/pc02-01.png", "engine portrait"},
+        {"rulesets/medusa/icons_x2/med01-01.png", "medusa portrait 01"},
+        {"rulesets/medusa/icons_x2/med01-56.png", "medusa portrait 56"}
+    });
+    writeZipFile(assets / "packs/mm7.core.zip", {{"icons_x2/npc1.png", "mm7 portrait"}});
+    writeZipFile(assets / "packs/mm8.core.zip", {{"icons_x2/npc2.png", "mm8 portrait"}});
+    writeCorePackIndex(assets, {"engine", "mm7", "mm8"});
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assets, AssetScaleTier::X2, AssetScaleProfile{}, "mm8"));
+        fs.setRulesetIconRoot("engine/rulesets/medusa");
+        REQUIRE(fs.readTextFile("Data/icons/med01-01.png"));
+
+        // GameApplication::activateWorldForMap before Mount Nighon (MM7).
+        REQUIRE(fs.switchActiveWorld("mm7"));
+        CHECK_EQ(fs.getActiveWorldId(), "mm7");
+        CHECK_EQ(fs.getRulesetIconRoot(), "engine/rulesets/medusa");
+
+        // The gameplay HUD's lookup (GameplayHudCommon::loadHudTexture -> Engine::findImageAssetPath).
+        DirectoryAssetPathCache directories;
+        AssetPathLookupCache paths;
+        for (const std::string frame : {"med01-01", "med01-56"})
+        {
+            CAPTURE(frame);
+            const std::optional<std::string> path = findImageAssetPath(fs, "Data/icons", frame, directories, paths);
+            REQUIRE(path);
+            CHECK(fs.readTextFile(*path) == std::optional<std::string>(
+                frame == "med01-01" ? "medusa portrait 01" : "medusa portrait 56"));
+            CHECK(assetScaleTierFromResolvedPath(*path) == AssetScaleTier::X2);
+        }
+        // Standard portraits and the new world's own icons are unaffected.
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
+        CHECK(fs.readTextFile("Data/icons/npc1.png") == std::optional<std::string>("mm7 portrait"));
+
+        // Back to Standard: no Medusa icons leak into another world.
+        fs.setRulesetIconRoot("");
+        REQUIRE(fs.switchActiveWorld("mm8"));
+        CHECK(fs.getRulesetIconRoot().empty());
+        DirectoryAssetPathCache standardDirectories;
+        AssetPathLookupCache standardPaths;
+        CHECK_FALSE(findImageAssetPath(fs, "Data/icons", "med01-01", standardDirectories, standardPaths));
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
     }
     std::filesystem::remove_all(temporaryRoot);
 }
