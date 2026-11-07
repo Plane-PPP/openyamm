@@ -12,7 +12,9 @@ SCHEMA = 1
 CHANNEL = "minotaur"
 ROOT = Path(__file__).resolve().parents[1]
 SHA = re.compile(r"[0-9a-f]{64}\Z")
-VERSION = re.compile(r"minotaur-[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z")
+# The launcher (engine/update/AppInstallation.cpp, isValidAppVersionName) ignores an app/current longer than
+# 32 characters and reports "app\\current is missing", so a longer version could never start.
+VERSION = re.compile(r"(?=[^\n]{1,32}\Z)minotaur-[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z")
 PACK_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.zip\Z")
 
 

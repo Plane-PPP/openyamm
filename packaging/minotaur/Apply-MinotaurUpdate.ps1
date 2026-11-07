@@ -3,7 +3,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Assert-Version([string]$Value) {
-    if ($Value -cnotmatch '^minotaur-[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') {
+    # OpenYAMM.exe ignores an app/current longer than 32 characters (AppInstallation.cpp, isValidAppVersionName).
+    if ($Value.Length -gt 32 -or $Value -cnotmatch '^minotaur-[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') {
         throw 'Invalid Minotaur version name.'
     }
 }

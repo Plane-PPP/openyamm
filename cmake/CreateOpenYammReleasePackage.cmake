@@ -32,6 +32,12 @@ if (DEFINED OPENYAMM_RELEASE_LAUNCHER AND NOT OPENYAMM_RELEASE_LAUNCHER STREQUAL
     if (NOT OPENYAMM_RELEASE_VERSION MATCHES "^[A-Za-z0-9][A-Za-z0-9.-]*$")
         message(FATAL_ERROR "OPENYAMM_RELEASE_VERSION must name the version folder, not '${OPENYAMM_RELEASE_VERSION}'")
     endif()
+    # The launcher ignores a longer app/current (engine/update/AppInstallation.cpp, isValidAppVersionName).
+    string(LENGTH "${OPENYAMM_RELEASE_VERSION}" openyammReleaseVersionLength)
+    if (openyammReleaseVersionLength GREATER 32)
+        message(FATAL_ERROR "OPENYAMM_RELEASE_VERSION '${OPENYAMM_RELEASE_VERSION}' is longer than 32 characters; "
+            "the launcher would report app/current as missing")
+    endif()
     set(openyammReleaseAppDir "${OPENYAMM_RELEASE_STAGE_DIR}/app/${OPENYAMM_RELEASE_VERSION}")
     get_filename_component(openyammReleaseLauncherName "${OPENYAMM_RELEASE_LAUNCHER}" NAME)
     get_filename_component(openyammReleaseLauncherSuffix "${OPENYAMM_RELEASE_LAUNCHER}" LAST_EXT)

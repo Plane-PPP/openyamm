@@ -38,7 +38,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  update_tests:
+    name: Offline updater tests (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /tools/
+            /packaging/minotaur/
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Test generation, version limits and the actual Windows installer
+        run: python tools/test_minotaur_updates.py
+      - name: Test full and thin package validation
+        run: python tools/test_verify_minotaur_windows_package.py
+
   windows:
+    needs: update_tests
     name: Windows x64 Medusa patch
     env:
       MINOTAUR_UPSTREAM_VERSION: "1.20"
@@ -132,8 +151,13 @@ jobs:
           base_path="packaging/minotaur/bases/$MEDUSA_BASE_VERSION.json"
           read -r checked_version base_sha <<< "$(/ucrt64/bin/python.exe tools/minotaur_updates.py check-base "$base_path")"
           test "$checked_version" = "$MEDUSA_BASE_VERSION"
-          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.20-medusa-%s-%s-%s-%s\n' \
-            "$base_path" "$base_sha" "$MEDUSA_VERSION" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          # The launcher accepts at most 32 characters in app/current (AppInstallation.cpp, isValidAppVersionName);
+          # Alpha 0.1 shipped minotaur-1.20-medusa-0.1-<sha12>-1-1 (41) and could not start. The Medusa version and
+          # full commits are in MEDUSA-VERSION.txt and BUILD-REVISION.txt.
+          release_version="minotaur-medusa-${GITHUB_SHA:0:8}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          /ucrt64/bin/python.exe -c "import sys; sys.path.insert(0, 'tools'); from minotaur_updates import VERSION; sys.exit(0 if VERSION.fullmatch(sys.argv[1]) else 'Invalid or too long app version: ' + sys.argv[1])" "$release_version"
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=%s\n' \
+            "$base_path" "$base_sha" "$release_version" >> "$GITHUB_ENV"
 
       - name: Detect actual runner resources and compilation parallelism
         run: /ucrt64/bin/python.exe tools/measure_windows_build.py --probe
@@ -211,7 +235,7 @@ jobs:
             --engine-sha "$GITHUB_SHA" --content-sha "$MEDUSA_CONTENT_SHA"
           # The patch must carry exactly the program and the changed packs: the Medusa ruleset pack among them.
           /ucrt64/bin/python.exe - "$patch" <<'EOF'
-          import json, sys, zipfile
+          import json, os, sys, zipfile
           with zipfile.ZipFile(sys.argv[1]) as archive:
               names = archive.namelist()
               manifest = json.loads(archive.read(next(n for n in names if n.endswith("/minotaur-update.json"))))
@@ -225,6 +249,9 @@ jobs:
                   assert required in inner, required
               assert any(n.endswith("/README-MEDUSA-RU.txt") for n in names)
               assert any(n.endswith("/payload/app/openyamm.exe") for n in names)
+              # The launcher of the installed base reads app/current: at most 32 characters (AppInstallation.cpp).
+              assert len(manifest["target"]["version"]) <= 32, manifest["target"]["version"]
+              assert manifest["base"]["version"] == os.environ["MEDUSA_BASE_VERSION"], manifest["base"]["version"]
           print("Medusa patch contents verified")
           EOF
 

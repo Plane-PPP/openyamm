@@ -13,7 +13,7 @@ import unittest
 import zipfile
 
 from fetch_minotaur_baseline import RemoteZip, extract_baseline
-from minotaur_updates import (build_update, digest_file, index_identity, make_baseline, plan_update,
+from minotaur_updates import (VERSION, build_update, digest_file, index_identity, make_baseline, plan_update,
                               read_json, resolve_index, safe_relative, validate_index, write_json)
 
 
@@ -112,6 +112,18 @@ class PlannerTests(Fixture):
         next((content / 'packs').glob('engine*')).write_bytes(b'corrupt')
         with self.assertRaises(ValueError):
             build_update(stage, content, self.base, 'b' * 40, self.root / 'bad.zip', self.root / 'bad.json')
+
+    def test_version_names_fit_the_launcher_limit(self):
+        # Project Medusa Alpha 0.1 used a 41-character version; the launcher reported app\\current as missing.
+        for name in ['minotaur-1.20-c80ebaa9634d-25-1', 'minotaur-medusa-2c1ae605-9999-9', 'minotaur-' + 'a' * 23]:
+            with self.subTest(name=name):
+                self.assertTrue(VERSION.fullmatch(name))
+                make_baseline(name, 'a' * 40, self.base['index'])
+        for name in ['minotaur-1.20-medusa-0.1-2c1ae605467a-1-1', 'minotaur-' + 'a' * 24, 'minotaur-a\n']:
+            with self.subTest(name=name):
+                self.assertFalse(VERSION.fullmatch(name))
+                with self.assertRaises(ValueError):
+                    make_baseline(name, 'a' * 40, self.base['index'])
 
     def test_reject_unsafe_paths_missing_world_and_duplicate_files(self):
         for name in ['../settings.ini', '/saves/a', 'C:/x', 'a\\b', 'a/../b', 'CON.txt', 'a./b', 'a /b']:
@@ -216,6 +228,17 @@ class WindowsInstallerTests(Fixture):
         shutil.copytree(self.install / 'app' / self.base['version'], self.install / 'app/minotaur-unrelated')
         self.apply(directory, success=False)
         self.assertEqual(self.current(), 'minotaur-unrelated')
+
+    def test_too_long_target_version_refused_before_switch(self):
+        # The launcher cannot start a version longer than 32 characters (Project Medusa Alpha 0.1).
+        _, _, directory = self.update()
+        manifest_path = directory / 'minotaur-update.json'
+        manifest = read_json(manifest_path)
+        manifest['target']['version'] = 'minotaur-1.20-medusa-0.1-2c1ae605467a-1-1'
+        manifest_path.write_text(json.dumps(manifest), encoding='utf-8')
+        self.apply(directory, success=False)
+        self.assertEqual(self.current(), self.base['version'])
+        self.assertFalse((self.install / 'app' / manifest['target']['version']).exists())
 
     def test_corrupt_reused_resource_refused_then_retry_succeeds(self):
         manifest, _, directory = self.update()
