@@ -118,20 +118,20 @@ jobs:
           SHA-256: `{actual_sha}`. Релиз Project Medusa не изменяется.
           ''', encoding='utf-8')
 
-          existing = subprocess.run(['gh', 'api', f'repos/{repo}/releases/tags/{tag}'],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-          if existing.returncode == 0:
-              release = json.loads(existing.stdout)
-              assert release['draft'], 'Published release already exists; refusing to replace it'
-              assert release['target_commitish'] == source, 'Existing draft points to another source'
+          # REST lookup by tag excludes drafts; list authenticated releases, then use the release ID.
+          existing = next((r for r in api('releases?per_page=100') if r['tag_name'] == tag), None)
+          if existing is not None:
+              assert existing['draft'], 'Published release already exists; refusing to replace it'
+              assert existing['target_commitish'] == source, 'Existing draft points to another source'
           else:
-              assert b'404' in existing.stderr, existing.stderr.decode(errors='replace')
               command('release', 'create', tag, '--repo', repo, '--target', source,
                       '--title', 'Minotaur Rebalance 1.21 — Windows update',
                       '--notes-file', str(notes), '--draft', '--latest=false')
+          release = next(r for r in api('releases?per_page=100') if r['tag_name'] == tag)
+          release_id = release['id']
           command('release', 'upload', tag, '--repo', repo, '--clobber',
                   *[str(p) for p in sorted(out.iterdir())])
-          release = api(f'releases/tags/{tag}')
+          release = api(f'releases/{release_id}')
           assets = {a['name']: a for a in release['assets']}
           assert set(assets) == {p.name for p in out.iterdir()}, 'Incomplete release assets'
           for path in out.iterdir():
@@ -141,7 +141,7 @@ jobs:
                   digest = hashlib.file_digest(stream, 'sha256').hexdigest()
               assert asset['digest'] == 'sha256:' + digest, f'Release asset digest mismatch: {path.name}'
           command('release', 'edit', tag, '--repo', repo, '--draft=false', '--latest=false')
-          release = api(f'releases/tags/{tag}')
+          release = api(f'releases/{release_id}')
           assert not release['draft'] and not release['prerelease']
           assert api(f'git/ref/tags/{tag}')['object']['sha'] == source
           print('Published:', release['html_url'])
