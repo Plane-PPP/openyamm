@@ -1,3 +1,11 @@
+# Persistent Minotaur 1.21 Release — 2026-11-07
+
+The already tested ZIP was promoted unchanged to [GitHub Releases](https://github.com/Plane-PPP/openyamm/releases/tag/minotaur-1.21-c9949bbc7301-28-1).
+Full ZIP SHA-256 was rechecked on the publication runner; all four uploaded assets were digest-verified before publication.
+Publication run42335135110 succeeded. Executable source remains c9949bbc; supported base remains1.20-c80ebaa9634d-25-1.
+No rebuild, balance/save change or Medusa release modification. The Releases ZIP has no Actions retention expiry.
+[Direct download](https://github.com/Plane-PPP/openyamm/releases/download/minotaur-1.21-c9949bbc7301-28-1/Minotaur-Update-minotaur-1.21-c9949bbc7301-28-1.zip) and [verification/install guide](docs/research/windows-1.21-build.md).
+
 # Verified Windows 1.21 ZIP — 2026-11-06
 
 Source c9949bbc7301240adda39e1503ff2985729d470b; official c24a0aaa6bb6f7956c84beed1bd44c88e62453c4.

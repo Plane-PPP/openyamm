@@ -1,3 +1,9 @@
+# Persistent 1.21 download (2026-11-07)
+
+Published the unchanged verified Windows update in [GitHub Releases](https://github.com/Plane-PPP/openyamm/releases/tag/minotaur-1.21-c9949bbc7301-28-1),
+with SHA256SUMS, update report and baseline. Full ZIP hash and uploaded asset digests verified in Actions.
+No game rebuild or mechanics change. Medusa remains independent; Actions expiry no longer limits the download.
+
 # OpenYAMM 1.21 — verified Windows update (2026-11-06)
 
 Implemented / Linux and Windows automatic checks passed / ZIP packaged / manual campaign check pending.

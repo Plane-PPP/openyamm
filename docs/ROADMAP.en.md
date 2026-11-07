@@ -10,6 +10,7 @@ historical mod143 maps to official142. The new creation sheet shows innate Letha
 Local unit258/258,49,851assertions; runtime7/7,163assertions passed. Windows CI passed; private campaign saves have not been manually tested.
 Package `minotaur-1.21-c9949bbc7301-28-1`, source `c9949bbc7301240adda39e1503ff2985729d470b`.
 [ZIP, measured resources and installation](research/windows-1.21-build.md).
+[Permanent Release](https://github.com/Plane-PPP/openyamm/releases/tag/minotaur-1.21-c9949bbc7301-28-1) — unchanged ZIP, no Actions retention expiry.
 
 Previous summary as of 2026-11-02. Base: official OpenYAMM v1.20, last confirmed package
 `minotaur-1.20-c80ebaa9634d-25-1`, mod save format 143. The v0.4 + Luck balance has not changed.

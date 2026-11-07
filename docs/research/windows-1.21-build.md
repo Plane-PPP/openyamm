@@ -9,11 +9,13 @@ run 28, attempt 1, completed 2026-11-06 12:59:33 UTC.
 - Official v1.21: `c24a0aaa6bb6f7956c84beed1bd44c88e62453c4`.
 - New version: `minotaur-1.21-c9949bbc7301-28-1`.
 - Exact supported base: `minotaur-1.20-c80ebaa9634d-25-1`.
-- [Download the Windows ZIP](https://github.com/Plane-PPP/openyamm/actions/runs/42215979271/artifacts/13503548023).
+- [Download the Windows ZIP](https://github.com/Plane-PPP/openyamm/releases/download/minotaur-1.21-c9949bbc7301-28-1/Minotaur-Update-minotaur-1.21-c9949bbc7301-28-1.zip).
 - Filename: `Minotaur-Update-minotaur-1.21-c9949bbc7301-28-1.zip`.
 - Size: **1,932,865,419 bytes**, about **1.80 GiB**.
 - SHA-256: `8292edc36394fa15a7783bdb51a5ec66690f926fe08efdaaa89da04c40f9c723`.
-- Artifact expiry: **2026-11-13 12:59:03 UTC**. GitHub login is required to download Actions artifacts.
+- [Permanent GitHub Release](https://github.com/Plane-PPP/openyamm/releases/tag/minotaur-1.21-c9949bbc7301-28-1), published 2026-11-07 03:43:29 UTC.
+- Release assets have no Actions retention expiry. The original Actions copy expires on 2026-11-13.
+- [Publication workflow](https://github.com/Plane-PPP/openyamm/actions/runs/42335135110) succeeded.
 
 The ZIP includes 53 changed packs (1,909,044,068 bytes), 123 program/dependency files, installer and documentation.
 It reuses 113 unchanged packs, **3,959,503,161 bytes / 3.69 GiB**, from the installed base. The substantial delta is
@@ -44,6 +46,16 @@ directory (184 entries), manifest, base/source/target, installer CRCs and payloa
 Full duplicate download and local rehash of all 1.8 GiB did **not** finish: both HTTP/2 and HTTP/1.1 were abnormally
 slow on this VM; the latter ended at a bounded 180-second network timeout. This was not a memory guard/OOM.
 No claim of a complete local payload rehash is made. The downloadable artifact and CI verification succeeded.
+
+## Permanent publication
+
+The publication runner downloaded the **complete original ZIP**, checked its size and full SHA-256, uploaded it
+unchanged to a draft, verified all four release asset sizes/digests, and only then published the release.
+The release tag points to executable source `c9949bbc7301240adda39e1503ff2985729d470b`.
+The ZIP, `SHA256SUMS.txt`, update report and baseline are persistent Release attachments.
+The mod was not rebuilt. Medusa's release and the repository's Latest selection were not changed.
+The first publication attempt left a draft because GitHub's by-tag REST lookup excludes drafts; ID-based verification
+completed the same draft successfully in the workflow linked above.
 
 ## Resources
 
