@@ -1,0 +1,149 @@
+name: Publish verified Minotaur 1.21
+
+on:
+  push:
+    branches: [feature/minotaur-rebalance]
+    paths: [.github/workflows/minotaur-release-1.21.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-minotaur-1.21
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Plane-PPP/openyamm'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify existing build and publish its unchanged ZIP
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import subprocess
+          import zipfile
+
+          repo = 'Plane-PPP/openyamm'
+          run_id = 42215979271
+          source = 'c9949bbc7301240adda39e1503ff2985729d470b'
+          tag = 'minotaur-1.21-c9949bbc7301-28-1'
+          base = 'minotaur-1.20-c80ebaa9634d-25-1'
+          expected_sha = '8292edc36394fa15a7783bdb51a5ec66690f926fe08efdaaa89da04c40f9c723'
+          expected_size = 1932865419
+          filename = 'Minotaur-Update-' + tag + '.zip'
+          out = pathlib.Path('release-assets')
+          out.mkdir()
+
+          def command(*args):
+              return subprocess.run(['gh', *args], check=True)
+
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/{path}']))
+
+          def download(artifact_id, path):
+              with path.open('wb') as stream:
+                  subprocess.run(['gh', 'api', f'repos/{repo}/actions/artifacts/{artifact_id}/zip'],
+                                 stdout=stream, check=True)
+
+          run = api(f'actions/runs/{run_id}')
+          assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Build did not succeed'
+          assert run['head_sha'] == source and run['head_branch'] == 'feature/minotaur-rebalance'
+          assert run['path'] == '.github/workflows/minotaur-windows.yml'
+          artifacts = api(f'actions/runs/{run_id}/artifacts')['artifacts']
+          package = next(a for a in artifacts if a['id'] == 13503548023)
+          metadata = next(a for a in artifacts if a['id'] == 13503977226)
+          assert not package['expired'] and not metadata['expired']
+          assert package['name'] == filename and package['size_in_bytes'] == expected_size
+          assert package['digest'] == 'sha256:' + expected_sha
+
+          download(metadata['id'], pathlib.Path('metadata.zip'))
+          with zipfile.ZipFile('metadata.zip') as archive:
+              records = [json.loads(archive.read(n)) for n in archive.namelist() if n.endswith('.json')]
+          report = next(d for d in records if 'archive_sha256' in d)
+          baseline = next(d for d in records if 'index' in d)
+          assert report['source_sha'] == source and report['base'] == base and report['target'] == tag
+          assert report['archive_sha256'] == expected_sha and report['archive_bytes'] == expected_size
+          assert baseline['source_sha'] == source and baseline['version'] == tag
+
+          package_path = out / filename
+          download(package['id'], package_path)
+          assert package_path.stat().st_size == expected_size
+          with package_path.open('rb') as stream:
+              actual_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+          assert actual_sha == expected_sha, 'ZIP checksum mismatch'
+          print(f'Verified unchanged ZIP: {expected_size} bytes, SHA256 {actual_sha}', flush=True)
+          (out / 'SHA256SUMS.txt').write_text(f'{actual_sha}  {filename}\n', encoding='utf-8')
+          (out / 'update-report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+          (out / 'minotaur-baseline.json').write_text(json.dumps(baseline, indent=2) + '\n', encoding='utf-8')
+
+          notes = pathlib.Path('release-notes.md')
+          notes.write_text(f'''## Minotaur Rebalance на OpenYAMM 1.21
+
+          Готовый Windows ZIP-патч, без срока хранения Actions-артефакта. Это обновление установленного мода,
+          а не полная установка игры.
+
+          **Поддерживаемая исходная версия:** `{base}`.
+          **Новая версия:** `{tag}`.
+          **Код сборки:** `{source}`.
+          **Официальная база:** `c24a0aaa6bb6f7956c84beed1bd44c88e62453c4` (v1.21).
+
+          Баланс Minotaur, Lethal Strike, топоры, защита, стаки и предыдущие исправления сохранены.
+          Пройдены Windows CI, игровые, save/load, updater, AI и indoor-проверки.
+          ZIP содержит 53 изменённых пакета, повторно использует 113 (около 3,69 ГиБ).
+          Размер ZIP: 1 932 865 419 байт (около 1,80 ГиБ).
+
+          ### Установка
+
+          1. Закройте игру, отдельно скопируйте `saves` и `settings.ini`.
+          2. Распакуйте ZIP в папку игры и запустите `Apply-MinotaurUpdate.cmd` из папки обновления.
+          3. Запустите обычный `OpenYAMM.exe`. Проверьте старое сохранение, запишите новый слот и загрузите его повторно.
+
+          Установщик создаёт копию сейвов/настроек в `backups/minotaur/`, сохраняет предыдущую программу и ресурсы
+          для отката. Новые сейвы формата 155 нельзя использовать со старой версией мода.
+          Старые тестовые сохранения проверены; личное прохождение пользователя и GPU/Android UI вручную не проверялись.
+
+          [Успешный CI](https://github.com/{repo}/actions/runs/{run_id}) ·
+          [Подробный отчёт и откат](https://github.com/{repo}/blob/4b19b858fc15d31a3f02ecbc024f1c51863b889a/docs/research/windows-1.21-build.md)
+
+          SHA-256: `{actual_sha}`. Релиз Project Medusa не изменяется.
+          ''', encoding='utf-8')
+
+          existing = subprocess.run(['gh', 'api', f'repos/{repo}/releases/tags/{tag}'],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+          if existing.returncode == 0:
+              release = json.loads(existing.stdout)
+              assert release['draft'], 'Published release already exists; refusing to replace it'
+              assert release['target_commitish'] == source, 'Existing draft points to another source'
+          else:
+              assert b'404' in existing.stderr, existing.stderr.decode(errors='replace')
+              command('release', 'create', tag, '--repo', repo, '--target', source,
+                      '--title', 'Minotaur Rebalance 1.21 — Windows update',
+                      '--notes-file', str(notes), '--draft', '--latest=false')
+          command('release', 'upload', tag, '--repo', repo, '--clobber',
+                  *[str(p) for p in sorted(out.iterdir())])
+          release = api(f'releases/tags/{tag}')
+          assets = {a['name']: a for a in release['assets']}
+          assert set(assets) == {p.name for p in out.iterdir()}, 'Incomplete release assets'
+          for path in out.iterdir():
+              asset = assets[path.name]
+              assert asset['state'] == 'uploaded' and asset['size'] == path.stat().st_size
+              with path.open('rb') as stream:
+                  digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+              assert asset['digest'] == 'sha256:' + digest, f'Release asset digest mismatch: {path.name}'
+          command('release', 'edit', tag, '--repo', repo, '--draft=false', '--latest=false')
+          release = api(f'releases/tags/{tag}')
+          assert not release['draft'] and not release['prerelease']
+          assert api(f'git/ref/tags/{tag}')['object']['sha'] == source
+          print('Published:', release['html_url'])
+          print('ZIP:', next(a['browser_download_url'] for a in release['assets'] if a['name'] == filename))
+          PY
