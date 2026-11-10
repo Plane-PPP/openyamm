@@ -294,6 +294,7 @@ void NewGameScreen::drawCharacterCreation(float deltaSeconds)
     updateNameBackspaceRepeat(deltaSeconds);
     m_frameSeconds = deltaSeconds;
     m_help = {};
+    finishPortraitImport();
     const bool wasEditing = m_state.nameEditing;
 
     if (m_escapePressed && !modalOpen())
@@ -417,9 +418,9 @@ void NewGameScreen::drawCreationRoster(bool input)
 
         drawSolidRect(portrait, 0xff10110au);
 
-        if (const CharacterDollEntry *pEntry = characterEntryForState(state))
+        if (characterEntryForState(state) != nullptr)
         {
-            drawTexture(portraitTextureNameForEntry(*pEntry), portrait);
+            drawTexture(portraitTextureNameForState(state), portrait);
         }
 
         outline(portrait, PortraitEdge);
@@ -1588,6 +1589,22 @@ void NewGameScreen::drawPortraitPicker()
               upperCase(Engine::tr("The portrait sets the race · the voice shown is its own")), "menu_lucida", 11,
               CaptionText);
 
+#if !defined(__ANDROID__) && !defined(OPENYAMM_IOS)
+    // A portrait package from a folder (game/party/CustomPortraits.h); the system dialog answers asynchronously.
+    if (!m_customPortraitsFolder.empty())
+    {
+        const std::string label = Engine::tr("Add Portrait...");
+        // labelButtonWidth measures screen pixels; the sheet rect takes mockup pixels.
+        const float width = labelButtonWidth(label, 170 * u) / u;
+
+        if (button("portrait-import", sheetRect(X + W - 44 - width, Y + 64, width, 26), label, "button_small",
+                   m_portraitFolderPick == nullptr && !modalOpen()))
+        {
+            requestPortraitImport();
+        }
+    }
+#endif
+
     const Rect viewport = sheetRect(X + 44, Y + 92, W - 88, H - 126);
     scrollViewport(viewport, m_popupContentHeight, m_popupScroll, 60);
     setDesignClip(viewport);
@@ -1612,7 +1629,6 @@ void NewGameScreen::drawPortraitPicker()
     constexpr float TilePitchX = 102;
     constexpr float TilePitchY = 148;
     const int perRow = std::max(1, int((W - 88 + 10) / TilePitchX));
-    const uint32_t selectedId = selectedCandidate().characterDataId;
 
     for (const uint32_t raceId : raceOrder)
     {
@@ -1683,8 +1699,8 @@ void NewGameScreen::drawPortraitPicker()
             const Hotspot tileInput =
                 hotspot("portrait-" + std::to_string(candidateIndex), rect, pointerInside(viewport));
             drawSolidRect(rect, 0xff10110au);
-            drawTexture(portraitTextureNameForEntry(*pEntry), rect);
-            const bool current = candidate.characterDataId == selectedId;
+            drawTexture(candidatePortraitTextureName(candidate), rect);
+            const bool current = candidateIndex == m_state.selectedCandidateIndex;
             outline(rect, current ? Gold : tileInput.hovered ? HoverEdge : PortraitEdge);
 
             if (current)
@@ -1697,8 +1713,7 @@ void NewGameScreen::drawPortraitPicker()
             {
                 const CreationState &state = slotIndex == m_activePartySlot ? m_state : m_partyStates[slotIndex];
 
-                if (slotIndex != m_activePartySlot && candidateForState(state).characterDataId
-                    == candidate.characterDataId)
+                if (slotIndex != m_activePartySlot && state.selectedCandidateIndex == candidateIndex)
                 {
                     const Rect badge{rect.x + 3 * u, rect.y + 3 * u, 18 * u, 18 * u};
                     drawSolidRect(badge, 0xff4cc9f2u);
@@ -2174,10 +2189,10 @@ void NewGameScreen::drawPartyBoard()
             const CreationState &state = slot == m_activePartySlot ? m_state : m_partyStates[slot];
             const float cx = left + SkillColumn + slot * memberColumn + memberColumn / 2;
 
-            if (const CharacterDollEntry *pEntry = characterEntryForState(state))
+            if (characterEntryForState(state) != nullptr)
             {
                 const Rect thumb = sheetRect(cx - 18, y, 36, 46);
-                drawTexture(portraitTextureNameForEntry(*pEntry), thumb);
+                drawTexture(portraitTextureNameForState(state), thumb);
                 outline(thumb, slot == m_activePartySlot ? Gold : PortraitEdge);
             }
 

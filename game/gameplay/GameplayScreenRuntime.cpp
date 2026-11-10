@@ -4482,6 +4482,11 @@ std::string GameplayScreenRuntime::resolvePortraitTextureName(const Character &c
     return uiRuntime().resolvePortraitTextureName(character);
 }
 
+std::string GameplayScreenRuntime::availablePortraitTextureName(const Character &character) const
+{
+    return uiRuntime().availablePortraitTextureName(character);
+}
+
 void GameplayScreenRuntime::renderPortraitFx(
     size_t memberIndex,
     float portraitX,

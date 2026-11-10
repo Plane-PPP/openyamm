@@ -1268,7 +1268,9 @@ void GameplayHudOverlaySupport::updateCharacterDetailOverlay(
         ? characterName
         : Engine::tr("{name} the {class}", {{"name", characterName}, {"class", characterClass}});
     overlay.body.clear();
-    overlay.portraitTextureName = defaultCharacterPortraitTextureName(*pCharacter);
+    Character portraitCharacter = *pCharacter;
+    portraitCharacter.portraitTextureName = context.availablePortraitTextureName(*pCharacter);
+    overlay.portraitTextureName = defaultCharacterPortraitTextureName(portraitCharacter);
     overlay.hitPointsText = std::to_string(summary.health.current) + " / " + std::to_string(summary.health.maximum);
     overlay.spellPointsText =
         std::to_string(summary.spellPoints.current) + " / " + std::to_string(summary.spellPoints.maximum);

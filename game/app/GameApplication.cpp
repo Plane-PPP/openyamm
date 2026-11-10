@@ -17,6 +17,7 @@
 #include "game/scene/IndoorSceneRuntime.h"
 #include "game/scene/OutdoorSceneRuntime.h"
 #include "game/items/ItemGenerator.h"
+#include "game/party/CustomPortraits.h"
 #include "game/party/PartySpellSystem.h"
 #include "game/party/SkillData.h"
 #include "game/party/SpellIds.h"
@@ -9073,9 +9074,24 @@ void GameApplication::shutdownApplication()
     m_gameAudioSystem.shutdown();
 }
 
+void GameApplication::mountCustomPortraits()
+{
+    if (m_pAssetFileSystem == nullptr)
+    {
+        return;
+    }
+
+    // Imported portraits (game/party/CustomPortraits.h) live in the user data, the working directory.
+    std::error_code error;
+    const std::filesystem::path folder =
+        std::filesystem::absolute(customPortraitIconDirectory(std::filesystem::path(CustomPortraitsFolderName)), error);
+    m_pAssetFileSystem->setUserIconDirectory(error ? std::filesystem::path() : folder);
+}
+
 bool GameApplication::loadGameData(Engine::AssetFileSystem &assetFileSystem)
 {
     m_pAssetFileSystem = &assetFileSystem;
+    mountCustomPortraits();
     m_gameSession.clear();
     m_gameDataRepository.clear();
     m_gameSession.bindDataRepository(&m_gameDataRepository);
@@ -12428,7 +12444,10 @@ void GameApplication::openNewGameScreen(const std::string &source)
         {
             openMainMenuScreen();
         });
-
+    pScreen->setCustomPortraits(std::filesystem::path(CustomPortraitsFolderName), [this]()
+    {
+        mountCustomPortraits();
+    });
 
     if (!m_mainMenuChildScreensPrepared)
     {

@@ -482,6 +482,7 @@ public:
         int screenHeight,
         const std::string &textureName);
     std::string resolvePortraitTextureName(const Character &character) const;
+    std::string availablePortraitTextureName(const Character &character) const;
     void renderPortraitFx(
         size_t memberIndex,
         float portraitX,

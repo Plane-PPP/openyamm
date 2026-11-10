@@ -12,8 +12,10 @@
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string>
@@ -53,6 +55,9 @@ public:
         bool hasCustomDefaultStats = false;
         std::array<int, static_cast<size_t>(StatId::Count)> defaultStats = {};
         std::array<std::string, 2> defaultOptionalSkills = {};
+        // An imported portrait's face texture names without the frame number (user_<id>-, game/party/CustomPortraits.h);
+        // empty for the character_data row's own face.
+        std::string portraitPrefix;
     };
 
     using ContinueAction = std::function<void(const std::vector<Character> &, const NewGameOptions &)>;
@@ -78,6 +83,9 @@ public:
     void onExit() override;
     void handleSdlEvent(const SDL_Event &event) override;
     bool textInputActive() const override;
+    // Where imported portraits live (the user data's portraits folder) and what runs after an import changes them (the
+    // game mounts their icon folder). Without a folder the portrait picker offers no import.
+    void setCustomPortraits(std::filesystem::path portraitsFolder, std::function<void()> portraitsChangedAction);
 
   private:
     friend struct NewGameScreenTestAccess;
@@ -243,6 +251,12 @@ public:
     std::vector<std::string> wrapTextToWidth(const std::string &fontName, const std::string &text, float maxWidth, float scale);
     const CharacterDollEntry *selectedCharacterEntry() const;
     const CharacterDollEntry *characterEntryForState(const CreationState &state) const;
+    std::string candidatePortraitTextureName(const CreationCandidate &candidate) const;
+    std::string portraitTextureNameForState(const CreationState &state) const;
+    // The imported portraits, each a copy of its base character's candidate with its own face.
+    void appendCustomPortraitCandidates();
+    void requestPortraitImport();
+    void finishPortraitImport();
     const CreationCandidate &selectedCandidate() const;
     const CreationCandidate &candidateForState(const CreationState &state) const;
     bool isGodLichState(const CreationState &state) const;
@@ -323,5 +337,14 @@ public:
     CreationHelp m_help;
     bool m_escapePressed = false;
     bool m_returnPressed = false;
+    std::filesystem::path m_customPortraitsFolder;
+    std::function<void()> m_customPortraitsChangedAction;
+    struct PortraitFolderPick
+    {
+        std::mutex mutex;
+        bool finished = false;
+        std::optional<std::filesystem::path> folder;
+    };
+    std::shared_ptr<PortraitFolderPick> m_portraitFolderPick;
 };
 }

@@ -8,6 +8,7 @@
 #include "engine/Localization.h"
 #include "game/StringUtils.h"
 #include "game/content/ContentManifest.h"
+#include "game/party/CustomPortraits.h"
 #include "game/render/SpriteAtlasCache.h"
 #include "game/render/TextureFiltering.h"
 #include "game/tables/MapStats.h"
@@ -312,10 +313,12 @@ std::string portraitTextureNameForTextureFrame(const std::string &textureName, u
     return frameTextureName;
 }
 
-std::string portraitTextureNameForCharacterFrame(const Character &character, uint16_t frameIndex)
+std::string portraitTextureNameForCharacterFrame(
+    const Character &character,
+    const std::string &portraitTextureName,
+    uint16_t frameIndex)
 {
-    const std::string textureFrameName =
-        portraitTextureNameForTextureFrame(character.portraitTextureName, frameIndex);
+    const std::string textureFrameName = portraitTextureNameForTextureFrame(portraitTextureName, frameIndex);
 
     if (!textureFrameName.empty())
     {
@@ -2695,14 +2698,16 @@ std::string GameplayUiRuntime::resolvePortraitTextureName(const Character &chara
         return "DEAD";
     }
 
+    const std::string portraitTextureName = availablePortraitTextureName(character);
+
     if (!m_portraitRuntimeLoaded)
     {
-        return character.portraitTextureName;
+        return portraitTextureName;
     }
 
     if (character.portraitState == PortraitId::Normal)
     {
-        return portraitTextureNameForCharacterFrame(character, 1);
+        return portraitTextureNameForCharacterFrame(character, portraitTextureName, 1);
     }
 
     const PortraitFrameEntry *pFrame =
@@ -2710,10 +2715,31 @@ std::string GameplayUiRuntime::resolvePortraitTextureName(const Character &chara
 
     if (pFrame != nullptr && pFrame->textureIndex > 0)
     {
-        return portraitTextureNameForCharacterFrame(character, pFrame->textureIndex);
+        return portraitTextureNameForCharacterFrame(character, portraitTextureName, pFrame->textureIndex);
     }
 
-    return character.portraitTextureName;
+    return portraitTextureName;
+}
+
+std::string GameplayUiRuntime::availablePortraitTextureName(const Character &character) const
+{
+    if (!isCustomPortraitTextureName(character.portraitTextureName) || m_pAssetFileSystem == nullptr
+        || m_pAssetFileSystem->exists("Data/icons/" + character.portraitTextureName + ".png"))
+    {
+        return character.portraitTextureName;
+    }
+
+    const CharacterDollEntry *pEntry = m_pDataRepository != nullptr
+        ? m_pDataRepository->characterDollTable().getCharacter(character.characterDataId)
+        : nullptr;
+
+    if (pEntry != nullptr && !pEntry->facePicturesPrefix.empty())
+    {
+        return pEntry->facePicturesPrefix + "01";
+    }
+
+    return portraitTextureNameForPictureFrame(pEntry != nullptr && pEntry->id > 0 ? pEntry->id - 1
+                                              : character.portraitPictureId, 1);
 }
 
 bool GameplayUiRuntime::triggerPortraitFxAnimation(

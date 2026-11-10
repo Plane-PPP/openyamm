@@ -365,6 +365,10 @@ public:
     GameplayPortraitPresentationState &portraitPresentationState();
     const GameplayPortraitPresentationState &portraitPresentationState() const;
     std::string resolvePortraitTextureName(const Character &character) const;
+    // The member's own face texture (frame 01): its portraitTextureName, or, for an imported portrait that is not
+    // installed (deleted, or a save from another computer), its base character's face. The save keeps the imported
+    // name, so the portrait returns when it is imported again.
+    std::string availablePortraitTextureName(const Character &character) const;
     bool triggerPortraitFxAnimation(const std::string &animationName, const std::vector<size_t> &memberIndices);
     void triggerPortraitSpellFx(const PartySpellCastResult &result);
     const PortraitFxEventEntry *findPortraitFxEvent(PortraitFxEventKind kind) const;

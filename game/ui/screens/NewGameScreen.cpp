@@ -7,6 +7,7 @@
 #include "game/content/ContentManifest.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/party/CustomPortraits.h"
 #include "game/party/SkillData.h"
 #include "game/party/SpeechIds.h"
 #include "game/rules/GameRules.h"
@@ -741,7 +742,7 @@ void NewGameScreen::addPartySlot()
         const bool used = std::any_of(m_partyStates.begin(), m_partyStates.end(),
             [this, index](const CreationState &state)
             {
-                return candidateForState(state).characterDataId == m_candidates[index].characterDataId;
+                return state.selectedCandidateIndex == index;
             });
 
         if (!used)
@@ -873,6 +874,8 @@ void NewGameScreen::rebuildCandidates()
             m_candidates.push_back(std::move(candidate));
         }
     }
+
+    appendCustomPortraitCandidates();
 
     const auto isDragon = [](const CreationCandidate &candidate)
     {
@@ -1037,6 +1040,175 @@ void NewGameScreen::refreshSkillChoices(bool applyCandidateDefaults)
             }
         }
     }
+}
+
+void NewGameScreen::setCustomPortraits(std::filesystem::path portraitsFolder,
+                                       std::function<void()> portraitsChangedAction)
+{
+    m_customPortraitsFolder = std::move(portraitsFolder);
+    m_customPortraitsChangedAction = std::move(portraitsChangedAction);
+}
+
+std::string NewGameScreen::candidatePortraitTextureName(const CreationCandidate &candidate) const
+{
+    if (!candidate.portraitPrefix.empty())
+    {
+        return candidate.portraitPrefix + "01";
+    }
+
+    const CharacterDollEntry *pEntry =
+        m_pGameData != nullptr ? m_pGameData->characterDollTable().getCharacter(candidate.characterDataId) : nullptr;
+    return pEntry != nullptr ? portraitTextureNameForEntry(*pEntry) : std::string();
+}
+
+std::string NewGameScreen::portraitTextureNameForState(const CreationState &state) const
+{
+    return candidatePortraitTextureName(candidateForState(state));
+}
+
+void NewGameScreen::appendCustomPortraitCandidates()
+{
+    if (m_customPortraitsFolder.empty())
+    {
+        return;
+    }
+
+    const size_t standardCount = m_candidates.size();
+
+    for (const CustomPortrait &portrait : loadCustomPortraits(m_customPortraitsFolder))
+    {
+        // Offered where its base character is: the same race, classes and continent rules.
+        for (size_t index = 0; index < standardCount; ++index)
+        {
+            if (m_candidates[index].characterDataId == portrait.baseCharacterId)
+            {
+                CreationCandidate candidate = m_candidates[index];
+                candidate.portraitPrefix = customPortraitTexturePrefix(portrait.id);
+                m_candidates.push_back(std::move(candidate));
+                break;
+            }
+        }
+    }
+}
+
+void NewGameScreen::requestPortraitImport()
+{
+    m_portraitFolderPick = std::make_shared<PortraitFolderPick>();
+    SDL_ShowOpenFolderDialog(
+        [](void *pUserData, const char *const *pFileList, int)
+        {
+            std::unique_ptr<std::shared_ptr<PortraitFolderPick>> pPick(
+                static_cast<std::shared_ptr<PortraitFolderPick> *>(pUserData));
+            std::lock_guard lock((*pPick)->mutex);
+
+            if (pFileList != nullptr && pFileList[0] != nullptr)
+            {
+                (*pPick)->folder = std::filesystem::path(pFileList[0]);
+            }
+
+            (*pPick)->finished = true;
+        },
+        new std::shared_ptr<PortraitFolderPick>(m_portraitFolderPick), nullptr, nullptr, false);
+}
+
+void NewGameScreen::finishPortraitImport()
+{
+    if (m_portraitFolderPick == nullptr || m_pGameData == nullptr)
+    {
+        return;
+    }
+
+    std::optional<std::filesystem::path> folder;
+    {
+        std::lock_guard lock(m_portraitFolderPick->mutex);
+
+        if (!m_portraitFolderPick->finished)
+        {
+            return;
+        }
+
+        folder = m_portraitFolderPick->folder;
+    }
+    m_portraitFolderPick.reset();
+
+    if (!folder)
+    {
+        return;
+    }
+
+    const CustomPortraitImportResult result =
+        importCustomPortrait(*folder, m_customPortraitsFolder, m_pGameData->characterDollTable());
+
+    if (!result.success)
+    {
+        confirm(Engine::tr("Add Portrait"), Engine::tr("The portrait was not imported: {reason}",
+                                                       {{"reason", result.error}}), {Engine::tr("OK")}, [](int) {});
+        return;
+    }
+
+    if (m_customPortraitsChangedAction)
+    {
+        m_customPortraitsChangedAction();
+    }
+
+    // The party keeps its portraits: states point at candidates by index, and the new list may add one in between.
+    saveActivePartyState();
+    std::vector<std::pair<uint32_t, std::string>> chosen;
+    std::vector<bool> godLich;
+
+    for (const CreationState &state : m_partyStates)
+    {
+        const CreationCandidate &candidate = candidateForState(state);
+        chosen.emplace_back(candidate.characterDataId, candidate.portraitPrefix);
+        godLich.push_back(isGodLichState(state));
+    }
+
+    rebuildCandidates();
+    const std::string prefix = customPortraitTexturePrefix(result.portrait.id);
+    std::optional<size_t> importedIndex;
+
+    for (size_t slot = 0; slot < m_partyStates.size(); ++slot)
+    {
+        if (godLich[slot])
+        {
+            m_partyStates[slot].selectedCandidateIndex = m_candidates.size();
+            continue;
+        }
+
+        for (size_t index = 0; index < m_candidates.size(); ++index)
+        {
+            if (m_candidates[index].characterDataId == chosen[slot].first
+                && m_candidates[index].portraitPrefix == chosen[slot].second)
+            {
+                m_partyStates[slot].selectedCandidateIndex = index;
+                break;
+            }
+        }
+    }
+
+    for (size_t index = 0; index < m_candidates.size(); ++index)
+    {
+        if (m_candidates[index].portraitPrefix == prefix)
+        {
+            importedIndex = index;
+        }
+    }
+
+    m_state = m_partyStates[m_activePartySlot];
+    std::string body = result.replaced
+        ? Engine::tr("{name} was updated.", {{"name", result.portrait.name}})
+        : Engine::tr("{name} was added to the portraits.", {{"name", result.portrait.name}});
+
+    if (importedIndex)
+    {
+        chooseCandidateForActiveSlot(*importedIndex);
+    }
+    else
+    {
+        body += " " + Engine::tr("Its base character is not offered on this continent, so it is not shown here.");
+    }
+
+    confirm(Engine::tr("Add Portrait"), body, {Engine::tr("OK")}, [](int) {});
 }
 
 bool NewGameScreen::textInputActive() const
@@ -1500,7 +1672,7 @@ Character NewGameScreen::buildVoicePreviewCharacter() const
 
     if (pEntry != nullptr)
     {
-        character.portraitTextureName = portraitTextureNameForEntry(*pEntry);
+        character.portraitTextureName = candidatePortraitTextureName(candidate);
         character.portraitPictureId = pEntry->id > 0 ? (pEntry->id - 1) : 0;
         character.sexId = pEntry->defaultSex;
         character.raceId = pEntry->raceId >= 0 ? static_cast<uint32_t>(pEntry->raceId) : 0;
@@ -1729,7 +1901,7 @@ Character NewGameScreen::buildCharacterFromState(const CreationState &state) con
 
     if (pEntry != nullptr)
     {
-        character.portraitTextureName = portraitTextureNameForEntry(*pEntry);
+        character.portraitTextureName = candidatePortraitTextureName(candidate);
         character.portraitPictureId = pEntry->id > 0 ? (pEntry->id - 1) : 0;
         character.sexId = pEntry->defaultSex;
         character.raceId = pEntry->raceId >= 0 ? static_cast<uint32_t>(pEntry->raceId) : 0;

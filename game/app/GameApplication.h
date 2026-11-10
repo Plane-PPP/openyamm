@@ -168,6 +168,8 @@ private:
     friend struct GameApplicationTestAccess;
 
     bool loadGameData(Engine::AssetFileSystem &assetFileSystem);
+    // Serves the imported party portraits of the user data as icons (AssetFileSystem::setUserIconDirectory).
+    void mountCustomPortraits();
     bool ensureCommonGameDataLoaded();
     // Loads the common data under this ruleset's tables when they are not the loaded ones. Tear the session down
     // first: the reload replaces the tables that runtimes and screens point into.
