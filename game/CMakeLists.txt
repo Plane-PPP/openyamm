@@ -310,6 +310,7 @@ add_library(openyamm_game STATIC
     outdoor/WeatherPresentation.cpp
     party/Party.cpp
     party/BattleOrders.cpp
+    party/CustomPortraits.cpp
     party/EventSpellBuffs.cpp
     party/LloydsBeaconRuntime.cpp
     party/PlaythroughStatistics.cpp

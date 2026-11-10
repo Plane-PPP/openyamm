@@ -1,6 +1,7 @@
 add_executable(openyamm_unit_tests
     AssetFileSystemTests.cpp
     UserDataPathsTests.cpp
+    CustomPortraitTests.cpp
     LogFileTests.cpp
     AssetPackIndexTests.cpp
     UpdaterTests.cpp
@@ -367,6 +368,7 @@ add_executable(openyamm_unit_tests
     ../game/items/WorldItemShape.cpp
     ../game/party/Party.cpp
     ../game/party/BattleOrders.cpp
+    ../game/party/CustomPortraits.cpp
     ../game/party/PlaythroughStatistics.cpp
     ../game/party/PlaythroughSeal.cpp
     ../game/party/EventSpellBuffs.cpp
