@@ -85,6 +85,12 @@ public:
         const InstalledContentOptions &installedContentOptions
     );
     bool switchActiveWorld(const std::string &activeWorldId);
+    // A folder of the player's own icons at the x2 scale (imported party portraits, user_<id>-NN.png), searched after
+    // every icon package for unqualified icon requests (Data/icons/...): it adds icons and never replaces packaged
+    // ones. It stays mounted across switchActiveWorld. An empty path removes it; a folder that does not exist yet is
+    // remembered and mounted by the next call. Returns false when the folder exists but cannot be mounted.
+    bool setUserIconDirectory(const std::filesystem::path &directory);
+    const std::filesystem::path &getUserIconDirectory() const;
     bool mountDevelopmentRoot(const std::filesystem::path &assetRoot);
     bool exists(const std::string &virtualPath) const;
     // Returns the selected virtual file path, including its actual scale directory, also inside archives.
@@ -202,6 +208,8 @@ private:
     std::vector<std::pair<std::string, AssetScaleTier>> m_iconPackages;
     std::vector<SearchMount> m_searchMounts;
     bool m_androidApkAssetRoot;
+    std::filesystem::path m_userIconDirectory;
+    std::string m_mountedUserIconDirectory;
     bool m_languagePacksMissing = false;
     std::vector<std::pair<std::string, uint64_t>> m_missingLanguageBytes;
     std::unique_ptr<LookupCache> m_pLookupCache;

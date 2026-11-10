@@ -99,6 +99,8 @@ constexpr const char *EngineDevelopmentRootName = "engine";
 constexpr const char *WorldsDevelopmentRootName = "worlds";
 constexpr const char *DefaultActiveWorldId = "mm8";
 constexpr const char *IconsDirectoryName = "icons";
+// The virtual folder of AssetFileSystem::setUserIconDirectory; its "_x2" gives the icons their scale.
+constexpr const char *UserIconMountPoint = "user/icons_x2";
 constexpr const char *AudioDirectoryName = "audio";
 constexpr const char *MusicDirectoryName = "music";
 constexpr const char *VideosDirectoryName = "videos";
@@ -675,8 +677,53 @@ bool AssetFileSystem::switchActiveWorld(const std::string &activeWorldId)
     const AssetScaleTier assetScaleTier = m_assetScaleTier;
     const AssetScaleProfile assetScaleProfile = m_assetScaleProfile;
     const InstalledContentOptions installedContentOptions = m_installedContentOptions;
+    // The player's icons belong to the game, not to the world: initialize() forgets them.
+    const std::filesystem::path userIconDirectory = m_userIconDirectory;
 
-    return initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions);
+    if (!initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions))
+    {
+        return false;
+    }
+
+    setUserIconDirectory(userIconDirectory);
+    return true;
+}
+
+bool AssetFileSystem::setUserIconDirectory(const std::filesystem::path &directory)
+{
+    if (!m_mountedUserIconDirectory.empty())
+    {
+        PHYSFS_unmount(m_mountedUserIconDirectory.c_str());
+        m_mountedUserIconDirectory.clear();
+    }
+
+    m_userIconDirectory = directory;
+    bool mounted = true;
+    std::error_code error;
+
+    if (isInitialized() && !directory.empty() && std::filesystem::is_directory(directory, error))
+    {
+        const std::string root = utf8String(directory);
+        mounted = PHYSFS_mount(root.c_str(), UserIconMountPoint, 1) != 0;
+
+        if (mounted)
+        {
+            m_mountedUserIconDirectory = root;
+        }
+        else
+        {
+            std::cerr << "PHYSFS_mount failed for the user icon folder " << root << ": "
+                      << PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()) << '\n';
+        }
+    }
+
+    refreshLookupCache();
+    return mounted;
+}
+
+const std::filesystem::path &AssetFileSystem::getUserIconDirectory() const
+{
+    return m_userIconDirectory;
 }
 
 bool AssetFileSystem::mountDevelopmentRoot(const std::filesystem::path &assetRoot)
@@ -1847,6 +1894,8 @@ void AssetFileSystem::shutdown()
     m_installedContentOptions = {};
     m_iconPackages.clear();
     m_searchMounts.clear();
+    m_userIconDirectory.clear();
+    m_mountedUserIconDirectory.clear();
     m_androidApkAssetRoot = false;
     m_languagePacksMissing = false;
     m_missingLanguageBytes.clear();
@@ -2045,6 +2094,10 @@ std::vector<std::string> AssetFileSystem::resolveVirtualPathCandidates(const std
                     continue;
                 }
                 resolvedPaths.push_back(root + "/icons" + assetScaleTierDirectorySuffix(tier) + suffix);
+            }
+            if (package.empty() && !m_mountedUserIconDirectory.empty())
+            {
+                resolvedPaths.push_back(UserIconMountPoint + suffix);
             }
             // No native or other-package fallback for a qualified icon request.
             return resolvedPaths;

@@ -1370,6 +1370,53 @@ TEST_CASE("AssetFileSystem authoritative icon packages isolate restored and reta
     std::filesystem::remove_all(temporaryRoot);
 }
 
+TEST_CASE("AssetFileSystem serves the user icon folder after the packages and keeps it across worlds")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assets = temporaryRoot / "assets";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm6 x2\nworlds/mm7 x2\n"},
+        {"icons_x2/pc02-01.png", "engine portrait"}
+    });
+    writeZipFile(assets / "packs/mm6.core.zip", {{"icons_x2/npc1.png", "mm6 portrait"}});
+    writeZipFile(assets / "packs/mm7.core.zip", {{"icons_x2/npc1.png", "mm7 portrait"}});
+    writeCorePackIndex(assets, {"engine", "mm6", "mm7"});
+    const std::filesystem::path userIcons = temporaryRoot / "user data" / "portraits" / "icons_x2";
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assets, AssetScaleTier::X2, AssetScaleProfile{}, "mm6"));
+
+        // A folder that does not exist yet is remembered, not an error.
+        CHECK(fs.setUserIconDirectory(userIcons));
+        CHECK_FALSE(fs.readTextFile("Data/icons/user_medusa-01.png"));
+
+        std::filesystem::create_directories(userIcons);
+        std::ofstream(userIcons / "user_medusa-01.png", std::ios::binary) << "imported portrait";
+        std::ofstream(userIcons / "pc02-01.png", std::ios::binary) << "must not replace";
+        REQUIRE(fs.setUserIconDirectory(userIcons));
+        CHECK(fs.readTextFile("Data/icons/user_medusa-01.png") == std::optional<std::string>("imported portrait"));
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
+        const std::vector<std::string> icons = fs.enumerate("Data/icons");
+        CHECK(std::find(icons.begin(), icons.end(), "user_medusa-01.png") != icons.end());
+        const std::optional<std::string> resolved = fs.resolveExistingFilePath("Data/icons/user_medusa-01.png");
+        REQUIRE(resolved);
+        CHECK(assetScaleTierFromResolvedPath(*resolved) == AssetScaleTier::X2);
+        // Package-qualified requests never reach the player's folder.
+        CHECK_FALSE(fs.readTextFile("engine/icons/user_medusa-01.png"));
+
+        // Loading a map of another world re-initializes the mounts; the player's icons stay.
+        REQUIRE(fs.switchActiveWorld("mm7"));
+        CHECK(fs.getUserIconDirectory() == userIcons);
+        CHECK(fs.readTextFile("Data/icons/npc1.png") == std::optional<std::string>("mm7 portrait"));
+        CHECK(fs.readTextFile("Data/icons/user_medusa-01.png") == std::optional<std::string>("imported portrait"));
+
+        CHECK(fs.setUserIconDirectory({}));
+        CHECK_FALSE(fs.readTextFile("Data/icons/user_medusa-01.png"));
+    }
+    std::filesystem::remove_all(temporaryRoot);
+}
+
 TEST_CASE("AssetFileSystem cached lookups refresh and follow changed mounts")
 {
     using namespace OpenYAMM::Engine;
