@@ -1,0 +1,193 @@
+# TEST ONLY, not for upstream: a Windows build of feature/custom-portrait-import (upstream main + the portrait
+# import) as an incremental update over the installed Minotaur 1.21 base, for the player's manual test in a copy of
+# the game folder. Built like the fork's Minotaur/Medusa Windows patches (tools/minotaur_updates.py).
+name: Custom portrait import Windows test build
+
+on:
+  push:
+    branches:
+      - test/custom-portrait-import-windows
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: custom-portraits-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 test patch
+    env:
+      PORTRAIT_TEST_BASE_VERSION: minotaur-1.21-c9949bbc7301-28-1
+    runs-on: windows-latest
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Preserve repository line endings
+        shell: pwsh
+        run: git config --global core.autocrlf input
+
+      - name: Check out sources and assets
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /README.md
+            /CMakeLists.txt
+            /LICENSE
+            /COPYRIGHT
+            /cmake/
+            /engine/
+            /game/
+            /packaging/
+            /tools/
+            /tests/
+            /third_party/doctest/
+            /assets_dev/_legacy/sprites_original/
+            /assets_dev/engine/
+            /assets_dev/worlds/mm6/
+            /assets_dev/worlds/mm7/
+            /assets_dev/worlds/mm8/
+            /assets_dev/languages/
+            !/assets_dev/languages/templates/
+            !/assets_dev/languages/*/engine/audio/
+            !/assets_dev/languages/*/engine/videos/
+            !/assets_dev/languages/*/worlds/
+
+      - name: Install MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-yaml
+
+      - name: Select update base and unique app version
+        run: |
+          base_path="packaging/minotaur/bases/$PORTRAIT_TEST_BASE_VERSION.json"
+          read -r checked_version base_sha <<< "$(/ucrt64/bin/python.exe tools/minotaur_updates.py check-base "$base_path")"
+          test "$checked_version" = "$PORTRAIT_TEST_BASE_VERSION"
+          # The launcher accepts at most 32 characters in app/current.
+          release_version="minotaur-portrait-${GITHUB_SHA:0:8}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          /ucrt64/bin/python.exe -c "import sys; sys.path.insert(0, 'tools'); from minotaur_updates import VERSION; sys.exit(0 if VERSION.fullmatch(sys.argv[1]) else 'Invalid or too long app version: ' + sys.argv[1])" "$release_version"
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=%s\n' \
+            "$base_path" "$base_sha" "$release_version" >> "$GITHUB_ENV"
+
+      - name: Detect actual runner resources and compilation parallelism
+        run: /ucrt64/bin/python.exe tools/measure_windows_build.py --probe
+
+      - name: Configure release build
+        run: >-
+          cmake -S . -B build-windows -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DPython3_EXECUTABLE="$(cygpath -m /ucrt64/bin/python.exe)"
+          -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=ON
+          -DOPENYAMM_BUILD_TESTS=ON
+          -DOPENYAMM_COOK_ON_BUILD=OFF
+          -DOPENYAMM_RELEASE_VERSION=${MINOTAUR_RELEASE_VERSION}
+          -DOPENYAMM_RELEASE_THIN=ON
+          -DOPENYAMM_RELEASE_CONTENT_DIR="$(cygpath -m "$PWD/build-windows/release-content")"
+          -DOPENYAMM_BUILD_EDITOR=OFF
+          -DOPENYAMM_BUILD_TOOLS=OFF
+
+      - name: Build Windows program, shaders and cooker
+        run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase program --
+          cmake --build build-windows
+          --target openyamm openyamm_launcher openyamm_runtime_shaders openyamm_sprite_atlas_cook
+          --parallel "$MINOTAUR_BUILD_JOBS"
+
+      - name: Build and run the portrait import tests on Windows
+        run: |
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests --parallel "$MINOTAUR_BUILD_JOBS"
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase portrait-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='Custom portraits*,AssetFileSystem*,*UserDataPaths*,*user data*'
+
+      - name: Prepare indexed content
+        run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content --
+          /ucrt64/bin/python.exe tools/package_runtime_assets.py
+          --assets-root assets_dev --output build-windows/release-content
+          --profile desktop --cooker build-windows/game/openyamm_sprite_atlas_cook.exe
+          --release "${MINOTAUR_RELEASE_VERSION}" --build "${GITHUB_SHA}"
+
+      - name: Package the small program archive
+        run: >-
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase package --
+          cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
+
+      - name: Create the test patch over Minotaur 1.21
+        run: |
+          patch="build-windows/test-patch/OpenYAMM-Portrait-Import-Test-Windows-Patch.zip"
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase update-zip -- \
+            /ucrt64/bin/python.exe tools/minotaur_updates.py build \
+            --stage build-windows/release/Release/OpenYAMM \
+            --content build-windows/release-content \
+            --base "${MINOTAUR_BASE_PATH}" --source-sha "${GITHUB_SHA}" \
+            --output "$patch" \
+            --baseline-output build-windows/test-patch/minotaur-baseline.json
+          /ucrt64/bin/python.exe - "$patch" <<'EOF'
+          import hashlib, json, os, sys, zipfile
+          path = sys.argv[1]
+          readme = """OpenYAMM custom portrait import - Windows TEST build (not a Minotaur release)
+
+          Upstream OpenYAMM main with the custom portrait import, as an update over Minotaur 1.21
+          (minotaur-1.21-c9949bbc7301-28-1). Install it into a COPY of the game folder: the copy becomes plain
+          upstream OpenYAMM without the Minotaur rules. Run Apply-MinotaurUpdate.cmd from this folder.
+          Source: """ + os.environ["GITHUB_SERVER_URL"] + "/" + os.environ["GITHUB_REPOSITORY"] + "/commit/" + os.environ["GITHUB_SHA"] + "\n"
+          with zipfile.ZipFile(path, "a", zipfile.ZIP_DEFLATED) as archive:
+              names = archive.namelist()
+              prefix = names[0].split("/", 1)[0] + "/"
+              archive.writestr(prefix + "README-PORTRAIT-IMPORT-TEST.txt", readme.replace("\n          ", "\n"))
+          with zipfile.ZipFile(path) as archive:
+              names = archive.namelist()
+              manifest = json.loads(archive.read(next(n for n in names if n.endswith("/minotaur-update.json"))))
+              assert any(n.endswith("/payload/app/openyamm.exe") for n in names)
+              assert len(manifest["target"]["version"]) <= 32, manifest["target"]["version"]
+              assert manifest["base"]["version"] == os.environ["PORTRAIT_TEST_BASE_VERSION"]
+              print("changed packs:", manifest["changed_packs"])
+          digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+          print(f"{os.path.basename(path)} {os.path.getsize(path)} bytes sha256 {digest}")
+          with open(path + ".sha256", "w") as stream:
+              stream.write(f"{digest}  {os.path.basename(path)}\n")
+          EOF
+
+      - name: Upload the test patch
+        uses: actions/upload-artifact@v7
+        with:
+          name: openyamm-portrait-import-test-patch-${{ github.sha }}-windows-x64
+          path: |
+            build-windows/test-patch/*.zip
+            build-windows/test-patch/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload baseline and size/checksum report
+        uses: actions/upload-artifact@v7
+        with:
+          name: openyamm-portrait-import-test-metadata-${{ github.sha }}
+          path: build-windows/test-patch/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload runner resource measurements even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: portrait-import-build-resources-${{ github.sha }}
+          path: build-resources/
+          if-no-files-found: warn
+          retention-days: 30
