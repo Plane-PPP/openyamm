@@ -1,6 +1,8 @@
 # TEST ONLY, not for upstream: a Windows build of feature/custom-portrait-import (upstream main + the portrait
 # import) as an incremental update over the installed Minotaur 1.21 base, for the player's manual test in a copy of
 # the game folder. Built like the fork's Minotaur/Medusa Windows patches (tools/minotaur_updates.py).
+# No unit tests here: upstream's openyamm_unit_tests does not link on MinGW (WinHttp/BCrypt are not linked; upstream
+# packages build with tests off). The portrait tests run on Linux.
 name: Custom portrait import Windows test build
 
 on:
@@ -96,7 +98,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DPython3_EXECUTABLE="$(cygpath -m /ucrt64/bin/python.exe)"
           -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=ON
-          -DOPENYAMM_BUILD_TESTS=ON
+          -DOPENYAMM_BUILD_TESTS=OFF
           -DOPENYAMM_COOK_ON_BUILD=OFF
           -DOPENYAMM_RELEASE_VERSION=${MINOTAUR_RELEASE_VERSION}
           -DOPENYAMM_RELEASE_THIN=ON
@@ -110,11 +112,6 @@ jobs:
           cmake --build build-windows
           --target openyamm openyamm_launcher openyamm_runtime_shaders openyamm_sprite_atlas_cook
           --parallel "$MINOTAUR_BUILD_JOBS"
-
-      - name: Build and run the portrait import tests on Windows
-        run: |
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests --parallel "$MINOTAUR_BUILD_JOBS"
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase portrait-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='Custom portraits*,AssetFileSystem*,*UserDataPaths*,*user data*'
 
       - name: Prepare indexed content
         run: >-
