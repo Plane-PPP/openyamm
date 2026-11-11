@@ -23,7 +23,8 @@ jobs:
   windows:
     name: Windows x64 test patch
     env:
-      PORTRAIT_TEST_BASE_VERSION: minotaur-1.21-c9949bbc7301-28-1
+      # The installed portrait test build (run 42970260621); first test build was over minotaur-1.21-c9949bbc7301-28-1.
+      PORTRAIT_TEST_BASE_VERSION: minotaur-portrait-babc506d-3-1
     runs-on: windows-latest
     timeout-minutes: 240
     defaults:
@@ -124,7 +125,7 @@ jobs:
 
       - name: Create the test patch over Minotaur 1.21
         run: |
-          patch="build-windows/test-patch/OpenYAMM-Portrait-Import-Test-Windows-Patch.zip"
+          patch="build-windows/test-patch/OpenYAMM-Portrait-Doll-Import-Test-Windows-Patch.zip"
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase update-zip -- \
             /ucrt64/bin/python.exe tools/minotaur_updates.py build \
             --stage build-windows/release/Release/OpenYAMM \
@@ -135,12 +136,13 @@ jobs:
           /ucrt64/bin/python.exe - "$patch" <<'EOF'
           import hashlib, json, os, sys, zipfile
           path = sys.argv[1]
-          readme = """OpenYAMM custom portrait import - Windows TEST build (not a Minotaur release)
+          readme = """OpenYAMM custom portrait and doll import - Windows TEST build (not a Minotaur release)
 
-          Upstream OpenYAMM main with the custom portrait import, as an update over Minotaur 1.21
-          (minotaur-1.21-c9949bbc7301-28-1). Install it into a COPY of the game folder: the copy becomes plain
-          upstream OpenYAMM without the Minotaur rules. Run Apply-MinotaurUpdate.cmd from this folder.
+          Upstream OpenYAMM main with the custom portrait import and its doll, as an update over the installed
+          portrait test build (BASE_VERSION). Run
+          Apply-MinotaurUpdate.cmd from this folder.
           Source: """ + os.environ["GITHUB_SERVER_URL"] + "/" + os.environ["GITHUB_REPOSITORY"] + "/commit/" + os.environ["GITHUB_SHA"] + "\n"
+          readme = readme.replace("BASE_VERSION", os.environ["PORTRAIT_TEST_BASE_VERSION"])
           with zipfile.ZipFile(path, "a", zipfile.ZIP_DEFLATED) as archive:
               names = archive.namelist()
               prefix = names[0].split("/", 1)[0] + "/"
