@@ -57,7 +57,33 @@ name: "Medusa"          # optional, shown in messages; at most 48 characters
 base_character: 2       # character_data.txt row: doll, race, sex, default class and voice
 ```
 
-and `01.png ... 56.png`: 118x158, 8-bit RGBA PNG. Other files in the folder are ignored.
+and `01.png ... 56.png`: 118x158, 8-bit RGBA PNG. Optionally a `doll/` folder with the portrait's own doll images
+(next section). Other files in the folder are ignored.
+
+## The doll
+
+The paperdoll of the character screen and of the party creation preview is layered: background, **body**, right
+hand, left hand, equipment by slot, fingers over the weapon (`GameplayPartyOverlayRenderer::renderCharacterOverlay`,
+`NewGameScreen::buildCreationPreviewDollPixels`). The head is painted on the body image; the row's `head` column is
+read but never drawn. Hands and equipment are placed by the row's doll type, and equipment art is drawn for that type
+(`<icon>v<type + 1>`), so a portrait keeps its base row's doll type, pose and silhouette and may replace only these
+images, each at the size of the base row's image (x2 PNG, 8-bit RGBA):
+
+| Package file | Replaces (character_data column) | pc02, x2 |
+|---|---|---|
+| `doll/body.png` | `bod` (9): the body with the head | 166x594 |
+| `doll/hand_left_closed.png` | `LHd` (11): left hand on a shield | 34x132 |
+| `doll/hand_left_hold.png` | `LHu` (12): left hand on a two-handed grip | 34x120 |
+| `doll/hand_left_open.png` | `LHo` (13): free left hand | 50x142 |
+| `doll/hand_right_fingers.png` | `RHb` (14): right fingers over the weapon | 34x28 |
+| `doll/hand_right_open.png` | `RHd` (17): free right hand | 94x118 |
+| `doll/hand_right_hold.png` | `RHu` (18): right hand holding a weapon | 58x28 |
+
+Any subset may be given. The import installs them as `user_<id>_body.png` and `user_<id>_hand_<name>.png` (no frame
+digits at the end) and lists them in `portraits/<id>.yml`; importing the id again without a part removes it.
+`customPortraitDollEntry` gives a member with an imported portrait the base row with the installed parts swapped in;
+a part that is not installed (or a deleted portrait) shows the base row's own image. Table rows, doll types and saves
+are unchanged.
 
 ## Import checks
 
@@ -66,7 +92,9 @@ and `01.png ... 56.png`: 118x158, 8-bit RGBA PNG. Other files in the folder are 
 - `portrait.yml` is missing, larger than 64 KB, not YAML, not `schema: 1`, or a field has the wrong type;
 - the id is not 1-32 of `a-z 0-9 _` (no paths);
 - `base_character` is unknown or a row without a race (an NPC-only face);
-- a frame is missing, a link, empty or over 1 MB, not a PNG, not 118x158, not 8-bit RGBA, or does not decode.
+- a frame is missing, a link, empty or over 1 MB, not a PNG, not 118x158, not 8-bit RGBA, or does not decode;
+- a doll image is a link or over 1 MB, replaces an image the base row does not have, is not twice the size of that
+  image, is not an 8-bit RGBA PNG, or does not decode.
 
 Files are read by fixed names only and written under names derived from the checked id. The frames and manifest are
 written as `*.import` files first and renamed over the old ones only when all are written; the manifest goes last, so
@@ -85,4 +113,5 @@ manifest whose id does not match its file name or whose frames are not all prese
 
 - Android and iOS import (content URIs).
 - A cooked atlas for imported faces (56 small PNG files load fast enough; the HUD keeps loaded textures).
-- A custom doll or voice: the base row provides them.
+- A custom doll type, pose or voice: the base row provides them; only its body and hand images can be replaced.
+- Re-importing an id while the game runs shows the new images after a restart (loaded textures stay cached).
