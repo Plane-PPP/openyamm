@@ -24,7 +24,8 @@ jobs:
     name: Windows x64 test patch
     env:
       # The installed portrait test build (run 42970260621); first test build was over minotaur-1.21-c9949bbc7301-28-1.
-      PORTRAIT_TEST_BASE_VERSION: minotaur-portrait-babc506d-3-1
+      # Installed doll test build (run 42998058911).
+      PORTRAIT_TEST_BASE_VERSION: minotaur-portrait-2afc1fa5-5-1
     runs-on: windows-latest
     timeout-minutes: 240
     defaults:
@@ -123,7 +124,22 @@ jobs:
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase package --
           cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
 
-      - name: Create the test patch over Minotaur 1.21
+      - name: Check that the launcher needs no MinGW runtime DLLs
+        run: |
+          # The game copies app/<version>/OpenYAMM-launcher.exe over the root OpenYAMM.exe after a healthy start, where
+          # the DLLs collected next to openyamm.exe are not: the launcher must import Windows system DLLs only.
+          launcher="build-windows/release/Release/OpenYAMM/app/${MINOTAUR_RELEASE_VERSION}/OpenYAMM-launcher.exe"
+          for executable in "$launcher" build-windows/release/Release/OpenYAMM/OpenYAMM.exe; do
+            test -f "$executable" || continue
+            imports="$(objdump -p "$executable" | sed -n 's/^\s*DLL Name: //p')"
+            echo "$executable: $(tr '\n' ' ' <<< "$imports")"
+            if grep -Eiq '^(libstdc\+\+|libgcc|libwinpthread)' <<< "$imports"; then
+              echo "::error::$executable imports MinGW runtime DLLs."
+              exit 1
+            fi
+          done
+
+      - name: Create the test patch over the installed test build
         run: |
           patch="build-windows/test-patch/OpenYAMM-Portrait-Doll-Import-Test-Windows-Patch.zip"
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase update-zip -- \
