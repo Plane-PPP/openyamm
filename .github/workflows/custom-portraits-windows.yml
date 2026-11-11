@@ -2,7 +2,8 @@
 # import) as an incremental update over the installed Minotaur 1.21 base, for the player's manual test in a copy of
 # the game folder. Built like the fork's Minotaur/Medusa Windows patches (tools/minotaur_updates.py).
 # No unit tests here: upstream's openyamm_unit_tests does not link on MinGW (WinHttp/BCrypt are not linked; upstream
-# packages build with tests off). The portrait tests run on Linux.
+# packages build with tests off). The portrait tests run on Linux. No language packs: upstream's
+# package_runtime_assets.py mixes path separators under MSYS2 Python; the test build is English only.
 name: Custom portrait import Windows test build
 
 on:
@@ -57,11 +58,6 @@ jobs:
             /assets_dev/worlds/mm6/
             /assets_dev/worlds/mm7/
             /assets_dev/worlds/mm8/
-            /assets_dev/languages/
-            !/assets_dev/languages/templates/
-            !/assets_dev/languages/*/engine/audio/
-            !/assets_dev/languages/*/engine/videos/
-            !/assets_dev/languages/*/worlds/
 
       - name: Install MSYS2 UCRT64 toolchain
         uses: msys2/setup-msys2@v2
