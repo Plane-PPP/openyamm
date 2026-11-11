@@ -2721,6 +2721,16 @@ std::string GameplayUiRuntime::resolvePortraitTextureName(const Character &chara
     return portraitTextureName;
 }
 
+CharacterDollEntry GameplayUiRuntime::characterDollEntry(
+    const CharacterDollEntry &base,
+    const Character &character) const
+{
+    return customPortraitDollEntry(base, character.portraitTextureName, [this](const std::string &textureName)
+    {
+        return m_pAssetFileSystem != nullptr && m_pAssetFileSystem->exists("Data/icons/" + textureName + ".png");
+    });
+}
+
 std::string GameplayUiRuntime::availablePortraitTextureName(const Character &character) const
 {
     if (!isCustomPortraitTextureName(character.portraitTextureName) || m_pAssetFileSystem == nullptr

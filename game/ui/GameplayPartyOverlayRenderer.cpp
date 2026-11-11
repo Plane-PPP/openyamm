@@ -9164,8 +9164,16 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
             : GameplayUiSkin::Ivory;
     const uint32_t experienceValueColorAbgr =
         canTrainToNextLevel ? GameplayUiSkin::Bonus : GameplayUiSkin::Ivory;
-    const CharacterDollEntry *pCharacterDollEntry =
+    const CharacterDollEntry *pBaseCharacterDollEntry =
         resolveCharacterDollEntry(context.characterDollTable(), pCharacter);
+    // An imported portrait may bring its own body and hands; the row's doll type and equipment stay.
+    const std::optional<CharacterDollEntry> characterDollEntry =
+        pBaseCharacterDollEntry != nullptr && pCharacter != nullptr
+            ? std::optional<CharacterDollEntry>(
+                context.gameplayUiRuntime().characterDollEntry(*pBaseCharacterDollEntry, *pCharacter))
+            : std::nullopt;
+    const CharacterDollEntry *pCharacterDollEntry =
+        characterDollEntry ? &*characterDollEntry : pBaseCharacterDollEntry;
     const CharacterDollTypeEntry *pCharacterDollType =
         pCharacterDollEntry != nullptr && context.characterDollTable() != nullptr
             ? context.characterDollTable()->getDollType(pCharacterDollEntry->dollTypeId)

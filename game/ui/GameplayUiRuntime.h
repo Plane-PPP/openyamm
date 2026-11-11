@@ -369,6 +369,9 @@ public:
     // installed (deleted, or a save from another computer), its base character's face. The save keeps the imported
     // name, so the portrait returns when it is imported again.
     std::string availablePortraitTextureName(const Character &character) const;
+    // The doll a member shows: its character_data row, with the body and hands of its imported portrait where they
+    // are installed (game/party/CustomPortraits.h).
+    CharacterDollEntry characterDollEntry(const CharacterDollEntry &base, const Character &character) const;
     bool triggerPortraitFxAnimation(const std::string &animationName, const std::vector<size_t> &memberIndices);
     void triggerPortraitSpellFx(const PartySpellCastResult &result);
     const PortraitFxEventEntry *findPortraitFxEvent(PortraitFxEventKind kind) const;

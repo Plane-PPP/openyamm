@@ -43,6 +43,55 @@ std::string installedFrameFileName(std::string_view id, size_t frame)
     return customPortraitTexturePrefix(id) + buffer + ".png";
 }
 
+constexpr std::array<CustomDollPart, size_t(CustomDollPart::Count)> DollParts = {CustomDollPart::Body,
+    CustomDollPart::LeftHandClosed, CustomDollPart::LeftHandHold, CustomDollPart::LeftHandOpen,
+    CustomDollPart::RightHandFingers, CustomDollPart::RightHandOpen, CustomDollPart::RightHandHold};
+
+// doll/body.png, doll/hand_left_closed.png ...
+std::string dollPartPackageFile(CustomDollPart part)
+{
+    const std::string name(customDollPartName(part));
+    return part == CustomDollPart::Body ? "doll/body.png" : "doll/hand_" + name + ".png";
+}
+
+// The CharacterDollEntry field that names a part's image.
+std::string CharacterDollEntry::*dollPartMember(CustomDollPart part)
+{
+    switch (part)
+    {
+        case CustomDollPart::LeftHandClosed:
+            return &CharacterDollEntry::leftHandClosedAsset;
+        case CustomDollPart::LeftHandHold:
+            return &CharacterDollEntry::leftHandHoldAsset;
+        case CustomDollPart::LeftHandOpen:
+            return &CharacterDollEntry::leftHandOpenAsset;
+        case CustomDollPart::RightHandFingers:
+            return &CharacterDollEntry::rightHandFingersAsset;
+        case CustomDollPart::RightHandOpen:
+            return &CharacterDollEntry::rightHandOpenAsset;
+        case CustomDollPart::RightHandHold:
+            return &CharacterDollEntry::rightHandHoldAsset;
+        case CustomDollPart::Body:
+        case CustomDollPart::Count:
+            break;
+    }
+
+    return &CharacterDollEntry::bodyAsset;
+}
+
+std::optional<CustomDollPart> dollPartFromName(const std::string &name)
+{
+    for (const CustomDollPart part : DollParts)
+    {
+        if (customDollPartName(part) == name)
+        {
+            return part;
+        }
+    }
+
+    return std::nullopt;
+}
+
 // A regular file, not a link, below the size limit.
 std::optional<std::vector<uint8_t>> readPackageFile(const std::filesystem::path &path, uintmax_t maximumBytes)
 {
@@ -72,8 +121,9 @@ uint32_t readBigEndian32(const std::vector<uint8_t> &bytes, size_t offset)
         | uint32_t(bytes[offset + 3]);
 }
 
-// Empty when the bytes are a frame the HUD can show: a 118x158, 8-bit RGBA PNG that decodes.
-std::string checkFrame(const std::vector<uint8_t> &bytes, const std::string &fileName)
+// Empty when the bytes are an image the HUD can show at the given size: an 8-bit RGBA PNG that decodes.
+std::string checkImage(const std::vector<uint8_t> &bytes, const std::string &fileName, int expectedWidth,
+                       int expectedHeight)
 {
     const bool png = bytes.size() > 33 && std::equal(PngSignature.begin(), PngSignature.end(), bytes.begin())
         && std::equal(bytes.begin() + 12, bytes.begin() + 16, std::string_view("IHDR").begin());
@@ -86,13 +136,14 @@ std::string checkFrame(const std::vector<uint8_t> &bytes, const std::string &fil
     const uint32_t width = readBigEndian32(bytes, 16);
     const uint32_t height = readBigEndian32(bytes, 20);
 
-    if (width != uint32_t(CustomPortraitFrameWidth) || height != uint32_t(CustomPortraitFrameHeight))
+    if (width != uint32_t(expectedWidth) || height != uint32_t(expectedHeight))
     {
-        return Engine::tr("{file} is {width}x{height}; portrait frames are 118x158.",
-                          {{"file", fileName}, {"width", uint64_t(width)}, {"height", uint64_t(height)}});
+        return Engine::tr("{file} is {width}x{height}; it must be {expectedWidth}x{expectedHeight}.",
+                          {{"file", fileName}, {"width", uint64_t(width)}, {"height", uint64_t(height)},
+                           {"expectedWidth", expectedWidth}, {"expectedHeight", expectedHeight}});
     }
 
-    // Bit depth 8, colour type 6 (RGBA): the transparent background the portrait frame needs.
+    // Bit depth 8, colour type 6 (RGBA): the transparent background a portrait frame or doll image needs.
     if (bytes[24] != 8 || bytes[25] != 6)
     {
         return Engine::tr("{file} must be an 8-bit RGBA PNG with a transparent background.", {{"file", fileName}});
@@ -160,6 +211,21 @@ std::optional<CustomPortrait> parseManifest(const std::string &text, std::string
         }
 
         portrait.baseCharacterId = manifest["base_character"].as<uint32_t>();
+
+        if (manifest["doll"] && manifest["doll"].IsSequence())
+        {
+            for (const YAML::Node &part : manifest["doll"])
+            {
+                const std::optional<CustomDollPart> dollPart = dollPartFromName(part.as<std::string>());
+
+                if (dollPart
+                    && std::find(portrait.dollParts.begin(), portrait.dollParts.end(), *dollPart)
+                        == portrait.dollParts.end())
+                {
+                    portrait.dollParts.push_back(*dollPart);
+                }
+            }
+        }
     }
     catch (const YAML::Exception &)
     {
@@ -191,7 +257,21 @@ std::string manifestText(const CustomPortrait &portrait)
     YAML::Emitter emitter;
     emitter << YAML::BeginMap << YAML::Key << "schema" << YAML::Value << ManifestSchema << YAML::Key << "id"
             << YAML::Value << portrait.id << YAML::Key << "name" << YAML::Value << portrait.name << YAML::Key
-            << "base_character" << YAML::Value << portrait.baseCharacterId << YAML::EndMap;
+            << "base_character" << YAML::Value << portrait.baseCharacterId;
+
+    if (!portrait.dollParts.empty())
+    {
+        emitter << YAML::Key << "doll" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+
+        for (const CustomDollPart part : portrait.dollParts)
+        {
+            emitter << std::string(customDollPartName(part));
+        }
+
+        emitter << YAML::EndSeq;
+    }
+
+    emitter << YAML::EndMap;
     return std::string(emitter.c_str()) + "\n";
 }
 
@@ -239,6 +319,82 @@ bool isCustomPortraitTextureName(std::string_view textureName)
 std::filesystem::path customPortraitIconDirectory(const std::filesystem::path &portraitsFolder)
 {
     return portraitsFolder / "icons_x2";
+}
+
+std::string_view customDollPartName(CustomDollPart part)
+{
+    switch (part)
+    {
+        case CustomDollPart::Body:
+            return "body";
+        case CustomDollPart::LeftHandClosed:
+            return "left_closed";
+        case CustomDollPart::LeftHandHold:
+            return "left_hold";
+        case CustomDollPart::LeftHandOpen:
+            return "left_open";
+        case CustomDollPart::RightHandFingers:
+            return "right_fingers";
+        case CustomDollPart::RightHandOpen:
+            return "right_open";
+        case CustomDollPart::RightHandHold:
+            return "right_hold";
+        case CustomDollPart::Count:
+            break;
+    }
+
+    return {};
+}
+
+const std::string &characterDollPartAsset(const CharacterDollEntry &entry, CustomDollPart part)
+{
+    return entry.*dollPartMember(part);
+}
+
+std::string customDollPartTextureName(std::string_view id, CustomDollPart part)
+{
+    const std::string name(customDollPartName(part));
+    return std::string(CustomPortraitTexturePrefix) + std::string(id) + (part == CustomDollPart::Body ? "_" : "_hand_")
+        + name;
+}
+
+CharacterDollEntry customPortraitDollEntry(
+    const CharacterDollEntry &base,
+    std::string_view portraitTextureName,
+    const std::function<bool(const std::string &textureName)> &installed)
+{
+    CharacterDollEntry entry = base;
+    const size_t frameSeparator = portraitTextureName.rfind('-');
+
+    if (!isCustomPortraitTextureName(portraitTextureName) || frameSeparator == std::string_view::npos
+        || frameSeparator <= CustomPortraitTexturePrefix.size() || !installed)
+    {
+        return entry;
+    }
+
+    std::string id(portraitTextureName.substr(CustomPortraitTexturePrefix.size(),
+                                              frameSeparator - CustomPortraitTexturePrefix.size()));
+    std::transform(id.begin(), id.end(), id.begin(), [](unsigned char character)
+    {
+        return char(std::tolower(character));
+    });
+
+    if (!validCustomPortraitId(id))
+    {
+        return entry;
+    }
+
+    for (const CustomDollPart part : DollParts)
+    {
+        const std::string textureName = customDollPartTextureName(id, part);
+
+        if (installed(textureName))
+        {
+            entry.*dollPartMember(part) = textureName;
+        }
+    }
+
+    return entry;
 }
 
 std::vector<CustomPortrait> loadCustomPortraits(const std::filesystem::path &portraitsFolder)
@@ -290,6 +446,13 @@ std::vector<CustomPortrait> loadCustomPortraits(const std::filesystem::path &por
             continue;
         }
 
+        // A missing doll image falls back to the base row's.
+        std::erase_if(portrait->dollParts, [&](CustomDollPart part)
+        {
+            return !std::filesystem::is_regular_file(
+                iconDirectory / (customDollPartTextureName(portrait->id, part) + ".png"), typeError);
+        });
+
         portraits.push_back(std::move(*portrait));
     }
 
@@ -303,7 +466,8 @@ std::vector<CustomPortrait> loadCustomPortraits(const std::filesystem::path &por
 CustomPortraitImportResult importCustomPortrait(
     const std::filesystem::path &packageFolder,
     const std::filesystem::path &portraitsFolder,
-    const CharacterDollTable &characterDollTable)
+    const CharacterDollTable &characterDollTable,
+    const DollAssetSizeLookup &dollAssetSize)
 {
     CustomPortraitImportResult result;
     const std::optional<std::vector<uint8_t>> manifestBytes =
@@ -347,7 +511,7 @@ CustomPortraitImportResult importCustomPortrait(
             return result;
         }
 
-        result.error = checkFrame(*bytes, fileName);
+        result.error = checkImage(*bytes, fileName, CustomPortraitFrameWidth, CustomPortraitFrameHeight);
 
         if (!result.error.empty())
         {
@@ -355,6 +519,51 @@ CustomPortraitImportResult importCustomPortrait(
         }
 
         frames.push_back(std::move(*bytes));
+    }
+
+    // The doll: whichever of doll/body.png and doll/hand_<name>.png the package has, each the size of the base row's
+    // image at x2. The manifest's own doll list is ignored; the files decide.
+    portrait->dollParts.clear();
+    std::vector<std::vector<uint8_t>> dollImages;
+
+    for (const CustomDollPart part : DollParts)
+    {
+        const std::string fileName = dollPartPackageFile(part);
+        std::error_code linkError;
+
+        if (!std::filesystem::exists(std::filesystem::symlink_status(packageFolder / fileName, linkError)))
+        {
+            continue;
+        }
+
+        std::optional<std::vector<uint8_t>> bytes = readPackageFile(packageFolder / fileName, MaximumFrameBytes);
+
+        if (!bytes)
+        {
+            result.error = Engine::tr("{file} is not a file or is too large.", {{"file", fileName}});
+            return result;
+        }
+
+        const std::string &baseAsset = characterDollPartAsset(*pBase, part);
+        const std::optional<std::pair<int, int>> baseSize =
+            !baseAsset.empty() && baseAsset != "none" && dollAssetSize ? dollAssetSize(baseAsset) : std::nullopt;
+
+        if (!baseSize)
+        {
+            result.error = Engine::tr("{file} replaces an image base_character {id} does not have.",
+                                      {{"file", fileName}, {"id", uint64_t(portrait->baseCharacterId)}});
+            return result;
+        }
+
+        result.error = checkImage(*bytes, fileName, baseSize->first * 2, baseSize->second * 2);
+
+        if (!result.error.empty())
+        {
+            return result;
+        }
+
+        portrait->dollParts.push_back(part);
+        dollImages.push_back(std::move(*bytes));
     }
 
     // Everything is checked: write temporary files first, then replace the old ones, so a failed write leaves the
@@ -373,6 +582,20 @@ CustomPortraitImportResult importCustomPortrait(
         temporaryFiles.push_back(finalFiles.back().string() + std::string(ImportSuffix));
 
         if (!writeFile(temporaryFiles.back(), frames[frame - 1]))
+        {
+            removeFiles(temporaryFiles);
+            result.error = Engine::tr("The portrait could not be written to the portraits folder.");
+            return result;
+        }
+    }
+
+    for (size_t index = 0; index < portrait->dollParts.size(); ++index)
+    {
+        finalFiles.push_back(iconDirectory / (customDollPartTextureName(portrait->id, portrait->dollParts[index])
+                                              + ".png"));
+        temporaryFiles.push_back(finalFiles.back().string() + std::string(ImportSuffix));
+
+        if (!writeFile(temporaryFiles.back(), dollImages[index]))
         {
             removeFiles(temporaryFiles);
             result.error = Engine::tr("The portrait could not be written to the portraits folder.");
@@ -401,6 +624,15 @@ CustomPortraitImportResult importCustomPortrait(
             removeFiles(std::vector<std::filesystem::path>(temporaryFiles.begin() + index, temporaryFiles.end()));
             result.error = Engine::tr("The portrait could not be written to the portraits folder.");
             return result;
+        }
+    }
+
+    // A part an earlier import brought and this one does not: the base row's image again.
+    for (const CustomDollPart part : DollParts)
+    {
+        if (std::find(portrait->dollParts.begin(), portrait->dollParts.end(), part) == portrait->dollParts.end())
+        {
+            std::filesystem::remove(iconDirectory / (customDollPartTextureName(portrait->id, part) + ".png"), error);
         }
     }
 

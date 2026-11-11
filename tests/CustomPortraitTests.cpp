@@ -69,8 +69,36 @@ std::vector<std::string> characterRow(const std::string &id, const std::string &
     row[1] = "1";
     row[3] = "1";
     row[5] = "x";
+    // The doll images of pc02: a body and the hands, without the right fingers (column 14) to test a missing one.
+    row[9] = "testbod";
+    row[11] = "testlhd";
+    row[17] = "testrhd";
     row[23] = raceId;
     return row;
+}
+
+// The logical sizes of the base row's doll images, as the mounted assets would report them.
+DollAssetSizeLookup dollSizes()
+{
+    return [](const std::string &assetName) -> std::optional<std::pair<int, int>>
+    {
+        if (assetName == "testbod")
+        {
+            return std::pair<int, int>(83, 297);
+        }
+
+        if (assetName == "testrhd")
+        {
+            return std::pair<int, int>(47, 59);
+        }
+
+        if (assetName == "testlhd")
+        {
+            return std::pair<int, int>(17, 66);
+        }
+
+        return std::nullopt;
+    };
 }
 
 CharacterDollTable makeDolls()
@@ -131,7 +159,7 @@ TEST_CASE("Custom portraits: a complete package imports, lists and can be import
     const CharacterDollTable dolls = makeDolls();
     writePackage(package, manifest("medusa"));
 
-    const CustomPortraitImportResult first = importCustomPortrait(package, portraits, dolls);
+    const CustomPortraitImportResult first = importCustomPortrait(package, portraits, dolls, dollSizes());
     REQUIRE_MESSAGE(first.success, first.error);
     CHECK_FALSE(first.replaced);
     CHECK_EQ(first.portrait.id, "medusa");
@@ -152,7 +180,7 @@ TEST_CASE("Custom portraits: a complete package imports, lists and can be import
 
     // The same id again replaces it: still one portrait, with the new name.
     std::ofstream(package / "portrait.yml") << manifest("medusa", "2", "Medusa v2");
-    const CustomPortraitImportResult second = importCustomPortrait(package, portraits, dolls);
+    const CustomPortraitImportResult second = importCustomPortrait(package, portraits, dolls, dollSizes());
     REQUIRE_MESSAGE(second.success, second.error);
     CHECK(second.replaced);
     listed = loadCustomPortraits(portraits);
@@ -176,7 +204,7 @@ TEST_CASE("Custom portraits: a broken package is refused with its reason and wri
 
     const auto refused = [&](const std::filesystem::path &package, const std::string &expectedText)
     {
-        const CustomPortraitImportResult result = importCustomPortrait(package, portraits, dolls);
+        const CustomPortraitImportResult result = importCustomPortrait(package, portraits, dolls, dollSizes());
         CHECK_FALSE(result.success);
         CHECK_MESSAGE(result.error.find(expectedText) != std::string::npos, result.error);
         CHECK(portraitsFolderEmpty(portraits));
@@ -267,15 +295,100 @@ TEST_CASE("Custom portraits: an installed portrait that lost frames or its name 
     const std::filesystem::path portraits = root / "portraits";
     const CharacterDollTable dolls = makeDolls();
     writePackage(package, manifest("medusa"));
-    REQUIRE(importCustomPortrait(package, portraits, dolls).success);
+    REQUIRE(importCustomPortrait(package, portraits, dolls, dollSizes()).success);
     REQUIRE_EQ(loadCustomPortraits(portraits).size(), 1u);
 
     std::filesystem::remove(customPortraitIconDirectory(portraits) / "user_medusa-20.png");
     CHECK(loadCustomPortraits(portraits).empty());
 
-    REQUIRE(importCustomPortrait(package, portraits, dolls).success);
+    REQUIRE(importCustomPortrait(package, portraits, dolls, dollSizes()).success);
     std::filesystem::rename(portraits / "medusa.yml", portraits / "gorgon.yml");
     CHECK(loadCustomPortraits(portraits).empty());
 
     std::filesystem::remove_all(root);
+}
+
+TEST_CASE("Custom portraits: a package's doll replaces the base row's body and hands at their size")
+{
+    const std::filesystem::path root = makePortraitTestRoot();
+    const std::filesystem::path package = root / "package";
+    const std::filesystem::path portraits = root / "portraits";
+    const std::filesystem::path icons = customPortraitIconDirectory(portraits);
+    const CharacterDollTable dolls = makeDolls();
+    writePackage(package, manifest("medusa"));
+    std::filesystem::create_directories(package / "doll");
+    REQUIRE(writeFrame(package / "doll/body.png", 166, 594, SDL_PIXELFORMAT_RGBA32));
+    REQUIRE(writeFrame(package / "doll/hand_right_open.png", 94, 118, SDL_PIXELFORMAT_RGBA32));
+
+    const CustomPortraitImportResult imported = importCustomPortrait(package, portraits, dolls, dollSizes());
+    REQUIRE_MESSAGE(imported.success, imported.error);
+    CHECK(imported.portrait.dollParts
+          == std::vector<CustomDollPart>{CustomDollPart::Body, CustomDollPart::RightHandOpen});
+    CHECK(std::filesystem::is_regular_file(icons / "user_medusa_body.png"));
+    CHECK(std::filesystem::is_regular_file(icons / "user_medusa_hand_right_open.png"));
+    std::vector<CustomPortrait> listed = loadCustomPortraits(portraits);
+    REQUIRE_EQ(listed.size(), 1u);
+    CHECK_EQ(listed[0].dollParts.size(), 2u);
+
+    SUBCASE("a doll image of the wrong size is refused and nothing changes")
+    {
+        REQUIRE(writeFrame(package / "doll/body.png", 100, 100, SDL_PIXELFORMAT_RGBA32));
+        const CustomPortraitImportResult refused = importCustomPortrait(package, portraits, dolls, dollSizes());
+        CHECK_FALSE(refused.success);
+        CHECK_MESSAGE(refused.error.find("doll/body.png is 100x100; it must be 166x594") != std::string::npos,
+                      refused.error);
+        CHECK(std::filesystem::is_regular_file(icons / "user_medusa_hand_right_open.png"));
+    }
+
+    SUBCASE("an image the base row does not have is refused")
+    {
+        REQUIRE(writeFrame(package / "doll/hand_right_fingers.png", 34, 28, SDL_PIXELFORMAT_RGBA32));
+        const CustomPortraitImportResult refused = importCustomPortrait(package, portraits, dolls, dollSizes());
+        CHECK_FALSE(refused.success);
+        CHECK_MESSAGE(refused.error.find("doll/hand_right_fingers.png replaces an image") != std::string::npos,
+                      refused.error);
+    }
+
+    SUBCASE("importing again without a doll brings the base row's images back")
+    {
+        std::filesystem::remove_all(package / "doll");
+        REQUIRE(importCustomPortrait(package, portraits, dolls, dollSizes()).success);
+        CHECK_FALSE(std::filesystem::exists(icons / "user_medusa_body.png"));
+        CHECK_FALSE(std::filesystem::exists(icons / "user_medusa_hand_right_open.png"));
+        listed = loadCustomPortraits(portraits);
+        REQUIRE_EQ(listed.size(), 1u);
+        CHECK(listed[0].dollParts.empty());
+    }
+
+    SUBCASE("a lost doll image is dropped, the portrait stays")
+    {
+        std::filesystem::remove(icons / "user_medusa_body.png");
+        listed = loadCustomPortraits(portraits);
+        REQUIRE_EQ(listed.size(), 1u);
+        CHECK(listed[0].dollParts == std::vector<CustomDollPart>{CustomDollPart::RightHandOpen});
+    }
+
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("Custom portraits: a member's doll uses the installed parts of its imported portrait")
+{
+    CharacterDollEntry base;
+    base.bodyAsset = "pc02bod";
+    base.rightHandOpenAsset = "pc02rhd";
+    base.leftHandOpenAsset = "pc02lho";
+    const auto installed = [](const std::string &textureName)
+    {
+        return textureName == "user_medusa_body" || textureName == "user_medusa_hand_left_open";
+    };
+
+    const CharacterDollEntry imported = customPortraitDollEntry(base, "user_medusa-13", installed);
+    CHECK_EQ(imported.bodyAsset, "user_medusa_body");
+    CHECK_EQ(imported.leftHandOpenAsset, "user_medusa_hand_left_open");
+    CHECK_EQ(imported.rightHandOpenAsset, "pc02rhd");
+
+    // Built-in portraits and portraits without doll images keep the row's doll.
+    CHECK_EQ(customPortraitDollEntry(base, "pc02-01", installed).bodyAsset, "pc02bod");
+    CHECK_EQ(customPortraitDollEntry(base, "user_gorgon-01", installed).bodyAsset, "pc02bod");
+    CHECK_EQ(customPortraitDollEntry(base, "user_-01", installed).bodyAsset, "pc02bod");
 }

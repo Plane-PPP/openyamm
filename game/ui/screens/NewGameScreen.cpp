@@ -1,5 +1,6 @@
 #include "game/ui/screens/NewGameScreen.h"
 
+#include "engine/ImageAssetLoader.h"
 #include "engine/Localization.h"
 #include "engine/Utf8Text.h"
 
@@ -1136,8 +1137,28 @@ void NewGameScreen::finishPortraitImport()
         return;
     }
 
+    // The doll images of a package must match the base row's in size; ask the mounted assets for those sizes.
+    const DollAssetSizeLookup dollAssetSize = [this](const std::string &assetName)
+        -> std::optional<std::pair<int, int>>
+    {
+        Engine::DirectoryAssetPathCache directories;
+        Engine::AssetPathLookupCache paths;
+        const std::optional<std::string> path =
+            Engine::findImageAssetPath(assetFileSystem(), "Data/icons", assetName, directories, paths);
+        const std::optional<Engine::ImageDimensions> size =
+            path ? Engine::loadImageDimensions(assetFileSystem(), *path) : std::nullopt;
+
+        if (!size)
+        {
+            return std::nullopt;
+        }
+
+        const Engine::AssetScaleTier tier = Engine::assetScaleTierFromResolvedPath(*path);
+        return std::pair<int, int>(Engine::scalePhysicalPixelsToLogical(size->width, tier),
+                                   Engine::scalePhysicalPixelsToLogical(size->height, tier));
+    };
     const CustomPortraitImportResult result =
-        importCustomPortrait(*folder, m_customPortraitsFolder, m_pGameData->characterDollTable());
+        importCustomPortrait(*folder, m_customPortraitsFolder, m_pGameData->characterDollTable(), dollAssetSize);
 
     if (!result.success)
     {

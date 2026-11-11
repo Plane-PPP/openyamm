@@ -1,5 +1,6 @@
 // The party creation sheet: approach C2 of level_generation/ui/party_creation_study_20261101 (c2.html). Regions come
 // from character_creation.yml; rows inside them are laid out here in the mockup's 1600x900 pixels.
+#include "game/party/CustomPortraits.h"
 #include "game/ui/screens/NewGameScreen.h"
 
 #include "engine/Localization.h"
@@ -1102,9 +1103,17 @@ void NewGameScreen::drawCreationDoll(bool input)
     drawSolidRect(box, 0xff0d1110u);
     const Hotspot dollInput = hotspot("doll", box, input && !godLich);
 
-    if (const CharacterDollEntry *pEntry = selectedCharacterEntry())
+    if (const CharacterDollEntry *pBaseEntry = selectedCharacterEntry())
     {
-        const std::string compositeKey = std::to_string(pEntry->id) + ":" + pEntry->bodyAsset;
+        // An imported portrait may bring its own body and hands (game/party/CustomPortraits.h).
+        const CharacterDollEntry entry = customPortraitDollEntry(*pBaseEntry, portraitTextureNameForState(m_state),
+            [this](const std::string &textureName)
+            {
+                return assetFileSystem().exists("Data/icons/" + textureName + ".png");
+            });
+        const CharacterDollEntry *pEntry = &entry;
+        const std::string compositeKey = std::to_string(pEntry->id) + ":" + pEntry->bodyAsset + ":"
+            + pEntry->leftHandOpenAsset + ":" + pEntry->rightHandOpenAsset;
 
         if (compositeKey != m_creationPreviewDollCacheKey)
         {
