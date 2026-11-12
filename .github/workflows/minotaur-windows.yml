@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feature/minotaur-rebalance
+      # The roguelike prototype branch builds the same update over the Minotaur base, then checks its run (below).
+      - feature/roguelike-run
     paths:
       - ".github/workflows/minotaur-windows.yml"
       - "CMakeLists.txt"
@@ -250,6 +252,21 @@ jobs:
           path: build-windows/minotaur-update/*.json
           if-no-files-found: error
           retention-days: 90
+
+      # The roguelike branch only, after the uploads so the update ZIP exists even when a check fails: the run's unit
+      # tests, then its scenario played headless by the packaged game on the packaged content.
+      - name: Test the roguelike run
+        if: github.ref_name == 'feature/roguelike-run'
+        run: build-windows/tests/openyamm_unit_tests.exe --test-case='*dungeon run*,*run.yml*,*installed run*'
+
+      - name: Play the roguelike run on the packaged game
+        if: github.ref_name == 'feature/roguelike-run'
+        run: |
+          game="build-windows/release/Release/OpenYAMM/app/${MINOTAUR_RELEASE_VERSION}/openyamm.exe"
+          mkdir -p build-windows/roguelike-user
+          "$game" --user-data "$PWD/build-windows/roguelike-user" \
+            --asset-root "$PWD/build-windows/minotaur-content" \
+            --headless-run-scenario "$PWD/tests/scenarios/rulesets/roguelike_run.yml"
 
       - name: Create optional full installation
         if: env.MINOTAUR_PACKAGE_MODE != 'update'
