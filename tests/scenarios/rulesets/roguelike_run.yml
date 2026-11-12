@@ -1,0 +1,68 @@
+id: rulesets.roguelike_run
+title: Roguelike - a run starts in a dungeon and every exit leads into the next dungeon, none twice
+world: mm6
+mode: faithful
+tags: [rulesets, roguelike]
+steps:
+  # Any game brings the runtime up (the Hive, a map no run visits). `run new` then starts the run through the code a
+  # new game from party creation uses (GameApplication::startNewSessionFromCharacterCreation), with seed 4 so the
+  # order is the same on every run: 6d01 6d12 6d07 6d15 6t3 6d02 6t2 6d13.
+  - new_game_flow: {start_map: hive.blv}
+  - console: {line: "run new 4", expect_contains: "Run started in 6d01.blv, seed 4."}
+  - assert:
+      map: 6d01.blv
+      ruleset: {id: roguelike}
+  - console: {line: "run", expect_contains: "dungeon 1 of 8, map 6d01.blv (on course), seed 4, order: 6d01.blv"}
+  - console: {line: "loc", expect_contains: "position=(601.000, 6871.000,"}
+  - console:
+      line: "run"
+      expect_contains: "order: 6d01.blv 6d12.blv 6d07.blv 6d15.blv 6t3.blv 6d02.blv 6t2.blv 6d13.blv"
+  # The party stands at the entrance run.yml gives (`loc`). Each dungeon is left by its own exit event, which asks to
+  # leave for the outdoor map; the run sends the party into the next dungeon instead. Goblinwatch's exit door is
+  # event 51.
+  - execute_event: {id: 51}
+  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
+  - assert: {map: 6d12.blv}
+  - console: {line: "run", expect_contains: "dungeon 2 of 8, map 6d12.blv (on course)"}
+  - console: {line: "loc", expect_contains: "position=(-127.000, 4190.000,"}
+  # Silver Helm Stronghold: event 21.
+  - execute_event: {id: 21}
+  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
+  - assert: {map: 6d07.blv}
+  - console: {line: "run", expect_contains: "dungeon 3 of 8, map 6d07.blv (on course)"}
+  - console: {line: "loc", expect_contains: "position=(4427.000, 3061.000,"}
+  # Silver Helm Outpost: event 20.
+  - execute_event: {id: 20}
+  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
+  - assert: {map: 6d15.blv}
+  - console: {line: "run", expect_contains: "dungeon 4 of 8, map 6d15.blv (on course)"}
+  - console: {line: "loc", expect_contains: "position=(-495.000, -219.000,"}
+  # Icewind Keep, Temple of Tsantsa, Abandoned Temple and Temple of the Fist: event 50.
+  - execute_event: {id: 50}
+  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
+  - assert: {map: 6t3.blv}
+  - console: {line: "run", expect_contains: "dungeon 5 of 8, map 6t3.blv (on course)"}
+  - console: {line: "loc", expect_contains: "position=(2817.000, -4748.000,"}
+  - execute_event: {id: 50}
+  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
+  - assert: {map: 6d02.blv}
+  - console: {line: "run", expect_contains: "dungeon 6 of 8, map 6d02.blv (on course)"}
+  - console: {line: "loc", expect_contains: "position=(16406.000, -19669.000,"}
+  - execute_event: {id: 50}
+  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
+  - assert: {map: 6t2.blv}
+  - console: {line: "run", expect_contains: "dungeon 7 of 8, map 6t2.blv (on course)"}
+  - console: {line: "loc", expect_contains: "position=(0.000, -2231.000,"}
+  - execute_event: {id: 50}
+  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
+  - assert: {map: 6d13.blv}
+  - console: {line: "run", expect_contains: "dungeon 8 of 8, map 6d13.blv (on course)"}
+  - console: {line: "loc", expect_contains: "position=(-128.000, -3968.000,"}
+  # The run is kept by the save: the count and the order come back with it.
+  - save_game: roguelike_last_dungeon
+  - new_game_flow: {start_map: hive.blv}
+  - load_game: roguelike_last_dungeon
+  - assert:
+      map: 6d13.blv
+      ruleset: {id: roguelike}
+  - console: {line: "run", expect_contains: "dungeon 8 of 8, map 6d13.blv (on course), seed 4"}

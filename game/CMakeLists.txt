@@ -385,6 +385,7 @@ add_library(openyamm_game STATIC
     scene/OutdoorSceneRuntime.cpp
     app/main.cpp
     app/GameApplication.cpp
+    app/GameApplicationDungeonRun.cpp
     app/KeyboardBindings.cpp
     app/GameSettings.cpp
     app/ContentSetup.cpp
