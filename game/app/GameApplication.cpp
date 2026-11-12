@@ -11776,7 +11776,8 @@ bool GameApplication::startNewSessionFromCharacterCreation(
         return false;
     }
 
-    if (m_pOutdoorPartyRuntime == nullptr)
+    // A continent may start indoors (Chedian: Ravensford's training camp, a BLV).
+    if (m_pMapSceneRuntime == nullptr)
     {
         cancelLoadingOverlay();
         openMainMenuScreen();
