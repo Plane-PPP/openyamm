@@ -110,6 +110,27 @@ std::optional<DungeonRunDefinition> parseDungeonRunDefinition(const std::string 
 
             definition.dungeons.push_back(std::move(stop));
         }
+
+        const YAML::Node firstNode = root["first"];
+
+        if (firstNode)
+        {
+            const std::string firstMap = firstNode.IsScalar() ? lowerCaseCopy(firstNode.as<std::string>()) : "";
+
+            for (size_t index = 0; index < definition.dungeons.size(); ++index)
+            {
+                if (lowerCaseCopy(definition.dungeons[index].mapFileName) == firstMap)
+                {
+                    definition.firstDungeon = index;
+                }
+            }
+
+            if (!definition.firstDungeon.has_value())
+            {
+                errorMessage = "run.yml first must name one of its dungeons";
+                return std::nullopt;
+            }
+        }
     }
     catch (const std::exception &exception)
     {
@@ -173,6 +194,20 @@ std::vector<size_t> dungeonRunOrder(size_t dungeonCount, uint64_t rootSeed)
     return order;
 }
 
+std::vector<size_t> dungeonRunOrder(const DungeonRunDefinition &run, uint64_t rootSeed)
+{
+    std::vector<size_t> order = dungeonRunOrder(run.dungeons.size(), rootSeed);
+
+    if (run.firstDungeon.has_value() && *run.firstDungeon < order.size())
+    {
+        // Taking one index out leaves the others in a uniformly random order.
+        std::erase(order, *run.firstDungeon);
+        order.insert(order.begin(), *run.firstDungeon);
+    }
+
+    return order;
+}
+
 const DungeonRunStop *dungeonRunStop(const DungeonRunDefinition &run, uint64_t rootSeed, size_t entered)
 {
     if (entered >= run.dungeons.size())
@@ -180,7 +215,7 @@ const DungeonRunStop *dungeonRunStop(const DungeonRunDefinition &run, uint64_t r
         return nullptr;
     }
 
-    return &run.dungeons[dungeonRunOrder(run.dungeons.size(), rootSeed)[entered]];
+    return &run.dungeons[dungeonRunOrder(run, rootSeed)[entered]];
 }
 
 std::string dungeonRunEndText(bool defeated, size_t completedDungeons)

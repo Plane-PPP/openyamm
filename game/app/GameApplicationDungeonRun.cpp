@@ -274,7 +274,7 @@ void GameApplication::registerDungeonRunConsoleCommand()
                 << ", map " << currentMap << (onCourse ? " (on course)" : " (off course)")
                 << ", seed " << rootSeed << ", order:";
 
-            for (size_t index : dungeonRunOrder(dungeonRun->dungeons.size(), rootSeed))
+            for (size_t index : dungeonRunOrder(*dungeonRun, rootSeed))
             {
                 out << ' ' << dungeonRun->dungeons[index].mapFileName;
             }

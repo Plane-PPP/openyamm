@@ -140,6 +140,46 @@ TEST_CASE("a dungeon run hands out its stops by the count of dungeons entered an
     CHECK(OpenYAMM::Game::dungeonRunStop(*run, Seed, run->dungeons.size() + 5) == nullptr);
 }
 
+TEST_CASE("a dungeon run with a first dungeon always starts there and shuffles the others")
+{
+    std::string error;
+    const std::optional<DungeonRunDefinition> run =
+        OpenYAMM::Game::parseDungeonRunDefinition(std::string("first: 6D02.blv\n") + RunYaml, error);
+    REQUIRE_MESSAGE(run.has_value(), error);
+    REQUIRE(run->firstDungeon.has_value());
+    CHECK_EQ(*run->firstDungeon, 1u);
+
+    // Without the key any dungeon may come first.
+    const std::optional<DungeonRunDefinition> freeRun = OpenYAMM::Game::parseDungeonRunDefinition(RunYaml, error);
+    REQUIRE_MESSAGE(freeRun.has_value(), error);
+    CHECK_FALSE(freeRun->firstDungeon.has_value());
+
+    std::set<std::vector<size_t>> orders;
+    std::set<size_t> freeFirstDungeons;
+
+    for (uint64_t seed = 1; seed <= 100; ++seed)
+    {
+        CAPTURE(seed);
+        const std::vector<size_t> order = OpenYAMM::Game::dungeonRunOrder(*run, seed);
+        REQUIRE_EQ(order.size(), 3u);
+        CHECK_EQ(order.front(), 1u);
+        CHECK_EQ(std::set<size_t>(order.begin(), order.end()).size(), 3u);
+        CHECK(order == OpenYAMM::Game::dungeonRunOrder(*run, seed));
+        CHECK_EQ(OpenYAMM::Game::dungeonRunStop(*run, seed, 0)->mapFileName, "6d02.blv");
+        orders.insert(order);
+        freeFirstDungeons.insert(OpenYAMM::Game::dungeonRunOrder(*freeRun, seed).front());
+    }
+
+    // The two other dungeons come in both orders.
+    CHECK_EQ(orders.size(), 2u);
+    CHECK_EQ(freeFirstDungeons.size(), 3u);
+
+    // The first dungeon must be one of the list.
+    CHECK_FALSE(OpenYAMM::Game::parseDungeonRunDefinition(std::string("first: 6d99.blv\n") + RunYaml, error)
+        .has_value());
+    CHECK_FALSE(error.empty());
+}
+
 TEST_CASE("a dungeon run's end line counts the dungeons left behind")
 {
     CHECK_EQ(OpenYAMM::Game::dungeonRunEndText(true, 0), "Run over. Dungeons cleared: 0.");
@@ -180,6 +220,9 @@ TEST_CASE("the installed run's dungeons are MM6 maps entered where their outdoor
     // The skeleton's pool: five to eight dungeons.
     CHECK(run.dungeons.size() >= 5);
     CHECK(run.dungeons.size() <= 8);
+    // A run starts in Goblinwatch, the dungeon made for a new party.
+    REQUIRE(run.firstDungeon.has_value());
+    CHECK_EQ(run.dungeons[*run.firstDungeon].mapFileName, "6d01.blv");
 
     // Every evt.MoveToMap(x, y, z, yaw, ..., "map") of MM6's outdoor maps.
     const std::filesystem::path mapsRoot = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/worlds/mm6";

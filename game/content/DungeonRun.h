@@ -29,6 +29,9 @@ struct DungeonRunStop
 struct DungeonRunDefinition
 {
     std::vector<DungeonRunStop> dungeons;
+    // The dungeon every run starts in (`first` in run.yml, an index into dungeons); only the others are shuffled.
+    // Without it a run may start in any dungeon.
+    std::optional<size_t> firstDungeon;
 };
 
 // The named global variable, saved with the game, that counts the dungeons the run entered, the current one included.
@@ -42,8 +45,10 @@ std::optional<DungeonRunDefinition> loadDungeonRunDefinition(
     const Engine::AssetFileSystem &assetFileSystem,
     const std::string &rulesetId,
     std::string &errorMessage);
-// The order of a run's dungeons: the indices 0..dungeonCount-1, shuffled by the root seed.
+// The indices 0..dungeonCount-1, shuffled by the root seed.
 std::vector<size_t> dungeonRunOrder(size_t dungeonCount, uint64_t rootSeed);
+// The order of a run's dungeons: that shuffle, with the run's first dungeon moved to the front.
+std::vector<size_t> dungeonRunOrder(const DungeonRunDefinition &run, uint64_t rootSeed);
 // The dungeon that follows `entered` others, or nullptr when the run has none left.
 const DungeonRunStop *dungeonRunStop(const DungeonRunDefinition &run, uint64_t rootSeed, size_t entered);
 // The main menu's line after a run: the party's defeat, or the last dungeon left behind.

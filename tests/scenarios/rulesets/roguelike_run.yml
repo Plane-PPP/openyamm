@@ -6,7 +6,7 @@ tags: [rulesets, roguelike]
 steps:
   # Any game brings the runtime up (the Hive, a map no run visits). `run new` then starts the run through the code a
   # new game from party creation uses (GameApplication::startNewSessionFromCharacterCreation), with seed 4 so the
-  # order is the same on every run: 6d01 6d12 6d07 6d15 6t3 6d02 6t2 6d13.
+  # order is the same on every run: 6d01 (always first) 6d12 6d07 6d15 6t3 6d02 6t2 6d13.
   - new_game_flow: {start_map: hive.blv}
   - console: {line: "run new 4", expect_contains: "Run started in 6d01.blv, seed 4."}
   - assert:
@@ -66,3 +66,6 @@ steps:
       map: 6d13.blv
       ruleset: {id: roguelike}
   - console: {line: "run", expect_contains: "dungeon 8 of 8, map 6d13.blv (on course), seed 4"}
+  # A run starts in Goblinwatch whatever the seed (`first` in run.yml): seed 1 alone would begin in 6d07.
+  - console: {line: "run new 1", expect_contains: "Run started in 6d01.blv, seed 1."}
+  - console: {line: "run", expect_contains: "(on course), seed 1, order: 6d01.blv 6d07.blv 6d13.blv"}

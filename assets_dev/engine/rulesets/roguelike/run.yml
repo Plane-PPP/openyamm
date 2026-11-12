@@ -1,12 +1,16 @@
-# The dungeons of a run (game/content/DungeonRun.h). A run shuffles them by the save's random seed, starts in the first
-# and sends every exit to the next; no dungeon repeats within a run.
+# The dungeons of a run (game/content/DungeonRun.h). A run shuffles them by the save's random seed and sends every exit
+# to the next dungeon of that order; no dungeon repeats within a run.
 #
 # entrance: where the party arrives. The original BLV maps have no party start, so these are the destinations of the
 # outdoor events that lead into each dungeon (evt.MoveToMap in worlds/mm6/events/maps/out*.lua): x, y, z and the yaw
 # in the same units (2048 to a turn).
 #
+# first: the dungeon every run starts in; the others follow in a shuffled order. Until a run has rules of its own for
+# difficulty it starts in Goblinwatch, the one dungeon made for a new party. Remove the line to start anywhere.
+#
 # The pool: MM6 dungeons of one map each, whose exit is a single unconditional event and whose events need no key or
 # quest from outside. Monster levels are the A/B/C ranks of the map's three encounter slots (map_stats.txt).
+first: 6d01.blv
 dungeons:
   # Goblinwatch: rats 2-6, goblins 4-10, blood suckers 2-8. oute3.lua, exit event 51.
   - map: 6d01.blv
