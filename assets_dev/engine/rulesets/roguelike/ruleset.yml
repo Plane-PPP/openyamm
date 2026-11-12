@@ -1,0 +1,13 @@
+# Roguelike: a dungeon run. The party starts in a random dungeon; every exit leads into the next random dungeon and
+# the party's defeat ends the run. The dungeons and their entrances are listed in run.yml (game/content/DungeonRun.h).
+# Rules: this package changes none. The engine creates MAW's rules only for the id "maw" (game/app/GameSession.cpp),
+# so a run plays on the Standard rules of the build it ships in.
+id: roguelike
+name: Roguelike
+description: >-
+  A dungeon run: start in a random dungeon, every exit leads to the next one, defeat ends the run.
+contentSchemaVersion: 1
+rulesPanel:
+  title: Roguelike
+  subtitle: Dungeon Run
+  summary: "Skeleton: random dungeons in a row, no town. Defeat ends the run."

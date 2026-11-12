@@ -136,6 +136,7 @@ add_library(openyamm_game STATIC
     content/ContentManifest.cpp
     content/ContentTableComposer.cpp
     content/WorldDecorations.cpp
+    content/DungeonRun.cpp
     content/RulesetDefinition.cpp
     content/RulesetOptions.cpp
     items/InventoryItemUseRuntime.cpp
