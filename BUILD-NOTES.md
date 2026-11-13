@@ -1,3 +1,10 @@
+# Roguelike skeleton /2.3 — local Linux verification, no Windows package
+
+Verified base530d75a3b65cf7b2b7e0c4020cdd936fcc7fb66b, branch integration/minotaur-v2.3-20261113.
+Skeleton branch integration/minotaur-v2.3-roguelike-20261113:8run tests/599assertions and original48step scenario passed.
+Combined selected unit277/50364 and native26/3328passed; safe-heavy-run jobs4, no Vulkan build.
+Source and limits: docs/research/minotaur-2.3-roguelike.md. Previous1.21 remains the actual published Windows package.
+
 # OpenYAMM2.3 / Minotaur — integration in progress, no new Windows build
 
 Base54efa0e975420b7544837244ec5d465923cf1dc4; official target f4a6b8032759a218505532b2600ac56b6d80c7af.

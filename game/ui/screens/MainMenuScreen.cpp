@@ -516,6 +516,11 @@ void MainMenuScreen::drawHome()
     }
 }
 
+void MainMenuScreen::setStatus(std::string status)
+{
+    m_status = std::move(status);
+}
+
 void MainMenuScreen::drawUpdates()
 {
     if (m_pUpdater == nullptr)

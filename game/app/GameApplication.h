@@ -25,6 +25,7 @@
 #include "game/app/ScreenManager.h"
 #include "game/content/CompletionCertificates.h"
 #include "game/content/ContentManifest.h"
+#include "game/content/DungeonRun.h"
 #include "game/debug/AiArena.h"
 #include "game/debug/DebugConsole.h"
 #include "game/debug/GameImGuiBgfxRenderer.h"
@@ -208,6 +209,21 @@ private:
     // The debug console's `testparty`: a new MAW game with a test party (game/debug/MawTestParties.h).
     bool processPendingTestParty();
     bool loadMawTestPartyCatalog(MawTestPartyCatalog &catalog, std::string &error) const;
+    // Dungeon runs (game/content/DungeonRun.h): a game whose ruleset package has a run.yml. Without one these do
+    // nothing. The session's run, if its ruleset has one.
+    std::optional<DungeonRunDefinition> loadSessionDungeonRun() const;
+    // How many dungeons the run entered, and its setter; kept in a named global variable of the save.
+    int32_t dungeonRunEntered();
+    void setDungeonRunEntered(int32_t entered);
+    // Starts the new session's run: its first dungeon, or nullopt when the session is not a run.
+    std::optional<MapStartDestination> beginDungeonRun();
+    // Points a move to another map at the run's next dungeon. False when the run has none left: the move is
+    // dropped and the game returns to the main menu.
+    bool redirectMapMoveForDungeonRun(EventRuntimeState::PendingMapMove &pendingMapMove);
+    // The debug console's `run new`: a new run with the default party, begun at the start of the next frame.
+    bool processPendingDungeonRunStart();
+    // The debug console's `run`: the run's progress, or a new run.
+    void registerDungeonRunConsoleCommand();
     void shutdownRenderer();
     Party &ensureSessionPartyState();
     void bindPartyDependencies(Party &party);
@@ -464,6 +480,15 @@ private:
     std::optional<PendingDebugMapJump> m_pendingDebugMapJump;
     // The arguments of a `testparty` that starts a new game, run at the start of the next frame.
     std::optional<std::vector<std::string>> m_pendingTestParty;
+    // A `run new` waiting for the next frame: the ruleset of the run and its seed (nullopt: a fresh one).
+    struct PendingDungeonRunStart
+    {
+        std::string rulesetId;
+        std::optional<uint64_t> rootSeed;
+    };
+    std::optional<PendingDungeonRunStart> m_pendingDungeonRunStart;
+    // A line the next main menu shows once (how a dungeon run ended).
+    std::string m_mainMenuStatus;
     // A map move held for a few frames while the leaving map's autosave captures its preview.
     std::optional<EventRuntimeState::PendingMapMove> m_mapMoveAwaitingAutosave;
     std::vector<EffectHandle> m_debugEffectHandles;

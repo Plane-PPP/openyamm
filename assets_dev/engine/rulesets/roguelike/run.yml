@@ -1,0 +1,38 @@
+# The dungeons of a run (game/content/DungeonRun.h). A run shuffles them by the save's random seed and sends every exit
+# to the next dungeon of that order; no dungeon repeats within a run.
+#
+# entrance: where the party arrives. The original BLV maps have no party start, so these are the destinations of the
+# outdoor events that lead into each dungeon (evt.MoveToMap in worlds/mm6/events/maps/out*.lua): x, y, z and the yaw
+# in the same units (2048 to a turn).
+#
+# first: the dungeon every run starts in; the others follow in a shuffled order. Until a run has rules of its own for
+# difficulty it starts in Goblinwatch, the one dungeon made for a new party. Remove the line to start anywhere.
+#
+# The pool: MM6 dungeons of one map each, whose exit is a single unconditional event and whose events need no key or
+# quest from outside. Monster levels are the A/B/C ranks of the map's three encounter slots (map_stats.txt).
+first: 6d01.blv
+dungeons:
+  # Goblinwatch: rats 2-6, goblins 4-10, blood suckers 2-8. oute3.lua, exit event 51.
+  - map: 6d01.blv
+    entrance: {x: 601, y: 6871, z: 177, yaw: 1400}
+  # Abandoned Temple: bats 3-9, cobras 5-14, spiders 5-12. oute3.lua, exit event 50.
+  - map: 6d02.blv
+    entrance: {x: 16406, y: -19669, z: 865, yaw: 500}
+  # Temple of Tsantsa: cannibals 6-10, cobras 5-14. outd2.lua, exit event 50.
+  - map: 6t3.blv
+    entrance: {x: 2817, y: -4748, z: -639, yaw: 512}
+  # Temple of the Fist: monks 8-27, rats 2-6. outd2.lua, exit event 50.
+  - map: 6t2.blv
+    entrance: {x: 0, y: -2231, z: 513, yaw: 512}
+  # Silver Helm Outpost: swordsmen 10-24, monks 8-27, guards 11-33. oute2.lua, exit event 20.
+  - map: 6d07.blv
+    entrance: {x: 4427, y: 3061, z: 769, yaw: 1024}
+  # Icewind Keep: ogres 15-28, guards 11-33. outc1.lua, exit event 50.
+  - map: 6d15.blv
+    entrance: {x: -495, y: -219, z: 1, yaw: 512}
+  # The Monolith: druids 10-28, earth elementals 25-40, water elementals 14-36. outd1.lua, exit event 50.
+  - map: 6d13.blv
+    entrance: {x: -128, y: -3968, z: 1, yaw: 512}
+  # Silver Helm Stronghold: swordsmen 10-24, fighters 14-35, sorcerers 25-50. outd1.lua, exit event 21.
+  - map: 6d12.blv
+    entrance: {x: -127, y: 4190, z: 1, yaw: 1536}

@@ -12,7 +12,8 @@ A frozen155 fixture was captured with the previous writer before merging. Lethal
 retain their agreed formulas; inherited upstream behavior is listed in the [report](research/minotaur-2.3-integration.md).
 The Linux game and both test targets build. Focused unit profiles:269 cases/49,765assertions; runtime:26/3,328.
 These are selected profiles, not the full suite. No Windows package or manual/GPU verification is claimed.
-The Roguelike skeleton is a separate final step; run rules are outside this task.
+The Roguelike skeleton is ported on a separate branch:8 cases/599assertions and the original48-step scenario passed.
+Run rules are unchanged. [Skeleton handoff](research/minotaur-2.3-roguelike.md).
 
 ## OpenYAMM 1.21 — Windows ZIP ready
 

@@ -26,6 +26,7 @@ add_executable(openyamm_unit_tests
     PlaythroughStatisticsTests.cpp
     BattleOrdersTests.cpp
     ProjectMedusaTests.cpp
+    DungeonRunTests.cpp
     QuickItemSlotTests.cpp
     EffectSystemTests.cpp
     EnergyShieldTests.cpp
@@ -255,6 +256,7 @@ add_executable(openyamm_unit_tests
     ../game/content/ContentManifest.cpp
     ../game/content/ContentTableComposer.cpp
     ../game/content/WorldDecorations.cpp
+    ../game/content/DungeonRun.cpp
     ../game/content/RulesetDefinition.cpp
     ../game/content/RulesetOptions.cpp
     ../game/data/ActorNameResolver.cpp

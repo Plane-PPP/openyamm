@@ -41,6 +41,8 @@ class MainMenuScreen : public MenuDesignScreen
                    std::optional<CurrentGame> currentGame = std::nullopt);
     AppMode mode() const override;
     void prepareForFirstFrame();
+    // A line for the home page's status rail (how a dungeon run ended).
+    void setStatus(std::string status);
     void onExit() override;
     void handleSdlEvent(const SDL_Event &event) override;
 

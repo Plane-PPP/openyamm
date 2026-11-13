@@ -276,6 +276,8 @@ struct ScenarioGameApplicationAccess
         application.registerDebugConsoleCommands();
         const size_t before = application.m_debugConsole.totalMessageCount();
         application.m_debugConsole.executeLine(line);
+        // `run new` begins its game at the start of the next frame; a scenario has no frames, so begin it here.
+        application.processPendingDungeonRunStart();
         const std::vector<DebugConsole::Message> &messages = application.m_debugConsole.messages();
         const size_t added = std::min(application.m_debugConsole.totalMessageCount() - before, messages.size());
         bool success = true;

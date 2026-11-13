@@ -142,3 +142,12 @@ hashes; no bake regenerated, no model/source art changed. No STALE_LIGHTING_BAKE
 Whitespace check of the integration delta against v2.3 passes. The full cached merge retains three upstream EOF
 blank-line warnings already present in v2.3: tests/Mm9ActorRulesTests.cpp:2098,
 tests/playthrough/mm9/17_sturmford_pledge.yml:108 and tests/scenarios/mm9/ai/guards.yml:44; those files were not edited.
+
+## Проверенный локальный checkpoint и продолжение
+
+Пользователь разрешил локальные интеграционные коммиты. Основа зафиксирована
+`530d75a3b65cf7b2b7e0c4020cdd936fcc7fb66b` на `integration/minotaur-v2.3-20261113`.
+От неё создана `integration/minotaur-v2.3-roguelike-20261113`; перенос скелета и проверки завершены,
+см. [отдельный handoff](minotaur-2.3-roguelike.md). Предыдущие упоминания pending/неперенесённого скелета выше
+описывают исторический момент подготовки. Итоговые фильтры этой линии:277unit/50 364assertions и26native/3 328,
+плюс исходный48step сценарий. Согласованный баланс и старый save header сохранены.

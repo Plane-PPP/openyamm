@@ -1,3 +1,12 @@
+# Roguelike skeleton on the verified2.3 base — Linux checks passed (2026-11-13)
+
+Separate integration branch from530d75a3; original roguelike branch unchanged. Existing8-dungeon rules/pool retained;
+all8run unit cases/599assertions and the original48-step scenario passed. Adapted read-only run/status and the
+assisted flag of debug run new to2.3 playthrough statistics. Save format remains OYMINO1/v180, schema179.
+Selected combined unit277cases/50,364assertions and native26/3,328passed. Known inherited failed-load counter risk
+and unverified visuals/audio/final-exit/defeat paths are documented in docs/research/minotaur-2.3-roguelike.md.
+Local commits only; no push, CI or publication.
+
 # OpenYAMM2.3 integration — in progress (2026-11-13)
 
 Ported to official f4a6b803 with Project Medusa and the desktop portrait/paperdoll importer.

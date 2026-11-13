@@ -148,6 +148,7 @@ add_library(openyamm_game STATIC
     content/ContentManifest.cpp
     content/ContentTableComposer.cpp
     content/WorldDecorations.cpp
+    content/DungeonRun.cpp
     content/RulesetDefinition.cpp
     content/RulesetOptions.cpp
     items/InventoryItemUseRuntime.cpp
@@ -417,6 +418,7 @@ add_library(openyamm_game STATIC
     scene/OutdoorSceneRuntime.cpp
     app/main.cpp
     app/GameApplication.cpp
+    app/GameApplicationDungeonRun.cpp
     app/KeyboardBindings.cpp
     app/GameSettings.cpp
     app/ContentSetup.cpp

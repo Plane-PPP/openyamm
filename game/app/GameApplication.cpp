@@ -3458,6 +3458,8 @@ void GameApplication::registerDebugConsoleCommands()
         },
         .readOnlyWith = readOnlyConsoleActions(true, {"list"})});
 
+    registerDungeonRunConsoleCommand();
+
     m_debugConsole.registerCommand({
         .name = "model",
         .description = "Inspect and control shared glTF model instances.",
@@ -12981,6 +12983,11 @@ void GameApplication::openMenuScreen(bool paused)
                                         std::move(actions), m_settingsMenuSection, paused, location, date,
                                         m_pUpdater.get(), std::move(currentGame));
     pScreen->prepareForFirstFrame();
+    if (!paused && !m_mainMenuStatus.empty())
+    {
+        pScreen->setStatus(std::move(m_mainMenuStatus));
+        m_mainMenuStatus.clear();
+    }
     if (!paused && m_pUpdater)
     {
         // Reaching the main menu proves an updated version works (packaging/UPDATER_PLAN.md 8.2, health check).
@@ -13455,12 +13462,15 @@ bool GameApplication::startNewSessionFromCharacterCreation(
     m_gameSession.clear();
     m_gameSession.clearCurrentSavePath();
     m_gameSession.setRuleset(options.ruleset);
-    m_gameSession.setRandomRootSeed(freshRandomRootSeed());
+    m_gameSession.setRandomRootSeed(options.randomRootSeed.value_or(freshRandomRootSeed()));
     m_gameSession.setCurrentSceneKind(SceneKind::Outdoor);
     const std::optional<MapStartDestination> continentStartDestination =
         continentId != 0 ? resolveContinentStartDestination(continentId) : std::nullopt;
-    const MapStartDestination startupDestination =
-        continentStartDestination.value_or(resolveStartupDestination());
+    // A dungeon run starts in its first dungeon, whatever the continent.
+    const std::optional<MapStartDestination> dungeonRunStartDestination = beginDungeonRun();
+    const MapStartDestination startupDestination = dungeonRunStartDestination.has_value()
+        ? *dungeonRunStartDestination
+        : continentStartDestination.value_or(resolveStartupDestination());
     m_gameSession.playthroughStatistics().beginNewPlaythrough(
         worldIdOfMap(startupDestination.mapFileName), options.ruleset.id, statisticsDifficulty(options.ruleset));
 
@@ -13759,7 +13769,7 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
 
     const uint64_t pendingDebugMapJumpBeginTickCount = collectFrameDiagnostics ? SDL_GetTicksNS() : 0;
 
-    if (processPendingTestParty())
+    if (processPendingTestParty() || processPendingDungeonRunStart())
     {
         finishFrameDiagnostics();
         return;
@@ -14878,6 +14888,12 @@ bool GameApplication::processPendingMapMove()
         return false;
     }
 
+    // A dungeon run sends every way out of a map into its next dungeon.
+    if (!isSameMapTeleport && !redirectMapMoveForDungeonRun(*pendingMapMove))
+    {
+        return false;
+    }
+
     const auto applyMapMoveDirection = [this, &pendingMapMove]()
     {
         if (!pendingMapMove->directionDegrees.has_value() || m_pMapSceneRuntime == nullptr)
@@ -15483,6 +15499,17 @@ void GameApplication::handleCompletedPartyDefeatScreen()
     }
 
     m_gameInputSystem.suppressMouseButtonsUntilReleased();
+
+    // Defeat ends a dungeon run: no respawn, the main menu tells how far the party came.
+    if (loadSessionDungeonRun().has_value())
+    {
+        m_pendingPartyDefeatRespawnMapFileName.reset();
+        m_pendingPartyDefeatRespawnStart.reset();
+        m_mainMenuStatus = dungeonRunEndText(true, static_cast<size_t>(std::max(dungeonRunEntered() - 1, 0)));
+        openMainMenuScreen();
+        return;
+    }
+
     m_screenManager.setActiveScreen(nullptr);
     m_gameSession.gameplayScreenRuntime().interactionState().menuToggleLatch = true;
     finishPartyDefeat();
