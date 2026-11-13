@@ -2,6 +2,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -100,6 +101,12 @@ bool validateAssetPackRecord(const AssetPackRecord &pack, std::string &error)
         return false;
     }
 
+    if (!pack.language.empty() && (!isSimpleName(pack.language) || pack.language.find('.') != std::string::npos))
+    {
+        error = "pack " + pack.id + " has an invalid language: " + pack.language;
+        return false;
+    }
+
     return true;
 }
 
@@ -137,11 +144,40 @@ std::optional<AssetPackIndex> parseAssetPackIndex(const std::string &text, std::
             return std::nullopt;
         }
 
-        std::unordered_set<std::string> ids;
-        std::unordered_set<std::string> files;
+        // A release's index lists the languages' optional packs apart (language_packs): the updaters before 2.0
+        // check every pack of a new version's index before switching to it, and never download a language's
+        // (packaging/publish_release.py).
+        const YAML::Node languagePacks = document["language_packs"];
+
+        if (languagePacks && !languagePacks.IsSequence())
+        {
+            error = "pack index language_packs is not a list";
+            return std::nullopt;
+        }
+
+        std::vector<YAML::Node> packNodes;
 
         for (const YAML::Node &packNode : packs)
         {
+            packNodes.push_back(packNode);
+        }
+
+        const size_t firstLanguagePack = packNodes.size();
+
+        if (languagePacks)
+        {
+            for (const YAML::Node &packNode : languagePacks)
+            {
+                packNodes.push_back(packNode);
+            }
+        }
+
+        std::unordered_set<std::string> ids;
+        std::unordered_set<std::string> files;
+
+        for (size_t nodeIndex = 0; nodeIndex < packNodes.size(); ++nodeIndex)
+        {
+            const YAML::Node &packNode = packNodes[nodeIndex];
             AssetPackRecord pack;
             pack.id = requiredString(packNode, "id");
             pack.package = requiredString(packNode, "package");
@@ -150,9 +186,16 @@ std::optional<AssetPackIndex> parseAssetPackIndex(const std::string &text, std::
             pack.size = packNode["size"].as<uint64_t>();
             pack.contentId = requiredString(packNode, "content_id");
             pack.sha256 = requiredString(packNode, "sha256");
+            pack.language = packNode["language"] ? packNode["language"].as<std::string>() : std::string();
 
             if (!validateAssetPackRecord(pack, error))
             {
+                return std::nullopt;
+            }
+
+            if (nodeIndex >= firstLanguagePack && pack.language.empty())
+            {
+                error = "pack index language pack " + pack.id + " names no language";
                 return std::nullopt;
             }
 
@@ -196,6 +239,11 @@ bool validateAssetPackFiles(const AssetPackIndex &index, const std::filesystem::
         std::error_code sizeError;
         const uintmax_t size = std::filesystem::file_size(storeRoot / pack.file, sizeError);
 
+        if (sizeError && !pack.language.empty())
+        {
+            continue;
+        }
+
         if (sizeError || size != pack.size)
         {
             error = sizeError ? "missing content pack " + pack.file
@@ -213,8 +261,7 @@ bool assetPackFilesExist(const AssetPackIndex &index, const std::filesystem::pat
     for (const AssetPackRecord &pack : index.packs)
     {
         std::error_code fileError;
-
-        if (!std::filesystem::is_regular_file(storeRoot / pack.file, fileError))
+        if (!std::filesystem::is_regular_file(storeRoot / pack.file, fileError) && pack.language.empty())
         {
             error = "missing content pack " + pack.file;
             return false;
@@ -223,5 +270,40 @@ bool assetPackFilesExist(const AssetPackIndex &index, const std::filesystem::pat
 
     error.clear();
     return true;
+}
+
+std::vector<std::string> assetPackLanguages(const AssetPackIndex &index)
+{
+    std::vector<std::string> languages;
+
+    for (const AssetPackRecord &pack : index.packs)
+    {
+        if (!pack.language.empty() && std::find(languages.begin(), languages.end(), pack.language) == languages.end())
+        {
+            languages.push_back(pack.language);
+        }
+    }
+
+    std::sort(languages.begin(), languages.end());
+    return languages;
+}
+
+uint64_t missingLanguagePackBytes(const AssetPackIndex &index, const std::filesystem::path &storeRoot,
+                                  const std::string &language)
+{
+    uint64_t bytes = 0;
+
+    for (const AssetPackRecord &pack : index.packs)
+    {
+        std::error_code sizeError;
+
+        if (!language.empty() && pack.language == language
+            && std::filesystem::file_size(storeRoot / pack.file, sizeError) != pack.size)
+        {
+            bytes += pack.size;
+        }
+    }
+
+    return bytes;
 }
 }

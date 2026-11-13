@@ -14,6 +14,7 @@
 #include <fstream>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -767,6 +768,26 @@ TEST_CASE("summoned actor projectiles do not collide with party allies")
     CHECK(service.isProjectileSourceFriendlyToActor(projectile, facts));
 }
 
+TEST_CASE("hostile monster projectiles strike party summons of a friendly faction")
+{
+    GameplayProjectileService service;
+    const GameplayProjectileService::ProjectileState projectile = makeActorProjectile();
+
+    // The shooter's faction is friendly to the summon's monster (a Will o' Wisp among the Temple of Baa's monsters).
+    GameplayProjectileService::ProjectileActorRelationFacts facts = {};
+    facts.sourceMonsterKnown = true;
+    facts.sourceMonsterFriendlyToTarget = true;
+    facts.sourceHostileToParty = true;
+    CHECK(service.isProjectileSourceFriendlyToActor(projectile, facts));
+
+    facts.targetPartyControlled = true;
+    CHECK_FALSE(service.isProjectileSourceFriendlyToActor(projectile, facts));
+
+    // A monster at peace with the party keeps its faction's relation to the party's summons.
+    facts.sourceHostileToParty = false;
+    CHECK(service.isProjectileSourceFriendlyToActor(projectile, facts));
+}
+
 TEST_CASE("fire spike spawn limits are mastery based and actor trigger chooses nearest hostile")
 {
     GameplayProjectileService service;
@@ -833,6 +854,17 @@ TEST_CASE("fire spike spawn limits are mastery based and actor trigger chooses n
     CHECK_EQ(triggerResult.actorIndex, 4u);
     CHECK_EQ(triggerResult.actorId, 301u);
     CHECK(triggerResult.damage > 0);
+
+    // A hostile behind a closed door does not set the spike off (OY-490): the farther one does.
+    triggerInput.actors[1].blockedFromTrap = true;
+    CHECK(GameplayProjectileService::fireSpikeTrapReaches(triggerInput, triggerInput.actors[1]));
+    const GameplayProjectileService::FireSpikeTrapTriggerResult blockedResult =
+        service.buildFireSpikeTrapTrigger(triggerInput);
+    CHECK(blockedResult.triggered);
+    CHECK_EQ(blockedResult.actorIndex, 9u);
+
+    triggerInput.actors[0].blockedFromTrap = true;
+    CHECK_FALSE(service.buildFireSpikeTrapTrigger(triggerInput).triggered);
 }
 
 TEST_CASE("projectile frame without collision advances motion without expiring")
@@ -1182,6 +1214,38 @@ TEST_CASE("a Carnage arrow explodes like a fireball where it strikes")
     CHECK_FALSE(strike(0.0f).areaImpact.has_value());
 }
 
+TEST_CASE("a Carnage blast rolls each monster's damage and adds what a direct hit on it would")
+{
+    GameplayProjectileService service;
+    GameplayProjectileService::ProjectileState arrow = makePartyProjectile(30);
+    GameplayProjectileService::ProjectileDirectActorImpactInput target = {};
+    target.actorId = 7;
+
+    // A blast without a damage range (a fireball) deals its one damage.
+    CHECK_EQ(service.partyBlastDamageToActor(arrow, 30, target), 30);
+
+    arrow.blastMinimumDamage = 10;
+    arrow.blastMaximumDamage = 60;
+    std::set<int> rolls;
+
+    for (uint32_t actorId = 1; actorId <= 40; ++actorId)
+    {
+        target.actorId = actorId;
+        const int damage = service.partyBlastDamageToActor(arrow, 30, target);
+        CHECK(damage >= 10);
+        CHECK(damage <= 60);
+        rolls.insert(damage);
+    }
+
+    CHECK(rolls.size() > 5);
+
+    // Its bonus against the monster's kind doubles the monster's own roll.
+    target.actorId = 3;
+    const int plain = service.partyBlastDamageToActor(arrow, 30, target);
+    target.damageMultiplier = 2;
+    CHECK_EQ(service.partyBlastDamageToActor(arrow, 30, target), plain * 2);
+}
+
 TEST_CASE("an event missile flies to its target in its flight time, passes the party and bursts there on actors")
 {
     GameplayProjectileService service;
@@ -1252,6 +1316,47 @@ TEST_CASE("an event missile flies to its target in its flight time, passes the p
     CHECK_EQ(burst->fxRequest->point.x, doctest::Approx(9000.0f));
 }
 
+TEST_CASE("an event missile that strikes the party collides with it and deals the event's damage")
+{
+    GameplayProjectileService service;
+    GameplayProjectileService::ProjectileSpawnRequest request = {};
+    request.sourceKind = GameplayProjectileService::ProjectileState::SourceKind::Event;
+    request.definition.speed = 3000.0f;
+    request.definition.lifetimeTicks = 64;
+    request.damage = 20;
+    request.damageType = OpenYAMM::Game::CombatDamageType::Fire;
+    request.eventMissile = true;
+    request.eventMissileStrikesParty = true;
+    request.targetX = 400.0f;
+    request.targetZ = 100.0f;
+    request.sourceZ = 100.0f;
+
+    const GameplayProjectileService::ProjectileSpawnResult spawned = service.spawnProjectile(request);
+    REQUIRE(spawned.kind == GameplayProjectileService::ProjectileSpawnResult::Kind::SpawnedProjectile);
+    const GameplayProjectileService::ProjectileState &projectile = spawned.projectile;
+    CHECK(service.canProjectileCollideWithParty(projectile));
+
+    GameplayProjectileService::ProjectilePartyImpactDamageInput damageInput = {};
+    damageInput.sourceKind = projectile.sourceKind;
+    damageInput.projectileDamage = projectile.damage;
+    damageInput.eventSource = true;
+    const int damage = service.resolveProjectilePartyImpactDamage(damageInput);
+    CHECK_EQ(damage, 20);
+
+    GameplayProjectileService::ProjectileFrameFacts facts = {};
+    facts.deltaSeconds = 1.0f / 64.0f;
+    facts.canHitParty = true;
+    facts.nonPartyProjectileDamage = damage;
+    facts.partyPosition = {400.0f, 0.0f, 0.0f};
+    facts.hasCollision = true;
+    facts.collision.kind = GameplayProjectileService::ProjectileFrameCollisionKind::Party;
+    facts.collision.point = {350.0f, 0.0f, 100.0f};
+    GameplayProjectileService::ProjectileState flying = projectile;
+    const GameplayProjectileService::ProjectileFrameResult result = service.updateProjectileFrame(flying, facts);
+    REQUIRE(result.directPartyDamage.has_value());
+    CHECK_EQ(*result.directPartyDamage, 20);
+}
+
 TEST_CASE("in turn-based mode a party shot the queue waits on vanishes beyond 5120 from the party")
 {
     GameplayProjectileService service;
@@ -1284,4 +1389,35 @@ TEST_CASE("in turn-based mode a party shot the queue waits on vanishes beyond 51
     GameplayProjectileService::ProjectileState unwaited = projectile;
     unwaited.turnBasedPendingAction = false;
     CHECK_FALSE(service.updateProjectileFrame(unwaited, facts).expireProjectile);
+}
+
+TEST_CASE("the party's hit reach makes real-time party shots vanish beyond it")
+{
+    GameplayProjectileService service;
+    GameplayProjectileService::ProjectileState projectile = makePartyProjectile(10);
+    projectile.lifetimeTicks = 768;
+    projectile.x = 6000.0f;
+    projectile.velocityX = 4000.0f;
+
+    GameplayProjectileService::ProjectileFrameFacts facts = {};
+    facts.deltaSeconds = 1.0f / 128.0f;
+    facts.partyPosition = {0.0f, 0.0f, 0.0f};
+
+    // Without a reach (monster shots), the shot keeps flying.
+    GameplayProjectileService::ProjectileState unlimitedShot = projectile;
+    CHECK_FALSE(service.updateProjectileFrame(unlimitedShot, facts).expireProjectile);
+
+    // The party's: 5120, the yellow alert and turn-based reach (GameplayActorService::partyHitReach).
+    facts.partyShotReach = 5120.0f;
+    GameplayProjectileService::ProjectileState farShot = projectile;
+    CHECK(service.updateProjectileFrame(farShot, facts).expireProjectile);
+
+    GameplayProjectileService::ProjectileState nearShot = projectile;
+    nearShot.x = 5000.0f;
+    CHECK_FALSE(service.updateProjectileFrame(nearShot, facts).expireProjectile);
+
+    // A monster's missile is not the party's shot.
+    GameplayProjectileService::ProjectileState monsterShot = projectile;
+    monsterShot.sourceKind = GameplayProjectileService::ProjectileState::SourceKind::Actor;
+    CHECK_FALSE(service.updateProjectileFrame(monsterShot, facts).expireProjectile);
 }

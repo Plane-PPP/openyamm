@@ -7,6 +7,7 @@
 #include "game/mm9/Mm9TeacherSchedule.h"
 #include "game/mm9/Mm9QuestMarkers.h"
 #include "game/mm9/Mm9RudeDialogue.h"
+#include "game/mm9/Mm9HirelingTable.h"
 #include "game/mm9/Mm9SkillTrainer.h"
 #include "game/mm9/Mm9TransportRoute.h"
 #include "game/tables/CharacterDollTable.h"
@@ -81,10 +82,12 @@ public:
     const Mm9TeacherScheduleTable &mm9TeacherScheduleTable() const;
     const Mm9RudeDialogueTable &mm9RudeDialogueTable() const;
     const Mm9SkillTrainerTable &mm9SkillTrainerTable() const;
+    const Mm9HirelingTable &mm9HirelingTable() const;
     const Mm9TransportRouteTable &mm9TransportRouteTable() const;
     const Mm9QuestInteractionTable &mm9QuestInteractionTable() const;
     const RosterTable &rosterTable() const;
     const CharacterDollTable &characterDollTable() const;
+    const MergedCharacterVoiceTable &characterVoiceTable() const;
     const CharacterInspectTable &characterInspectTable() const;
     const RaceStartingStatsTable &raceStartingStatsTable() const;
     const ReadableScrollTable &readableScrollTable() const;
@@ -112,6 +115,8 @@ public:
     const MergedPotionSettingTable &mergedPotionSettingTable() const;
     // The address of the active ruleset's player's guide (`guide_url`), empty for none.
     const std::string &rulesetGuideUrl() const;
+    // Whether the active ruleset plays in a world (its `worlds`; every world when it names none).
+    bool rulesetSupportsWorld(const std::string &worldId) const;
     // Null unless the MAW ruleset is active.
     const MawMapLevels *mawMapLevels() const;
     const MawItemData *mawItemData() const;
@@ -148,10 +153,12 @@ private:
     const Mm9TeacherScheduleTable *m_pMm9TeacherScheduleTable = nullptr;
     const Mm9RudeDialogueTable *m_pMm9RudeDialogueTable = nullptr;
     const Mm9SkillTrainerTable *m_pMm9SkillTrainerTable = nullptr;
+    const Mm9HirelingTable *m_pMm9HirelingTable = nullptr;
     const Mm9TransportRouteTable *m_pMm9TransportRouteTable = nullptr;
     const Mm9QuestInteractionTable *m_pMm9QuestInteractionTable = nullptr;
     const RosterTable *m_pRosterTable = nullptr;
     const CharacterDollTable *m_pCharacterDollTable = nullptr;
+    const MergedCharacterVoiceTable *m_pCharacterVoiceTable = nullptr;
     const CharacterInspectTable *m_pCharacterInspectTable = nullptr;
     const RaceStartingStatsTable *m_pRaceStartingStatsTable = nullptr;
     const ReadableScrollTable *m_pReadableScrollTable = nullptr;
@@ -184,6 +191,7 @@ private:
     const MawDimensionData *m_pMawDimensionData = nullptr;
     const MawTextData *m_pMawTextData = nullptr;
     std::string m_rulesetGuideUrl;
+    std::vector<std::string> m_rulesetWorlds;
     const MergedReagentSettingTable *m_pMergedReagentSettingTable = nullptr;
     const MergedComplexItemPictureTable *m_pMergedComplexItemPictureTable = nullptr;
     const MergedTeacherTopicTable *m_pMergedTeacherTopicTable = nullptr;

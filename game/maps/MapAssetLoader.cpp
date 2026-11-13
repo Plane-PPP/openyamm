@@ -8,8 +8,10 @@
 #include "game/maps/DecorationModelManifest.h"
 #include "game/maps/IndoorSceneYml.h"
 #include "game/maps/MapAssetLoader.h"
+#include "game/maps/SceneOverlayPaths.h"
 #include "game/maps/MapDecorationTextures.h"
 #include "game/maps/MapIdentity.h"
+#include "game/maps/MapLayoutIdentity.h"
 #include "game/maps/MapPresentation.h"
 #include "game/maps/OutdoorSceneYml.h"
 #include "game/maps/TerrainTileData.h"
@@ -238,6 +240,8 @@ std::string monsterSpriteFrameFamilyDirectory()
     return "Data/rendering/sprite_frames/monsters";
 }
 
+// How far over a decoration's base its sector is looked up (buildIndoorDecorationBillboardSet's sector pass).
+constexpr float DecorationSectorProbeLift = 32.0f;
 constexpr uint32_t EnvironmentFlagRain = 0x01;
 constexpr uint32_t EnvironmentFlagSnow = 0x02;
 constexpr uint32_t EnvironmentFlagUnderwater = 0x04;
@@ -2534,6 +2538,9 @@ std::optional<DecorationBillboardSet> buildIndoorDecorationBillboardSet(
     }
 
     std::vector<int16_t> entitySectorIds(indoorMapData.entities.size(), -1);
+    size_t listedDecorationCount = 0;
+    std::optional<size_t> firstListingSector;
+    bool listsSpanSectors = false;
 
     for (size_t sectorIndex = 0; sectorIndex < indoorMapData.sectors.size(); ++sectorIndex)
     {
@@ -2546,7 +2553,21 @@ std::optional<DecorationBillboardSet> buildIndoorDecorationBillboardSet(
                 entitySectorIds[decorationId] = static_cast<int16_t>(sectorIndex);
             }
         }
+
+        listedDecorationCount += sector.decorationIds.size();
+
+        if (!sector.decorationIds.empty())
+        {
+            listsSpanSectors = listsSpanSectors || (firstListingSector && *firstListingSector != sectorIndex);
+            firstListingSector = firstListingSector.value_or(sectorIndex);
+        }
     }
+
+    // A converted map lists every decoration once, in the room of the air it stands in; MM6-MM8's lists hold all of a
+    // map's decorations in one sector, or miss some.
+    const bool decorationListsComplete = listsSpanSectors
+        && listedDecorationCount == entitySectorIds.size()
+        && std::find(entitySectorIds.begin(), entitySectorIds.end(), int16_t(-1)) == entitySectorIds.end();
 
     // Match the editor's room assignment for legacy maps that do not already carry complete decoration lists.
     // This runs while loading the indoor billboard asset; render frames only consume cached sector ids.
@@ -2554,6 +2575,8 @@ std::optional<DecorationBillboardSet> buildIndoorDecorationBillboardSet(
 
     for (DecorationBillboard &billboard : billboardSet->billboards)
     {
+        // Probed a little over its base: a decoration whose base is a few units under the floor it stands on (MM6's
+        // pyramid torches by a ramp, MM9's sunk stone benches) otherwise takes the sector of a floor far below.
         const std::optional<int16_t> resolvedSectorId =
             findIndoorSectorForPoint(
                 indoorMapData,
@@ -2561,17 +2584,40 @@ std::optional<DecorationBillboardSet> buildIndoorDecorationBillboardSet(
                 {
                     static_cast<float>(billboard.x),
                     static_cast<float>(billboard.y),
-                    static_cast<float>(billboard.z)
+                    static_cast<float>(billboard.z) + DecorationSectorProbeLift
                 },
                 &geometryCache);
+
+        const int16_t listedSectorId =
+            billboard.entityIndex < entitySectorIds.size() ? entitySectorIds[billboard.entityIndex] : int16_t(-1);
 
         if (resolvedSectorId)
         {
             billboard.sectorId = *resolvedSectorId;
+
+            // Sunk well under its floor (MM9's bookcases and tapestries, 80-107 units), the probe can miss its room's
+            // box and find only a floor over it in another sector (Thjorgard City's bookcases took the roof room and
+            // never drew in their houses). No floor of that sector under it: it does not stand there, the list knows.
+            if (decorationListsComplete
+                && listedSectorId >= 0
+                && listedSectorId != *resolvedSectorId
+                && !indoorSectorHasFloorUnderPoint(
+                    indoorMapData,
+                    indoorMapData.vertices,
+                    *resolvedSectorId,
+                    {
+                        static_cast<float>(billboard.x),
+                        static_cast<float>(billboard.y),
+                        static_cast<float>(billboard.z) + DecorationSectorProbeLift
+                    },
+                    &geometryCache))
+            {
+                billboard.sectorId = listedSectorId;
+            }
         }
         else if (billboard.entityIndex < entitySectorIds.size())
         {
-            billboard.sectorId = entitySectorIds[billboard.entityIndex];
+            billboard.sectorId = listedSectorId;
         }
     }
 
@@ -3914,67 +3960,6 @@ std::optional<IndoorTextureSet> buildIndoorTextureSet(
 
     return textureSet;
 }
-
-bool isSceneOverlayFileName(const std::string &entryName, const std::string &sceneFileName)
-{
-    const std::string lowerEntryName = toLowerCopy(entryName);
-    const std::string lowerSceneFileName = toLowerCopy(sceneFileName);
-
-    if (!lowerEntryName.ends_with(".yml") || lowerEntryName == lowerSceneFileName)
-    {
-        return false;
-    }
-
-    if (lowerEntryName.ends_with(".scene.yml"))
-    {
-        const std::string underscoreOverlayPrefix =
-            lowerSceneFileName.substr(0, lowerSceneFileName.size() - 10) + "_";
-
-        if (lowerEntryName.starts_with(underscoreOverlayPrefix))
-        {
-            return true;
-        }
-    }
-
-    const std::string numberedOverlayPrefix = lowerSceneFileName.substr(0, lowerSceneFileName.size() - 4) + ".";
-    return lowerEntryName.starts_with(numberedOverlayPrefix);
-}
-
-// The world's overlays in name order, then the active ruleset's (`rulesetRoot`, empty for Standard).
-std::vector<std::string> buildSceneOverlayPathCandidates(
-    const Engine::AssetFileSystem &assetFileSystem,
-    const std::string &sceneFileName,
-    const std::string &rulesetRoot)
-{
-    std::vector<std::string> candidates;
-    const auto collect = [&](const std::string &directory)
-    {
-        std::vector<std::string> found;
-
-        for (const std::string &entryName : assetFileSystem.enumerate(directory))
-        {
-            if (isSceneOverlayFileName(entryName, sceneFileName))
-            {
-                found.push_back(directory + "/" + entryName);
-            }
-        }
-
-        std::sort(found.begin(), found.end(), [](const std::string &left, const std::string &right)
-        {
-            return toLowerCopy(left) < toLowerCopy(right);
-        });
-        candidates.insert(candidates.end(), found.begin(), found.end());
-    };
-
-    collect("Data/games");
-
-    if (!rulesetRoot.empty())
-    {
-        collect(rulesetRoot + "maps");
-    }
-
-    return candidates;
-}
 }
 
 bool ensureMonsterSpriteFramesLoaded(
@@ -5105,6 +5090,17 @@ std::optional<MapAssetInfo> MapAssetLoader::load(
                 }
             }
         }
+    }
+
+    if (assetInfo.indoorMapData)
+    {
+        assetInfo.layoutIdentity =
+            computeIndoorMapLayoutIdentity(*assetInfo.indoorMapData, assetInfo.indoorMapDeltaData);
+    }
+    else if (assetInfo.outdoorMapData)
+    {
+        assetInfo.layoutIdentity =
+            computeOutdoorMapLayoutIdentity(*assetInfo.outdoorMapData, assetInfo.outdoorMapDeltaData);
     }
 
     logStageComplete("map asset load complete");

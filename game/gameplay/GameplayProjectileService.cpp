@@ -556,6 +556,8 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.shieldModifiers = request.shieldModifiers;
         projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
         projectile.explosionRadius = request.explosionRadius;
+        projectile.blastMinimumDamage = request.blastMinimumDamage;
+        projectile.blastMaximumDamage = request.blastMaximumDamage;
         projectile.critical = request.critical;
         projectile.useActorHitChance = request.useActorHitChance;
         projectile.turnBasedPendingAction = request.turnBasedPendingAction;
@@ -615,6 +617,7 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.lifetimeTicks = std::max<uint32_t>(1, uint32_t(std::ceil(flightSeconds * ProjectileTicksPerSecond)));
         speed = flightDistance * ProjectileTicksPerSecond / float(projectile.lifetimeTicks);
         projectile.eventMissile = true;
+        projectile.eventMissileStrikesParty = request.eventMissileStrikesParty;
         projectile.targetX = request.targetX;
         projectile.targetY = request.targetY;
         projectile.targetZ = request.targetZ;
@@ -630,6 +633,8 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     projectile.shieldModifiers = request.shieldModifiers;
     projectile.weakerOfPhysicalAndFire = request.weakerOfPhysicalAndFire;
     projectile.explosionRadius = request.explosionRadius;
+    projectile.blastMinimumDamage = request.blastMinimumDamage;
+    projectile.blastMaximumDamage = request.blastMaximumDamage;
     projectile.critical = request.critical;
     projectile.useActorHitChance = request.useActorHitChance;
     projectile.turnBasedPendingAction = request.turnBasedPendingAction;
@@ -1105,6 +1110,8 @@ std::optional<GameplayProjectileService::ProjectileSpawnRequest> GameplayProject
     request.shieldModifiers = projectile.shieldModifiers;
     request.weakerOfPhysicalAndFire = projectile.weakerOfPhysicalAndFire;
     request.explosionRadius = projectile.explosionRadius;
+    request.blastMinimumDamage = projectile.blastMinimumDamage;
+    request.blastMaximumDamage = projectile.blastMaximumDamage;
     request.critical = projectile.critical;
     request.sourceX = struck.preciseX;
     request.sourceY = struck.preciseY;
@@ -1636,7 +1643,7 @@ GameplayProjectileService::buildProjectileAreaImpact(
         ? std::max(1, projectile.damage)
         : input.nonPartyProjectileDamage;
 
-    if (input.canHitParty && !projectile.eventMissile)
+    if (input.canHitParty && (!projectile.eventMissile || projectile.eventMissileStrikesParty))
     {
         const float partyCenterZ = input.partyZ + input.partyCollisionHeight * 0.5f;
         impact.hitParty = pointWithinExpandedCylinder(
@@ -1686,6 +1693,54 @@ GameplayProjectileService::buildProjectileAreaImpact(
     }
 
     return impact;
+}
+
+std::vector<GameplayProjectileService::ProjectileAreaImpactDestructibleHit>
+GameplayProjectileService::buildProjectileAreaDestructibleHits(
+    const ProjectileState &projectile,
+    const GameplayWorldPoint &impactPoint,
+    float impactRadius,
+    int nonPartyProjectileDamage,
+    const std::vector<ProjectileAreaImpactDestructibleFacts> &destructibles)
+{
+    std::vector<ProjectileAreaImpactDestructibleHit> hits;
+
+    if (impactRadius <= 0.0f || projectile.sourceKind == ProjectileState::SourceKind::Actor)
+    {
+        return hits;
+    }
+
+    const int damage = projectile.sourceKind == ProjectileState::SourceKind::Party
+        ? std::max(1, projectile.damage)
+        : nonPartyProjectileDamage;
+
+    if (damage <= 0)
+    {
+        return hits;
+    }
+
+    for (const ProjectileAreaImpactDestructibleFacts &destructible : destructibles)
+    {
+        if (destructible.directImpact)
+        {
+            continue;
+        }
+
+        // The box's point nearest the impact.
+        const float nearestX = std::clamp(impactPoint.x, destructible.boundsMin.x, destructible.boundsMax.x);
+        const float nearestY = std::clamp(impactPoint.y, destructible.boundsMin.y, destructible.boundsMax.y);
+        const float nearestZ = std::clamp(impactPoint.z, destructible.boundsMin.z, destructible.boundsMax.z);
+        const float dx = nearestX - impactPoint.x;
+        const float dy = nearestY - impactPoint.y;
+        const float dz = nearestZ - impactPoint.z;
+
+        if (dx * dx + dy * dy + dz * dz <= impactRadius * impactRadius)
+        {
+            hits.push_back({destructible.id, damage});
+        }
+    }
+
+    return hits;
 }
 
 std::optional<int>
@@ -1758,6 +1813,25 @@ GameplayProjectileService::buildProjectileDirectActorImpact(
     impact.damage = input.nonPartyProjectileDamage;
     impact.applyNonPartyProjectileDamage = input.nonPartyProjectileDamage > 0;
     return impact;
+}
+
+int GameplayProjectileService::partyBlastDamageToActor(
+    const ProjectileState &projectile,
+    int blastDamage,
+    const ProjectileDirectActorImpactInput &input) const
+{
+    if (projectile.sourceKind != ProjectileState::SourceKind::Party || projectile.blastMaximumDamage <= 0)
+    {
+        return blastDamage;
+    }
+
+    ProjectileState shot = projectile;
+    std::mt19937 rng(projectile.projectileId ^ static_cast<uint32_t>((input.actorId + 1) * 2246822519u));
+    const int minimumDamage = std::max(1, projectile.blastMinimumDamage);
+    shot.damage = std::uniform_int_distribution<int>(
+        minimumDamage, std::max(minimumDamage, projectile.blastMaximumDamage))(rng);
+    shot.useActorHitChance = false;
+    return buildProjectileDirectActorImpact(shot, input).damage;
 }
 
 void GameplayProjectileService::expireProjectile(
@@ -2074,15 +2148,19 @@ GameplayProjectileService::ProjectileFrameResult GameplayProjectileService::upda
     }
 
     // In turn-based mode a party shot the queue waits on is removed once it is more than 5120 from the party
-    // (MM8 0x472d20; OE SpriteObject::updateObjects).
-    if (facts.turnBasedActive && projectile.turnBasedPendingAction)
+    // (MM8 0x472d20; OE SpriteObject::updateObjects). The party's hit reach does the same in real time.
+    constexpr float TurnBasedObjectRange = 5120.0f;
+    const float shotReach = facts.turnBasedActive && projectile.turnBasedPendingAction
+        ? TurnBasedObjectRange
+        : projectile.sourceKind == ProjectileState::SourceKind::Party ? facts.partyShotReach : 0.0f;
+
+    if (shotReach > 0.0f)
     {
-        constexpr float TurnBasedObjectRange = 5120.0f;
         const float dx = projectile.x - facts.partyPosition.x;
         const float dy = projectile.y - facts.partyPosition.y;
         const float dz = projectile.z - facts.partyPosition.z;
 
-        if (dx * dx + dy * dy + dz * dz > TurnBasedObjectRange * TurnBasedObjectRange)
+        if (dx * dx + dy * dy + dz * dz > shotReach * shotReach)
         {
             result.expireProjectile = true;
             return result;
@@ -2321,7 +2399,8 @@ std::optional<GameplayProjectileService::ProjectileWardBlock> GameplayProjectile
 
 bool GameplayProjectileService::canProjectileCollideWithParty(const ProjectileState &projectile) const
 {
-    return projectile.sourceKind != ProjectileState::SourceKind::Party && !projectile.eventMissile;
+    return projectile.sourceKind != ProjectileState::SourceKind::Party
+        && (!projectile.eventMissile || projectile.eventMissileStrikesParty);
 }
 
 bool GameplayProjectileService::isProjectileSourceFriendlyToActor(
@@ -2336,6 +2415,13 @@ bool GameplayProjectileService::isProjectileSourceFriendlyToActor(
     if (projectile.fromSummonedMonster)
     {
         return !facts.targetHostileToParty || facts.targetPartyControlled;
+    }
+
+    // A party summon is the enemy of every monster hostile to the party, whatever their factions, as the AI targets
+    // it (resolveFactionTargetPolicy's hostileToSummon): their shots hit it.
+    if (facts.targetPartyControlled && facts.sourceHostileToParty)
+    {
+        return false;
     }
 
     if (!facts.sourceMonsterKnown)
@@ -2429,6 +2515,26 @@ uint32_t GameplayProjectileService::advanceFireSpikeTrapLifetime(
     return timeSinceCreatedTicks + ticksFromDeltaSeconds(deltaSeconds);
 }
 
+bool GameplayProjectileService::fireSpikeTrapReaches(
+    const FireSpikeTrapTriggerInput &input,
+    const FireSpikeTrapActorFacts &actor)
+{
+    const float deltaX = actor.x - input.x;
+    const float deltaY = actor.y - input.y;
+    const float triggerRadius =
+        static_cast<float>(std::max<uint16_t>(actor.radius, 24))
+        + static_cast<float>(std::max<uint16_t>(input.trapRadius, 24))
+        + 48.0f;
+
+    if (deltaX * deltaX + deltaY * deltaY > triggerRadius * triggerRadius)
+    {
+        return false;
+    }
+
+    const float actorCenterZ = actor.z + static_cast<float>(actor.height) * 0.5f;
+    return std::abs(actorCenterZ - input.z) <= static_cast<float>(std::max<uint16_t>(actor.height, 128));
+}
+
 GameplayProjectileService::FireSpikeTrapTriggerResult
 GameplayProjectileService::buildFireSpikeTrapTrigger(
     const FireSpikeTrapTriggerInput &input) const
@@ -2438,7 +2544,7 @@ GameplayProjectileService::buildFireSpikeTrapTrigger(
 
     for (const FireSpikeTrapActorFacts &actor : input.actors)
     {
-        if (actor.unavailableForCombat)
+        if (actor.unavailableForCombat || actor.blockedFromTrap)
         {
             continue;
         }
@@ -2455,25 +2561,14 @@ GameplayProjectileService::buildFireSpikeTrapTrigger(
             continue;
         }
 
+        if (!fireSpikeTrapReaches(input, actor))
+        {
+            continue;
+        }
+
         const float deltaX = actor.x - input.x;
         const float deltaY = actor.y - input.y;
         const float horizontalDistanceSquared = deltaX * deltaX + deltaY * deltaY;
-        const float triggerRadius =
-            static_cast<float>(std::max<uint16_t>(actor.radius, 24))
-            + static_cast<float>(std::max<uint16_t>(input.trapRadius, 24))
-            + 48.0f;
-
-        if (horizontalDistanceSquared > triggerRadius * triggerRadius)
-        {
-            continue;
-        }
-
-        const float actorCenterZ = actor.z + static_cast<float>(actor.height) * 0.5f;
-
-        if (std::abs(actorCenterZ - input.z) > static_cast<float>(std::max<uint16_t>(actor.height, 128)))
-        {
-            continue;
-        }
 
         if (horizontalDistanceSquared < bestDistanceSquared)
         {
@@ -2740,6 +2835,39 @@ PartyMissileSource GameplayProjectileService::partyMissileSource(
     }
 
     return source;
+}
+
+void GameplayProjectileService::addPartyArrowElements(
+    PartyMissileSource &source,
+    const ProjectileState &projectile,
+    const Party *pParty,
+    const ItemTable *pItemTable,
+    std::mt19937 &rng)
+{
+    if (source.pAttacker == nullptr
+        || pParty == nullptr
+        || projectile.spellId != 0
+        || projectile.damageType == CombatDamageType::Irresistible
+        || !pParty->rules().combat.addsWeaponElementalDamage())
+    {
+        return;
+    }
+
+    const ElementalDamageBonuses enchantDamage = ItemEnchantRuntime::rollCharacterAttackElementalDamage(
+        *source.pAttacker,
+        CharacterAttackMode::Bow,
+        pItemTable,
+        pParty->specialItemEnchantTable(),
+        rng);
+    ElementalDamageBonuses elements = enchantDamage;
+    elements +=
+        ItemEnchantRuntime::characterWeaponDamageElements(*source.pAttacker, CharacterAttackMode::Bow, pItemTable);
+
+    if (elements.total() > 0)
+    {
+        source.addedElementalDamage = enchantDamage.total();
+        source.weaponElements = elements;
+    }
 }
 
 MonsterDamageResistances GameplayProjectileService::monsterDamageResistances(

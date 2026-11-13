@@ -65,6 +65,8 @@ void printUsage(std::ostream &stream, const char *pProgram)
            << "  --map <map-file>                 Start on this map\n"
            << "  --ruleset <id>[:<option>...]     Ruleset of a new game, such as maw:hell:horizontal\n"
            << "  --asset-root <directory>         Content root\n"
+           << "  --extra-mount <directory>        Development: read this folder's engine/ and worlds/<id>/ map files\n"
+           << "                                   in front of a development content root\n"
            << "  --asset-scale <1|2|4|x1|x2|x4>   Asset scale tier\n"
            << "  --user-data <directory>          Folder of settings.ini, saves and the log\n"
            << "  --load-unique-actor <index>      Load only this actor of the map\n"
@@ -165,6 +167,20 @@ bool parseCommonArguments(
 
             config.assetRoot = argv[argumentIndex + 1];
             assetRootArgumentProvided = true;
+            ++argumentIndex;
+            continue;
+        }
+
+        if (argument == "--extra-mount")
+        {
+            if (!config.installedContent.extraMountRoot.empty() || argumentIndex + 1 >= argc)
+            {
+                std::cerr << "Usage: --extra-mount <directory>\n";
+                return false;
+            }
+
+            std::error_code absoluteError;
+            config.installedContent.extraMountRoot = std::filesystem::absolute(argv[argumentIndex + 1], absoluteError);
             ++argumentIndex;
             continue;
         }
@@ -383,6 +399,7 @@ void applySettingsConfigOverridesIfConfigured(
     config.hitchThresholdMilliseconds = settings->hitchThresholdMilliseconds;
     config.verticalSync = settings->verticalSync;
     config.installedContent.acceptModifiedPacks = settings->keepModifiedPacks;
+    config.installedContent.languageId = settings->language;
 }
 
 // settings.ini in the user data folder (the working directory by then), or the defaults.
@@ -467,6 +484,8 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
     // Mounted only over a release's packs (packaging/MODDING.md).
     std::error_code currentPathError;
     config.installedContent.modsRoot = std::filesystem::current_path(currentPathError) / "mods";
+    // The player's own language packs (devdocs/LOCALIZATION.md), on every asset root.
+    config.installedContent.userLanguagesRoot = std::filesystem::current_path(currentPathError) / "languages";
 #endif
 
     const bool headlessCommand = !arguments.empty() && arguments[0].rfind("--headless-", 0) == 0;
@@ -832,8 +851,21 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
     // A fresh installation from the small download package carries no content yet.
     else if (releaseContent && OpenYAMM::Game::installedContentMissing(config.assetRoot))
     {
-        if (OpenYAMM::Game::runContentSetup(updateChannelUrl(), config.assetRoot)
+        if (OpenYAMM::Game::runContentSetup(updateChannelUrl(), config.assetRoot, config.installedContent.languageId)
             != OpenYAMM::Game::ContentSetupResult::Ready)
+        {
+            return 0;
+        }
+    }
+    // The language chosen in Settings has voices, sounds or videos not downloaded yet (devdocs/LOCALIZATION.md):
+    // the same window downloads them; if the player closes it, the game plays in English this time.
+    else if (releaseContent
+             && OpenYAMM::Game::languageContentMissing(config.assetRoot, config.installedContent.languageId))
+    {
+        const OpenYAMM::Game::ContentSetupResult result =
+            OpenYAMM::Game::runContentSetup(updateChannelUrl(), config.assetRoot, config.installedContent.languageId);
+
+        if (result == OpenYAMM::Game::ContentSetupResult::Restarted)
         {
             return 0;
         }

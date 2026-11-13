@@ -1,4 +1,5 @@
 #include "game/rules/maw/MawItemFormulas.h"
+#include "engine/Localization.h"
 
 #include "game/rules/maw/MawCombatFormulas.h"
 
@@ -56,8 +57,11 @@ double expectedPityWait(double base, double multiplier)
 
 const char *mawRarityName(MawRarity rarity)
 {
+    // English, translated where an item's name shows it.
     static constexpr std::array<const char *, 9> Names = {
-        "", "Common", "Uncommon", "Rare", "Epic", "Ancient", "Primordial", "Legendary", "Celestial",
+        "", Engine::trNoop("Common").data(), Engine::trNoop("Uncommon").data(), Engine::trNoop("Rare").data(),
+        Engine::trNoop("Epic").data(), Engine::trNoop("Ancient").data(), Engine::trNoop("Primordial").data(),
+        Engine::trNoop("Legendary").data(), Engine::trNoop("Celestial").data(),
     };
     return size_t(rarity) < Names.size() ? Names[size_t(rarity)] : "";
 }
@@ -375,8 +379,9 @@ int mawArmorClass(int baseArmorClass, int referenceArmorClass, int itemPower, do
 
 int mawLevelRequirement(int dropLevel, double rung, const MawLevelRequirementRules &rules)
 {
+    // MAW's ItemLevel.WearLevel: the ladder's tier levels raise the requirement, never above 80 % of the drop level.
     const double level = dropLevel + (rung - 1) * 3;
-    double requirement = level - (10 + 0.09 * level);
+    double requirement = std::min(level - (10 + 0.09 * level), dropLevel * 0.8);
     requirement -= rules.nightmare ? 6 : 0;
     requirement -= rules.doom ? 3 : 0;
     requirement -= rules.insanity ? 3 : 0;

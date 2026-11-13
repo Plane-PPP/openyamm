@@ -1,4 +1,5 @@
 #include "game/rules/maw/MawMonsterRules.h"
+#include "engine/Localization.h"
 
 #include "game/gameplay/GameplayMonsterSpawn.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
@@ -112,7 +113,8 @@ double bossDropShare(const CorpseLootContext &context)
         return 1;
     }
 
-    const int tier = context.pFacts->tier > 0 ? context.pFacts->tier : mawMonsterTier(context.pStats->id);
+    const int tier = context.pFacts->tier > 0 ? context.pFacts->tier
+                                              : mawMonsterFamily(context.pMonsterTable, context.pStats->id).tier;
     return 1.0 / (5 - tier);
 }
 
@@ -324,6 +326,7 @@ int levelOf(const std::unordered_map<int, int> &levels, int monsterId, int fallb
 bool gainsHellRangedAttack(
     const RulesetOptions &options,
     const std::string &mapFileName,
+    bool outdoorMap,
     const MonsterTable::MonsterStatsEntry &stats,
     bool bountyMap)
 {
@@ -331,7 +334,7 @@ bool gainsHellRangedAttack(
         "out01.odm", "out02.odm", "7out01.odm", "7out02.odm", "oute3.odm", "outd3.odm",
     };
     const std::string map = lowerFileName(mapFileName);
-    const bool hellOutdoors = options.difficulty >= RulesetDifficulty::Hell && map.ends_with(".odm")
+    const bool hellOutdoors = options.difficulty >= RulesetDifficulty::Hell && outdoorMap
         && std::find(StartingMaps.begin(), StartingMaps.end(), map) == StartingMaps.end();
     return (hellOutdoors || bountyMap) && !stats.attack1HasMissile && stats.attack2Chance <= 0 && !stats.hasSpell1
         && !stats.canFly;
@@ -341,6 +344,16 @@ bool gainsHellRangedAttack(
 // or [L + 10, L + 30] when that falls outside (MON:311-335).
 // The level a boss starts from (MawBossLevel, MON:31-40): a C row its level plus the C - B gap, an A or B row the next
 // tier's level.
+// A monster MAW may make a boss: sized on the map, no named NPC or unique, no wimp and no scripted actor. A world's
+// monster (MM9's) must also be hostile; MAW's own rows keep MAW's rule, which does not ask
+// (zzMaw-Monsters.lua:2880-2890).
+bool bossCandidate(const MapMonsterPlacement &monster)
+{
+    return monster.pStats != nullptr && monster.pFacts != nullptr && monster.pFacts->level > 0 && !monster.named
+        && !monster.scripted && (monster.hostile || monster.pStats->id < MawWorldMonsterRows)
+        && monster.pStats->aiType != MonsterTable::MonsterAiType::Wimp;
+}
+
 int bossBaseLevel(int level, int familyLevel, uint8_t tier, int nextTierLevel)
 {
     return tier == 3 ? std::max(1, int(mawRound(2.0 * level - familyLevel))) : std::max(1, nextTierLevel);
@@ -368,7 +381,8 @@ int bossLevel(int level, int candidate, double draw)
 // The monster's share of its family's HP: A and C rows keep their table ratio to the B row, within 0.6-1.8.
 double tierHealthRatio(const MonsterTable &monsterTable, const MonsterTable::MonsterStatsEntry &stats, uint8_t tier)
 {
-    const MonsterTable::MonsterStatsEntry *pFamilyB = monsterTable.findStatsById(int16_t(mawFamilyBId(stats.id)));
+    const MonsterTable::MonsterStatsEntry *pFamilyB =
+        monsterTable.findStatsById(int16_t(mawMonsterFamily(&monsterTable, stats.id).row(2)));
 
     if (tier == 2 || pFamilyB == nullptr || pFamilyB->hitPoints <= 0)
     {
@@ -389,12 +403,32 @@ void setDisplayedDamage(int &diceRolls, int &diceSides, int &bonus, double damag
 
 std::string mawBossAffixName(MawBossAffix affix)
 {
-    static constexpr std::array<const char *, 22> Names = {
-        "", "Summoner", "Venomous", "Plagueborn", "Fixator", "Exploding", "Thorn", "Reflecting", "Adamantite",
-        "Swapper", "Regenerating", "Puller", "Leecher", "Swift", "Shadow", "Broodlord", "Broodling", "Omnipotent",
-        "Unstoppable", "Berserker", "Cryptic", "Skilled",
+    // English identities (badges, actor names); shown through localizedActorName.
+    static constexpr std::array<std::string_view, 22> Names = {
+        "",
+        Engine::trcNoop("monster affix", "Summoner"),
+        Engine::trcNoop("monster affix", "Venomous"),
+        Engine::trcNoop("monster affix", "Plagueborn"),
+        Engine::trcNoop("monster affix", "Fixator"),
+        Engine::trcNoop("monster affix", "Exploding"),
+        Engine::trcNoop("monster affix", "Thorn"),
+        Engine::trcNoop("monster affix", "Reflecting"),
+        Engine::trcNoop("monster affix", "Adamantite"),
+        Engine::trcNoop("monster affix", "Swapper"),
+        Engine::trcNoop("monster affix", "Regenerating"),
+        Engine::trcNoop("monster affix", "Puller"),
+        Engine::trcNoop("monster affix", "Leecher"),
+        Engine::trcNoop("monster affix", "Swift"),
+        Engine::trcNoop("monster affix", "Shadow"),
+        Engine::trcNoop("monster affix", "Broodlord"),
+        Engine::trcNoop("monster affix", "Broodling"),
+        Engine::trcNoop("monster affix", "Omnipotent"),
+        Engine::trcNoop("monster affix", "Unstoppable"),
+        Engine::trcNoop("monster affix", "Berserker"),
+        Engine::trcNoop("monster affix", "Cryptic"),
+        Engine::trcNoop("monster affix", "Skilled"),
     };
-    return size_t(affix) < Names.size() ? Names[size_t(affix)] : "";
+    return size_t(affix) < Names.size() ? std::string(Names[size_t(affix)]) : std::string();
 }
 
 MawBossAffix mawBossEffectAffix(const ActorRulesetFacts &facts)
@@ -495,7 +529,7 @@ std::optional<RulesetMapProgress> mawMapProgress(const MapKillProgress &progress
 
     if (openRun && facts.completedBefore && !facts.beyondMadness)
     {
-        result.reward = "counts for the Dimensional Maps quest";
+        result.reward = Engine::tr("counts for the Dimensional Maps quest");
     }
     else if (facts.completedBefore && !openRun)
     {
@@ -503,16 +537,10 @@ std::optional<RulesetMapProgress> mawMapProgress(const MapKillProgress &progress
     }
     else
     {
-        result.reward = facts.austerity ? "experience and gold" : "experience, gold, materials";
+        result.reward = Engine::tr(facts.austerity ? "experience and gold" : "experience, gold, materials");
     }
 
     return result;
-}
-
-uint8_t mawMonsterTier(int monsterId)
-{
-    const int remainder = monsterId % 3;
-    return remainder == 1 ? 1 : remainder == 2 ? 2 : 3;
 }
 
 double mawMonsterBaseDamage(
@@ -553,11 +581,12 @@ GameplayMonsterBolsterResult MawMonsterRules::resolveMonster(
     // reset when the map loads or the rules change (MON:383-665); a boss keeps its affix and rolls.
     const std::unordered_map<int, int> &levels = m_rules.monsterLevels(*context.pMonsterTable, *context.pMap);
     const int baseLevel = levelOf(levels, stats.id, stats.level);
-    facts.familyLevel = levelOf(levels, mawFamilyBId(stats.id), baseLevel);
-    facts.tier = mawMonsterTier(stats.id);
+    const MawMonsterFamily family = mawMonsterFamily(context.pMonsterTable, stats.id);
+    facts.familyLevel = levelOf(levels, family.row(2), baseLevel);
+    facts.tier = family.tier;
     facts.level = facts.bossAffix != 0
         ? bossLevel(baseLevel,
-              bossBaseLevel(baseLevel, facts.familyLevel, facts.tier, levelOf(levels, stats.id + 1, baseLevel)),
+              bossBaseLevel(baseLevel, facts.familyLevel, facts.tier, levelOf(levels, family.row(family.tier + 1), baseLevel)),
               facts.bossLevelDraw)
         : baseLevel;
 
@@ -601,7 +630,8 @@ GameplayMonsterBolsterResult MawMonsterRules::resolveMonster(
     result.maxHp = std::max(1, int(roundedHealth));
     // Armour grows from the table's B level to the row's level on the map (MON:751); a boss or unique monster keeps its
     // row's armour, not its own level's. Poisons replace diseases below level 20 (MON:3741-3747).
-    const MonsterTable::MonsterStatsEntry *pTableB = context.pMonsterTable->findStatsById(int16_t(mawFamilyBId(stats.id)));
+    const MonsterTable::MonsterStatsEntry *pTableB = context.pMonsterTable->findStatsById(
+        int16_t(mawMonsterFamily(context.pMonsterTable, stats.id).row(2)));
     const double tableFamilyLevel = pTableB != nullptr ? std::max(1, pTableB->level) : familyLevel;
     result.armorClass = int(mawRound(stats.armorClass * (baseLevel + 10.0) / (tableFamilyLevel + 10)));
 
@@ -642,7 +672,8 @@ GameplayMonsterBolsterResult MawMonsterRules::resolveMonster(
     // From Hell up, outdoors outside the six starting maps, and on a bounty hunt's map on any difficulty, a walking
     // melee-only monster also shoots: chance 10, 20 or 30 % by tier, its dice and bonus cut from attack 1's
     // (MON:632-658).
-    if (gainsHellRangedAttack(m_rules.options(), mapFileName, stats, m_rules.bountyLevel().has_value()))
+    if (gainsHellRangedAttack(
+            m_rules.options(), mapFileName, m_rules.outdoorMap(mapFileName), stats, m_rules.bountyLevel().has_value()))
     {
         result.generatedAttack2 = true;
         result.generatedAttack2IsRanged = true;
@@ -811,10 +842,12 @@ bool MawMonsterRules::placeMapBosses(
     const auto baseLevelOf = [this, &context](const MapMonsterPlacement &monster)
     {
         const ActorRulesetFacts &facts = *monster.pFacts;
+        const MawMonsterFamily family = mawMonsterFamily(context.pMonsterTable, monster.pStats->id);
         const int nextTierLevel = context.pMonsterTable != nullptr
-            ? levelOf(m_rules.monsterLevels(*context.pMonsterTable, *context.pMap), monster.pStats->id + 1, facts.level)
+            ? levelOf(m_rules.monsterLevels(*context.pMonsterTable, *context.pMap), family.row(family.tier + 1),
+                  facts.level)
             : facts.level;
-        return bossBaseLevel(facts.level, facts.familyLevel, mawMonsterTier(monster.pStats->id), nextTierLevel);
+        return bossBaseLevel(facts.level, facts.familyLevel, family.tier, nextTierLevel);
     };
     const double divisor = config.doomMode ? 60 : 150;
     int bossCount = int(std::ceil((double(monsters.size()) - 30) / divisor));
@@ -841,9 +874,8 @@ bool MawMonsterRules::placeMapBosses(
         {
             const MapMonsterPlacement &monster = monsters[index];
 
-            if (monster.pStats != nullptr && monster.pFacts != nullptr && monster.pFacts->level > 0 && !monster.named
-                && mawMonsterTier(monster.pStats->id) != 3
-                && monster.pStats->aiType != MonsterTable::MonsterAiType::Wimp && unitDraw(roll) < *chance / 100)
+            if (bossCandidate(monster) && mawMonsterFamily(context.pMonsterTable, monster.pStats->id).tier != 3
+                && unitDraw(roll) < *chance / 100)
             {
                 changed = makeBoss(*monster.pFacts, randomStreamKey(rootSeed, RandomDomain::BossStats, map, resets,
                     index), 0, baseLevelOf(monster)) || changed;
@@ -857,10 +889,8 @@ bool MawMonsterRules::placeMapBosses(
     {
         const MapMonsterPlacement &monster = monsters[index];
 
-        // MAW does not ask whether the monster is hostile (zzMaw-Monsters.lua:2880-2890).
-        if (monster.pStats != nullptr && monster.pFacts != nullptr && monster.pFacts->level > 0 && !monster.named
-            && mawMonsterTier(monster.pStats->id) == 3
-            && monster.pStats->aiType != MonsterTable::MonsterAiType::Wimp && monster.pFacts->bossAffix == 0)
+        if (bossCandidate(monster) && mawMonsterFamily(context.pMonsterTable, monster.pStats->id).tier == 3
+            && monster.pFacts->bossAffix == 0)
         {
             candidates.push_back(index);
         }
@@ -1086,10 +1116,11 @@ CorpseLoot MawMonsterRules::corpseLoot(const CorpseLootContext &context) const
     result.boss = affixBoss || context.uniqueNameId == Morcarack;
     MonsterTable::LootPrototype &loot = result.loot;
     const int level = pFacts->level;
-    const int tier = pFacts->tier > 0 ? pFacts->tier : mawMonsterTier(stats.id);
+    const MawMonsterFamily family = mawMonsterFamily(context.pMonsterTable, stats.id);
+    const int tier = pFacts->tier > 0 ? pFacts->tier : family.tier;
 
     const MonsterTable::MonsterStatsEntry *pFamilyB = context.pMonsterTable != nullptr
-        ? context.pMonsterTable->findStatsById(int16_t(mawFamilyBId(stats.id)))
+        ? context.pMonsterTable->findStatsById(int16_t(family.row(2)))
         : nullptr;
     const double familyBaseLevel = pFamilyB != nullptr ? pFamilyB->level : stats.level;
     // The table caps a monster's level at 255 where MAW reads it for loot.
@@ -1135,9 +1166,9 @@ CorpseLoot MawMonsterRules::corpseLoot(const CorpseLootContext &context) const
         {
             const std::unordered_map<int, int> &levels = m_rules.monsterLevels(*context.pMonsterTable, *context.pMap);
             const int baseLevel = levelOf(levels, stats.id, stats.level);
-            const int familyLevel = levelOf(levels, mawFamilyBId(stats.id), baseLevel);
+            const int familyLevel = levelOf(levels, family.row(2), baseLevel);
             const int candidate = bossBaseLevel(
-                baseLevel, familyLevel, uint8_t(tier), levelOf(levels, stats.id + 1, baseLevel));
+                baseLevel, familyLevel, uint8_t(tier), levelOf(levels, family.row(tier + 1), baseLevel));
 
             if (bossLevelRedrawn(baseLevel, candidate))
             {
@@ -1377,8 +1408,8 @@ int16_t MawMonsterRules::arenaWaveMonster(int wave, const MonsterTable &monsterT
 
 uint32_t MawMonsterRules::bountyReward(const MonsterTable::MonsterStatsEntry &stats) const
 {
-    // getPartyLevel(4): every continent's bank but the "other" one.
-    return uint32_t(std::max(0.0, mawRound(stats.level + m_rules.state().levelOutside(0))) * 100);
+    // getPartyLevel(4): every continent's bank (MMMerge's fourth, "other", bank held nothing; MAW's is Chedian's).
+    return uint32_t(std::max(0.0, mawRound(stats.level + m_rules.state().totalLevel())) * 100);
 }
 
 std::optional<std::string> MawMonsterRules::bountyRefusal(const IGameplayWorldRuntime &world) const
@@ -1388,10 +1419,35 @@ std::optional<std::string> MawMonsterRules::bountyRefusal(const IGameplayWorldRu
     if (world.mapKillProgress(progress)
         && !m_rules.state().clearedSinceRefill.contains(lowerFileName(progress.mapFileName)))
     {
-        return "You need to clear the area COMPLETELY first.";
+        return Engine::tr("You need to clear the area COMPLETELY first.");
     }
 
     return std::nullopt;
+}
+
+std::optional<std::string> MawMonsterRules::bountyRefusalForMap(
+    const std::string &mapFileName, const std::string &mapName) const
+{
+    if (!m_rules.state().clearedSinceRefill.contains(lowerFileName(mapFileName)))
+    {
+        return Engine::tr("You need to clear {place} COMPLETELY first.", {{"place", Engine::localizeKnown(mapName)}});
+    }
+
+    return std::nullopt;
+}
+
+std::optional<int16_t> MawMonsterRules::bountyTargetMonster(const MonsterTable &monsterTable, uint32_t seed) const
+{
+    const std::vector<const MonsterTable::MonsterStatsEntry *> families = mawArenaFamilies(monsterTable);
+
+    if (families.empty())
+    {
+        return std::nullopt;
+    }
+
+    // spawnBountyTarget's first draw.
+    std::mt19937 rng(seed);
+    return int16_t(families[std::uniform_int_distribution<size_t>(0, families.size() - 1)(rng)]->id);
 }
 
 std::optional<BountyTarget> MawMonsterRules::spawnBountyTarget(
@@ -1430,7 +1486,7 @@ std::optional<BountyTarget> MawMonsterRules::spawnBountyTarget(
     // level plus the party's banked levels less 2/3 of the target family's B level, and its walkers shoot too
     // (BountyHunt.lua:214, MON:591-593, 634).
     const int bounty = int(mawRound(std::max(
-        0.0, m_rules.state().levelOutside(0) - (pFamilyB != nullptr ? pFamilyB->level : target.level) / 1.5)));
+        0.0, m_rules.state().totalLevel() - (pFamilyB != nullptr ? pFamilyB->level : target.level) / 1.5)));
 
     if (EventRuntimeState *pRuntimeState = world.eventRuntimeState())
     {
@@ -1448,7 +1504,7 @@ std::optional<BountyTarget> MawMonsterRules::spawnBountyTarget(
     // The bounty texts name the boss as spawned and a "Bounty" note marks its spot (BountyHunt.lua:216-231).
     BountyTarget result;
     result.monsterId = int16_t(target.id);
-    result.mapNote = "Bounty";
+    result.mapNote = Engine::tr("Bounty");
     GameplayRuntimeActorState huntedState = {};
 
     if (!hunted.empty() && world.actorRuntimeState(hunted.front(), huntedState))
@@ -1564,15 +1620,17 @@ std::optional<std::string> MawMonsterRules::mapResetOffer(const std::string &map
 
     // Only a dungeon cleared since it last refilled: a reset refills it, so resets cannot be chained without a re-clear
     // (zzMaw-Maps.lua:166-188).
-    if (!fileName.ends_with(".blv") || !m_rules.state().clearedSinceRefill.contains(fileName)
+    if (!fileName.ends_with(".blv") || m_rules.outdoorMap(fileName)
+        || !m_rules.state().clearedSinceRefill.contains(fileName)
         || mode == RulesetChallengeMode::RoadToInsanity || mode == RulesetChallengeMode::BeyondMadness)
     {
         return std::nullopt;
     }
 
     const int resets = m_rules.state().resetCount(fileName);
-    return "You have cleared this dungeon. Resetting it brings every monster back "
-        + std::to_string(20 * (resets + 1)) + " levels stronger than at first, with no second completion reward.";
+    return Engine::tr("You have cleared this dungeon. Resetting it brings every monster back {levels} levels stronger "
+                      "than at first, with no second completion reward.",
+        {{"levels", 20 * (resets + 1)}});
 }
 
 void MawMonsterRules::resetMap(const std::string &mapFileName) const
@@ -1586,6 +1644,24 @@ bool MawMonsterRules::mapRefillForced(const std::string &mapFileName) const
 {
     const MawDimensionRun *pRun = m_rules.dimensionRun(mapFileName);
     return m_forcedRefills.contains(lowerFileName(mapFileName)) || (pRun != nullptr && pRun->entering);
+}
+
+bool MawMonsterRules::countsForMapCompletion(
+    const MapStatsEntry &map, const MonsterTable::MonsterStatsEntry &stats) const
+{
+    return m_rules.mapLevels().countsForCompletion(map.fileName, stats);
+}
+
+double MawMonsterRules::packDensityFactor(const MapStatsEntry &map) const
+{
+    const RulesetOptions &options = m_rules.options();
+    return m_rules.mapLevels().densityFactor(map.fileName, std::string(rulesetDifficultyId(options.difficulty)),
+        std::string(rulesetChallengeModeId(options.challengeMode)));
+}
+
+bool MawMonsterRules::keepsUsedBarrelsThroughRefill() const
+{
+    return true;
 }
 
 void MawMonsterRules::decorationRaisedStats(
@@ -1812,8 +1888,9 @@ void MawMonsterRules::hatchBoss(IGameplayWorldRuntime &world, uint32_t actorId, 
     request.radius = 256;
     request.boss = true;
     request.moveSpeed = 350;
-    const uint8_t tier = mawMonsterTier(boss.monsterId);
-    const int16_t familyC = int16_t((boss.monsterId - 1) / 3 * 3 + 3);
+    const MawMonsterFamily family = mawMonsterFamily(world.monsterTable(), boss.monsterId);
+    const uint8_t tier = family.tier;
+    const int16_t familyC = int16_t(family.row(3));
 
     if (boss.affix == uint8_t(MawBossAffix::Omnipotent))
     {
@@ -1838,7 +1915,7 @@ void MawMonsterRules::hatchBoss(IGameplayWorldRuntime &world, uint32_t actorId, 
         return;
     }
 
-    request.monsterId = boss.affix == uint8_t(MawBossAffix::Broodling) ? int16_t(boss.monsterId - 1) : familyC;
+    request.monsterId = boss.affix == uint8_t(MawBossAffix::Broodling) ? int16_t(family.row(tier - 1)) : familyC;
     request.count = 3;
     request.bossAffix = uint8_t(MawBossAffix::Broodling);
     request.seed = rng();
@@ -1858,7 +1935,7 @@ void MawMonsterRules::capInsanityFood(IGameplayWorldRuntime &world) const
 
     MawGameState &state = m_rules.state();
 
-    if (!world.isIndoorMap())
+    if (world.isOpenAirMap())
     {
         pParty->addFood(state.heldFood);
         state.heldFood = 0;
@@ -2038,7 +2115,7 @@ void MawMonsterRules::updateMonsters(IGameplayWorldRuntime &world, float deltaSe
             }
 
             GameplayMonsterSpawnRequest request;
-            request.monsterId = int16_t(mawFamilyBId(state.monsterId));
+            request.monsterId = int16_t(mawMonsterFamily(world.monsterTable(), state.monsterId).row(2));
             request.tierWeights = {55, 30, 15};
             request.x = state.preciseX;
             request.y = state.preciseY;
@@ -2081,7 +2158,7 @@ void MawMonsterRules::updateMonsters(IGameplayWorldRuntime &world, float deltaSe
         if (pRuntimeState != nullptr && m_rules.options().difficulty >= RulesetDifficulty::Hard
             && mawFlightMap(m_announcedMap))
         {
-            pRuntimeState->statusMessages.push_back("Fly is allowed without restrictions here");
+            pRuntimeState->statusMessages.push_back(Engine::tr("Fly is allowed without restrictions here"));
         }
     }
 
@@ -2102,7 +2179,8 @@ void MawMonsterRules::updateMonsters(IGameplayWorldRuntime &world, float deltaSe
             if (mark != weakenedMark(m_rules, progress.mapFileName))
             {
                 mark = weakenedMark(m_rules, progress.mapFileName);
-                pRuntimeState->statusMessages.push_back("Monsters are weakened and can no longer resurrect");
+                pRuntimeState->statusMessages.push_back(
+                    Engine::tr("Monsters are weakened and can no longer resurrect"));
             }
         }
     }
@@ -2253,7 +2331,7 @@ bool MawMonsterRules::teleportBlockedNearEnemies() const
 std::string MawMonsterRules::teleportBlockedText(bool townPortal) const
 {
     return townPortal && m_rules.options().challengeMode == RulesetChallengeMode::BeyondMadness
-        ? "Madness is not a place for cowards"
+        ? Engine::tr("Madness is not a place for cowards")
         : MonsterRules::teleportBlockedText(townPortal);
 }
 
@@ -2318,7 +2396,7 @@ std::optional<std::string> MawMonsterRules::rulesTopic(const std::string &topic,
 
         if (int(highest) < tier)
         {
-            return formatQuestText(questRules.textTooLow, {}, tier);
+            return formatQuestText(Engine::localize(questRules.textTooLow), {}, tier);
         }
 
         // Keyed by the tier, so asking again after a reload gives the same map (rollQuestMap).
@@ -2349,18 +2427,18 @@ std::optional<std::string> MawMonsterRules::rulesTopic(const std::string &topic,
 
         if (!party.tryGrantInventoryItem(item))
         {
-            return std::string("Your packs are too full to take the map.");
+            return Engine::tr("Your packs are too full to take the map.");
         }
 
         quest.mapGiven = true;
         quest.cleared = false;
-        return formatQuestText(questRules.textGive, pTarget->name,
+        return formatQuestText(Engine::localize(questRules.textGive), Engine::localize(pTarget->name),
             mawDimensionMapLevel(map.power, m_rules.mapLevels().band(pTarget->fileName)));
     }
 
     if (!quest.cleared)
     {
-        return questRules.textNotCleared;
+        return Engine::localize(questRules.textNotCleared);
     }
 
     // AddGoldExp: the gold, and the same in experience to everyone as an event gives it.
@@ -2368,15 +2446,17 @@ std::optional<std::string> MawMonsterRules::rulesTopic(const std::string &topic,
     const MapStatsEntry *pCurrentMap =
         m_rules.mapTable() != nullptr ? m_rules.mapTable()->findByFileName(m_rules.currentMap()) : nullptr;
     const uint32_t continentId = pCurrentMap != nullptr ? pCurrentMap->mergedContinentId : 0;
-    party.addGold(reward);
+    party.addGold(reward, GoldReason::Event);
+    const int64_t experience =
+        m_rules.gameRules().experience.eventExperience(party, reward, continentId, party.members().size());
 
     for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
     {
-        party.addExperienceToMember(memberIndex, m_rules.gameRules().experience.eventExperience(party, reward,
-            continentId));
+        party.addExperienceToMember(memberIndex, experience, ExperienceReason::Event);
     }
 
-    const std::string text = formatQuestText(questRules.textReward, quest.clearedMapName, reward);
+    const std::string text =
+        formatQuestText(Engine::localize(questRules.textReward), Engine::localize(quest.clearedMapName), reward);
     quest.done = quest.done || tier >= questRules.unlockTier;
     quest.tierLevel = data.nextQuestTier(tier);
     quest.mapGiven = false;

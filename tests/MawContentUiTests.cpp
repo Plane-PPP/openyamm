@@ -1,4 +1,5 @@
 #include "doctest/doctest.h"
+#include "engine/AssetFileSystem.h"
 #include "game/app/KeyboardBindings.h"
 #include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/items/InventoryBags.h"
@@ -25,6 +26,7 @@
 #include "game/tables/MapStats.h"
 #include "game/tables/MergedBaseTables.h"
 #include "game/tables/PotionEffectTable.h"
+#include "game/tables/ItemTable.h"
 #include "game/tables/SpellTable.h"
 #include "tests/RegressionGameData.h"
 
@@ -562,8 +564,8 @@ TEST_CASE("MAW potion descriptions carry their numbers at the potion's power (L7
     Character drinker;
     drinker.rulesetState.potionSteps[259] = 1;
     const std::string steps = *items.itemDescription(transcendence, &drinker);
-    CHECK_NE(steps.find("50 Skill Points (step 2)"), std::string::npos);
-    CHECK_NE(steps.find("Best step already taken: 1 (20 Skill Points)"), std::string::npos);
+    CHECK_NE(steps.find("50 skill points (step 2;"), std::string::npos);
+    CHECK_NE(steps.find("Best step already drunk: 1 (20 skill points)"), std::string::npos);
 
     // Items without a text and Standard keep the item table's notes.
     InventoryItem sword;
@@ -783,9 +785,14 @@ TEST_CASE("MAW race cards list the race's skill bonuses, resistances and immunit
     Character vampire;
     vampire.raceId = 1;
     const std::vector<std::string> vampireNotes = classes.raceNotes(vampire);
-    REQUIRE_EQ(vampireNotes.size(), 2);
+    REQUIRE_EQ(vampireNotes.size(), 3);
     CHECK_EQ(vampireNotes[0], "Immune to Mind magic.");
-    CHECK_EQ(vampireNotes[1], "Preservation at night and in dungeons.");
+    CHECK_EQ(vampireNotes[1],
+        "Leeches 5% of melee and 2.5% of ranged and spell damage as hit points, half as much as a Vampire.");
+    CHECK_EQ(vampireNotes[2], "Preservation at night and in dungeons.");
+    // The Vampire class leeches twice the race's share (mawLeech).
+    vampire.className = "Vampire";
+    CHECK_EQ(classes.raceNotes(vampire)[1], "Leeches 10% of melee and 5% of ranged and spell damage as hit points.");
 
     // The table drives the bonuses too: an undead character is immune to Body and Mind, a level-10 dragon resists fire
     // by 120.
@@ -1018,6 +1025,38 @@ TEST_CASE("MAW's crafting and alchemy bags take what the party picks up: the pic
     CHECK_FALSE(stored->taggedBag);
 }
 
+TEST_CASE("a solo character's tagged bags on every tab take what the party picks up (OY-344)")
+{
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    const ItemTable &itemTable = OpenYAMM::Tests::regressionGameData().itemTable;
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    Party party = mawParty(rules, 1);
+    Character &solo = *party.member(0);
+    const int bagCount = rules.gameRules().items.bagCount(party);
+    REQUIRE_EQ(bagCount, 20);
+
+    // Tab III, bag 2 crafting and tab V, bag 4 alchemy, tagged while open; the overview then opens tab I's first.
+    REQUIRE(InventoryBags::openBag(solo, 9, bagCount));
+    CHECK(InventoryBags::toggleTag(solo, 9, BagTag::Crafting));
+    REQUIRE(InventoryBags::openBag(solo, 19, bagCount));
+    CHECK(InventoryBags::toggleTag(solo, 19, BagTag::Alchemy));
+    REQUIRE(InventoryBags::openBag(solo, 0, bagCount));
+
+    const std::optional<StoredPickup> material = storePickedUpItem(party, packItem(1041, 1, 1), &itemTable);
+    REQUIRE(material);
+    CHECK(material->taggedBag);
+    REQUIRE_EQ(InventoryBags::itemsInBag(solo, 9).size(), 1u);
+    CHECK_EQ(InventoryBags::itemsInBag(solo, 9)[0].objectDescriptionId, 1041u);
+
+    const std::optional<StoredPickup> potion = storePickedUpItem(party, packItem(222, 1, 1), &itemTable);
+    REQUIRE(potion);
+    CHECK(potion->taggedBag);
+    REQUIRE_EQ(InventoryBags::itemsInBag(solo, 19).size(), 1u);
+    CHECK_EQ(InventoryBags::itemsInBag(solo, 19)[0].objectDescriptionId, 222u);
+    CHECK(solo.inventory.empty());
+    CHECK_EQ(solo.rulesetState.currentBag, 0);
+}
+
 TEST_CASE("MAW bag tags survive a save (H.10, save 123)")
 {
     GameSaveData save;
@@ -1083,6 +1122,11 @@ TEST_CASE("MAW's gather key brings corpses and crafting items; Standard has none
 
     // The keys: MAW's actions have their own ini names and defaults.
     CHECK_EQ(keyboardBindingDefinition(KeyboardAction::GatherLoot).iniKey, "gather_loot");
+    // The inventory key keeps the settings key it had as "Quest"; the quest book has a key of its own (OY-481).
+    CHECK_EQ(keyboardBindingDefinition(KeyboardAction::Inventory).iniKey, "quest");
+    CHECK_EQ(keyboardBindingDefinition(KeyboardAction::Inventory).defaultBinding.scancode, SDL_SCANCODE_I);
+    CHECK_EQ(keyboardBindingDefinition(KeyboardAction::QuestBook).iniKey, "quest_book");
+    CHECK_EQ(keyboardBindingDefinition(KeyboardAction::QuestBook).defaultBinding.kind, InputBindingKind::None);
     CHECK_EQ(keyboardBindingDefinition(KeyboardAction::GatherLoot).defaultBinding.scancode, SDL_SCANCODE_G);
     CHECK_EQ(keyboardBindingDefinition(KeyboardAction::Unstuck).defaultBinding.kind, InputBindingKind::None);
     CHECK_EQ(keyboardBindingDefinition(KeyboardAction::AlchemistPick).defaultBinding.scancode, SDL_SCANCODE_A);
@@ -1196,6 +1240,58 @@ TEST_CASE("MAW Insanity: spellbooks cost more in shops by their place, training 
     const float multiplier = insanity.gameRules().skills.trainingPriceMultiplier(trainee, 2.0f);
     CHECK_EQ(multiplier, doctest::Approx(insanity.model(1).skill(50) + 4));
     CHECK_EQ(plain.gameRules().skills.trainingPriceMultiplier(trainee, 2.0f), doctest::Approx(2.0f));
+}
+
+TEST_CASE("MAW prices a world's spellbook as its own book of the same spell")
+{
+    const auto row = [](uint32_t itemId, const std::string &value, const std::string &mod1)
+    {
+        std::vector<std::string> fields(26);
+        fields[0] = std::to_string(itemId);
+        fields[1] = "missing_test_icon";
+        fields[2] = "Book " + mod1;
+        fields[3] = value;
+        fields[4] = "Book";
+        fields[6] = mod1;
+        fields[17] = "test";
+        fields[18] = "test:item/" + std::to_string(itemId);
+        fields[19] = std::to_string(itemId);
+        return fields;
+    };
+    OpenYAMM::Engine::AssetFileSystem assetFileSystem;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    REQUIRE(assetFileSystem.initialize(sourceRoot, sourceRoot / "assets_dev", OpenYAMM::Engine::AssetScaleTier::X1));
+    ItemTable itemTable;
+    // MAW's Meteor Shower book (408) at MAW's price; MM9's (10909) and a world book whose spell has no MAW book row.
+    REQUIRE(itemTable.load(
+        assetFileSystem, {row(408, "40000", "S9"), row(10909, "2000", "S9"), row(10910, "3000", "S10")}, {}));
+
+    RulesetOptions insanityOptions;
+    insanityOptions.challengeMode = RulesetChallengeMode::RoadToInsanity;
+    MawRules insanity(insanityOptions, MawMapLevels{});
+    MawRules plain(RulesetOptions{}, MawMapLevels{});
+    insanity.setItemTable(&itemTable);
+    plain.setItemTable(&itemTable);
+    const auto item = [](uint32_t itemId)
+    {
+        InventoryItem book;
+        book.objectDescriptionId = itemId;
+        return book;
+    };
+    const auto price = [&](const MawRules &rules, uint32_t itemId)
+    {
+        return rules.gameRules().items.shopBuyValue(item(itemId), *itemTable.get(itemId), nullptr, nullptr);
+    };
+
+    CHECK_EQ(price(plain, 10909), price(plain, 408));
+    CHECK_EQ(plain.gameRules().items.itemValue(item(10909), *itemTable.get(10909), nullptr, nullptr, 1),
+        plain.gameRules().items.itemValue(item(408), *itemTable.get(408), nullptr, nullptr, 1));
+    // Road to Insanity's multiplier (the 9th of its school, x10) applies on top, as to MAW's own book.
+    CHECK_EQ(price(insanity, 10909), price(insanity, 408));
+    CHECK_EQ(price(insanity, 10909), 10 * price(plain, 408));
+    // Without a MAW book of that spell the world's book keeps its own value.
+    CHECK_EQ(price(plain, 10910), standardGameRules().items.shopBuyValue(item(10910), *itemTable.get(10910),
+        nullptr, nullptr));
 }
 
 TEST_CASE("MAW Insanity: a town names another town's open bounty instead of a new one (P9.I8)")

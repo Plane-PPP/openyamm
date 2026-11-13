@@ -12,6 +12,7 @@
 #include "game/fx/WorldFxRenderResources.h"
 #include "game/fx/WorldFxSystem.h"
 #include "game/fx/EffectRenderer.h"
+#include "game/fx/MistWisps.h"
 #include "game/render/ShieldDomeRenderer.h"
 #include "game/outdoor/OutdoorCollisionData.h"
 #include "game/outdoor/OutdoorDistantSea.h"
@@ -40,7 +41,6 @@
 #include "game/tables/JournalHistoryTable.h"
 #include "game/tables/JournalQuestTable.h"
 #include "game/gameplay/GameplayScreenState.h"
-#include "game/gameplay/GameplayTalkCamera.h"
 #include "game/items/ItemEnchantTables.h"
 #include "game/tables/NpcDialogTable.h"
 #include "game/tables/ObjectTable.h"
@@ -52,6 +52,7 @@
 #include "game/tables/RosterTable.h"
 #include "game/tables/SpellTable.h"
 #include "game/gameplay/GameplayDialogController.h"
+#include "game/ui/CombatFloatingText.h"
 #include "game/ui/EnemyHealthBarRenderer.h"
 #include "game/ui/GameplayHudCommon.h"
 #include "game/ui/GameplayUiController.h"
@@ -143,6 +144,8 @@ public:
     const SkyPresetLibrary *skyPresetLibrary() const;
     // Terrain square for the Enhanced map-edge fog and the sea past it, for the current camera height.
     SkySurroundings skySurroundings() const;
+    // What the map's mist takes of the hour's and the weather's ambient light, 1 at a clear noon (devdocs/MIST.md).
+    std::array<float, 3> mistLight() const;
     // Baked sun/sky light colours (u_bakedLighting), hue-tinted by the Enhanced sky when it is active.
     std::array<std::array<float, 4>, 2> bakedLightingColors(
         const OutdoorWorldRuntime::AtmosphereState &atmosphere) const;
@@ -648,6 +651,8 @@ public:
     const GameSettings &settingsSnapshot() const;
     GameplayWorldUiRenderState gameplayUiRenderState(int width, int height) const;
     WorldFxSystem &worldFxSystem();
+    // The model a decoration shows now, by its sprite override key (a talking prop's talk portrait).
+    std::optional<DecorationPortraitModel> decorationPortraitModel(uint32_t spriteOverrideKey) const;
     Engine::ModelRenderer &modelRenderer() { return m_modelRenderer; }
     EffectRenderer &effectRenderer() { return m_effectRenderer; }
     const EffectRenderer::Diagnostics &effectRenderDiagnostics() const;
@@ -692,20 +697,6 @@ private:
     void syncCursorToGameplayCrosshair(SDL_Window *pWindow = nullptr);
     void refreshViewDistanceCache();
     const BillboardTextureHandle *findBillboardTexture(const std::string &textureName, int16_t paletteId) const;
-
-    struct CombatFloatingText
-    {
-        size_t actorIndex = 0;
-        int amount = 0;
-        std::string text;
-        float x = 0.0f;
-        float y = 0.0f;
-        float z = 0.0f;
-        float remainingSeconds = 0.0f;
-        float durationSeconds = 0.0f;
-        uint32_t colorAbgr = 0xffffffffu;
-        float fontScale = 1.0f;
-    };
 
 
 
@@ -936,6 +927,7 @@ private:
     uint64_t m_renderableStartTickNanoseconds = 0;
     uint64_t m_renderFrameIndex = 0;
     WorldFxSystem m_worldFxSystem;
+    MistWisps m_mistWisps;
     std::vector<std::vector<size_t>> m_decorationBillboardGridCells;
     std::vector<InteractiveDecorationBinding> m_interactiveDecorationBindings;
     std::vector<KeyboardInteractionBillboardCandidate> m_keyboardInteractionBillboardCandidates;
@@ -950,7 +942,10 @@ private:
     float m_cameraTargetZ;
     float m_cameraYawRadians;
     float m_cameraPitchRadians;
-    GameplayTalkCamera m_talkCamera;
+    // This frame's view: a playing cinematic's field of view (60 otherwise) and the camera shake, set by render().
+    float m_viewVerticalFovDegrees = 60.0f;
+    float m_viewShakeYawRadians = 0.0f;
+    float m_viewShakePitchRadians = 0.0f;
     float m_cameraEyeHeight;
     float m_cameraDistance;
     float m_cameraOrthoScale;
@@ -998,12 +993,12 @@ private:
     const Engine::AssetFileSystem *m_pAssetFileSystem;
     GameSettings m_gameSettings = GameSettings::createDefault();
     ViewDistanceCache m_viewDistanceCache;
-    std::filesystem::path m_autosavePath =
-        std::filesystem::path("saves") / "autosave.oysav";
+    // Where the autosave goes instead of the playthrough's own file (headless diagnostics).
+    std::optional<std::filesystem::path> m_autosavePath;
     PendingSavePreviewCaptureState m_pendingSavePreviewCapture;
     int m_lastRenderWidth = 0;
     int m_lastRenderHeight = 0;
     std::vector<EnemyHealthBarRenderer::Draw> m_pendingEnemyHealthBars;
-    std::vector<CombatFloatingText> m_combatFloatingTexts;
+    CombatFloatingText m_combatFloatingText;
 };
 }

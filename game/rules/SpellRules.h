@@ -14,6 +14,7 @@ namespace OpenYAMM::Game
 {
 class Party;
 struct ActorRulesetFacts;
+struct SpellbookSkin;
 struct SpellEntry;
 class SpellTable;
 
@@ -89,8 +90,9 @@ public:
         const SpellTable &spellTable,
         bool indoor,
         bool fromSpellbook) const;
-    // Switches the member's spell rotation (MAW's Elementalists) and says whether it is on now; nothing for a member
-    // without one.
+    // Whether the member's spell rotation (MAW's Elementalists) is on; nothing for a member without one.
+    virtual std::optional<bool> spellRotation(const Character &member) const;
+    // Switches the member's spell rotation and says whether it is on now; nothing for a member without one.
     virtual std::optional<bool> toggleSpellRotation(Character &member) const;
     // The recovery ticks the cast takes, from the table's.
     virtual int recoveryTicks(const CharacterSpellCast &cast, int tableTicks) const;
@@ -157,6 +159,9 @@ public:
     virtual std::optional<AuraReport> auraReport(const Party &party) const;
     // Whether Tab in the spellbook turns to the member's next school (MAW). Standard: no.
     virtual bool tabCyclesSpellbookSchools() const;
+    // The member's class's own look of the spellbook: page art, tabs and spell pictures (MAW's Death Knight and
+    // Thief lines). Presentation only. Standard: none, the standard book.
+    virtual const SpellbookSkin *spellbookSkin(const Character &member) const;
     // Whether Sunray can be cast indoors, at any hour there (MAW: SP:1006); outdoors it still needs daylight.
     // Standard: no, outdoors only.
     virtual bool sunrayWorksIndoors() const;

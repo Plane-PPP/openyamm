@@ -1,4 +1,5 @@
 #include "game/maps/IndoorSceneYml.h"
+#include "game/maps/MistYml.h"
 
 #include "game/StringUtils.h"
 #include "game/maps/MapItemSourceYml.h"
@@ -11,8 +12,10 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <exception>
+#include <iostream>
 #include <limits>
 #include <sstream>
 #include <vector>
@@ -159,6 +162,36 @@ bool parsePatrolNode(const YAML::Node &node, std::vector<std::array<int32_t, 3>>
         }
 
         points.push_back({point[0].as<int32_t>(), point[1].as<int32_t>(), point[2].as<int32_t>()});
+    }
+
+    return true;
+}
+
+// A placed actor's held items (scene held_items): a list of {model, node}; absent is none.
+bool parseHeldItemsNode(const YAML::Node &node, std::vector<MapDeltaHeldItem> &items, std::string &errorMessage)
+{
+    items.clear();
+
+    if (!node)
+    {
+        return true;
+    }
+
+    if (!node.IsSequence())
+    {
+        errorMessage = "held_items must be a list of {model, node}";
+        return false;
+    }
+
+    for (const YAML::Node &item : node)
+    {
+        if (!item.IsMap() || !item["model"] || !item["node"] || item.size() != 2)
+        {
+            errorMessage = "held_items must be a list of {model, node}";
+            return false;
+        }
+
+        items.push_back({item["model"].as<std::string>(), item["node"].as<std::string>()});
     }
 
     return true;
@@ -619,7 +652,8 @@ bool parseFloatTriple(const YAML::Node &node, std::array<float, 3> &value, std::
     return parsePositionNode(node, value[0], value[1], value[2], errorMessage);
 }
 
-// A door's `mover` block: rotation {pivot, axis, open_degrees, open_away}, easing, bodies, carry, auto_close_seconds.
+// A door's `mover` block: rotation {pivot, axis, open_degrees, open_away}, spin {pivot, axis, degrees_per_second,
+// spin_up_seconds, spin_down_seconds, start_on}, easing, bodies, carry, auto_close_seconds.
 bool parseIndoorMoverNode(
     const YAML::Node &node,
     uint32_t doorId,
@@ -707,6 +741,29 @@ bool parseIndoorMoverNode(
         mover.rotation = rotation;
     }
 
+    if (const YAML::Node spinNode = node["spin"]; spinNode)
+    {
+        if (!spinNode.IsMap())
+        {
+            errorMessage = "door mover spin must be a map";
+            return false;
+        }
+
+        IndoorMoverSpin spin = {};
+
+        if (!parseFloatTriple(spinNode["pivot"], spin.pivot, errorMessage)
+            || !parseFloatTriple(spinNode["axis"], spin.axis, errorMessage)
+            || !readScalarNode(spinNode, "degrees_per_second", spin.degreesPerSecond, errorMessage)
+            || !readScalarNode(spinNode, "spin_up_seconds", spin.spinUpSeconds, errorMessage, false)
+            || !readScalarNode(spinNode, "spin_down_seconds", spin.spinDownSeconds, errorMessage, false)
+            || !readScalarNode(spinNode, "start_on", spin.startOn, errorMessage, false))
+        {
+            return false;
+        }
+
+        mover.spin = spin;
+    }
+
     return true;
 }
 
@@ -746,6 +803,31 @@ bool parseIndoorLaddersNode(const YAML::Node &node, std::vector<IndoorLadder> &l
         }
 
         ladders.push_back(std::move(ladder));
+    }
+
+    return true;
+}
+
+// `opaque_faces`: a sequence of face ids (appended to `faces`).
+bool parseOpaqueFacesNode(const YAML::Node &node, std::vector<uint16_t> &faces, std::string &errorMessage)
+{
+    if (!node.IsSequence())
+    {
+        errorMessage = "opaque_faces must be a sequence";
+        return false;
+    }
+
+    try
+    {
+        for (const YAML::Node &faceNode : node)
+        {
+            faces.push_back(faceNode.as<uint16_t>());
+        }
+    }
+    catch (const std::exception &exception)
+    {
+        errorMessage = std::string("could not parse opaque_faces: ") + exception.what();
+        return false;
     }
 
     return true;
@@ -1093,17 +1175,29 @@ bool parseStaticLightsNode(const YAML::Node &node, bool &frontOnly, std::string 
 
 // `actor_detection`: {wakes: neighbours | none} (re_mm8/INDOOR_EXPLORATION_AND_ACTIVATION.md, "OpenYAMM detection by
 // sight, hearing and neighbours").
-bool parseActorDetectionNode(const YAML::Node &node, bool &neighbourWakes, std::string &errorMessage)
+bool parseActorDetectionNode(
+    const YAML::Node &node, bool &neighbourWakes, std::optional<float> &provokeRadius, std::string &errorMessage)
 {
     if (!node.IsMap())
     {
-        errorMessage = "actor_detection must be a map of wakes (neighbours or none)";
+        errorMessage = "actor_detection must be a map of wakes (neighbours or none) and provoke_radius";
         return false;
     }
     bool parsed = true;
     for (const auto &pair : node)
     {
         const std::string key = pair.first.as<std::string>();
+        if (key == "provoke_radius")
+        {
+            const float radius = pair.second.IsScalar() ? pair.second.as<float>() : -1.0f;
+            if (!std::isfinite(radius) || radius < 0.0f)
+            {
+                errorMessage = "actor_detection provoke_radius must be a distance, 0 or more";
+                return false;
+            }
+            provokeRadius = radius;
+            continue;
+        }
         if (key != "wakes")
         {
             errorMessage = "actor_detection has an unknown key " + key;
@@ -1147,6 +1241,35 @@ bool parseActorMovementNode(const YAML::Node &node, bool &dropsFollow, std::stri
         parsed = value == "follow";
     }
     dropsFollow = parsed;
+    return true;
+}
+
+// `portal_visibility`: {near_reach: units}, the distance within which a portal of the camera's sector that the view
+// would drop still opens the whole view (IndoorPortalVisibility.h nearPortalReach; a converter's maps, whose floors
+// near doorways may be a voxel off).
+bool parsePortalVisibilityNode(const YAML::Node &node, float &nearReach, std::string &errorMessage)
+{
+    if (!node.IsMap())
+    {
+        errorMessage = "portal_visibility must be a map of near_reach";
+        return false;
+    }
+    for (const auto &pair : node)
+    {
+        const std::string key = pair.first.as<std::string>();
+        if (key != "near_reach")
+        {
+            errorMessage = "portal_visibility has an unknown key " + key;
+            return false;
+        }
+        const float value = pair.second.as<float>();
+        if (!(value >= 0.0f && value <= 512.0f))
+        {
+            errorMessage = "portal_visibility near_reach must be 0..512";
+            return false;
+        }
+        nearReach = value;
+    }
     return true;
 }
 
@@ -1439,7 +1562,7 @@ bool parseDestructiblesNode(
 }
 
 // `ambient_sounds`: a sequence of {key, sound, position, inner_radius, outer_radius, volume, loop, wait [min, max],
-// day_only, night_only, start_on} (devdocs/AMBIENT_SOUNDS.md).
+// day_only, night_only, start_on, sprite} (devdocs/AMBIENT_SOUNDS.md).
 bool parseAmbientSoundsNode(
     const YAML::Node &node,
     std::vector<WorldAmbientSound> &sounds,
@@ -1469,7 +1592,7 @@ bool parseAmbientSoundsNode(
 
                 if (key != "key" && key != "sound" && key != "position" && key != "inner_radius"
                     && key != "outer_radius" && key != "volume" && key != "loop" && key != "wait"
-                    && key != "day_only" && key != "night_only" && key != "start_on")
+                    && key != "day_only" && key != "night_only" && key != "start_on" && key != "sprite")
                 {
                     errorMessage = "an ambient_sounds entry has an unknown key " + key;
                     return false;
@@ -1487,6 +1610,7 @@ bool parseAmbientSoundsNode(
                 || !readScalarNode(entryNode, "day_only", sound.dayOnly, errorMessage, false)
                 || !readScalarNode(entryNode, "night_only", sound.nightOnly, errorMessage, false)
                 || !readScalarNode(entryNode, "start_on", sound.startOn, errorMessage, false)
+                || !readScalarNode(entryNode, "sprite", sound.spriteCog, errorMessage, false)
                 || !parseFloatTriple(entryNode["position"], sound.position, errorMessage))
             {
                 errorMessage = "ambient sound: " + errorMessage;
@@ -1687,7 +1811,7 @@ bool parseFootstepSoundsNode(
 }
 
 // `terrain`: {materials: a local file name in worlds/<world>/terrain_materials/, textures: the ground faces' texture
-// names}.
+// names, exclude_faces: face indices with such a texture drawn as ordinary faces}.
 bool parseTerrainNode(const YAML::Node &node, std::optional<IndoorTerrain> &terrain, std::string &errorMessage)
 {
     if (!node.IsMap())
@@ -1701,7 +1825,7 @@ bool parseTerrainNode(const YAML::Node &node, std::optional<IndoorTerrain> &terr
         for (const auto &pair : node)
         {
             const std::string key = pair.first.as<std::string>();
-            if (key != "materials" && key != "textures" && key != "grass")
+            if (key != "materials" && key != "textures" && key != "grass" && key != "exclude_faces")
             {
                 errorMessage = "terrain has an unknown key " + key;
                 return false;
@@ -1735,6 +1859,21 @@ bool parseTerrainNode(const YAML::Node &node, std::optional<IndoorTerrain> &terr
         std::sort(parsed.textureNames.begin(), parsed.textureNames.end());
         parsed.textureNames.erase(std::unique(parsed.textureNames.begin(), parsed.textureNames.end()),
             parsed.textureNames.end());
+        if (const YAML::Node excludedNode = node["exclude_faces"])
+        {
+            if (!excludedNode.IsSequence())
+            {
+                errorMessage = "terrain exclude_faces must be a sequence of face indices";
+                return false;
+            }
+            for (const YAML::Node &faceNode : excludedNode)
+            {
+                parsed.excludedFaces.push_back(faceNode.as<uint32_t>());
+            }
+            std::sort(parsed.excludedFaces.begin(), parsed.excludedFaces.end());
+            parsed.excludedFaces.erase(std::unique(parsed.excludedFaces.begin(), parsed.excludedFaces.end()),
+                parsed.excludedFaces.end());
+        }
     }
     catch (const std::exception &exception)
     {
@@ -2186,6 +2325,202 @@ void applyIndoorSceneFaceOverride(const IndoorSceneFaceAttributeOverride &overri
     }
 }
 
+// One actor record of a scene (initial_state.actors, and a ruleset overlay's pack_reserve).
+bool parseIndoorSceneActorNode(
+    const YAML::Node &actorNode,
+    size_t actorIndex,
+    MapDeltaActor &actor,
+    std::string &errorMessage)
+{
+    if (!actorNode.IsMap())
+    {
+        errorMessage = "actor entry must be a map";
+        return false;
+    }
+
+    actor.diagnosticSourceActorIndex = actorIndex;
+
+    if (!readScalarNode(actorNode, "name", actor.name, errorMessage)
+        || !readScalarNode(actorNode, "npc_id", actor.npcId, errorMessage)
+        || !readScalarNode(actorNode, "mm9_rude_id", actor.mm9RudeId, errorMessage, false)
+        || !readScalarNode(
+            actorNode,
+            "mm9_source_object_index",
+            actor.mm9SourceObjectIndex,
+            errorMessage,
+            false)
+        || !readScalarNode(
+            actorNode,
+            "mm9_can_receive_damage",
+            actor.mm9CanReceiveDamage,
+            errorMessage,
+            false)
+        || !readScalarNode(actorNode, "respawns_on_refill", actor.respawnsOnRefill, errorMessage, false)
+        || !readScalarNode(actorNode, "mm9_civilian", actor.mm9Civilian, errorMessage, false)
+        || !readScalarNode(actorNode, "mm9_guard", actor.mm9Guard, errorMessage, false)
+        || !readScalarNode(actorNode, "draw_scale", actor.drawScale, errorMessage, false)
+        || !readScalarNode(actorNode, "initial_yaw_units", actor.initialYawUnits, errorMessage, false)
+        || !readScalarNode(actorNode, "immobile", actor.immobile, errorMessage, false)
+        || !readScalarNode(actorNode, "leash_radius", actor.leashRadius, errorMessage, false)
+        || !readScalarNode(actorNode, "dormant", actor.dormant, errorMessage, false)
+        || !parsePatrolNode(actorNode["patrol"], actor.patrolPoints, errorMessage)
+        || !readScalarNode(actorNode, "keeps_height", actor.keepsHeight, errorMessage, false)
+        || !readScalarNode(actorNode, "posed", actor.posed, errorMessage, false)
+        || !parseHeldItemsNode(actorNode["held_items"], actor.heldItems, errorMessage)
+        || !readScalarNode(actorNode, "attributes", actor.attributes, errorMessage)
+        || !readScalarNode(actorNode, "hp", actor.hp, errorMessage)
+        || !readScalarNode(actorNode, "hostility_type", actor.hostilityType, errorMessage)
+        || !readScalarNode(actorNode, "monster_info_id", actor.monsterInfoId, errorMessage)
+        || !readScalarNode(actorNode, "monster_id", actor.monsterId, errorMessage)
+        || !readScalarNode(actorNode, "radius", actor.radius, errorMessage)
+        || !readScalarNode(actorNode, "height", actor.height, errorMessage)
+        || !readScalarNode(actorNode, "move_speed", actor.moveSpeed, errorMessage)
+        || !readScalarNode(actorNode, "sector_id", actor.sectorId, errorMessage)
+        || !readScalarNode(
+            actorNode,
+            "current_action_animation",
+            actor.currentActionAnimation,
+            errorMessage)
+        || !readScalarNode(actorNode, "group", actor.group, errorMessage)
+        || !readScalarNode(actorNode, "ally", actor.ally, errorMessage)
+        || !readScalarNode(actorNode, "unique_name_index", actor.uniqueNameIndex, errorMessage)
+        || !parsePositionNode(actorNode["position"], actor.x, actor.y, actor.z, errorMessage))
+    {
+        return false;
+    }
+
+    // An MM9 placement's AI settings (devdocs/mm9_rework/monster_ai/PROFILE.md).
+    if (const YAML::Node mm9AiNode = actorNode["mm9_ai"])
+    {
+        Mm9AiPlacementRecord mm9Ai;
+
+        if (!parseMm9AiPlacementNode(mm9AiNode, mm9Ai, errorMessage))
+        {
+            return false;
+        }
+
+        actor.mm9Ai = std::move(mm9Ai);
+    }
+
+    if (!readScalarNode(actorNode, "carried_item_id", actor.carriedItemId, errorMessage, false))
+    {
+        actor.carriedItemId = 0;
+    }
+
+    const YAML::Node spriteIdsNode = actorNode["sprite_ids"];
+
+    if (!spriteIdsNode || !spriteIdsNode.IsSequence() || spriteIdsNode.size() != actor.spriteIds.size())
+    {
+        errorMessage = "actor.sprite_ids must have exactly 4 entries";
+        return false;
+    }
+
+    for (size_t spriteIndex = 0; spriteIndex < actor.spriteIds.size(); ++spriteIndex)
+    {
+        if (!spriteIdsNode[spriteIndex].IsScalar())
+        {
+            errorMessage = "actor sprite_ids entries must be scalar";
+            return false;
+        }
+
+        try
+        {
+            actor.spriteIds[spriteIndex] = spriteIdsNode[spriteIndex].as<uint16_t>();
+        }
+        catch (const std::exception &exception)
+        {
+            errorMessage = std::string("could not parse actor sprite id: ") + exception.what();
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// The scene's actors as a ruleset overlay's pack reserve was made against them: FNV-1a 64 over
+// "monster_id,x,y,z;" of each actor in order, in hex (tools/maw/mm9_pack_reserve.py writes the same).
+std::string scenePackReserveCheck(const std::vector<MapDeltaActor> &actors)
+{
+    uint64_t hash = 0xcbf29ce484222325ull;
+
+    for (const MapDeltaActor &actor : actors)
+    {
+        const std::string text = std::to_string(actor.monsterId) + "," + std::to_string(actor.x) + ","
+            + std::to_string(actor.y) + "," + std::to_string(actor.z) + ";";
+
+        for (const char character : text)
+        {
+            hash ^= uint8_t(character);
+            hash *= 0x100000001b3ull;
+        }
+    }
+
+    char hex[17] = {};
+    std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(hash));
+    return hex;
+}
+
+// A ruleset overlay's `pack_reserve` (MapDeltaData::packReserve): {scene_actors, scene_check, actors: [{from_factor,
+// actor}]}. A reserve made against other scene actors (the map was rebuilt since) is not used, and says so: its
+// copies would stand where the new scene may have walls (tools/maw/mm9_balance.py --check finds it).
+bool applyScenePackReserve(const YAML::Node &node, IndoorSceneInitialState &initialState, std::string &errorMessage)
+{
+    try
+    {
+        const std::string check = node["scene_check"].as<std::string>("");
+
+        if (node["scene_actors"].as<size_t>(0) != initialState.actors.size()
+            || check != scenePackReserveCheck(initialState.actors))
+        {
+            std::cerr << "Scene pack reserve not used: made for other scene actors (" << check
+                      << "); rerun tools/maw/mm9_pack_reserve.py\n";
+            return true;
+        }
+
+        const YAML::Node actorsNode = node["actors"];
+
+        if (!actorsNode || !actorsNode.IsSequence())
+        {
+            errorMessage = "pack_reserve.actors must be a sequence";
+            return false;
+        }
+
+        initialState.packReserve.clear();
+        initialState.packReserve.reserve(actorsNode.size());
+        float previousFactor = 0.0f;
+
+        for (const YAML::Node &entry : actorsNode)
+        {
+            MapDeltaPackReserveActor reserve;
+            reserve.fromFactor = entry["from_factor"].as<float>();
+
+            if (reserve.fromFactor < previousFactor)
+            {
+                errorMessage = "pack_reserve.actors must rise by from_factor";
+                return false;
+            }
+
+            previousFactor = reserve.fromFactor;
+
+            if (!parseIndoorSceneActorNode(
+                    entry["actor"], initialState.actors.size() + initialState.packReserve.size(), reserve.actor,
+                    errorMessage))
+            {
+                return false;
+            }
+
+            initialState.packReserve.push_back(std::move(reserve));
+        }
+    }
+    catch (const std::exception &exception)
+    {
+        errorMessage = std::string("pack_reserve: ") + exception.what();
+        return false;
+    }
+
+    return true;
+}
+
 std::optional<IndoorSceneData> IndoorSceneYmlLoader::loadFromText(
     const std::string &yamlText,
     std::string &errorMessage) const
@@ -2473,7 +2808,19 @@ std::optional<IndoorSceneData> IndoorSceneYmlLoader::loadFromText(
         return std::nullopt;
     }
 
+    if (const YAML::Node opaqueFacesNode = rootNode["opaque_faces"];
+        opaqueFacesNode && !parseOpaqueFacesNode(opaqueFacesNode, sceneData.opaqueFaces, errorMessage))
+    {
+        return std::nullopt;
+    }
+
     if (const YAML::Node fogNode = rootNode["fog"]; fogNode && !parseFogNode(fogNode, sceneData.fog, errorMessage))
+    {
+        return std::nullopt;
+    }
+
+    if (const YAML::Node mistNode = rootNode["mist"];
+        mistNode && !parseSceneMistNode(mistNode, sceneData.mist, errorMessage))
     {
         return std::nullopt;
     }
@@ -2526,9 +2873,16 @@ std::optional<IndoorSceneData> IndoorSceneYmlLoader::loadFromText(
         return std::nullopt;
     }
 
+    if (const YAML::Node portalNode = rootNode["portal_visibility"];
+        portalNode && !parsePortalVisibilityNode(portalNode, sceneData.portalNearReach, errorMessage))
+    {
+        return std::nullopt;
+    }
+
     if (const YAML::Node actorDetectionNode = rootNode["actor_detection"];
         actorDetectionNode
-        && !parseActorDetectionNode(actorDetectionNode, sceneData.actorNeighbourWakes, errorMessage))
+        && !parseActorDetectionNode(
+            actorDetectionNode, sceneData.actorNeighbourWakes, sceneData.actorProvokeRadius, errorMessage))
     {
         return std::nullopt;
     }
@@ -2664,104 +3018,11 @@ std::optional<IndoorSceneData> IndoorSceneYmlLoader::loadFromText(
     for (size_t actorIndex = 0; actorIndex < actorsNode.size(); ++actorIndex)
     {
         const YAML::Node actorNode = actorsNode[actorIndex];
-
-        if (!actorNode.IsMap())
-        {
-            errorMessage = "actor entry must be a map";
-            return std::nullopt;
-        }
-
         MapDeltaActor actor = {};
-        actor.diagnosticSourceActorIndex = actorIndex;
 
-        if (!readScalarNode(actorNode, "name", actor.name, errorMessage)
-            || !readScalarNode(actorNode, "npc_id", actor.npcId, errorMessage)
-            || !readScalarNode(actorNode, "mm9_rude_id", actor.mm9RudeId, errorMessage, false)
-            || !readScalarNode(
-                actorNode,
-                "mm9_source_object_index",
-                actor.mm9SourceObjectIndex,
-                errorMessage,
-                false)
-            || !readScalarNode(
-                actorNode,
-                "mm9_can_receive_damage",
-                actor.mm9CanReceiveDamage,
-                errorMessage,
-                false)
-            || !readScalarNode(actorNode, "mm9_civilian", actor.mm9Civilian, errorMessage, false)
-            || !readScalarNode(actorNode, "mm9_guard", actor.mm9Guard, errorMessage, false)
-            || !readScalarNode(actorNode, "initial_yaw_units", actor.initialYawUnits, errorMessage, false)
-            || !readScalarNode(actorNode, "immobile", actor.immobile, errorMessage, false)
-            || !readScalarNode(actorNode, "leash_radius", actor.leashRadius, errorMessage, false)
-            || !readScalarNode(actorNode, "dormant", actor.dormant, errorMessage, false)
-            || !parsePatrolNode(actorNode["patrol"], actor.patrolPoints, errorMessage)
-            || !readScalarNode(actorNode, "keeps_height", actor.keepsHeight, errorMessage, false)
-            || !readScalarNode(actorNode, "attributes", actor.attributes, errorMessage)
-            || !readScalarNode(actorNode, "hp", actor.hp, errorMessage)
-            || !readScalarNode(actorNode, "hostility_type", actor.hostilityType, errorMessage)
-            || !readScalarNode(actorNode, "monster_info_id", actor.monsterInfoId, errorMessage)
-            || !readScalarNode(actorNode, "monster_id", actor.monsterId, errorMessage)
-            || !readScalarNode(actorNode, "radius", actor.radius, errorMessage)
-            || !readScalarNode(actorNode, "height", actor.height, errorMessage)
-            || !readScalarNode(actorNode, "move_speed", actor.moveSpeed, errorMessage)
-            || !readScalarNode(actorNode, "sector_id", actor.sectorId, errorMessage)
-            || !readScalarNode(
-                actorNode,
-                "current_action_animation",
-                actor.currentActionAnimation,
-                errorMessage)
-            || !readScalarNode(actorNode, "group", actor.group, errorMessage)
-            || !readScalarNode(actorNode, "ally", actor.ally, errorMessage)
-            || !readScalarNode(actorNode, "unique_name_index", actor.uniqueNameIndex, errorMessage)
-            || !parsePositionNode(actorNode["position"], actor.x, actor.y, actor.z, errorMessage))
+        if (!parseIndoorSceneActorNode(actorNode, actorIndex, actor, errorMessage))
         {
             return std::nullopt;
-        }
-
-        // An MM9 placement's AI settings (devdocs/mm9_rework/monster_ai/PROFILE.md).
-        if (const YAML::Node mm9AiNode = actorNode["mm9_ai"])
-        {
-            Mm9AiPlacementRecord mm9Ai;
-
-            if (!parseMm9AiPlacementNode(mm9AiNode, mm9Ai, errorMessage))
-            {
-                return std::nullopt;
-            }
-
-            actor.mm9Ai = std::move(mm9Ai);
-        }
-
-        if (!readScalarNode(actorNode, "carried_item_id", actor.carriedItemId, errorMessage, false))
-        {
-            actor.carriedItemId = 0;
-        }
-
-        const YAML::Node spriteIdsNode = actorNode["sprite_ids"];
-
-        if (!spriteIdsNode || !spriteIdsNode.IsSequence() || spriteIdsNode.size() != actor.spriteIds.size())
-        {
-            errorMessage = "actor.sprite_ids must have exactly 4 entries";
-            return std::nullopt;
-        }
-
-        for (size_t spriteIndex = 0; spriteIndex < actor.spriteIds.size(); ++spriteIndex)
-        {
-            if (!spriteIdsNode[spriteIndex].IsScalar())
-            {
-                errorMessage = "actor sprite_ids entries must be scalar";
-                return std::nullopt;
-            }
-
-            try
-            {
-                actor.spriteIds[spriteIndex] = spriteIdsNode[spriteIndex].as<uint16_t>();
-            }
-            catch (const std::exception &exception)
-            {
-                errorMessage = std::string("could not parse actor sprite id: ") + exception.what();
-                return std::nullopt;
-            }
         }
 
         sceneData.initialState.actors.push_back(std::move(actor));
@@ -3193,6 +3454,12 @@ bool IndoorSceneYmlLoader::applyOverlayFromText(
             return false;
         }
 
+        if (const YAML::Node packReserveNode = initialStateNode["pack_reserve"];
+            packReserveNode && !applyScenePackReserve(packReserveNode, sceneData.initialState, errorMessage))
+        {
+            return false;
+        }
+
         const YAML::Node faceAttributeOverridesNode = initialStateNode["face_attribute_overrides"];
 
         if (faceAttributeOverridesNode)
@@ -3217,7 +3484,7 @@ bool IndoorSceneYmlLoader::applyOverlayFromText(
         }
     }
 
-    // An overlay's translucent faces add to the base scene's.
+    // An overlay's translucent and opaque faces add to the base scene's.
     if (const YAML::Node translucentFacesNode = rootNode["translucent_faces"];
         translucentFacesNode
         && !parseTranslucentFacesNode(translucentFacesNode, sceneData.translucentFaces, errorMessage))
@@ -3225,8 +3492,21 @@ bool IndoorSceneYmlLoader::applyOverlayFromText(
         return false;
     }
 
+    if (const YAML::Node opaqueFacesNode = rootNode["opaque_faces"];
+        opaqueFacesNode && !parseOpaqueFacesNode(opaqueFacesNode, sceneData.opaqueFaces, errorMessage))
+    {
+        return false;
+    }
+
     // An overlay's fog replaces the base scene's.
     if (const YAML::Node fogNode = rootNode["fog"]; fogNode && !parseFogNode(fogNode, sceneData.fog, errorMessage))
+    {
+        return false;
+    }
+
+    // An overlay's mist replaces the base scene's.
+    if (const YAML::Node mistNode = rootNode["mist"];
+        mistNode && !parseSceneMistNode(mistNode, sceneData.mist, errorMessage))
     {
         return false;
     }
@@ -3284,9 +3564,16 @@ bool IndoorSceneYmlLoader::applyOverlayFromText(
         return false;
     }
 
+    if (const YAML::Node portalNode = rootNode["portal_visibility"];
+        portalNode && !parsePortalVisibilityNode(portalNode, sceneData.portalNearReach, errorMessage))
+    {
+        return false;
+    }
+
     if (const YAML::Node actorDetectionNode = rootNode["actor_detection"];
         actorDetectionNode
-        && !parseActorDetectionNode(actorDetectionNode, sceneData.actorNeighbourWakes, errorMessage))
+        && !parseActorDetectionNode(
+            actorDetectionNode, sceneData.actorNeighbourWakes, sceneData.actorProvokeRadius, errorMessage))
     {
         return false;
     }
@@ -3348,34 +3635,53 @@ bool buildIndoorMoverDefinitions(
         const IndoorMoverDefinition &mover = *sceneDoor.mover;
         const std::string name = "door " + std::to_string(door.doorId) + " mover: ";
 
-        if (!mover.rotation)
+        if (!mover.rotation && mover.easing != IndoorMoverEasing::Linear)
         {
-            if (mover.easing != IndoorMoverEasing::Linear)
-            {
-                errorMessage = name + "easing needs a rotation";
-                return false;
-            }
+            errorMessage = name + "easing needs a rotation";
+            return false;
+        }
 
+        if (!mover.rotation && !mover.spin)
+        {
             movers.push_back(mover);
             continue;
         }
 
-        const IndoorMoverRotation &rotation = *mover.rotation;
-        const float axisLength = std::sqrt(rotation.axis[0] * rotation.axis[0] + rotation.axis[1] * rotation.axis[1]
-            + rotation.axis[2] * rotation.axis[2]);
-        const float degrees = std::fabs(rotation.openDegrees);
-
-        if (std::fabs(axisLength - 1.0f) > 1.0e-3f || !(degrees > 0.0f && degrees <= 360.0f))
+        const auto unitAxis = [](const std::array<float, 3> &axis)
         {
-            errorMessage = name + "the axis must be a unit vector and open_degrees within (0, 360]";
-            return false;
+            const float axisLength = std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+            return std::fabs(axisLength - 1.0f) <= 1.0e-3f;
+        };
+
+        if (mover.rotation)
+        {
+            const IndoorMoverRotation &rotation = *mover.rotation;
+            const float degrees = std::fabs(rotation.openDegrees);
+
+            if (!unitAxis(rotation.axis) || !(degrees > 0.0f && degrees <= 360.0f))
+            {
+                errorMessage = name + "the axis must be a unit vector and open_degrees within (0, 360]";
+                return false;
+            }
+
+            if (door.directionX != 0 || door.directionY != 0 || door.directionZ != 0
+                || door.moveLength != static_cast<uint32_t>(std::lround(degrees * 10.0f)))
+            {
+                errorMessage = name + "a rotating door has direction zero and move_length = open_degrees x 10";
+                return false;
+            }
         }
 
-        if (door.directionX != 0 || door.directionY != 0 || door.directionZ != 0
-            || door.moveLength != static_cast<uint32_t>(std::lround(degrees * 10.0f)))
+        if (mover.spin)
         {
-            errorMessage = name + "a rotating door has direction zero and move_length = open_degrees x 10";
-            return false;
+            const IndoorMoverSpin &spin = *mover.spin;
+
+            if (!unitAxis(spin.axis) || !(spin.degreesPerSecond > 0.0f) || !(spin.spinUpSeconds >= 0.0f)
+                || !(spin.spinDownSeconds >= 0.0f))
+            {
+                errorMessage = name + "a spin needs a unit axis, degrees_per_second above 0 and ramps of 0 or more";
+                return false;
+            }
         }
 
         if (vertexDoor.empty())
@@ -3527,6 +3833,17 @@ bool buildIndoorMapStateFromScene(
         return false;
     }
 
+    indoorMapData.opaqueFaces = sceneData.opaqueFaces;
+    std::sort(indoorMapData.opaqueFaces.begin(), indoorMapData.opaqueFaces.end());
+    indoorMapData.opaqueFaces.erase(
+        std::unique(indoorMapData.opaqueFaces.begin(), indoorMapData.opaqueFaces.end()), indoorMapData.opaqueFaces.end());
+
+    if (!indoorMapData.opaqueFaces.empty() && indoorMapData.opaqueFaces.back() >= indoorMapData.faces.size())
+    {
+        errorMessage = "opaque_faces face " + std::to_string(indoorMapData.opaqueFaces.back()) + " is out of range";
+        return false;
+    }
+
     if (!buildIndoorMoverDefinitions(
             sceneData.initialState.doors, indoorMapData, indoorMapData.moverDefinitions, errorMessage))
     {
@@ -3535,6 +3852,7 @@ bool buildIndoorMapStateFromScene(
 
     indoorMapData.ladders = sceneData.ladders;
     indoorMapData.fog = sceneData.fog;
+    indoorMapData.mist = sceneData.mist;
     indoorMapData.modelLighting = sceneData.modelLighting;
     indoorMapData.openSky = sceneData.openSky;
     indoorMapData.daylight = sceneData.daylight;
@@ -3580,7 +3898,9 @@ bool buildIndoorMapStateFromScene(
     indoorMapData.partySteepSlopesBlock = sceneData.partySteepSlopesBlock;
     indoorMapData.actorBarrierFaceIds = sceneData.actorBarrierFaceIds;
     indoorMapData.actorDropsFollow = sceneData.actorDropsFollow;
+    indoorMapData.portalNearReach = sceneData.portalNearReach;
     indoorMapData.actorNeighbourWakes = sceneData.actorNeighbourWakes;
+    indoorMapData.actorProvokeRadius = sceneData.actorProvokeRadius;
     indoorMapData.staticLightsFrontOnly = sceneData.staticLightsFrontOnly;
     indoorMapData.waterVolumes = sceneData.waterVolumes;
     indoorMapData.destructibles = sceneData.destructibles;
@@ -3626,6 +3946,7 @@ bool buildIndoorMapStateFromScene(
     if (indoorMapData.daylight.enabled)
     {
         indoorMapData.daylight.sectors = indoorOpenSkySectors(indoorMapData);
+        indoorMapData.daylight.openAirLights = indoorOpenAirLights(indoorMapData);
     }
 
     mapDeltaData.decorationFlags.assign(indoorMapData.entities.size(), 0);
@@ -3642,6 +3963,7 @@ bool buildIndoorMapStateFromScene(
     }
 
     mapDeltaData.actors = sceneData.initialState.actors;
+    mapDeltaData.packReserve = sceneData.initialState.packReserve;
     mapDeltaData.spriteObjects = sceneData.initialState.spriteObjects;
     mapDeltaData.chests = sceneData.initialState.chests;
     mapDeltaData.eventVariables = sceneData.initialState.eventVariables;

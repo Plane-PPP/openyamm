@@ -262,6 +262,51 @@ TEST_CASE("MM9 senses reach beyond the shared ranges, up to the engine's")
     CHECK(OpenYAMM::Game::mm9SenseRange(12000.0f, 6144.0f, 10240.0f) == doctest::Approx(12000.0f));
 }
 
+TEST_CASE("MM9 party awareness: the world's sight, view and provoke range")
+{
+    using OpenYAMM::Game::Mm9PartyAwareness;
+    const Mm9PartyAwareness mm9 = {};
+    const Mm9PartyAwareness world = {.sightAllRound = true, .sightScale = 1.5f, .sightMax = 4608.0f,
+        .provokeRange = 4096.0f};
+    OpenYAMM::Game::Mm9AiPlacement placement = {};
+    placement.sight = 1536.0f;
+    placement.hearing = 369.0f;
+
+    // MM9's own rules by default: the placement's sight, a 180 degree view, every hit a reason, no provoke.
+    CHECK(OpenYAMM::Game::mm9PartySenses(placement, mm9, false).sight == doctest::Approx(1536.0f));
+    CHECK_FALSE(OpenYAMM::Game::mm9PartyInView(false, mm9, false));
+    CHECK_FALSE(OpenYAMM::Game::mm9PartyHitProvokes(mm9, 100.0f));
+    CHECK_FALSE(OpenYAMM::Game::mm9PartyHitTooFar(mm9, 20000.0f));
+    CHECK(OpenYAMM::Game::mm9HeldPartyRange(1536.0f, true, true, mm9) == doctest::Approx(3072.0f));
+
+    // The world's: sight half again as far and all round (hearing unchanged), but a dormant start keeps MM9's.
+    CHECK(OpenYAMM::Game::mm9PartySenses(placement, world, false).sight == doctest::Approx(2304.0f));
+    CHECK(OpenYAMM::Game::mm9PartySenses(placement, world, false).hearing == doctest::Approx(369.0f));
+    CHECK(OpenYAMM::Game::mm9PartySenses(placement, world, true).sight == doctest::Approx(1536.0f));
+    // No farther than 4608, the engagement range plus MM6-MM8's 512: MM9's default sight (3379) and a far one (6144)
+    // stop there; a dormant start keeps its own.
+    placement.sight = 3379.0f;
+    CHECK(OpenYAMM::Game::mm9PartySenses(placement, world, false).sight == doctest::Approx(4608.0f));
+    placement.sight = 6144.0f;
+    CHECK(OpenYAMM::Game::mm9PartySenses(placement, world, false).sight == doctest::Approx(4608.0f));
+    CHECK(OpenYAMM::Game::mm9PartySenses(placement, world, true).sight == doctest::Approx(6144.0f));
+    placement.sight = 1536.0f;
+    CHECK(OpenYAMM::Game::mm9PartyInView(false, world, false));
+    CHECK_FALSE(OpenYAMM::Game::mm9PartyInView(false, world, true));
+    CHECK(OpenYAMM::Game::mm9PartyInView(true, world, true));
+
+    // A hit within the provoke range provokes; one beyond it is no reason to take a target.
+    CHECK(OpenYAMM::Game::mm9PartyHitProvokes(world, 4096.0f));
+    CHECK_FALSE(OpenYAMM::Game::mm9PartyHitTooFar(world, 4096.0f));
+    CHECK_FALSE(OpenYAMM::Game::mm9PartyHitProvokes(world, 4100.0f));
+    CHECK(OpenYAMM::Game::mm9PartyHitTooFar(world, 4100.0f));
+
+    // A provoked monster keeps the party as far as the provoke range, or its doubled sight when that is farther.
+    CHECK(OpenYAMM::Game::mm9HeldPartyRange(2304.0f, true, false, world) == doctest::Approx(4608.0f));
+    CHECK(OpenYAMM::Game::mm9HeldPartyRange(1000.0f, true, true, world) == doctest::Approx(4096.0f));
+    CHECK(OpenYAMM::Game::mm9HeldPartyRange(5069.0f, true, true, world) == doctest::Approx(10138.0f));
+}
+
 TEST_CASE("MM9 sight lines start at the eye")
 {
     // GetEyePos: the top of the body less 2 LT (5.12 units).
@@ -390,6 +435,37 @@ TEST_CASE("MM9 ranged walker shoots only at its shot checks, outside melee range
     const ActorAiUpdate blow = stepMm9(actor);
     CHECK_FALSE(findDecision(blow, ActorAiDecisionKind::ShotCheck));
     CHECK(findDecision(blow, ActorAiDecisionKind::AttackMelee).has_value());
+}
+
+TEST_CASE("MM9 ranged walker shoots at the party no farther than the party's hit reach")
+{
+    // A placement with a far sight (6144: Range.inc's range would be the engine's 5120) 4500 from the party: under
+    // MM8's 5120 it shoots; under MM9's 4096 party hit reach it does not, so the party can answer every shot.
+    ActorAiFacts actor = makeMm9Walker(Mm9AiArchetype::Skirmisher);
+    actor.tactics.mm9Profile->ranged = Mm9AiRanged::Walker;
+    actor.stats.attackConstraints.attack1IsRanged = true;
+    actor.stats.attackConstraints.rangedCommitAllowed = true;
+    actor.stats.attack2Damage.diceRolls = 2;
+    actor.stats.attack2Damage.diceSides = 4;
+    actor.movement.mm9Placement->sight = 6144.0f;
+    actor.runtime.mm9.targetKind = ActorAiTargetKind::Party;
+    actor.runtime.mm9.partyContact = true;
+    actor.runtime.mm9.shotCheckSeconds = 0.0f;
+    actor.target.currentPosition = {4577.0f, 0.0f, 0.0f};
+    actor.target.currentDistance = 4577.0f;
+    actor.target.currentEdgeDistance = 4537.0f;
+    const auto shootsWithReach = [&actor](float partyHitReach)
+    {
+        ActorAiFrameFacts frame = makeMm9Frame(actor);
+        frame.party.position = {4577.0f, 0.0f, 0.0f};
+        frame.partyHitReach = partyHitReach;
+        const OpenYAMM::Game::ActorAiFrameResult result = GameplayActorAiSystem{}.updateActors(frame);
+        REQUIRE(result.actorUpdates.size() == 1);
+        return findDecision(result.actorUpdates.front(), ActorAiDecisionKind::AttackRanged).has_value();
+    };
+
+    CHECK(shootsWithReach(5120.0f));
+    CHECK_FALSE(shootsWithReach(4096.0f));
 }
 
 TEST_CASE("MM9 ranged walker with a projectile casts both its spells at its shot checks")
@@ -822,6 +898,27 @@ TEST_CASE("MM9 turret scans by turning while it has no target")
     CHECK(std::abs(turn.movementIntent.yawRadians) < 0.03f);
 }
 
+TEST_CASE("MM9 turret that flies by its row never climbs toward a target above it")
+{
+    // The Dragon King: Fly Y, placed free in an arena, holding a Winged Mutant 2 000 units above him.
+    ActorAiFacts actor = makeMm9Walker(Mm9AiArchetype::Turret);
+    actor.stats.canFly = true;
+    actor.target.currentKind = ActorAiTargetKind::Actor;
+    actor.target.currentActorIndex = 1;
+    actor.target.currentPosition = {600.0f, 0.0f, 2000.0f};
+    actor.runtime.mm9.targetKind = ActorAiTargetKind::Actor;
+    actor.runtime.mm9.targetActorIndex = 1;
+    actor.runtime.mm9.shotCheckSeconds = 0.5f;
+    const ActorAiUpdate rooted = stepMm9(actor);
+    CHECK_FALSE(rooted.movementIntent.applyMovement);
+    CHECK(rooted.movementIntent.desiredMoveZ == 0.0f);
+
+    // A flier holding the same target climbs.
+    actor.tactics.mm9Profile->archetype = Mm9AiArchetype::Flier;
+    const ActorAiUpdate flier = stepMm9(actor);
+    CHECK(flier.movementIntent.desiredMoveZ > 0.0f);
+}
+
 TEST_CASE("MM9 swimmer runs at once from a target out of the water")
 {
     ActorAiFacts actor = makeMm9Walker(Mm9AiArchetype::Swimmer);
@@ -1035,6 +1132,14 @@ TEST_CASE("MM9 corpse asks to be raised and rises")
     REQUIRE(update.mm9Request);
     CHECK(update.mm9Request->revive);
     CHECK(update.state.mm9->raiseSeconds == doctest::Approx(2.0f));
+    CHECK(update.state.mm9->risen);
+
+    // Risen once, its next death is for good (AICommon.inc OnDeathDone clears g_bCanBeResurrected): no ask, no rise.
+    ActorAiFacts again = actor;
+    again.runtime.mm9 = *update.state.mm9;
+    again.runtime.mm9.dyingSeen = true;
+    again.mm9World.raiseSerial = 2;
+    CHECK_FALSE(stepCorpse(again).mm9Request.has_value());
 }
 
 TEST_CASE("MM9 phase 4b rules: townsfolk, guards, dormant starts")
@@ -1103,7 +1208,6 @@ TEST_CASE("MM9 townsperson runs to a guard from a hit and ignores the party's ne
     using namespace OpenYAMM::Game;
     ActorAiFacts actor = makeMm9Walker();
     actor.tactics.mm9Profile = mm9StandInCivilianProfile();
-    actor.status.hostileToParty = false;
     actor.target = {};
     actor.mm9World.damageSerial = 1;
     actor.mm9World.attackerKind = ActorAiTargetKind::Party;
@@ -1625,6 +1729,109 @@ TEST_CASE("MM9 idle arms its fidget anew whenever it returns to idle")
     CHECK(update.state.mm9->idleFidgetWaitSeconds != doctest::Approx(armed));
 }
 
+TEST_CASE("MM9 idle with an idle clip loops it and never fidgets, and fidgets anew once the loop ends")
+{
+    // MM9's LoopAnim holds the animator in its script state 0x11, whose think (0x1001c7e0) never fidgets.
+    ActorAiFacts actor = makeMm9Walker();
+    actor.target = {};
+    actor.runtime.mm9.wanderSeconds = 0.0f;
+    actor.runtime.fidgetClips.count = 2;
+    actor.runtime.fidgetClips.seconds = {1.5f, 2.0f};
+    actor.movement.mm9Placement->idleClip = "pray";
+    CHECK(runMm9Idle(actor, 60.0f).empty());
+    CHECK(actor.runtime.mm9.idleThisStep);
+    CHECK(actor.runtime.mm9.idleLooped);
+    CHECK(actor.runtime.animationState == ActorAiAnimationState::Standing);
+
+    // Without it (its script's SetState(idle)) the fidget is armed anew: the first comes 5-12 s later.
+    actor.movement.mm9Placement->idleClip.clear();
+    const std::vector<Mm9IdleFidget> fidgets = runMm9Idle(actor, 30.0f);
+    REQUIRE_FALSE(fidgets.empty());
+    CHECK(fidgets[0].clock >= 4.95f);
+    CHECK(fidgets[0].clock <= 12.05f);
+}
+
+TEST_CASE("MM9 routine runs its steps in turn: a clip, a walk, a chance group, the items, round again")
+{
+    using OpenYAMM::Game::Mm9AiRoutine;
+    using OpenYAMM::Game::Mm9AiRoutineStep;
+    ActorAiFacts actor = makeMm9Walker();
+    actor.target = {};
+    actor.runtime.fidgetClips.count = 1;
+    actor.runtime.fidgetClips.seconds = {1.0f};
+    Mm9AiRoutineStep hammer;
+    hammer.kind = Mm9AiRoutineStep::Kind::Clip;
+    hammer.clips = {{"hammer", 1.0f}};
+    Mm9AiRoutineStep walk;
+    walk.kind = Mm9AiRoutineStep::Kind::Walk;
+    walk.point = {600, 0, 0};
+    Mm9AiRoutineStep never;
+    never.kind = Mm9AiRoutineStep::Kind::Chance;
+    never.chance = 0.0f;
+    never.skip = 1;
+    Mm9AiRoutineStep dump;
+    dump.kind = Mm9AiRoutineStep::Kind::Clip;
+    dump.clips = {{"dump", 1.0f}};
+    Mm9AiRoutineStep hide;
+    hide.kind = Mm9AiRoutineStep::Kind::HideItems;
+    Mm9AiRoutineStep rock;
+    rock.kind = Mm9AiRoutineStep::Kind::Clip;
+    rock.clips = {{"rock", 0.5f}};
+    const std::vector<Mm9AiRoutine> routines = {{"default", {hammer, walk, never, dump, hide, rock}}};
+    actor.movement.mm9Routines = routines;
+    actor.movement.mm9Routine = 0;
+    const auto run = [&](float seconds)
+    {
+        ActorAiUpdate update;
+
+        for (float clock = 0.0f; clock < seconds; clock += 1.0f / 128.0f)
+        {
+            update = stepMm9(actor);
+            CHECK_FALSE(findDecision(update, ActorAiDecisionKind::Fidget));
+            actor.runtime.mm9 = *update.state.mm9;
+            actor.runtime.motionState = update.state.motionState.value_or(actor.runtime.motionState);
+            actor.runtime.animationState = update.animation.animationState.value_or(actor.runtime.animationState);
+        }
+
+        return update;
+    };
+
+    // The clip: it stands for its second.
+    ActorAiUpdate update = run(0.5f);
+    CHECK(actor.runtime.mm9.routine == 0);
+    CHECK(actor.runtime.mm9.routineStep == 0);
+    CHECK(actor.runtime.mm9.routineClip == 0);
+    CHECK(update.animation.animationState == ActorAiAnimationState::Standing);
+
+    // Then the walk heads for its point, at a wander's walk.
+    update = run(0.6f);
+    CHECK(actor.runtime.mm9.routineStep == 1);
+    CHECK(update.movementIntent.targetPosition.x == doctest::Approx(600.0f));
+    CHECK(update.state.motionState == ActorAiMotionState::Wandering);
+
+    // There, the chance group (never) is skipped: the items go down and the last clip plays.
+    actor.movement.position = {600.0f, 0.0f, 0.0f};
+    run(0.1f);
+    CHECK(actor.runtime.mm9.routineStep == 5);
+    CHECK(actor.runtime.mm9.routineItemsHidden);
+
+    // After it, round again from the first step.
+    run(0.5f);
+    CHECK(actor.runtime.mm9.routineStep == 0);
+
+    // A routine changed (a map script's choice) starts from its first step with its items up.
+    const std::vector<Mm9AiRoutine> other = {{"ceremony", {rock}}, {"default", {hammer, hide, rock}}};
+    actor.movement.mm9Routines = other;
+    actor.movement.mm9Routine = 1;
+    run(1.1f);
+    CHECK(actor.runtime.mm9.routineStep == 2);
+    CHECK(actor.runtime.mm9.routineItemsHidden);
+    actor.movement.mm9Routine = 0;
+    run(0.1f);
+    CHECK(actor.runtime.mm9.routine == 0);
+    CHECK_FALSE(actor.runtime.mm9.routineItemsHidden);
+}
+
 TEST_CASE("MM9 townsperson turns back to its facing after a talk at 180 degrees a second")
 {
     constexpr float Pi = 3.14159265f;
@@ -1660,3 +1867,232 @@ TEST_CASE("MM9 townsperson turns back to its facing after a talk at 180 degrees 
     actor.target = makeMm9Walker().target;
     CHECK_FALSE(stepMm9(actor).state.mm9->talkTurnBack);
 }
+
+TEST_CASE("MM9 chat rules: NPCBase.inc's waits, the socializers and whose turn it is")
+{
+    using namespace OpenYAMM::Game;
+    constexpr float Degrees = 3.14159265f / 180.0f;
+    // GetRandomInt is inclusive: whole seconds from the low to the high end.
+    CHECK(mm9SocializeWaitSeconds(0.0f) == 5.0f);
+    CHECK(mm9SocializeWaitSeconds(0.999f) == 15.0f);
+    CHECK(mm9ChatSearchSeconds(0.0f) == 5.0f);
+    CHECK(mm9ChatSearchSeconds(0.999f) == 10.0f);
+    CHECK(mm9ChatLengthSeconds(0.0f) == 10.0f);
+    CHECK(mm9ChatLengthSeconds(0.5f) == 20.0f);
+    CHECK(mm9ChatLengthSeconds(0.999f) == 30.0f);
+    // GetRandomFloat 4, 10 and the about-face of 180 +- 45 degrees.
+    CHECK(mm9ChatApproachSeconds(0.0f) == doctest::Approx(4.0f));
+    CHECK(mm9ChatApproachSeconds(1.0f) == doctest::Approx(10.0f));
+    CHECK(mm9ChatLeaveTurnRadians(0.0f) == doctest::Approx(135.0f * Degrees));
+    CHECK(mm9ChatLeaveTurnRadians(0.5f) == doctest::Approx(180.0f * Degrees));
+    CHECK(mm9ChatLeaveTurnRadians(1.0f) == doctest::Approx(225.0f * Degrees));
+
+    // Only an aimless wander without a leash or a path looks for someone.
+    Mm9AiPlacement placement = {};
+    CHECK_FALSE(mm9Socializes(placement, 0));
+    placement.wander = Mm9AiWanderMode::Aimless;
+    CHECK(mm9Socializes(placement, 0));
+    CHECK_FALSE(mm9Socializes(placement, 3));
+    placement.wanderLeash = 512.0f;
+    CHECK_FALSE(mm9Socializes(placement, 0));
+
+    // The one who asked speaks first; then they alternate.
+    CHECK(mm9ChatTurnIsMine(true, 0, 0));
+    CHECK_FALSE(mm9ChatTurnIsMine(false, 0, 0));
+    CHECK(mm9ChatTurnIsMine(false, 0, 1));
+    CHECK_FALSE(mm9ChatTurnIsMine(true, 1, 0));
+    CHECK(mm9ChatTurnIsMine(true, 1, 1));
+}
+
+namespace
+{
+// One AI step of a townsperson with the world's chat facts as given; its state, yaw and animation carried on.
+ActorAiUpdate stepMm9Chat(ActorAiFacts &actor)
+{
+    using namespace OpenYAMM::Game;
+    const ActorAiUpdate update = stepMm9(actor);
+    actor.runtime.mm9 = *update.state.mm9;
+    actor.runtime.yawRadians = update.movementIntent.updateYaw ? update.movementIntent.yawRadians
+                                                               : actor.runtime.yawRadians;
+    actor.runtime.motionState = update.state.motionState.value_or(actor.runtime.motionState);
+    actor.runtime.animationState = update.animation.animationState.value_or(actor.runtime.animationState);
+    actor.runtime.idleDecisionCount = update.state.idleDecisionCount.value_or(actor.runtime.idleDecisionCount);
+    return update;
+}
+
+std::string chatNote(const ActorAiUpdate &update)
+{
+    using namespace OpenYAMM::Game;
+    const std::optional<ActorAiDecision> chat = findDecision(update, ActorAiDecisionKind::Chat);
+    return chat && chat->pNote != nullptr ? chat->pNote : "";
+}
+}
+
+TEST_CASE("MM9 townsperson looks for someone, walks over, takes turns at Conv clips and turns away")
+{
+    using namespace OpenYAMM::Game;
+    constexpr float Step = 1.0f / 128.0f;
+    constexpr float Pi = 3.14159265f;
+    ActorAiFacts actor = makeMm9Walker(Mm9AiArchetype::Civilian);
+    actor.tactics.mm9Profile->guardRefuge = true;
+    actor.target = {};
+    actor.movement.mm9Placement->wander = Mm9AiWanderMode::Aimless;
+    actor.runtime.mm9.wanderSeconds = 0.0f;
+    actor.runtime.convClips.count = 2;
+    actor.runtime.convClips.seconds = {2.0f, 3.0f};
+    float clock = 0.0f;
+    float lookClock = -1.0f;
+    int searches = 0;
+
+    // Its first search comes 5-15 s after its wander starts; then the world asks once a second.
+    while (clock < 40.0f && searches < 3)
+    {
+        const ActorAiUpdate update = stepMm9Chat(actor);
+        clock += Step;
+
+        if (chatNote(update) == "look")
+        {
+            lookClock = clock;
+        }
+
+        if (update.mm9Request && update.mm9Request->chatSearch)
+        {
+            ++searches;
+        }
+    }
+
+    REQUIRE(lookClock > 0.0f);
+    CHECK(lookClock >= 5.0f);
+    CHECK(lookClock <= 17.0f);
+    CHECK(searches == 3);
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Looking);
+
+    // The one it found accepts: it walks toward it.
+    const size_t partner = 3;
+    ++actor.mm9World.chatSerial;
+    actor.mm9World.chatAnswer = Mm9ChatAnswer::Accepted;
+    actor.mm9World.chatOther = partner;
+    actor.mm9World.chatPartnerPresent = true;
+    actor.mm9World.chatPartnerPosition = {400.0f, 0.0f, 0.0f};
+    actor.mm9World.chatPartnerRadius = 40.0f;
+    actor.mm9World.chatPartnerPhase = Mm9ChatPhase::Listening;
+    ActorAiUpdate update = stepMm9Chat(actor);
+    CHECK(chatNote(update) == "approach");
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Approaching);
+    CHECK(actor.runtime.mm9.chatPartner == partner);
+    CHECK(update.state.motionState == ActorAiMotionState::Wandering);
+    CHECK(update.movementIntent.targetPosition.x == doctest::Approx(400.0f));
+
+    // There: they stand together, and it speaks first.
+    actor.movement.position = {300.0f, 0.0f, 0.0f};
+    update = stepMm9Chat(actor);
+    CHECK(chatNote(update) == "begin");
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Talking);
+    actor.mm9World.chatPartnerPhase = Mm9ChatPhase::Talking;
+    update = stepMm9Chat(actor);
+    CHECK(chatNote(update) == "converse");
+    CHECK(actor.runtime.mm9.chatClip >= 0);
+    CHECK(update.animation.animationState == ActorAiAnimationState::Bored);
+
+    // Its clip ends: the turn is the other's, so it waits while the other speaks, then speaks again.
+    const float clipSeconds = actor.runtime.mm9.chatClipSeconds;
+    bool spokeAgain = false;
+
+    for (float elapsed = 0.0f; elapsed < clipSeconds + 0.1f; elapsed += Step)
+    {
+        stepMm9Chat(actor);
+    }
+
+    CHECK(actor.runtime.mm9.chatClip < 0);
+    CHECK(actor.runtime.mm9.chatTurns == 1);
+    actor.mm9World.chatPartnerSpeaking = true;
+
+    for (int step = 0; step < 64; ++step)
+    {
+        spokeAgain = spokeAgain || chatNote(stepMm9Chat(actor)) == "converse";
+    }
+
+    CHECK_FALSE(spokeAgain);
+    actor.mm9World.chatPartnerSpeaking = false;
+    actor.mm9World.chatPartnerTurns = 1;
+    CHECK(chatNote(stepMm9Chat(actor)) == "converse");
+
+    // Its chat time runs out: it ends the chat and turns about, 135-225 degrees at 180 a second.
+    const float facing = actor.runtime.yawRadians;
+    actor.runtime.mm9.chatTalkSeconds = 0.0f;
+    CHECK(chatNote(stepMm9Chat(actor)) == "end");
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Leaving);
+    const float turn = std::abs(std::remainder(actor.runtime.mm9.chatLeaveYawRadians - facing, 2.0f * Pi));
+    CHECK(turn >= 0.75f * Pi - 0.01f);
+    float turning = 0.0f;
+
+    while (actor.runtime.mm9.chatPhase == Mm9ChatPhase::Leaving && turning < 3.0f)
+    {
+        stepMm9Chat(actor);
+        turning += Step;
+    }
+
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Waiting);
+    CHECK(turning == doctest::Approx(turn / Pi).epsilon(0.05));
+    CHECK(actor.runtime.mm9.chatSeconds >= 4.0f);
+}
+
+TEST_CASE("MM9 townsperson asked to chat waits for the other, and turns away when it leaves")
+{
+    using namespace OpenYAMM::Game;
+    ActorAiFacts actor = makeMm9Walker(Mm9AiArchetype::Civilian);
+    actor.tactics.mm9Profile->guardRefuge = true;
+    actor.target = {};
+    actor.runtime.mm9.wanderSeconds = 0.0f;
+    // Standing (no wander): it never looks for anyone itself.
+    for (int step = 0; step < 4; ++step)
+    {
+        stepMm9Chat(actor);
+    }
+
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Off);
+    ++actor.mm9World.chatSerial;
+    actor.mm9World.chatAnswer = Mm9ChatAnswer::Asked;
+    actor.mm9World.chatOther = 2;
+    actor.mm9World.chatPartnerPresent = true;
+    actor.mm9World.chatPartnerPosition = {0.0f, 500.0f, 0.0f};
+    actor.mm9World.chatPartnerPhase = Mm9ChatPhase::Approaching;
+    CHECK(chatNote(stepMm9Chat(actor)) == "hello");
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Listening);
+
+    // The other arrives: it faces it (a quarter turn at 180 degrees a second) and waits for its first clip.
+    actor.mm9World.chatPartnerPhase = Mm9ChatPhase::Talking;
+    CHECK(chatNote(stepMm9Chat(actor)) == "begin");
+
+    for (int step = 0; step < 80; ++step)
+    {
+        CHECK(chatNote(stepMm9Chat(actor)) != "converse");
+    }
+
+    CHECK(actor.runtime.yawRadians == doctest::Approx(0.5f * 3.14159265f).epsilon(0.01));
+
+    // The other is gone: goodbye, and it turns away.
+    actor.mm9World.chatPartnerPresent = false;
+    CHECK(chatNote(stepMm9Chat(actor)) == "goodbye");
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Leaving);
+}
+
+TEST_CASE("MM9 animal on the civilian loop never looks for anyone to chat with")
+{
+    using namespace OpenYAMM::Game;
+    // FarmAnimal.inc, wander.inc, cats and dogs run the civilian loop without NPCBase.inc (guardRefuge false).
+    ActorAiFacts actor = makeMm9Walker(Mm9AiArchetype::Civilian);
+    actor.target = {};
+    actor.movement.mm9Placement->wander = Mm9AiWanderMode::Aimless;
+    actor.runtime.mm9.wanderSeconds = 0.0f;
+
+    for (int step = 0; step < 128 * 30; ++step)
+    {
+        const ActorAiUpdate update = stepMm9Chat(actor);
+        const bool searched = update.mm9Request && update.mm9Request->chatSearch;
+        CHECK_FALSE(searched);
+    }
+
+    CHECK(actor.runtime.mm9.chatPhase == Mm9ChatPhase::Startup);
+}
+

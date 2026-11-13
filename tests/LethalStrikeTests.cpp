@@ -16,6 +16,7 @@
 #include "tests/PartySpellTestHarness.h"
 
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -65,7 +66,7 @@ public:
             .displayName = "Target", .position = {targetDistance, 0, 0}, .currentHp = hp, .maxHp = maximum,
             .effectiveLevel = level, .isDead = hp <= 0, .hostileToParty = true};
     }
-    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier, const ShieldHitModifiers & = {}) override
+    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier, const ShieldHitModifiers & = {}, bool = false) override
     {
         ++ordinaryApplications;
         damage = value;
@@ -507,7 +508,7 @@ TEST_CASE("Lethal Strike excludes shooting spells world objects and untargeted s
         }
         if (mode == 1)
         {
-            c.attackSpellName = "Fire Bolt";
+            setAttackSpell("Fire Bolt", c.battleOrders, c.battleOrderFallback);
             c.skills["FireMagic"] = {"FireMagic", 10, SkillMastery::Master};
             c.knownSpellIds.insert(2);
         }
@@ -781,7 +782,7 @@ TEST_CASE("Lethal Strike latest separates technology and named mod skills throug
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     save = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(save, error);
-    CHECK(save->sourceSaveVersion == 154);
+    CHECK(save->sourceSaveVersion == 179);
     const auto &c = save->party.members[0];
     CHECK(c.techPoints == 321);
     CHECK(c.spellbookSchool == 2);
@@ -813,12 +814,71 @@ TEST_CASE("Lethal Strike production 1.14 v132 migrates to current schema without
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     auto loaded = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(loaded, error);
-    CHECK(loaded->sourceSaveVersion == 154);
+    CHECK(loaded->sourceSaveVersion == 179);
     CHECK(loaded->party.members.front().inventory == old.inventory);
     CHECK(loaded->party.members.front().techPoints == 321);
     CHECK(loaded->party.members.front().findSkill("LethalStrike")->level == 7);
     CHECK(loaded->party.members.front().findSkill("EnergyGuns")->level == 4);
     CHECK(loaded->outdoorWorldStates.size() == save->outdoorWorldStates.size());
     CHECK(loaded->indoorSceneStates.size() == save->indoorSceneStates.size());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Minotaur frozen production 1.21 v155 migrates to 2.3 without losing skills and progress")
+{
+    std::string error;
+    const auto original = loadGameDataFromPath(std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "tests/fixtures/minotaur-1.21-v155.oysav", error);
+    REQUIRE_MESSAGE(original, error);
+    CHECK(original->sourceSaveVersion == 154);
+    REQUIRE(original->party.members.size() == 1);
+    const Character &member = original->party.members.front();
+    CHECK(member.techPoints == 321);
+    CHECK(member.spellbookSchool == 2);
+    REQUIRE(member.findSkill("LethalStrike"));
+    CHECK(member.findSkill("LethalStrike")->level == 7);
+    CHECK(member.findSkill("LethalStrike")->mastery == SkillMastery::Master);
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-v155-to-v180.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, *original, error), error);
+    const auto loaded = loadGameDataFromPath(path, error);
+    REQUIRE_MESSAGE(loaded, error);
+    CHECK(loaded->sourceSaveVersion == 179);
+    REQUIRE(loaded->party.members.size() == 1);
+    const Character &restored = loaded->party.members.front();
+    CHECK(restored.inventory == member.inventory);
+    CHECK(restored.techPoints == member.techPoints);
+    CHECK(restored.findSkill("LethalStrike")->level == 7);
+    CHECK(restored.findSkill("EnergyGuns")->level == 4);
+    CHECK(loaded->mapFileName == original->mapFileName);
+    CHECK(loaded->namedGlobalVars == original->namedGlobalVars);
+    CHECK(loaded->outdoorWorldStates.size() == original->outdoorWorldStates.size());
+    CHECK(loaded->indoorSceneStates.size() == original->indoorSceneStates.size());
+    const auto summary = loadGameSaveSummaryFromPath(path, error);
+    REQUIRE_MESSAGE(summary, error);
+    CHECK(summary->saveName == original->saveName);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Minotaur rejects unknown mod envelopes instead of decoding them as official schemas")
+{
+    const auto fixture = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-1.21-v155.oysav";
+    std::ifstream input(fixture, std::ios::binary);
+    REQUIRE(input.good());
+    std::vector<char> bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    REQUIRE(bytes.size() > 12);
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-unknown-envelope.oysav";
+    for (uint32_t version : {154u, 176u, 177u, 179u})
+    {
+        std::memcpy(bytes.data() + 8, &version, sizeof(version));
+        {
+            std::ofstream output(path, std::ios::binary);
+            output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            REQUIRE(output.good());
+        }
+        std::string error;
+        CHECK_FALSE(loadGameDataFromPath(path, error));
+        CHECK(error == "written by a newer version of OpenYAMM");
+        CHECK_FALSE(loadGameSaveSummaryFromPath(path, error));
+    }
     std::filesystem::remove(path);
 }

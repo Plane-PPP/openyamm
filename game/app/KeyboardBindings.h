@@ -38,7 +38,9 @@ enum class KeyboardAction : uint8_t
     Cast,
     Pass,
     CharCycle,
-    Quest,
+    // Opens the inventory. Its settings key stays "quest", the name these settings had when the action was called
+    // Quest, so existing bindings keep working (OY-481).
+    Inventory,
     QuickRef,
     Rest,
     History,
@@ -102,6 +104,17 @@ enum class KeyboardAction : uint8_t
     QuickItem6,
     QuickSave,
     QuickLoad,
+    // MM9's formation screen (the MM9 world, world.yml formations). MM9 opens it with F, OpenYAMM's Attack key, so it
+    // defaults to O (PARTYORDER, MM9's art for the screen).
+    PartyFormation,
+    // The playthrough statistics (the Quick Reference overlay's Statistics page). Every letter is taken: F1.
+    Statistics,
+    // The Battle Orders window over the spellbook (game/ui/GameplayBattleOrders.h); unbound by default.
+    BattleOrders,
+    // Upkeep (devdocs/BATTLE_ORDERS.md): a ready member casts the first due spell of their upkeep list.
+    Upkeep,
+    // The Journal on its Quests page, as MM7's Quest key opens the quest book (OY-481); unbound by default.
+    QuestBook,
     Count
 };
 

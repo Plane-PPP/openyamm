@@ -50,6 +50,18 @@ settings:
   name: Camera kick
   type: toggle
   desc: Nudge the view along the blow on critical hits and kills.
+- id: fast_attack_repeat
+  section: gameplay
+  group: Combat
+  name: Fast attack repeat
+  type: toggle
+  desc: A held Attack or Quick Cast key repeats at once; off, a short tap acts for one character, as in the originals.
+- id: formations_everywhere
+  section: gameplay
+  group: Combat
+  name: Party formation everywhere
+  type: toggle
+  desc: Might and Magic IX's formation on every continent; monsters strike the front rank more often. Off, monsters of the older games choose their victims as in the originals.
 - id: turn_based_monster_speed
   section: gameplay
   group: Turn-based combat
@@ -74,12 +86,37 @@ settings:
   - ['3', 3x]
   - ['4', 4x]
   desc: Play the party's attacks and spells in flight faster. Walking in the movement phase keeps its pace.
+- id: mm9_loot_in_older_worlds
+  section: gameplay
+  group: Loot
+  name: MM9 loot in MM6-MM8
+  type: toggle
+  desc: Drops and chests in Enroth, Antagarich and Jadame can hold Might and Magic IX's weapons, armour and jewellery.
 - id: skip_event_cutscenes
   section: gameplay
   group: Story
   name: Skip event cutscenes
   type: toggle
   desc: Skip event movies. Leave off for a first adventure.
+- id: quicksave_slots
+  section: gameplay
+  group: Saving
+  name: Quicksaves kept
+  type: range
+  min: 1
+  max: 20
+  desc: Each game keeps this many quicksaves. A new one becomes the first and the oldest is removed.
+# The menu adds the installed language packs (languages/<id>/language.yml) to these options and lists qps only while it
+# is the active language (set it with --set gameplay.language=qps).
+- id: language
+  section: interface
+  group: Language
+  name: Language
+  type: select
+  options:
+  - [en, English]
+  - [qps, Pseudo-language (testing)]
+  desc: The language of menus, messages and the games' text. Takes effect at the next start.
 - id: combat_text
   section: interface
   group: Combat messages
@@ -90,8 +127,13 @@ settings:
   section: interface
   group: Combat messages
   name: Combat log
-  type: toggle
-  desc: A button beside the followers' head opens a log of recent hits, each with its damage steps.
+  type: select
+  options:
+  - [auto, MAW games]
+  - ['on', Always]
+  - ['off', 'Off']
+  desc: A button under the minimap opens a log of recent hits, each with its damage steps; with MAW games, only in
+    MAW games outside the MM9 world.
   desktop_only: true
 - id: show_hits
   section: interface
@@ -132,6 +174,15 @@ settings:
   name: Quest markers
   type: toggle
   desc: Mark characters with quests to offer or complete, where the world has them.
+- id: map_style
+  section: interface
+  group: Exploration
+  name: Map style
+  type: select
+  options:
+  - [painted, Painted]
+  - [lines, Lines]
+  desc: Where a world has painted maps (MM9), show them, or the line map drawn as you explore where the place has one.
 - id: context_action_popup
   section: interface
   group: Exploration
@@ -167,6 +218,12 @@ settings:
   - [always, Always]
   desc: Outline items in their rarity colour (rulesets with rarities, such as MAW).
   game_ruleset: maw
+- id: shop_list_view
+  section: interface
+  group: Items
+  name: Shops as lists
+  type: toggle
+  desc: The shops of the older games sell from Might and Magic IX's list, one row per kind of item with tabs, instead of the shelves.
 - id: update_now
   section: updates
   group: Version
@@ -339,6 +396,22 @@ settings:
   name: Wet surfaces
   type: toggle
   desc: Rain darkens the ground and buildings, which dry slowly afterwards.
+- id: mist
+  section: video
+  group: Environment
+  name: Mist
+  type: toggle
+  desc: Ground mist on the maps that have it.
+- id: mist_strength
+  section: video
+  group: Environment
+  name: Density
+  type: range
+  min: 0
+  max: 200
+  unit: '%'
+  depends: mist
+  desc: ''
 - id: terrain_specular
   section: video
   group: Environment
@@ -722,6 +795,12 @@ bindings:
 - id: quick_spell_4
   name: Cast quick spell 4
   group: Combat
+- id: battle_orders
+  name: Battle orders
+  group: Combat
+- id: upkeep
+  name: Cast upkeep spells
+  group: Combat
 - id: cast
   name: Open spellbook
   group: Combat
@@ -744,6 +823,9 @@ bindings:
   name: Next character
   group: Party & books
 - id: quest
+  name: Inventory
+  group: Party & books
+- id: quest_book
   name: Quest book
   group: Party & books
 - id: map_book
@@ -754,6 +836,9 @@ bindings:
   group: Party & books
 - id: quick_ref
   name: Quick reference
+  group: Party & books
+- id: statistics
+  name: Statistics
   group: Party & books
 - id: rest
   name: Rest
@@ -773,6 +858,9 @@ bindings:
 - id: follower_4
   name: Speak with follower 4
   group: Party & books
+- id: party_formation
+  name: Party formation (MM9)
+  group: Party & books
 - id: double_speed
   name: Toggle double speed
   group: System
@@ -784,7 +872,7 @@ bindings:
   group: System
 # MAW's keys (devdocs/maw/GAPS.md §11 D.18): listed only in a MAW game's pause menu. `context` is the page a key acts
 # on; keys of different contexts may share a key (A picks the alchemist on the inventory page and moves left in play;
-# MAW's E closes our character screen).
+# MAW's E is our Use key).
 - id: unstuck
   name: Get unstuck
   group: MAW

@@ -25,6 +25,8 @@ public:
         float screenHeight = 0.0f;
         // The actor the attack that casts the spell was aimed at; an actor-targeted quick cast prefers it.
         std::optional<size_t> preferredActorIndex;
+        // The member a cast on a member goes to, already chosen (an upkeep cast: PartySpellSystem::upkeepNeed).
+        std::optional<size_t> characterTargetIndex;
     };
 
     enum class QuickSpellStartDisposition
@@ -164,6 +166,10 @@ private:
     static std::optional<bx::Vec3> resolveCursorTargetPoint(
         const TargetQueries &targetQueries,
         const IGameplayWorldRuntime *pWorldRuntime);
+    // The standing destructible under the crosshair (or the cursor), where a missile spell flies with no actor there.
+    static std::optional<bx::Vec3> resolveCursorDestructiblePoint(
+        const TargetQueries &targetQueries,
+        IGameplayWorldRuntime &worldRuntime);
     static bool tryValidateCasterForGameplayCast(GameplayScreenRuntime &runtime, size_t casterMemberIndex);
     static bool isQuickCastable(const PartySpellDescriptor &descriptor);
     static bool requiresTargetSelection(const PartySpellCastResult &result);

@@ -1,6 +1,9 @@
 #include "engine/AssetFileSystem.h"
 #include "tests/ContentPackTestSupport.h"
 #include "engine/AssetScaleTier.h"
+#include "engine/Localization.h"
+#include "game/gameplay/ActorNameText.h"
+#include "engine/ImageAssetLoader.h"
 
 #include <doctest/doctest.h>
 
@@ -446,6 +449,276 @@ TEST_CASE("AssetFileSystem mounts mods in front of the packs only when mods/ hol
                               options));
         CHECK(fs.readTextFile("engine/data_tables/house_data.txt") == std::optional<std::string>("dev-houses"));
     }
+
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("AssetFileSystem reads an extra development mount in front of a development root")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assetRoot = temporaryRoot / "assets_dev";
+    const std::filesystem::path extraRoot = temporaryRoot / "build_mount";
+    writeTextFile(assetRoot / "engine" / "data_tables" / "map_stats.txt", "game-stats");
+    writeTextFile(assetRoot / "engine" / "data_tables" / "spells.txt", "game-spells");
+    writeTextFile(assetRoot / "worlds" / "mm6" / "maps" / "d01.blv", "game-map");
+    writeTextFile(assetRoot / "worlds" / "mm6" / "events" / "maps" / "d01.lua", "game-script");
+    writeTextFile(assetRoot / "worlds" / "mm8" / "maps" / "d05.blv", "game-mm8-map");
+    writeTextFile(extraRoot / "engine" / "data_tables" / "map_stats.txt", "build-stats");
+    writeTextFile(extraRoot / "worlds" / "mm6" / "maps" / "new01.blv", "build-map");
+    writeTextFile(extraRoot / "worlds" / "mm6" / "events" / "maps" / "d01_rewire.lua", "build-overlay");
+    writeTextFile(extraRoot / "worlds" / "mm8" / "maps" / "d05.blv", "build-mm8-map");
+    const AssetScaleProfile profile = createUniformAssetScaleProfile(AssetScaleTier::X1);
+    InstalledContentOptions options;
+    options.extraMountRoot = extraRoot;
+
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assetRoot, AssetScaleTier::X1, profile, "mm6", options));
+        CHECK(fs.readTextFile("engine/data_tables/map_stats.txt") == std::optional<std::string>("build-stats"));
+        CHECK(fs.readTextFile("data_tables/map_stats.txt") == std::optional<std::string>("build-stats"));
+        CHECK(fs.readTextFile("engine/data_tables/spells.txt") == std::optional<std::string>("game-spells"));
+        CHECK(fs.readTextFile("Data/games/new01.blv") == std::optional<std::string>("build-map"));
+        CHECK(fs.readTextFile("Data/games/d01.blv") == std::optional<std::string>("game-map"));
+        CHECK(fs.readTextFile("worlds/mm6/events/maps/d01_rewire.lua") == std::optional<std::string>("build-overlay"));
+        CHECK(fs.readTextFile("Data/games/d05.blv") == std::optional<std::string>("build-mm8-map"));
+        const std::vector<std::string> scripts = fs.enumerate("events/maps");
+        CHECK(std::find(scripts.begin(), scripts.end(), "d01_rewire.lua") != scripts.end());
+        CHECK(std::find(scripts.begin(), scripts.end(), "d01.lua") != scripts.end());
+
+        // A world switch mounts again with the same folder.
+        REQUIRE(fs.switchActiveWorld("mm8"));
+        CHECK(fs.readTextFile("Data/games/d05.blv") == std::optional<std::string>("build-mm8-map"));
+        CHECK(fs.readTextFile("Data/games/new01.blv") == std::optional<std::string>("build-map"));
+    }
+
+    // Without the option nothing of the folder is read.
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assetRoot, AssetScaleTier::X1, profile, "mm6", {}));
+        CHECK(fs.readTextFile("engine/data_tables/map_stats.txt") == std::optional<std::string>("game-stats"));
+        CHECK_FALSE(fs.exists("Data/games/new01.blv"));
+    }
+
+    // A folder that does not exist is an error, not silence.
+    options.extraMountRoot = temporaryRoot / "missing";
+    AssetFileSystem missing;
+    CHECK_FALSE(missing.initialize(temporaryRoot, assetRoot, AssetScaleTier::X1, profile, "mm6", options));
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("AssetFileSystem mounts a language pack's fonts, sounds, videos and icons over the game's, and nothing else")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const AssetScaleProfile profile = createUniformAssetScaleProfile(AssetScaleTier::X1);
+
+    const auto writePack = [](const std::filesystem::path &pack)
+    {
+        writeTextFile(pack / "language.yml", "name: Test\n");
+        writeTextFile(pack / "engine" / "fonts" / "truetype" / "lucida.yml", "pack-font");
+        writeTextFile(pack / "engine" / "audio" / "zm1.wav", "pack-sound");
+        writeTextFile(pack / "worlds" / "mm7" / "audio" / "w7.wav", "pack-world-sound");
+        writeTextFile(pack / "worlds" / "mm7" / "videos" / "Cutscenes" / "7intro.ogv", "pack-video");
+        // Images with text in them (OY-579): the Arcomage card sheet.
+        writeTextFile(pack / "engine" / "icons_x2" / "sprites.pcx", "pack-cards");
+        // Text goes through translation files: a pack's data table never replaces the game's.
+        writeTextFile(pack / "engine" / "data_tables" / "items.txt", "pack-items");
+    };
+
+    // A development root: the pack in assets_dev/languages.
+    const std::filesystem::path developmentRoot = temporaryRoot / "assets_dev";
+    writeTextFile(developmentRoot / "engine" / "fonts" / "truetype" / "lucida.yml", "game-font");
+    writeTextFile(developmentRoot / "engine" / "audio" / "zm1.wav", "game-sound");
+    writeTextFile(developmentRoot / "engine" / "data_tables" / "items.txt", "game-items");
+    writeTextFile(developmentRoot / "worlds" / "mm7" / "audio" / "w7.wav", "game-world-sound");
+    writeTextFile(developmentRoot / "worlds" / "mm7" / "videos" / "Cutscenes" / "7intro.ogv", "game-video");
+    writeTextFile(developmentRoot / "engine" / "icons_x2" / "sprites.pcx", "game-cards");
+    writePack(developmentRoot / "languages" / "ts");
+
+    InstalledContentOptions english;
+    InstalledContentOptions language;
+    language.languageId = "ts";
+    const auto check = [&](const std::filesystem::path &assetRoot, const InstalledContentOptions &options,
+                           const std::string &prefix)
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assetRoot, AssetScaleTier::X1, profile, "mm7", options));
+        CHECK(fs.readTextFile("fonts/truetype/lucida.yml") == std::optional<std::string>(prefix + "-font"));
+        CHECK(fs.readTextFile("Data/EnglishD/zm1.wav") == std::optional<std::string>(prefix + "-sound"));
+        CHECK(fs.readTextFile("Data/EnglishD/w7.wav") == std::optional<std::string>(prefix + "-world-sound"));
+        CHECK(fs.readTextFile("Videos/Cutscenes/7intro.ogv") == std::optional<std::string>(prefix + "-video"));
+        CHECK(fs.readTextFile("data_tables/items.txt") == std::optional<std::string>("game-items"));
+        CHECK(fs.readTextFile("engine/icons_x2/sprites.pcx") == std::optional<std::string>(prefix + "-cards"));
+        CHECK(fs.exists("languages/ts/language.yml"));
+        // A world switch mounts the pack again.
+        REQUIRE(fs.switchActiveWorld("mm7"));
+        CHECK(fs.readTextFile("Data/EnglishD/zm1.wav") == std::optional<std::string>(prefix + "-sound"));
+    };
+    check(developmentRoot, english, "game");
+    check(developmentRoot, language, "pack");
+
+    // A release: the packs, with the player's own pack in <user data>/languages.
+    const std::filesystem::path releaseRoot = temporaryRoot / "assets";
+    writeZipFile(releaseRoot / "packs/engine.core.zip", {
+        {"fonts/truetype/lucida.yml", "game-font"},
+        {"audio/zm1.wav", "game-sound"},
+        {"data_tables/items.txt", "game-items"},
+        {"icons_x2/sprites.pcx", "game-cards"}
+    });
+    writeZipFile(releaseRoot / "packs/mm7.core.zip", {
+        {"audio/w7.wav", "game-world-sound"},
+        {"videos/Cutscenes/7intro.ogv", "game-video"}
+    });
+    writeCorePackIndex(releaseRoot, {"engine", "mm7"});
+    writePack(temporaryRoot / "languages" / "ts");
+    english.userLanguagesRoot = temporaryRoot / "languages";
+    language.userLanguagesRoot = temporaryRoot / "languages";
+    check(releaseRoot, english, "game");
+    check(releaseRoot, language, "pack");
+
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("A language's translation is found for a table cell with spaces or line breaks around its text")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const AssetScaleProfile profile = createUniformAssetScaleProfile(AssetScaleTier::X1);
+    const std::filesystem::path developmentRoot = temporaryRoot / "assets_dev";
+    writeTextFile(developmentRoot / "engine" / "data_tables" / "items.txt", "game-items");
+    writeTextFile(developmentRoot / "languages" / "ts" / "language.yml", "name: Test\n");
+    writeTextFile(developmentRoot / "languages" / "ts" / "text" / "engine.po",
+                  "msgid \"Elvis\"\nmsgstr \"Elvisz\"\n\n"
+                  "msgid \"Hello.\\nGoodbye.\"\nmsgstr \"Ahoj.\\nNashle.\"\n");
+
+    InstalledContentOptions options;
+    options.languageId = "ts";
+    AssetFileSystem fs;
+    REQUIRE(fs.initialize(temporaryRoot, developmentRoot, AssetScaleTier::X1, profile, "mm7", options));
+    REQUIRE(activateLanguage(fs, "ts"));
+    CHECK(localize("Elvis") == "Elvisz");
+    CHECK(localize("Elvis ") == "Elvisz ");
+    CHECK(localize("Hello.\nGoodbye.\n") == "Ahoj.\nNashle.\n");
+    CHECK(localizeKnown("  Elvis") == "  Elvisz");
+    CHECK(localize(" Elvis Presley ") == " Elvis Presley ");
+    CHECK(localize("   ") == "   ");
+    REQUIRE(activateLanguage(fs, EnglishLanguageId));
+
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("A composed boss name takes the affix's own translation and the language's word order")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const AssetScaleProfile profile = createUniformAssetScaleProfile(AssetScaleTier::X1);
+    const std::filesystem::path developmentRoot = temporaryRoot / "assets_dev";
+    writeTextFile(developmentRoot / "engine" / "data_tables" / "items.txt", "game-items");
+    writeTextFile(developmentRoot / "languages" / "ts" / "language.yml", "name: Test\n");
+    // "Swift" alone is an item suffix ("of Swiftness"); the affix has its own entry.
+    writeTextFile(developmentRoot / "languages" / "ts" / "text" / "engine.po",
+                  "msgid \"Swift\"\nmsgstr \"of Speed\"\n\n"
+                  "msgctxt \"monster affix\"\nmsgid \"Swift\"\nmsgstr \"speed\"\n\n"
+                  "msgid \"{affix} {monster}\"\nmsgstr \"{monster} ({affix})\"\n\n"
+                  "msgid \"Resurrected {monster}\"\nmsgstr \"{monster} from the dead\"\n\n"
+                  "msgid \"Goblin\"\nmsgstr \"Gobline\"\n");
+
+    InstalledContentOptions options;
+    options.languageId = "ts";
+    AssetFileSystem fs;
+    REQUIRE(fs.initialize(temporaryRoot, developmentRoot, AssetScaleTier::X1, profile, "mm7", options));
+    REQUIRE(activateLanguage(fs, "ts"));
+    CHECK(OpenYAMM::Game::localizedActorName("Swift Goblin") == "Gobline (speed)");
+    CHECK(OpenYAMM::Game::localizedActorName("Resurrected Swift Goblin") == "Gobline (speed) from the dead");
+    REQUIRE(activateLanguage(fs, EnglishLanguageId));
+    CHECK(OpenYAMM::Game::localizedActorName("Swift Goblin") == "Swift Goblin");
+
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("AssetFileSystem mounts a release's optional language packs only for their language, when installed")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assetRoot = temporaryRoot / "assets";
+    const AssetScaleProfile profile = createUniformAssetScaleProfile(AssetScaleTier::X1);
+    struct Pack
+    {
+        std::string id;
+        std::string package;
+        std::string mount;
+        std::string language;
+        std::vector<std::pair<std::string, std::string>> files;
+    };
+    const std::vector<Pack> packs = {
+        {"engine.core", "engine", "/engine", "",
+         {{"fonts/truetype/lucida.yml", "game-font"}, {"audio/zm1.wav", "game-sound"}}},
+        // Every language's text is always installed.
+        {"engine.languages", "engine", "/engine/languages", "", {{"ts/language.yml", "name: Test\n"},
+                                                                 {"tz/language.yml", "name: Other\n"}}},
+        {"mm7.core", "mm7", "/worlds/mm7", "",
+         {{"videos/Cutscenes/7intro.ogv", "game-video"}, {"world.yml", "id: mm7\n"}}},
+        {"mm8.core", "mm8", "/worlds/mm8", "",
+         {{"videos/Cutscenes/8intro.ogv", "game-video"}, {"world.yml", "id: mm8\n"}}},
+        {"lang-ts.engine.fonts", "engine", "/engine/fonts", "ts", {{"truetype/lucida.yml", "ts-font"}}},
+        {"lang-ts.engine.audio", "engine", "/engine/audio", "ts", {{"zm1.wav", "ts-sound"}}},
+        {"lang-ts.mm7.videos", "mm7", "/worlds/mm7/videos", "ts", {{"Cutscenes/7intro.ogv", "ts-video"}}},
+        // Another world's pack last: it must not put that world in front of the active one (2.0 read MM8's
+        // world.yml in an MM7 game once Russian was downloaded).
+        {"lang-ts.mm8.videos", "mm8", "/worlds/mm8/videos", "ts", {{"Cutscenes/8intro.ogv", "ts-video"}}},
+        {"lang-tz.engine.audio", "engine", "/engine/audio", "tz", {{"zm1.wav", "tz-sound"}}},
+    };
+    std::string index = "{\"schema\": 1, \"release\": \"test\", \"build\": \"test\", \"profile\": \"desktop\", "
+                        "\"content_format\": 1, \"store\": \"packs\", \"packs\": [";
+
+    for (const Pack &pack : packs)
+    {
+        // The language tz was never downloaded: its pack is in the index only.
+        if (pack.language != "tz")
+        {
+            writeZipFile(assetRoot / "packs" / (pack.id + ".zip"), pack.files);
+        }
+
+        const uint64_t size =
+            pack.language == "tz" ? 1234 : std::filesystem::file_size(assetRoot / "packs" / (pack.id + ".zip"));
+        index += std::string(&pack == packs.data() ? "" : ", ") + "{\"id\": \"" + pack.id + "\", \"package\": \""
+            + pack.package + "\", \"mount\": \"" + pack.mount + "\", \"file\": \"" + pack.id + ".zip\", \"size\": "
+            + std::to_string(size) + ", \"content_id\": \"c" + pack.id + "\", \"sha256\": \"s\""
+            + (pack.language.empty() ? "" : ", \"language\": \"" + pack.language + "\"") + "}";
+    }
+
+    writeTextFile(assetRoot / "index.json", index + "]}");
+    std::string error;
+    const std::optional<AssetPackIndex> parsed = loadAssetPackIndex(assetRoot / "index.json", error);
+    REQUIRE_MESSAGE(parsed.has_value(), error);
+    CHECK(assetPackLanguages(*parsed) == std::vector<std::string>{"ts", "tz"});
+    CHECK_EQ(missingLanguagePackBytes(*parsed, assetRoot / "packs", "ts"), 0u);
+    CHECK_EQ(missingLanguagePackBytes(*parsed, assetRoot / "packs", "tz"), 1234u);
+    // A language's packs are optional: a missing one leaves the content usable.
+    CHECK(validateAssetPackFiles(*parsed, assetRoot / "packs", error));
+
+    const auto check = [&](const std::string &languageId, const std::string &prefix)
+    {
+        InstalledContentOptions options;
+        options.languageId = languageId;
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assetRoot, AssetScaleTier::X1, profile, "mm7", options));
+        CHECK(fs.readTextFile("fonts/truetype/lucida.yml") == std::optional<std::string>(prefix + "-font"));
+        CHECK(fs.readTextFile("Data/EnglishD/zm1.wav") == std::optional<std::string>(prefix + "-sound"));
+        CHECK(fs.readTextFile("Videos/Cutscenes/7intro.ogv") == std::optional<std::string>(prefix + "-video"));
+        CHECK(fs.readTextFile("worlds/mm8/videos/Cutscenes/8intro.ogv")
+              == std::optional<std::string>(prefix + "-video"));
+        // Unqualified requests still search the active world first, then the engine, then the other worlds.
+        CHECK(fs.readTextFile("world.yml") == std::optional<std::string>("id: mm7\n"));
+        CHECK(fs.exists("languages/ts/language.yml"));
+        CHECK(fs.exists("languages/tz/language.yml"));
+        CHECK(fs.languagePacksMissing() == (languageId == "tz"));
+    };
+    check("", "game");
+    check("ts", "ts");
+    // Chosen but not downloaded yet: the game's own files.
+    check("tz", "game");
 
     std::filesystem::remove_all(temporaryRoot);
 }
@@ -1167,6 +1440,103 @@ TEST_CASE("AssetFileSystem authoritative icon packages isolate restored and reta
     std::filesystem::remove_all(temporaryRoot);
 }
 
+TEST_CASE("AssetFileSystem adds the active ruleset's icons after the declared icon packages")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assets = temporaryRoot / "assets";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm6 x2\n"},
+        {"icons_x2/pc02-01.png", "engine portrait"},
+        {"rulesets/medusa/icons_x2/med01-01.png", "medusa portrait"},
+        {"rulesets/medusa/icons_x2/pc02-01.png", "must not replace"}
+    });
+    writeZipFile(assets / "packs/mm6.core.zip", {{"icons_x2/npc1.png", "mm6 portrait"}});
+    writeCorePackIndex(assets, {"engine", "mm6"});
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assets, AssetScaleTier::X1, AssetScaleProfile{}, "mm6"));
+        CHECK_FALSE(fs.readTextFile("Data/icons/med01-01.png"));
+
+        const uint64_t generation = fs.contentGeneration();
+        fs.setRulesetIconRoot("engine/rulesets/medusa/");
+        CHECK_EQ(fs.getRulesetIconRoot(), "engine/rulesets/medusa");
+        CHECK(fs.contentGeneration() > generation);
+        CHECK(fs.readTextFile("Data/icons/med01-01.png") == std::optional<std::string>("medusa portrait"));
+        CHECK(fs.readTextFile("engine/icons/med01-01.png") == std::optional<std::string>("medusa portrait"));
+        CHECK_FALSE(fs.readTextFile("worlds/mm6/icons/med01-01.png"));
+        // The ruleset adds icons; it never replaces the engine's or a world's.
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
+        CHECK(fs.readTextFile("Data/icons/npc1.png") == std::optional<std::string>("mm6 portrait"));
+        const std::vector<std::string> icons = fs.enumerate("Data/icons");
+        CHECK(std::find(icons.begin(), icons.end(), "med01-01.png") != icons.end());
+        const std::optional<std::string> resolved = fs.resolveExistingFilePath("Data/icons/med01-01.png");
+        REQUIRE(resolved);
+        CHECK(assetScaleTierFromResolvedPath(*resolved) == AssetScaleTier::X2);
+
+        fs.setRulesetIconRoot("");
+        CHECK(fs.getRulesetIconRoot().empty());
+        CHECK_FALSE(fs.readTextFile("Data/icons/med01-01.png"));
+        CHECK(fs.enumerate("Data/icons").size() == icons.size() - 1);
+    }
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("AssetFileSystem keeps the active ruleset's icons when a map switches the active world")
+{
+    // Medusa Alpha 0.2: the portrait showed on the party creation screen (mm8, the menu's world) but the gameplay
+    // HUD was empty on Mount Nighon, because loading an MM7 map switched the active world and forgot the icons.
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assets = temporaryRoot / "assets";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm7 x2\nworlds/mm8 x2\n"},
+        {"icons_x2/pc02-01.png", "engine portrait"},
+        {"rulesets/medusa/icons_x2/med01-01.png", "medusa portrait 01"},
+        {"rulesets/medusa/icons_x2/med01-56.png", "medusa portrait 56"}
+    });
+    writeZipFile(assets / "packs/mm7.core.zip", {{"icons_x2/npc1.png", "mm7 portrait"}});
+    writeZipFile(assets / "packs/mm8.core.zip", {{"icons_x2/npc2.png", "mm8 portrait"}});
+    writeCorePackIndex(assets, {"engine", "mm7", "mm8"});
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assets, AssetScaleTier::X2, AssetScaleProfile{}, "mm8"));
+        fs.setRulesetIconRoot("engine/rulesets/medusa");
+        REQUIRE(fs.readTextFile("Data/icons/med01-01.png"));
+
+        // GameApplication::activateWorldForMap before Mount Nighon (MM7).
+        REQUIRE(fs.switchActiveWorld("mm7"));
+        CHECK_EQ(fs.getActiveWorldId(), "mm7");
+        CHECK_EQ(fs.getRulesetIconRoot(), "engine/rulesets/medusa");
+
+        // The gameplay HUD's lookup (GameplayHudCommon::loadHudTexture -> Engine::findImageAssetPath).
+        DirectoryAssetPathCache directories;
+        AssetPathLookupCache paths;
+        for (const std::string frame : {"med01-01", "med01-56"})
+        {
+            CAPTURE(frame);
+            const std::optional<std::string> path = findImageAssetPath(fs, "Data/icons", frame, directories, paths);
+            REQUIRE(path);
+            CHECK(fs.readTextFile(*path) == std::optional<std::string>(
+                frame == "med01-01" ? "medusa portrait 01" : "medusa portrait 56"));
+            CHECK(assetScaleTierFromResolvedPath(*path) == AssetScaleTier::X2);
+        }
+        // Standard portraits and the new world's own icons are unaffected.
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
+        CHECK(fs.readTextFile("Data/icons/npc1.png") == std::optional<std::string>("mm7 portrait"));
+
+        // Back to Standard: no Medusa icons leak into another world.
+        fs.setRulesetIconRoot("");
+        REQUIRE(fs.switchActiveWorld("mm8"));
+        CHECK(fs.getRulesetIconRoot().empty());
+        DirectoryAssetPathCache standardDirectories;
+        AssetPathLookupCache standardPaths;
+        CHECK_FALSE(findImageAssetPath(fs, "Data/icons", "med01-01", standardDirectories, standardPaths));
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
+    }
+    std::filesystem::remove_all(temporaryRoot);
+}
+
 TEST_CASE("AssetFileSystem cached lookups refresh and follow changed mounts")
 {
     using namespace OpenYAMM::Engine;
@@ -1282,6 +1652,94 @@ TEST_CASE("AssetFileSystem resource hotfix is embedded in indexed engine content
         CHECK(fs.readTextFile("engine/ui/gameplay/character.yml") == std::optional<std::string>("fixed-ui"));
         CHECK(fs.readTextFile("Data/ui/gameplay/character.yml") == std::optional<std::string>("fixed-ui"));
         CHECK(fs.readTextFile("engine/data_tables/untouched.txt") == std::optional<std::string>("keep"));
+    }
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("AssetFileSystem serves the user icon folder after the packages and keeps it across worlds")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path temporaryRoot = makeTemporaryRoot();
+    const std::filesystem::path assets = temporaryRoot / "assets";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm6 x2\nworlds/mm7 x2\n"},
+        {"icons_x2/pc02-01.png", "engine portrait"}
+    });
+    writeZipFile(assets / "packs/mm6.core.zip", {{"icons_x2/npc1.png", "mm6 portrait"}});
+    writeZipFile(assets / "packs/mm7.core.zip", {{"icons_x2/npc1.png", "mm7 portrait"}});
+    writeCorePackIndex(assets, {"engine", "mm6", "mm7"});
+    const std::filesystem::path userIcons = temporaryRoot / "user data" / "portraits" / "icons_x2";
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(temporaryRoot, assets, AssetScaleTier::X2, AssetScaleProfile{}, "mm6"));
+
+        // A folder that does not exist yet is remembered, not an error.
+        CHECK(fs.setUserIconDirectory(userIcons));
+        CHECK_FALSE(fs.readTextFile("Data/icons/user_medusa-01.png"));
+
+        std::filesystem::create_directories(userIcons);
+        std::ofstream(userIcons / "user_medusa-01.png", std::ios::binary) << "imported portrait";
+        std::ofstream(userIcons / "pc02-01.png", std::ios::binary) << "must not replace";
+        REQUIRE(fs.setUserIconDirectory(userIcons));
+        CHECK(fs.readTextFile("Data/icons/user_medusa-01.png") == std::optional<std::string>("imported portrait"));
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("engine portrait"));
+        const std::vector<std::string> icons = fs.enumerate("Data/icons");
+        CHECK(std::find(icons.begin(), icons.end(), "user_medusa-01.png") != icons.end());
+        const std::optional<std::string> resolved = fs.resolveExistingFilePath("Data/icons/user_medusa-01.png");
+        REQUIRE(resolved);
+        CHECK(assetScaleTierFromResolvedPath(*resolved) == AssetScaleTier::X2);
+        // Package-qualified requests never reach the player's folder.
+        CHECK_FALSE(fs.readTextFile("engine/icons/user_medusa-01.png"));
+
+        // Loading a map of another world re-initializes the mounts; the player's icons stay.
+        REQUIRE(fs.switchActiveWorld("mm7"));
+        CHECK(fs.getUserIconDirectory() == userIcons);
+        CHECK(fs.readTextFile("Data/icons/npc1.png") == std::optional<std::string>("mm7 portrait"));
+        CHECK(fs.readTextFile("Data/icons/user_medusa-01.png") == std::optional<std::string>("imported portrait"));
+
+        CHECK(fs.setUserIconDirectory({}));
+        CHECK_FALSE(fs.readTextFile("Data/icons/user_medusa-01.png"));
+    }
+    std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("AssetFileSystem keeps ruleset and imported portraits together across worlds")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path root = makeTemporaryRoot();
+    const std::filesystem::path assets = root / "assets";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm7 x2\nworlds/mm8 x2\n"},
+        {"icons_x2/pc02-01.png", "packaged"},
+        {"rulesets/medusa/icons_x2/med01-01.png", "ruleset"}
+    });
+    writeZipFile(assets / "packs/mm7.core.zip", {{"icons_x2/npc1.png", "mm7"}});
+    writeZipFile(assets / "packs/mm8.core.zip", {{"icons_x2/npc2.png", "mm8"}});
+    writeCorePackIndex(assets, {"engine", "mm7", "mm8"});
+    const std::filesystem::path user = root / "portraits/icons_x2";
+    std::filesystem::create_directories(user);
+    std::ofstream(user / "user_face-01.png") << "imported";
+    std::ofstream(user / "med01-01.png") << "must not replace ruleset";
+    std::ofstream(user / "pc02-01.png") << "must not replace packaged";
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(root, assets, AssetScaleTier::X2, AssetScaleProfile{}, "mm8"));
+        fs.setRulesetIconRoot("engine/rulesets/medusa");
+        REQUIRE(fs.setUserIconDirectory(user));
+        for (const std::string world : {"mm7", "mm8"})
+        {
+            REQUIRE(fs.switchActiveWorld(world));
+            CHECK(fs.getRulesetIconRoot() == "engine/rulesets/medusa");
+            CHECK(fs.getUserIconDirectory() == user);
+            CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("packaged"));
+            CHECK(fs.readTextFile("Data/icons/med01-01.png") == std::optional<std::string>("ruleset"));
+            CHECK(fs.readTextFile("Data/icons/user_face-01.png") == std::optional<std::string>("imported"));
+        }
+        REQUIRE(fs.setUserIconDirectory({}));
+        CHECK_FALSE(fs.readTextFile("Data/icons/user_face-01.png"));
+        CHECK(fs.readTextFile("Data/icons/med01-01.png") == std::optional<std::string>("ruleset"));
+        fs.setRulesetIconRoot("");
+        CHECK_FALSE(fs.readTextFile("Data/icons/med01-01.png"));
     }
     std::filesystem::remove_all(root);
 }

@@ -29,6 +29,7 @@
 #include "game/debug/DebugConsole.h"
 #include "game/debug/GameImGuiBgfxRenderer.h"
 #include "game/debug/ScreenshotCaptureService.h"
+#include "game/debug/VideoCapture.h"
 #include "game/debug/ScreenshotTour.h"
 #include "game/debug/MenuInputTour.h"
 #include "game/maps/SaveGame.h"
@@ -63,6 +64,8 @@ public:
 
 private:
   MenuInputTour m_menuInputTour;
+  // The menu tour's clock: the frames' summed time steps (unscaled), so its waits follow a video capture's fixed step.
+  uint64_t m_menuInputTourClockNanoseconds = 0;
   std::vector<uint8_t> m_menuSavePreviewBmp;
   struct DebugMapJumpStart
   {
@@ -168,6 +171,8 @@ private:
     friend struct GameApplicationTestAccess;
 
     bool loadGameData(Engine::AssetFileSystem &assetFileSystem);
+    // Serves the imported party portraits of the user data as icons (AssetFileSystem::setUserIconDirectory).
+    void mountCustomPortraits();
     bool ensureCommonGameDataLoaded();
     // Loads the common data under this ruleset's tables when they are not the loaded ones. Tear the session down
     // first: the reload replaces the tables that runtimes and screens point into.
@@ -183,6 +188,9 @@ private:
     void updateDeferredMainMenuChildWarmup();
     void shutdownApplication();
     bool initializeSelectedMapRuntime(bool initializeView);
+    bool buildSelectedMapRuntime(bool initializeView);
+    // The map's <stem>.cinematics.yml, parsed (none: no file, or an invalid one, logged).
+    std::optional<CinematicLibrary> loadMapCinematics(const MapAssetInfo &map) const;
     const ActorBehaviorCatalog *reloadActorBehaviorCatalog();
     bool initializeRenderer();
     bool initializeDebugConsoleRenderer();
@@ -202,17 +210,29 @@ private:
     bool loadMawTestPartyCatalog(MawTestPartyCatalog &catalog, std::string &error) const;
     void shutdownRenderer();
     Party &ensureSessionPartyState();
-    void bindPartyDependencies(Party &party) const;
+    void bindPartyDependencies(Party &party);
+    std::string worldIdOfMap(const std::string &mapFileName);
+    static std::string statisticsDifficulty(const RulesetSelection &ruleset);
+    // The playthrough statistics' frame: the place, new members, the map entered and the real time played.
+    void updatePlaythroughStatistics(float realDeltaSeconds, bool gameplayLoaded);
     void synchronizeSessionFromRuntime();
     void synchronizeActiveReputationToParty();
     bool loadCurrentSessionMap(
+        bool initializeView,
+        const std::function<void(int)> &progressCallback = {});
+    // loadCurrentSessionMap for the same game going on (a map move, the defeat's respawn): the item on the cursor
+    // belongs to the party and stays on it, as in the originals; the map's views clear the UI state on the way.
+    bool loadCurrentSessionMapKeepingHeldItem(
         bool initializeView,
         const std::function<void(int)> &progressCallback = {});
     bool activateWorldForMap(const MapStatsEntry &map);
     bool activateWorldForMapFileName(const std::string &mapFileName);
     bool applyCurrentSessionToRuntime(bool initializeView);
     bool processPendingMapMove();
-    bool requestAutosaveBeforeMapMove();
+    // Requests an autosave, written once a frame has rendered its preview; never in headless (Noop renderer) runs.
+    bool requestAutosave();
+    // The map's world writes its autosave on arrival (world.yml autosave: arrival) rather than on departure.
+    bool worldAutosavesOnArrival(const std::string &mapFileName) const;
     bool activeViewSavePreviewCapturePending() const;
     bool processPendingCompletionCertificate();
     bool processPendingEventMovie();
@@ -223,6 +243,7 @@ private:
     void applyRulesMapLeave();
     bool processPendingPartyDefeat();
     void handleCompletedPartyDefeatScreen();
+    void finishPartyDefeat();
     void handleCompletedEventMovieScreen();
     void handleCompletedWinGameScreen();
     void saveCompletionCertificateImage(
@@ -235,13 +256,17 @@ private:
     std::string resolvePartyDefeatRespawnMapFileName() const;
     MapStartDestination resolvePartyDefeatRespawnDestination() const;
     std::string resolvePartyDefeatCutsceneStem() const;
+    bool worldPartyDeathApplies() const;
+    // world.yml partyDeath `when`: no condition holds, so the defeat is lost (MM9: LoseGame, then the autosave).
+    bool partyDefeatIsLost() const;
+    std::string partyDefeatContinentMapFileName() const;
     void applyPartyDefeatConsequences();
     bool respawnPartyAfterDefeat(bool initializeView);
     void captureCurrentSceneState();
     void restoreSavedOutdoorWorldStateForSelectedMap();
     void updateQuickSaveInput();
     void updateDoubleSpeedInput();
-    float gameplayDeltaSeconds(float deltaSeconds) const;
+    float gameplaySpeed() const;
     void updateGameplayTraceSnapshotHotkeys();
     bool processPendingQuickSaveInput();
     bool quickSave();
@@ -280,11 +305,14 @@ private:
     void pumpLoadingOverlayAnimation();
     void completeLoadingOverlay();
     void cancelLoadingOverlay();
-    void closeTransientGameplayUiForMapMove();
+    void closeTransientGameplayUiForMapMove(bool keepLootView);
     std::filesystem::path settingsFilePath() const;
     bool saveSettings(const GameSettings &settings, std::string &error) const;
     void loadOrCreateSettings();
     void applyCurrentSettingsToActiveRuntime();
+    // Whether the party stands in MM9's formation: the world turns it on (world.yml formations) or the player does
+    // everywhere (GameSettings::formationsEverywhere).
+    bool formationsActive() const;
     void applyStartupDebugSettingsToActiveRuntime();
     void requestApplicationQuit() const;
     void reportQuickSaveStatus(const std::string &status);
@@ -318,9 +346,13 @@ private:
     Engine::EngineApplication m_engineApplication;
     CinematicGrading m_cinematicGrading;
     ActorModelPreview m_actorModelPreview;
+    ActorModelPreview m_actorTalkPortrait{ActorPortraitKind::Talk};
     GameDataLoader m_gameDataLoader;
     GameDataRepository m_gameDataRepository;
     WorldManifest m_activeWorldManifest;
+    std::string m_playthroughStatisticsMap;
+    uint64_t m_playthroughStatisticsRoster = 0;
+    uint64_t m_lastPlayerInputTicks = 0;
     ActorBehaviorCatalog m_actorBehaviorCatalog;
     GameAudioSystem m_gameAudioSystem;
     WorldAmbientSoundRuntime m_worldAmbientSounds;
@@ -408,6 +440,8 @@ private:
     int m_lastFrameHeight = 480;
     std::optional<std::string> m_pendingPartyDefeatRespawnMapFileName;
     std::optional<DebugMapJumpStart> m_pendingPartyDefeatRespawnStart;
+    // A lost defeat (world.yml partyDeath `otherwise`): its movie, then the autosave.
+    bool m_pendingPartyDefeatReloadAutosave = false;
     std::vector<CompletionCertificateDefinition> m_completionCertificates;
     bool m_completionCertificatesLoaded = false;
     // Certificates earned at once (a world and the grand one), shown one after another.
@@ -417,6 +451,9 @@ private:
     bool m_pendingInputTextActive = false;
     bool m_skipGameplayUpdateUntilPromptSubmitKeysReleased = false;
     bool m_loadingSavedGameRuntime = false;
+    // The status notice of a map whose saved state was reset when it was entered (resetSavedMapStateOfAnotherLayout),
+    // shown once its view is up: building the view clears the status bar.
+    std::string m_mapStateResetNotice;
     FramePerformanceDiagnostics m_framePerformanceDiagnostics;
     uint32_t m_lastFramePerformanceLogTick = 0;
     DebugConsole m_debugConsole;
@@ -432,6 +469,7 @@ private:
     std::vector<EffectHandle> m_debugEffectHandles;
     std::vector<Engine::ModelInstanceHandle> m_debugModelHandles;
     ScreenshotCaptureService m_screenshotCaptureService;
+    VideoCapture m_videoCapture;
     std::optional<ScreenshotTour> m_screenshotTour;
     ScreenshotTourStage m_screenshotTourStage = ScreenshotTourStage::NotStarted;
     size_t m_screenshotTourShotIndex = 0;

@@ -92,7 +92,8 @@ def indoor_lighting_dependencies(path):
     version, header_size = struct.unpack_from("<II", data, 8)
     (face_count, sector_count, page_count, dependency_count, page_offset, face_offset, sector_offset,
      dependency_offset, pixel_offset, file_size) = struct.unpack_from("<10I", data, 24)
-    if version != 1 or header_size != 64:
+    # Version 2 pairs each lightmap page with its daylight page (devdocs/INDOOR_BAKED_LIGHTING.md); same sections.
+    if version not in (1, 2) or header_size != 64:
         raise ValueError(f"Unsupported indoor lighting version: {path}")
     if (file_size != len(data) or page_offset != 64 or face_offset != page_offset + page_count * 16
             or sector_offset != face_offset + face_count * 36 or dependency_offset != sector_offset + sector_count * 12
@@ -178,7 +179,8 @@ def overlay_model_textures(entries, source, overlay):
 def select_surface_textures(entries, profile, android_world):
     """World surface textures (tools/cook_surface_textures.py). Every package keeps textures/ (the .act palettes; the
     original BMPs are source art in assets_source). Desktop ships the BC7 x4 tier (textures_x4/*.oytex); android
-    ships its ASTC x2 tier from assets_cooked/android instead. Images that runtime code reads as images
+    ships its ASTC x2 tier from assets_cooked/android instead. MM9's native-only faces are cooked in the x1 folder
+    (textures/*.oytex), BC7 in assets_dev and ASTC in the android overlay. Images that runtime code reads as images
     (hwsplat04.png) stay in their tier folder. The surface material maps of the x4 tier (tools/surface_materials.py)
     ship on desktop only."""
     keep_tier = "textures_x4/" if profile == "desktop" else "textures_x2/"
@@ -187,10 +189,13 @@ def select_surface_textures(entries, profile, android_world):
             del entries[name]
         elif name.startswith("surface_materials_x") and profile != "desktop":
             del entries[name]
+        elif name.startswith("textures/") and name.endswith(".oytex") and profile != "desktop":
+            del entries[name]
     if profile != "desktop" and android_world is not None:
-        overlay = android_world / "textures_x2"
-        for path in sorted(overlay.glob("*.oytex")) if overlay.is_dir() else []:
-            entries["textures_x2/" + path.name] = path
+        for tier in ("textures_x2", "textures"):
+            overlay = android_world / tier
+            for path in sorted(overlay.glob("*.oytex")) if overlay.is_dir() else []:
+                entries[f"{tier}/{path.name}"] = path
 
 
 def verify_surface_cook(assets_root, profile):
@@ -264,6 +269,35 @@ def collect_entries(source, *, sprites=None, profile=None, dependencies=None, mo
             raise ValueError(f"Conflicting runtime dependency: {name}")
         entries[name] = path
     return entries
+
+
+def collect_languages(languages_root, worlds):
+    """The language packs of assets_dev/languages (devdocs/LOCALIZATION.md): ({name in the engine package: source} of
+    their text, always installed; {language id: {name in the language folder: source}} of their optional fonts, sounds
+    and videos). The templates folder is the translators' and ships nowhere, and neither does the text of a world the
+    release leaves out (text/mm9.po when a release ships no MM9)."""
+    text, overlays = {}, {}
+    if not languages_root.is_dir():
+        return text, overlays
+    for folder in sorted(languages_root.iterdir()):
+        if not folder.is_dir() or folder.name == "templates":
+            continue
+        if not (folder / "language.yml").is_file():
+            raise ValueError(f"Language pack without language.yml: {folder}")
+        for path in sorted(folder.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(folder).as_posix()
+            # A world's catalog is named after it (text/mm9.po); worlds/mm9 itself may be absent from the checkout.
+            if relative.startswith("text/") and re.fullmatch(r"mm\d+", path.stem) and path.stem not in worlds:
+                continue
+            if relative == "language.yml" or relative.startswith("text/"):
+                text[f"languages/{folder.name}/{relative}"] = path
+            elif relative.startswith(("engine/", "worlds/")):
+                overlays.setdefault(folder.name, {})[relative] = path
+            else:
+                raise ValueError(f"Language pack file in no shipped folder: {path}")
+    return text, overlays
 
 
 def package(source, output, **options):
@@ -365,8 +399,10 @@ def main():
                 worlds / name, model_textures=profile_root / "worlds" / name if profile_root else None,
                 surface_profile=args.profile,
                 surface_overlay=args.assets_root.parent / "assets_cooked" / args.profile / "worlds" / name)
+    language_text, language_overlays = collect_languages(args.assets_root / "languages", set(packages))
+    packages["engine"].update(language_text)
     reuse = published_packs(args.reuse_manifest, args.reuse_store or Path("."))
-    records = build_packs(packages, config, args.profile, args.output, reuse)
+    records = build_packs(packages, config, args.profile, args.output, reuse, language_overlays)
     write_index(args.output, records, profile=args.profile, release=args.release, build=args.build,
                 content_format=args.content_format)
     reused = sum(1 for record in records if record["content_id"] in reuse)

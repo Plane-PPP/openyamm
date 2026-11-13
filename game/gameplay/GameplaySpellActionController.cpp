@@ -1,7 +1,9 @@
 #include "game/gameplay/GameplaySpellActionController.h"
+#include "engine/Localization.h"
 
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/party/Party.h"
 #include "game/party/SpellIds.h"
 #include "game/tables/SpellTable.h"
 
@@ -13,6 +15,12 @@ GameplaySpellActionController::SpellActionResult GameplaySpellActionController::
     const TargetQueries &targetQueries,
     std::optional<size_t> extraSlot)
 {
+    // An MM9 hireling has no spellbook: its quick cast is its attack or spell (MM9 sends both the same way, 9.2).
+    if (const Party *pParty = runtime.party(); pParty != nullptr && pParty->activeHireling() != nullptr)
+    {
+        return SpellActionResult::AttackFallback;
+    }
+
     const GameplaySpellService::QuickSpellStartResolution resolution =
         spellService.tryStartQuickSpellCast(runtime, targetQueries, extraSlot);
 
@@ -42,12 +50,16 @@ GameplaySpellActionController::AttackCastResult GameplaySpellActionController::t
     }
 
     const SpellTable *pSpellTable = runtime.spellTable();
-    const SpellEntry *pAttackSpellEntry =
-        pSpellTable != nullptr ? pSpellTable->findByName(attackSpellName) : nullptr;
+    const Character *pCaster = runtime.partyReadOnly() != nullptr
+        ? runtime.partyReadOnly()->member(casterMemberIndex)
+        : nullptr;
+    const SpellEntry *pAttackSpellEntry = pSpellTable == nullptr ? nullptr
+        : pCaster != nullptr ? pSpellTable->findByName(attackSpellName, spellKnownBy(*pCaster))
+                             : pSpellTable->findByName(attackSpellName);
 
     if (pAttackSpellEntry == nullptr)
     {
-        runtime.setStatusBarEvent("Unknown attack spell");
+        runtime.setStatusBarEvent(Engine::tr("Unknown attack spell"));
         return {
             .disposition = AttackCastDisposition::Failed,
             .followupUiActive = false,
@@ -104,7 +116,7 @@ GameplaySpellActionController::updatePendingTargetSelection(
     {
         if (!pendingTargetState.cancelLatch)
         {
-            spellService.clearPendingTargetSelection(runtime, "Spell canceled");
+            spellService.clearPendingTargetSelection(runtime, Engine::tr("Spell canceled"));
             runtime.interactionState().menuToggleLatch = true;
             result.targetSelectionConsumed = true;
         }

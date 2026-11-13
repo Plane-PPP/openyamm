@@ -15,6 +15,8 @@ namespace OpenYAMM::Game
 {
 enum class EquipmentSlot : uint8_t;
 class MergedPotionSettingTable;
+class SpecialItemEnchantTable;
+class StandardItemEnchantTable;
 
 struct ItemEquipmentPlacement
 {
@@ -120,6 +122,13 @@ struct ItemDefinition
     uint16_t spriteIndex = 0;
     int varA = 0;
     int varB = 0;
+    // The VarA column as written: a Special item's own enchantment by name (VarB: a standard one's power).
+    std::string varAText;
+    // That enchantment, resolved once the enchantment tables load (ItemTable::resolveSpecialItemEnchants); every copy
+    // of the item carries it (ItemGenerator::assignSpecialItemEnchants).
+    uint16_t specialItemStandardEnchantId = 0;
+    uint16_t specialItemStandardEnchantPower = 0;
+    uint16_t specialItemSpecialEnchantId = 0;
     int equipX = 0;
     int equipY = 0;
     std::string notes;
@@ -209,6 +218,15 @@ public:
     bool loadWorldLootYaml(const std::string &text, const std::string &worldId, std::string &errorMessage);
     // The world's own random loot, or null when it rolls from the shared tables.
     const WorldLootTable *worldLoot(const std::string &worldId) const;
+    // The item pool a world's shops stock equipment from (ItemGenerator::shopPoolAllows): its own package when it has
+    // items, else the merged MM6-MM8 base, "engine". An empty world id has no pool.
+    std::string lootPoolForWorld(const std::string &worldId) const;
+    // Worlds whose random artifacts come only from level-7 chest slots (world.yml chestArtifactsOnly).
+    void setChestArtifactsOnlyWorlds(std::unordered_set<std::string> worldIds);
+    bool chestArtifactsOnly(const std::string &worldId) const;
+    // Worlds whose treasure markers roll gold by their item tier (world.yml groundGoldByItemTier).
+    void setGroundGoldByItemTierWorlds(std::unordered_set<std::string> worldIds);
+    bool groundGoldByItemTier(const std::string &worldId) const;
     const ItemDefinition *get(uint32_t itemId) const;
     const ItemDefinition *resolvePackageSourceItemId(const std::string &packageId, uint32_t sourceItemId) const;
     const ItemDefinition *findBySpriteIndex(uint16_t spriteIndex) const;
@@ -220,6 +238,12 @@ public:
     void setGroundModels(const ItemModelBindings &bindings);
     // Marks the potions listed in the potion settings, after the item rows are loaded.
     void applyPotionSettings(const MergedPotionSettingTable &potionSettingTable);
+    // Gives each Special item the enchantment its VarA column names: a standard one (at VarB's power, else 1) when a
+    // standard suffix matches, else a special one, as MM7 does for its special items. Returns the Special items whose
+    // VarA names no enchantment.
+    std::vector<uint32_t> resolveSpecialItemEnchants(
+        const StandardItemEnchantTable &standardTable,
+        const SpecialItemEnchantTable &specialTable);
     // The model an item draws lying on the ground: its icon's binding, or the missing-model placeholder.
     const ItemModelBinding &groundModel(uint32_t itemId) const;
     // Whether the item's icon has a ground model of its own (false: it draws the placeholder).
@@ -231,6 +255,11 @@ private:
     std::unordered_map<uint16_t, WorkshopModDefinition> m_workshopMods;
     std::unordered_map<std::string, uint32_t> m_sourceAliases;
     std::unordered_map<std::string, WorldLootTable> m_worldLoot;
+    // Lower-case package ids that own at least one item.
+    std::unordered_set<std::string> m_itemPackageIds;
+    // Lower-case world ids.
+    std::unordered_set<std::string> m_chestArtifactsOnlyWorlds;
+    std::unordered_set<std::string> m_groundGoldByItemTierWorlds;
     std::vector<ItemModelBinding> m_groundModels;
     // By item id: index into m_groundModels, or -1 for the placeholder.
     std::vector<int32_t> m_groundModelIndexByItemId;

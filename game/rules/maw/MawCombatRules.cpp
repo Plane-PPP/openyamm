@@ -1,4 +1,5 @@
 #include "game/rules/maw/MawCombatRules.h"
+#include "engine/Localization.h"
 
 #include "game/StringUtils.h"
 #include "game/gameplay/GameplayMonsterSpawn.h"
@@ -300,7 +301,7 @@ MawCritInputs meleeCritInputs(
     for (size_t handIndex = 0; handIndex < handItemIds.size(); ++handIndex)
     {
         const ItemDefinition *pItem = handItemIds[handIndex] != 0 ? itemTable.get(handItemIds[handIndex]) : nullptr;
-        const std::string skill = pItem != nullptr ? canonicalSkillName(pItem->skillGroup) : std::string();
+        const std::string skill = pItem != nullptr ? mawWeaponSkill(character, *pItem) : std::string();
 
         if (skill == "Dagger" && skillMastery(character, skill) >= SkillMastery::Master)
         {
@@ -543,10 +544,10 @@ double weaponLevelDamage(const MawRules &rules, const HeldWeapon &weapon, int pa
     return rules.model(partyCount).weaponLevelDamage(level, isTwoHanded(*weapon.pItem), 0);
 }
 
-// A weapon's own pace (getItemRecovery) from its skill's base recovery and its level.
+// A weapon's own pace (getItemRecovery) from the base recovery of the skill it is wielded with and its level.
 int weaponRecovery(const MawRules &rules, const HeldWeapon &weapon)
 {
-    const WeaponSkillNumbers *pNumbers = weaponSkillNumbers(canonicalSkillName(weapon.pItem->skillGroup));
+    const WeaponSkillNumbers *pNumbers = weaponSkillNumbers(mawWeaponSkill(*weapon.pWearer, *weapon.pItem));
     return mawItemRecovery(pNumbers != nullptr ? pNumbers->baseRecovery : UnknownWeaponRecovery,
         itemLevel(rules, *weapon.pItem, *weapon.pState, *weapon.pWearer), isTwoHanded(*weapon.pItem));
 }
@@ -1115,7 +1116,7 @@ MawCombatRules::MawCombatRules(MawRules &rules)
             {
                 // Traps, chest traps and event missiles: MAW's trap damage indoors and for anything but physical
                 // and water hits outdoors (falls and drowning keep their own); Sparks deals a third (DM:1623-1652).
-                const bool indoor = m_rules.currentMap().ends_with(".blv");
+                const bool indoor = !m_rules.outdoorMap(m_rules.currentMap());
 
                 if (indoor || (hit.type != CombatDamageType::Physical && hit.type != CombatDamageType::Water))
                 {
@@ -1348,13 +1349,15 @@ MawAttackDelay mawCharacterAttackDelay(
                 continue;
             }
 
-            const std::string skill = canonicalSkillName(pItem->skillGroup);
+            const std::string skill = mawWeaponSkill(character, *pItem);
             const WeaponSkillNumbers *pNumbers = weaponSkillNumbers(skill);
             handRecoveries.push_back(mawItemRecovery(
                 pNumbers != nullptr ? pNumbers->baseRecovery : UnknownWeaponRecovery,
                 itemLevel(rules, *pItem, *pRuntime, character),
                 isTwoHanded(*pItem)));
-            const bool offHandTwoHandedAxe = handIndex == 0 && skill == "Axe" && isTwoHanded(*pItem);
+            // A Minotaur's two-handed axe or halberd in the off hand pays no skill speed (S:482).
+            const bool offHandTwoHandedAxe = handIndex == 0 && isTwoHanded(*pItem)
+                && (canonicalSkillName(pItem->skillGroup) == "Axe" || mawIsHalberd(pItem->itemId));
 
             // Swiftness (41, 59): +0.3 for a two-hander, +0.15 for each one-handed weapon (S:464, 495-497).
             if (isSwift(*pRuntime))
@@ -1462,7 +1465,7 @@ double spearStack(const MawRules &rules, const Character &attacker, const ItemTa
                                                                          : nullptr;
 
     if (pMainHand == nullptr || attacker.equipmentRuntime.mainHand.broken
-        || canonicalSkillName(pMainHand->skillGroup) != "Spear"
+        || mawWeaponSkill(attacker, *pMainHand) != "Spear"
         || skillMastery(attacker, "Spear") < SkillMastery::Grandmaster)
     {
         return 0;
@@ -1482,11 +1485,35 @@ int mawFireAuraOnWeapon(
     return int(weaponFireAuraDamage(rules, wearer, held, false, 5));
 }
 
+std::optional<std::pair<int, int>> mawArtifactHitOnWeapon(
+    const MawRules &rules, const Character &wearer, const ItemDefinition &weapon, const InventoryItem &item)
+{
+    if (rules.itemTable() == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    EquippedItemRuntimeState state;
+    state.specialEnchantId = item.specialEnchantId;
+    state.rulesetFields = item.rulesetFields;
+    const HeldWeapon held = {&weapon, &state, weapon.equipStat == "Missile", &wearer};
+    const std::optional<MawEnchantRange> range = artifactHitRange(rules, wearer, *rules.itemTable(), held, 0, 5);
+
+    if (!range)
+    {
+        return std::nullopt;
+    }
+
+    // As a blow rolls it (MawCombatRules::meleeAttack).
+    const int minimum = int(mawRound(range->minimum));
+    return std::pair(minimum, std::max(minimum, int(mawRound(range->maximum))));
+}
+
 double mawSpearStackPercent(const MawRules &rules, const Character &attacker, const ItemTable &itemTable)
 {
     const ItemDefinition *pMainHand = attacker.equipment.mainHand != 0 ? itemTable.get(attacker.equipment.mainHand)
                                                                          : nullptr;
-    const bool halberd = pMainHand != nullptr && canonicalSkillName(pMainHand->skillGroup) == "Spear"
+    const bool halberd = pMainHand != nullptr && mawWeaponSkill(attacker, *pMainHand) == "Spear"
         && isTwoHanded(*pMainHand);
     const double multiplier = mawCharacterAttackDelay(
         rules, attacker, itemTable, CharacterAttackMode::Melee, 0).damageMultiplier;
@@ -1772,7 +1799,8 @@ MawPowerReport mawPowerReport(
     const ItemTable &itemTable,
     const StandardItemEnchantTable *pStandardItemEnchantTable,
     const SpecialItemEnchantTable *pSpecialItemEnchantTable,
-    int partyCount)
+    int partyCount,
+    const std::string *pSpellName)
 {
     CharacterAttackOnMonster context;
     context.pCharacter = &character;
@@ -1842,10 +1870,10 @@ MawPowerReport mawPowerReport(
             rules.auraSkill(5, &character)),
         weaponExtra(heldWeapons(character, itemTable, false, true)));
 
-    // The attack spell, else the quick spell: its average with Intellect or Personality, the Shaman's schools and the
-    // spell crit, plus the weapons' enchantments and Fire Aura as a spell carries them, per its recovery.
-    const std::string &spellName = !character.attackSpellName.empty() ? character.attackSpellName
-                                                                      : character.quickSpellName;
+    // The first spell of the battle orders, else the quick spell: its average with Intellect or Personality, the
+    // Shaman's schools and the spell crit, plus the weapons' enchantments and Fire Aura as a spell carries them, per its
+    // recovery.
+    const std::string &spellName = pSpellName != nullptr ? *pSpellName : mawPowerSpellName(character);
     const SpellEntry *pSpell = rules.spellTable() != nullptr && !spellName.empty()
         ? rules.spellTable()->findByName(spellName)
         : nullptr;
@@ -1941,6 +1969,44 @@ MawPowerReport mawPowerReport(
     }
 
     return report;
+}
+
+const std::string &mawPowerSpellName(const Character &character)
+{
+    for (const BattleOrder &order : character.battleOrders)
+    {
+        if (order.enabled && order.kind == BattleOrderKind::Spell && !order.spellName.empty())
+        {
+            return order.spellName;
+        }
+    }
+
+    return character.quickSpellName;
+}
+
+std::optional<std::string> mawStrongestSchoolSpell(
+    const MawRules &rules, const Character &character, const std::string &canonicalSchool)
+{
+    if (rules.spellTable() == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    // A school's spells run from its first to its last by level, so the highest id is the strongest.
+    const SpellEntry *pBest = nullptr;
+
+    for (const uint32_t spellId : character.knownSpellIds)
+    {
+        const SpellEntry *pSpell = rules.spellTable()->findById(int(spellId));
+
+        if (pSpell != nullptr && (pBest == nullptr || pSpell->id > pBest->id)
+            && resolveMagicSkillName(spellId) == canonicalSchool && mawCasterSpellDice(rules, character, *pSpell))
+        {
+            pBest = pSpell;
+        }
+    }
+
+    return pBest != nullptr ? std::optional<std::string>(pBest->name) : std::nullopt;
 }
 
 std::optional<MawSpellDice> mawCasterSpellDice(const MawRules &rules, const Character &caster, const SpellEntry &spell)
@@ -2055,6 +2121,13 @@ bool MawCombatRules::weaponKindMultiplierApplies() const
 {
     // DM:420-461 rebuilds the blow from the weapon's range; the artifacts' x2 rides on their on-hit damage
     // (artifactHitRange), and the relics and slaying enchantments have none (CMB-1).
+    return false;
+}
+
+bool MawCombatRules::addsWeaponElementalDamage() const
+{
+    // resolveCharacterAttack adds the weapons' enchantments, Fire Auras and artifacts itself: to a blow as its
+    // elements, to an arrow's own damage (stage_weaponRecompute).
     return false;
 }
 
@@ -2344,8 +2417,9 @@ void MawCombatRules::summonBossFamilyMember(
         return;
     }
 
-    const int16_t familyA = int16_t((summonerState.monsterId - 1) / 3 * 3 + 1);
-    const int16_t monsterId = std::uniform_real_distribution<double>(0, 1)(rng) < 0.75 ? familyA : familyA + 1;
+    const MawMonsterFamily family = mawMonsterFamily(world.monsterTable(), summonerState.monsterId);
+    const int16_t monsterId =
+        int16_t(std::uniform_real_distribution<double>(0, 1)(rng) < 0.75 ? family.row(1) : family.row(2));
     // Halfway to the party, at MAW's summon speed 350.
     GameplayMonsterSpawnRequest request;
     request.monsterId = monsterId;
@@ -2507,7 +2581,7 @@ int MawCombatRules::legendaryProtection(Party &party, size_t memberIndex, int da
 
     readyMinutes = m_gameMinutes + 150;
     member.health = Party::effectiveMaximumHealth(member) / 4;
-    m_statusMessages.push_back("Legendary power saves you from lethal damage");
+    m_statusMessages.push_back(Engine::tr("Legendary power saves you from lethal damage"));
     return 0;
 }
 
@@ -2541,7 +2615,7 @@ int MawCombatRules::divineProtection(Party &party, size_t memberIndex, int damag
     readyMinutes = m_gameMinutes + 150;
     const int maximum = pMember->maxHealth + pMember->permanentBonuses.maxHealth + pMember->magicalBonuses.maxHealth;
     pMember->health += int(mawRound(maximum * 0.25));
-    m_statusMessages.push_back("Divine Protection saves you from lethal damage");
+    m_statusMessages.push_back(Engine::tr("Divine Protection saves you from lethal damage"));
     return std::min(damage, pMember->health - 1);
 }
 
@@ -2710,7 +2784,7 @@ void MawCombatRules::updateArtifacts(Party &party, IGameplayWorldRuntime &world)
 
     if (repaired && world.eventRuntimeState() != nullptr)
     {
-        world.eventRuntimeState()->statusMessages.push_back("Repaired");
+        world.eventRuntimeState()->statusMessages.push_back(Engine::tr("Repaired"));
     }
 
     for (size_t index = 0; index < party.members().size(); ++index)
@@ -2855,7 +2929,8 @@ void MawCombatRules::updateCombat(Party &party, IGameplayWorldRuntime &world, fl
 
                 if (pRuntimeState != nullptr)
                 {
-                    pRuntimeState->statusMessages.push_back(member.name + "'s poison effect expired");
+                    pRuntimeState->statusMessages.push_back(
+                        Engine::tr("{name}'s poison effect expired", {{"name", member.name}}));
                 }
 
                 continue;
@@ -2884,7 +2959,7 @@ void MawCombatRules::updateCombat(Party &party, IGameplayWorldRuntime &world, fl
             if (party.member(memberIndex)->health < -10 * deathThreshold(*party.member(memberIndex))
                 && party.dismissMemberToAdventurersInn(memberIndex))
             {
-                m_statusMessages.push_back("Disintegrated");
+                m_statusMessages.push_back(Engine::tr("Disintegrated"));
             }
         }
     }
@@ -3049,7 +3124,7 @@ void MawCombatRules::applyPartyHitEffects(Party &party, const PartyHitOnMonster 
     }
 
     // The Doom modes, indoors: a struck monster wakes the ones within 256 units and shows them on the map (DM:217-230).
-    if (hit.pWorld != nullptr && hit.targetActorIndex && hit.pWorld->isIndoorMap()
+    if (hit.pWorld != nullptr && hit.targetActorIndex && !hit.pWorld->isOpenAirMap()
         && mawModelConfig(m_rules.options(), int(party.members().size())).doomMode)
     {
         hit.pWorld->revealActorsAround(*hit.targetActorIndex, 256.0f);
@@ -3604,7 +3679,7 @@ void MawCombatRules::applyMonsterHitEffects(
     CombatDamageType type) const
 {
     static thread_local std::mt19937 rng(std::random_device{}());
-    const bool special = !immuneToMonsterSpecialAttacks(*party.member(memberIndex));
+    const bool special = !immuneToMonsterSpecialAttacks(*party.combatant(memberIndex));
     std::optional<size_t> attackerIndex;
     GameplayRuntimeActorState attackerState = {};
 
@@ -3899,21 +3974,26 @@ std::optional<std::string> MawCombatRules::partyHitStatusText(const PartyHitStat
         ? m_rules.spellTable()->findById(int(status.spellId))
         : nullptr;
     const bool spell = pSpell != nullptr;
-    const std::string &name = spell ? pSpell->name : status.attackerName;
+    const std::string name = spell ? Engine::localize(pSpell->name, "spell") : status.attackerName;
     const std::string points = mawShortNumber(status.damage, true, 4);
-    const std::string critical = status.critical ? "\f65516(CRIT!)\f00000" : "";
+    const std::string critical = status.critical ? "\f65516" + Engine::tr("(CRIT!)") + "\f00000" : "";
 
     if (spell && status.monstersHit >= 2)
     {
-        return name + " hits for a total of " + points + " points!" + critical;
+        return Engine::tr("{attacker} hits for a total of {damage} points!", {{"attacker", name}, {"damage", points}})
+            + critical;
     }
 
     if (status.killed)
     {
-        return name + " inflicts " + points + " points killing " + status.targetName + "!" + critical;
+        return Engine::tr("{attacker} inflicts {damage} points killing {target}!",
+                   {{"attacker", name}, {"damage", points}, {"target", status.targetName}})
+            + critical;
     }
 
-    return name + (status.missile && !spell ? " shoots " : " hits ") + status.targetName + " for " + points
-        + " points!" + critical;
+    return Engine::tr(status.missile && !spell ? "{attacker} shoots {target} for {damage} points!"
+                                               : "{attacker} hits {target} for {damage} points!",
+               {{"attacker", name}, {"target", status.targetName}, {"damage", points}})
+        + critical;
 }
 }

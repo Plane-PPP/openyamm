@@ -1,3 +1,15 @@
+# OpenYAMM2.3 / Minotaur — integration in progress, no new Windows build
+
+Base54efa0e975420b7544837244ec5d465923cf1dc4; official target f4a6b8032759a218505532b2600ac56b6d80c7af.
+Isolated integration/minotaur-v2.3-20261113 worktree; pending merge, no new source commit yet.
+Medusa content pinned347fb2185a29dfd3d2eca47e61f2a13e476cf65b; importer excludes TEST ONLY72200416.
+Save OYMINO1/v180 maps to179, previous155 to154. Genuine frozen155 captured before merge.
+Linux game and both test targets built. Focused unit269cases/49,765assertions and native26/3,328passed.
+Independent copies of dependencies; native safe-heavy-run profile16/18GiB/jobs4.
+This host's SDL is configured for headless checks as in its previous build; desktop visuals remain unverified.
+No Windows CI, package or publication started; previous verified1.21 remains the actual released package.
+Current status and exact results: INTEGRATION-STATUS.md and docs/research/minotaur-2.3-integration.md.
+
 # Persistent Minotaur 1.21 Release — 2026-11-07
 
 The already tested ZIP was promoted unchanged to [GitHub Releases](https://github.com/Plane-PPP/openyamm/releases/tag/minotaur-1.21-c9949bbc7301-28-1).

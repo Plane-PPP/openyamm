@@ -1,3 +1,13 @@
+# OpenYAMM2.3 integration — in progress (2026-11-13)
+
+Ported to official f4a6b803 with Project Medusa and the desktop portrait/paperdoll importer.
+Retained C2 creation, Minotaur Lethal Strike/Axe/DR formulas and explicit old-save mappings.
+New mod envelope180 maps to upstream179; frozen production155 maps to154.
+Fixed the merge interaction that reported a Lethal Strike kill against an invulnerable indoor actor.
+Linux game/unit/runtime built; focused unit269cases/49,765assertions and native26/3,328passed.
+No Windows build, release or manual gameplay claim.
+Roguelike skeleton and final verification remain separate final steps. See docs/research/minotaur-2.3-integration.md.
+
 # Persistent 1.21 download (2026-11-07)
 
 Published the unchanged verified Windows update in [GitHub Releases](https://github.com/Plane-PPP/openyamm/releases/tag/minotaur-1.21-c9949bbc7301-28-1),

@@ -1,5 +1,6 @@
 #include "game/gameplay/GameplayActorService.h"
 
+#include "game/gameplay/PartyHostileAlert.h"
 #include "game/party/SpellIds.h"
 #include "game/tables/MonsterTable.h"
 #include "game/tables/SpellTable.h"
@@ -129,6 +130,26 @@ float GameplayActorService::configuredPartyEngagementRange() const
     return m_partyEngagementRange;
 }
 
+void GameplayActorService::setWorldPartyHitReach(std::optional<float> reach)
+{
+    m_worldPartyHitReach = reach;
+}
+
+float GameplayActorService::partyHitReach() const
+{
+    return std::min(PartyYellowAlertDistance, m_worldPartyHitReach.value_or(PartyYellowAlertDistance));
+}
+
+void GameplayActorService::setMm9PartyAwareness(const Mm9PartyAwareness &awareness)
+{
+    m_mm9PartyAwareness = awareness;
+}
+
+const Mm9PartyAwareness &GameplayActorService::mm9PartyAwareness() const
+{
+    return m_mm9PartyAwareness;
+}
+
 void GameplayActorService::setMeleeVerticalReach(float share)
 {
     m_meleeVerticalReach = share;
@@ -137,6 +158,23 @@ void GameplayActorService::setMeleeVerticalReach(float share)
 void GameplayActorService::setLevelRadiusLimit(float limit)
 {
     m_levelRadiusLimit = limit;
+}
+
+void GameplayActorService::setFriendlyActorsBlockParty(bool enabled)
+{
+    m_friendlyActorsBlockParty = enabled;
+}
+
+bool GameplayActorService::actorBlocksPartyMovement(
+    bool hostileToParty,
+    GameplayActorControlMode controlMode) const
+{
+    if (hostileToParty)
+    {
+        return true;
+    }
+
+    return m_friendlyActorsBlockParty && !isPartyControlledActor(controlMode);
 }
 
 bool GameplayActorService::meleeReachesVertically(float share, float attackerFootZ, float attackerHeight,
@@ -551,7 +589,8 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
                 : spellName == "enslave"
                 ? GameplayActorControlMode::Enslaved
                 : GameplayActorControlMode::ControlUndead;
-        state.hostileToParty = false;
+        // A berserk monster stays hostile to the party too: it attacks whoever is nearest.
+        state.hostileToParty = spellName == "berserk";
         state.hasDetectedParty = false;
         result.disposition = SharedSpellDisposition::Applied;
         result.effectKind = SharedSpellEffectKind::Control;
@@ -602,6 +641,28 @@ GameplayActorService::SharedSpellEffectResult GameplayActorService::tryApplyShar
     }
 
     return result;
+}
+
+bool GameplayActorService::hasRunningSpellEffectTimer(const GameplayActorSpellEffectState &state)
+{
+    return state.slowRemainingSeconds > 0.0f
+        || state.stunRemainingSeconds > 0.0f
+        || state.paralyzeRemainingSeconds > 0.0f
+        || state.fearRemainingSeconds > 0.0f
+        || state.blindRemainingSeconds > 0.0f
+        || state.controlRemainingSeconds > 0.0f
+        || state.shrinkRemainingSeconds > 0.0f
+        || state.darkGraspRemainingSeconds > 0.0f
+        || state.dayOfProtectionRemainingSeconds > 0.0f
+        || state.hourOfPowerRemainingSeconds > 0.0f
+        || state.painReflectionRemainingSeconds > 0.0f
+        || state.hammerhandsRemainingSeconds > 0.0f
+        || state.hasteRemainingSeconds > 0.0f
+        || state.shieldRemainingSeconds > 0.0f
+        || state.stoneskinRemainingSeconds > 0.0f
+        || state.blessRemainingSeconds > 0.0f
+        || state.fateRemainingSeconds > 0.0f
+        || state.heroismRemainingSeconds > 0.0f;
 }
 
 void GameplayActorService::updateSpellEffectTimers(
@@ -705,8 +766,22 @@ bool GameplayActorService::isPartyControlledActor(GameplayActorControlMode contr
     }
 }
 
-bool GameplayActorService::monsterIdsAreFriendly(int16_t leftMonsterId, int16_t rightMonsterId) const
+bool GameplayActorService::monsterIdsAreFriendly(
+    int16_t leftMonsterId,
+    int16_t rightMonsterId,
+    const std::unordered_map<uint32_t, int32_t> *pRelationOverrides) const
 {
+    if (pRelationOverrides != nullptr && !pRelationOverrides->empty())
+    {
+        const auto overrideIterator =
+            pRelationOverrides->find(relationOverrideKey(uint32_t(leftMonsterId), uint32_t(rightMonsterId)));
+
+        if (overrideIterator != pRelationOverrides->end())
+        {
+            return overrideIterator->second <= 0;
+        }
+    }
+
     return m_pMonsterTable != nullptr
         && m_pMonsterTable->getRelationBetweenMonsters(leftMonsterId, rightMonsterId) <= 0;
 }
@@ -920,8 +995,26 @@ GameplayActorTargetPolicyResult GameplayActorService::resolveActorTargetPolicy(
         uint32_t(actor.relationMonsterId > 0 ? actor.relationMonsterId : actor.monsterId);
     const uint32_t targetRelationMonsterId =
         uint32_t(target.relationMonsterId > 0 ? target.relationMonsterId : target.monsterId);
-    const auto overrideIterator =
-        pRelationOverrides->find(relationOverrideKey(actorRelationMonsterId, targetRelationMonsterId));
+    const auto findRow = [pRelationOverrides](uint32_t left, uint32_t right)
+    {
+        return pRelationOverrides->find(relationOverrideKey(left, right));
+    };
+    auto overrideIterator = pRelationOverrides->end();
+
+    if (actor.group != 0)
+    {
+        overrideIterator = findRow(relationGroupSide(actor.group), targetRelationMonsterId);
+    }
+
+    if (overrideIterator == pRelationOverrides->end() && target.group != 0)
+    {
+        overrideIterator = findRow(actorRelationMonsterId, relationGroupSide(target.group));
+    }
+
+    if (overrideIterator == pRelationOverrides->end())
+    {
+        overrideIterator = findRow(actorRelationMonsterId, targetRelationMonsterId);
+    }
 
     if (overrideIterator == pRelationOverrides->end())
     {
@@ -972,17 +1065,25 @@ GameplayActorTargetPolicyResult GameplayActorService::resolveFactionTargetPolicy
         return result;
     }
 
+    // A berserk monster attacks whatever is nearest, and every monster may fight it back (MM8: "attacking the nearest
+    // living creature"; the original makes it hostile at long range to all but its own group).
+    const bool berserk = actor.controlMode == GameplayActorControlMode::Berserk
+        || target.controlMode == GameplayActorControlMode::Berserk;
+    // A monster hit by another fights it back at long range, whatever their factions (MM6-MM8 lastCharacterIdToHit;
+    // OE Actor::FindClosestActor): how Evenmorn's gargoyles answer the ghosts.
+    const bool strikesBack = actor.lastActorAttackerId && *actor.lastActorAttackerId == target.actorId;
+
     const int factionRelation = m_pMonsterTable != nullptr
         ? m_pMonsterTable->getRelationBetweenMonsters(actorRelationMonsterId, targetRelationMonsterId)
         : 0;
     const bool hostileByFaction = factionRelation > 0;
 
-    if (!hostileByFaction && !hostileToSummon)
+    if (!hostileByFaction && !hostileToSummon && !berserk && !strikesBack)
     {
         return result;
     }
 
-    if (hostileToSummon)
+    if (hostileToSummon || berserk || strikesBack)
     {
         if (!actorCanEngageActorTarget(m_pMonsterTable, actor, target))
         {

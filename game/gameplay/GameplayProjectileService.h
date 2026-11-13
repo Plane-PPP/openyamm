@@ -6,6 +6,7 @@
 #include <functional>
 #include <cstdint>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -114,12 +115,18 @@ public:
         bool weakerOfPhysicalAndFire = false;
         // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); saved.
         float explosionRadius = 0.0f;
+        // A party shot's damage range, rolled again for each monster its blast reaches, as the original rolls the
+        // shooter's ranged damage for each (Carnage arrows); 0: the blast deals its one damage. Not saved.
+        int blastMinimumDamage = 0;
+        int blastMaximumDamage = 0;
         // A party missile or spell whose damage was a critical hit, for the status line and combat log where it
         // lands; not saved.
         bool critical = false;
         // An event's missile (evt.FireMissile): it passes the party, whose damage the event deals itself, and bursts
         // at its target when its flight time ends unless it strikes something first; saved.
         bool eventMissile = false;
+        // An event missile that strikes the party in its path (EventMissileRequest::strikesParty); not saved.
+        bool eventMissileStrikesParty = false;
         float targetX = 0.0f;
         float targetY = 0.0f;
         float targetZ = 0.0f;
@@ -204,11 +211,15 @@ public:
         bool weakerOfPhysicalAndFire = false;
         // The radius its damage reaches around the impact when it is not the spell's (Carnage arrows); not saved.
         float explosionRadius = 0.0f;
+        // ProjectileState::blastMinimumDamage and blastMaximumDamage.
+        int blastMinimumDamage = 0;
+        int blastMaximumDamage = 0;
         // Its damage was a critical hit (ProjectileState::critical).
         bool critical = false;
         // An event's missile (ProjectileState::eventMissile), reaching its target in flightSeconds (0: at the
         // object's speed).
         bool eventMissile = false;
+        bool eventMissileStrikesParty = false;
         float flightSeconds = 0.0f;
         bool useActorHitChance = false;
         bool turnBasedPendingAction = false;
@@ -366,6 +377,16 @@ public:
         bool directImpactActor = false;
     };
 
+    // A standing destructible that takes damage (devdocs/INDOOR_DESTRUCTIBLES.md), by its box: the world's id for it
+    // (an indoor scene id, an outdoor source object index). The one the missile struck takes only the direct hit.
+    struct ProjectileAreaImpactDestructibleFacts
+    {
+        uint32_t id = 0;
+        GameplayWorldPoint boundsMin = {};
+        GameplayWorldPoint boundsMax = {};
+        bool directImpact = false;
+    };
+
     struct ProjectileAreaImpactInput
     {
         float impactX = 0.0f;
@@ -385,6 +406,12 @@ public:
     struct ProjectileAreaImpactActorHit
     {
         size_t actorIndex = 0;
+        int damage = 0;
+    };
+
+    struct ProjectileAreaImpactDestructibleHit
+    {
+        uint32_t id = 0;
         int damage = 0;
     };
 
@@ -439,6 +466,8 @@ public:
         GameplayWorldPoint point;
         std::string colliderName;
         size_t worldFaceIndex = static_cast<size_t>(-1);
+        // A destructible decoration the missile struck (an indoor entity index; kind World, no face).
+        size_t worldEntityIndex = static_cast<size_t>(-1);
         size_t actorIndex = static_cast<size_t>(-1);
         uint32_t actorId = 0;
         int targetArmorClass = 0;
@@ -526,6 +555,9 @@ public:
         bool canHitParty = true;
         // Turn-based combat is on: a party shot the queue waits on vanishes once far from the party.
         bool turnBasedActive = false;
+        // The party's hit reach (GameplayActorService::partyHitReach): a party shot vanishes once farther from the
+        // party; 0 keeps the shot's own lifetime.
+        float partyShotReach = 0.0f;
         int nonPartyProjectileDamage = 0;
 
         std::vector<ProjectileAreaImpactActorFacts> areaActors;
@@ -577,6 +609,9 @@ public:
         bool eventSource = false;
         bool targetHostileToParty = false;
         bool targetPartyControlled = false;
+        // The shooting actor is the party's enemy (not looked up for a summon's shot or a target the party does not
+        // control).
+        bool sourceHostileToParty = false;
         bool sourceMonsterKnown = false;
         bool sourceMonsterFriendlyToTarget = false;
     };
@@ -601,6 +636,8 @@ public:
         bool unavailableForCombat = false;
         bool hostileToParty = false;
         bool friendlyToTrapSource = false;
+        // A wall or closed door stands between the spike and the creature (indoors), so it cannot trigger it (OY-490).
+        bool blockedFromTrap = false;
     };
 
     struct FireSpikeActiveTrapFacts
@@ -638,6 +675,10 @@ public:
         float z = 0.0f;
         std::vector<FireSpikeTrapActorFacts> actors;
     };
+
+    // Whether the creature is near enough to set the spike off (buildFireSpikeTrapTrigger's reach), before the
+    // other tests: the indoor world tests the line of sight only for these.
+    static bool fireSpikeTrapReaches(const FireSpikeTrapTriggerInput &input, const FireSpikeTrapActorFacts &actor);
 
     struct FireSpikeTrapTriggerResult
     {
@@ -869,8 +910,25 @@ public:
     ProjectileAreaImpact buildProjectileAreaImpact(
         const ProjectileState &projectile,
         const ProjectileAreaImpactInput &input) const;
+    // The destructibles an area impact (a fireball's blast) reaches, each within the radius of the impact point by its
+    // box, and the damage each takes: the blast's damage, as an actor takes it. Only a party's or an event's missile
+    // breaks the map (a monster's does not), and the destructible it struck takes only its direct hit.
+    static std::vector<ProjectileAreaImpactDestructibleHit> buildProjectileAreaDestructibleHits(
+        const ProjectileState &projectile,
+        const GameplayWorldPoint &impactPoint,
+        float impactRadius,
+        int nonPartyProjectileDamage,
+        const std::vector<ProjectileAreaImpactDestructibleFacts> &destructibles);
     ProjectileDirectActorImpact buildProjectileDirectActorImpact(
         const ProjectileState &projectile,
+        const ProjectileDirectActorImpactInput &input) const;
+    // What a party missile's blast deals one monster it reaches, before the monster's resistances. A shot with a
+    // blast damage range (Carnage) rolls it again for the monster and adds what a direct hit on it would (its bonus
+    // against the monster's kind, a Shield's halving), as MM8 deals each monster in the blast the shooter's ranged
+    // damage against it; other blasts deal `blastDamage`.
+    int partyBlastDamageToActor(
+        const ProjectileState &projectile,
+        int blastDamage,
         const ProjectileDirectActorImpactInput &input) const;
     void expireProjectile(
         ProjectileState &projectile,
@@ -918,6 +976,15 @@ public:
         const ItemTable *pItemTable,
         const MonsterTable::MonsterStatsEntry &targetStats,
         int targetCurrentHp);
+    // A party arrow's direct hit gains its bow's elemental enchantment and artifact damage, rolled for the hit and
+    // after the slaying multiplier and shield halving, as MM8 adds it; each element resists its own part. Nothing for
+    // spells, blaster shots, an explosion's splash or rules that add it themselves.
+    static void addPartyArrowElements(
+        PartyMissileSource &source,
+        const ProjectileState &projectile,
+        const Party *pParty,
+        const ItemTable *pItemTable,
+        std::mt19937 &rng);
     // A monster's every resistance, for the rules that pick among them.
     static MonsterDamageResistances monsterDamageResistances(const MonsterTable::MonsterStatsEntry &stats);
 

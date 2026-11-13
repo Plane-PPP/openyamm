@@ -4,7 +4,8 @@
 #   tag vX.Y              the same, then publishes release X.Y to https://jasicek.net/openyamm/ and GitHub Releases
 #   Run workflow + X.Y    the same, then publishes a test release to https://jasicek.net/openyamm-staging/
 # Only the publish job holds secrets: the GitHub environment "release" (tags v* and main only) carries the manifest
-# signing key, the Android release key and the deploy key of the server.
+# signing key, the Android release key and the deploy key of the server. The one exception is the repository secret
+# OPENYAMM_STATS_KEY_SOURCE, which every build compiles in (below).
 name: Packages
 
 run-name: >-
@@ -27,6 +28,12 @@ on:
 
 permissions:
   contents: read
+
+# The private source that holds the release key sealing the playthrough statistics (cmake/PlaythroughStatisticsKey.cmake),
+# from a repository secret, read by every CMake configure, the Android Gradle build's included. Without it the packages
+# seal with the public development key and label their statistics "Development build".
+env:
+  OPENYAMM_STATS_KEY_SOURCE: ${{ secrets.OPENYAMM_STATS_KEY_SOURCE }}
 
 concurrency:
   group: packages-${{ github.event_name }}-${{ github.ref }}
@@ -97,6 +104,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Language packs: their text, fonts, dubbed sounds and videos (optional packs, tools/packaging/packs.yml).
           - profile: desktop
             assets: |
               /assets_dev/_legacy/sprites_original/
@@ -104,8 +112,12 @@ jobs:
               /assets_dev/worlds/mm6/
               /assets_dev/worlds/mm7/
               /assets_dev/worlds/mm8/
+              /assets_dev/worlds/mm9/
+              /assets_dev/languages/
+              !/assets_dev/languages/templates/
           # Android packs the ASTC textures of assets_cooked/android; the desktop BC7 cooks in assets_dev stay out of
-          # the checkout (tools/package_runtime_assets.py reads their names from the git index).
+          # the checkout (tools/package_runtime_assets.py reads their names from the git index). The APK carries no
+          # language sounds or videos (devdocs/LOCALIZATION.md), so they stay out of its checkout.
           - profile: android
             assets: |
               /assets_cooked/android/
@@ -114,6 +126,12 @@ jobs:
               /assets_dev/worlds/mm6/
               /assets_dev/worlds/mm7/
               /assets_dev/worlds/mm8/
+              /assets_dev/worlds/mm9/
+              /assets_dev/languages/
+              !/assets_dev/languages/templates/
+              !/assets_dev/languages/*/engine/audio/
+              !/assets_dev/languages/*/engine/videos/
+              !/assets_dev/languages/*/worlds/
               !/assets_dev/worlds/*/textures_x4/
               !/assets_dev/**/models/textures/*.oytex
               !/assets_dev/**/terrain_materials/*/*.oytex
@@ -759,9 +777,10 @@ jobs:
             git fetch --force --depth=1 origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           fi
           if [ "$GITHUB_REF_TYPE" = tag ] && [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag ]; then
-            # The annotated tag's message is the release notes of the update question.
-            git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:subject)%0a%(contents:body)' \
-              > "$RUNNER_TEMP/notes.txt"
+            # The annotated tag's message is the release notes of the update question, line breaks kept
+            # (%(contents:subject) would join the first paragraph's lines); a signature is cut off.
+            git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents)' \
+              | sed '/^-----BEGIN [A-Z ]*SIGNATURE-----$/,$d' > "$RUNNER_TEMP/notes.txt"
             notes=(--notes "$RUNNER_TEMP/notes.txt")
           fi
           replace=()
@@ -827,8 +846,9 @@ jobs:
           - **Android** (64-bit ARM): install the `android-arm64.apk`, allowing your browser or file manager to install
             apps when asked.
 
-          The first start downloads the game content (about 5 GB, 3 GB on Android); later updates download only what
-          changed, from inside the game. Saves and settings stay in the extracted folder on Windows and Linux, and in
+          The first start downloads the game content (about 9 GB, 5.3 GB on Android); choosing a language with dubbed
+          voices downloads them too (70-220 MB). Later updates download only what changed, from inside the game. Saves
+          and settings stay in the extracted folder on Windows and Linux, and in
           `~/Library/Application Support/OpenYAMM` on macOS.
           EOF
           } > "$notes"

@@ -1,5 +1,6 @@
 #include "game/tables/HouseTable.h"
 
+#include "game/party/SkillData.h"
 #include "game/tables/MapStats.h"
 #include "game/tables/MergedBaseTables.h"
 #include "game/tables/ItemTable.h"
@@ -125,6 +126,10 @@ std::optional<size_t> specialEnchantSlotIndex(const std::string &equipStat)
     return static_cast<size_t>(std::distance(EquipStats.begin(), statIt));
 }
 
+// A ledger page's sanity limit: MM9 restocks with 15 rolls per range, and its biggest spellbook shop (Rober's Magic,
+// Lindisfarne) stocks 74 books.
+constexpr size_t MaxLedgerStockPageSlots = 128;
+
 size_t expectedVendorStockSlotCount(VendorStockProfile profile)
 {
     switch (profile)
@@ -179,6 +184,27 @@ VendorStockProfile parseVendorStockProfile(const std::string &value)
 bool parseBool(const std::string &value)
 {
     return value == "1" || value == "true" || value == "True";
+}
+
+// A world venue's learn_skills cell: canonical OpenYAMM skill names separated by '|', each once; false on any other.
+bool parseLearnSkills(const std::string &value, std::vector<std::string> &skills)
+{
+    skills.clear();
+    std::stringstream stream(value);
+    std::string token;
+
+    while (std::getline(stream, token, '|'))
+    {
+        if (!skillIdForSkillName(token) || canonicalSkillName(token) != token
+            || std::find(skills.begin(), skills.end(), token) != skills.end())
+        {
+            return false;
+        }
+
+        skills.push_back(token);
+    }
+
+    return true;
 }
 
 HouseEntry::DeterministicStockPage *findOrAddStockPage(
@@ -697,6 +723,7 @@ bool HouseTable::loadFromRows(const std::vector<std::vector<std::string>> &rows)
 {
     m_entries.clear();
     m_vendorAliases.clear();
+    m_serviceAliases.clear();
 
     for (const std::vector<std::string> &row : rows)
     {
@@ -863,6 +890,25 @@ bool HouseTable::appendVendorRows(
         entry.openHour = row.size() > 32 && !row[31].empty() ? parseSigned(row[31]) : 0;
         entry.closeHour = row.size() > 32 && !row[32].empty() ? parseSigned(row[32]) : 0;
         entry.resaleCapPercent = row.size() > 33 && !row[33].empty() ? std::clamp(parseSigned(row[33]), 1, 100) : 100;
+        // Optional buy_view column: Ledger (MM9's scrolling list) or Shelf; absent or empty: Shelf.
+        if (row.size() > 34 && !row[34].empty())
+        {
+            if (row[34] == "Ledger")
+            {
+                entry.shopBuyView = ShopBuyView::Ledger;
+            }
+            else if (row[34] != "Shelf")
+            {
+                errorMessage = "unknown buy_view '" + row[34] + "' for vendor " + row[0];
+                return false;
+            }
+        }
+        // Optional learn_skills column: the skills its "Learn Skills" menu teaches at Normal (MM9's shops).
+        if (row.size() > 35 && !parseLearnSkills(row[35], entry.offeredSkills))
+        {
+            errorMessage = "invalid learn_skills '" + row[35] + "' for vendor " + row[0];
+            return false;
+        }
         m_entries.emplace(vendorId, std::move(entry));
     }
 
@@ -960,7 +1006,9 @@ bool HouseTable::appendVendorRows(
         {
             continue;
         }
-        if (entry.deterministicStandardStockPages.empty() || entry.deterministicSpecialStockPages.empty())
+        // A Ledger shop may keep everything in one list (MM9's merchants have no Buy Special).
+        if (entry.deterministicStandardStockPages.empty()
+            || (entry.deterministicSpecialStockPages.empty() && entry.shopBuyView != ShopBuyView::Ledger))
         {
             errorMessage = "vendor " + std::to_string(vendorId) + " has incomplete deterministic stock";
             return false;
@@ -984,11 +1032,17 @@ bool HouseTable::appendVendorRows(
         sortPages(entry.deterministicSpecialStockPages);
         const auto validatePageLayout = [&](const std::vector<HouseEntry::DeterministicStockPage> &pages) -> bool
         {
+            // A shelf holds a fixed number of slots; the ledger scrolls, so a page may hold any number of items
+            // up to MaxLedgerStockPageSlots.
+            const bool ledger = entry.shopBuyView == ShopBuyView::Ledger;
             const size_t expectedSlotCount = expectedVendorStockSlotCount(entry.vendorStockProfile);
             for (size_t pageOrdinal = 0; pageOrdinal < pages.size(); ++pageOrdinal)
             {
-                if (pages[pageOrdinal].pageIndex != pageOrdinal
-                    || pages[pageOrdinal].items.size() != expectedSlotCount)
+                const size_t slotCount = pages[pageOrdinal].items.size();
+                const bool sizeValid = ledger
+                    ? slotCount > 0 && slotCount <= MaxLedgerStockPageSlots
+                    : slotCount == expectedSlotCount;
+                if (pages[pageOrdinal].pageIndex != pageOrdinal || !sizeValid)
                 {
                     errorMessage = "vendor " + std::to_string(vendorId)
                         + " has a non-contiguous or incorrectly sized stock page";
@@ -1010,7 +1064,8 @@ bool HouseTable::appendVendorRows(
 bool HouseTable::appendServiceVenueRows(
     const std::vector<std::vector<std::string>> &venueRows,
     const std::vector<std::vector<std::string>> &aliasRows,
-    std::string &errorMessage)
+    std::string &errorMessage,
+    const MapStats *pMapStats)
 {
     errorMessage.clear();
     std::unordered_set<std::string> canonicalIds;
@@ -1036,13 +1091,16 @@ bool HouseTable::appendServiceVenueRows(
         const int trainingMaxLevel = parseSigned(row[9]);
         const bool templeCanHeal = parseBool(row[10]);
         const bool templeCanDonate = parseBool(row[11]);
+        // MM9's service venues: temples, training halls, inns (taverns) and banks. A bank charges nothing.
+        const bool isBank = row[6] == "Bank";
+        const bool healsOrDonates = templeCanHeal || templeCanDonate;
         if (serviceId == 0
             || sourceServiceId == 0
-            || (row[6] != "Temple" && row[6] != "Training")
-            || priceMultiplier <= 0.0f
+            || (row[6] != "Temple" && row[6] != "Training" && row[6] != "Tavern" && !isBank)
+            || (isBank ? priceMultiplier < 0.0f : priceMultiplier <= 0.0f)
             || templeHealingTier < 0.0f
             || trainingMaxLevel < 0
-            || (row[6] == "Training" && (templeCanHeal || templeCanDonate))
+            || (row[6] != "Temple" && healsOrDonates)
             || (row[6] == "Temple" && !templeCanHeal && !templeCanDonate)
             || row[3].empty()
             || m_entries.contains(serviceId)
@@ -1057,13 +1115,27 @@ bool HouseTable::appendServiceVenueRows(
         entry.id = serviceId;
         entry.packageId = row[1];
         entry.sourceServiceId = sourceServiceId;
+        if (row.size() > 18 && !row[18].empty())
+        {
+            const MapStatsEntry *map = pMapStats != nullptr ? pMapStats->findByFileName(row[18]) : nullptr;
+            if (map == nullptr)
+            {
+                errorMessage = "unknown service venue map: " + row[18];
+                return false;
+            }
+            entry.mapId = map->id;
+        }
         entry.canonicalId = row[3];
         entry.name = row[4];
         entry.buildingName = row[5];
         entry.type = row[6];
         entry.proprietorName = entry.name;
         entry.priceMultiplier = priceMultiplier;
-        entry.skillPriceMultiplier = entry.priceMultiplier;
+        // Optional skill_price_multiplier column (an inn's skills keep MM9's merchant base; its price multiplier is the
+        // MM6-MM8 tavern value of the food and room prices); empty or absent: the price multiplier.
+        entry.skillPriceMultiplier = row.size() > 17 && !row[17].empty()
+            ? std::strtof(row[17].c_str(), nullptr)
+            : entry.priceMultiplier;
         entry.templeHealingTier = templeHealingTier;
         entry.trainingMaxLevel = trainingMaxLevel;
         entry.templeCanHeal = templeCanHeal;
@@ -1074,6 +1146,19 @@ bool HouseTable::appendServiceVenueRows(
             : DialogueScenePolicy::HouseVideo;
         entry.openHour = 0;
         entry.closeHour = 0;
+        // Optional learn_skills column: what its "Learn Skills" menu teaches; required exactly when can_learn_skills.
+        if (row.size() > 16 && !parseLearnSkills(row[16], entry.offeredSkills))
+        {
+            errorMessage = "invalid learn_skills '" + row[16] + "' for service venue " + row[0];
+            return false;
+        }
+        if (entry.serviceCanLearnSkills == entry.offeredSkills.empty() || !(entry.skillPriceMultiplier >= 0.0f))
+        {
+            errorMessage = "can_learn_skills, learn_skills or skill_price_multiplier invalid for service venue " + row[0];
+            return false;
+        }
+        // A tavern teaches by its list (the tavern menu offers "Learn Skills" unless it teaches nothing)
+        entry.teachesNothing = entry.offeredSkills.empty();
         m_entries.emplace(serviceId, std::move(entry));
     }
 
@@ -1199,6 +1284,42 @@ bool HouseTable::validateVendorStock(
         }
     }
     return true;
+}
+
+size_t HouseTable::removeSpecialEnchantsTheRulesetDoesNotRoll(
+    const ItemTable &itemTable,
+    const SpecialItemEnchantTable &specialItemEnchantTable)
+{
+    size_t removed = 0;
+    const auto removeFrom = [&](std::vector<HouseEntry::DeterministicStockPage> &pages)
+    {
+        for (HouseEntry::DeterministicStockPage &page : pages)
+        {
+            for (HouseEntry::DeterministicStockItem &stockItem : page.items)
+            {
+                const ItemDefinition *pItem = itemTable.get(stockItem.itemId);
+                const SpecialItemEnchantEntry *pEnchant = stockItem.specialEnchantId != 0
+                    ? specialItemEnchantTable.get(stockItem.specialEnchantId)
+                    : nullptr;
+                const std::optional<size_t> slotIndex =
+                    pItem != nullptr ? specialEnchantSlotIndex(pItem->equipStat) : std::nullopt;
+
+                if (pEnchant != nullptr && slotIndex && pEnchant->slotWeights[*slotIndex] <= 0)
+                {
+                    stockItem.specialEnchantId = 0;
+                    ++removed;
+                }
+            }
+        }
+    };
+
+    for (auto &[vendorId, entry] : m_entries)
+    {
+        removeFrom(entry.deterministicStandardStockPages);
+        removeFrom(entry.deterministicSpecialStockPages);
+    }
+
+    return removed;
 }
 
 bool HouseTable::loadAnimationRows(const std::vector<std::vector<std::string>> &rows)

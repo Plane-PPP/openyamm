@@ -1,5 +1,8 @@
 #include "game/rules/maw/MawClassRules.h"
 
+#include "game/mm9/Mm9HirelingTable.h"
+#include "engine/Localization.h"
+
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/PartyHostileAlert.h"
 #include "game/party/Party.h"
@@ -71,16 +74,17 @@ constexpr std::array<RaceSkills, 7> FlatSkillBonuses = {{
 
 struct RaceElement
 {
+    // English, translated where the race notes name it.
     const char *pName;
     int CharacterResistanceSet::*pResistance;
 };
 
-constexpr RaceElement FireElement = {"Fire", &CharacterResistanceSet::fire};
-constexpr RaceElement AirElement = {"Air", &CharacterResistanceSet::air};
-constexpr RaceElement WaterElement = {"Water", &CharacterResistanceSet::water};
-constexpr RaceElement EarthElement = {"Earth", &CharacterResistanceSet::earth};
-constexpr RaceElement MindElement = {"Mind", &CharacterResistanceSet::mind};
-constexpr RaceElement BodyElement = {"Body", &CharacterResistanceSet::body};
+constexpr RaceElement FireElement = {Engine::trNoop("Fire").data(), &CharacterResistanceSet::fire};
+constexpr RaceElement AirElement = {Engine::trNoop("Air").data(), &CharacterResistanceSet::air};
+constexpr RaceElement WaterElement = {Engine::trNoop("Water").data(), &CharacterResistanceSet::water};
+constexpr RaceElement EarthElement = {Engine::trNoop("Earth").data(), &CharacterResistanceSet::earth};
+constexpr RaceElement MindElement = {Engine::trNoop("Mind").data(), &CharacterResistanceSet::mind};
+constexpr RaceElement BodyElement = {Engine::trNoop("Body").data(), &CharacterResistanceSet::body};
 
 // What a race resists by base + perLevel x level; a base of 0 means immune. Elemental races resist their elements by
 // 25 + level, dragons fire by 100 + 2 x level; undead are immune to Body and Mind, vampires to Mind. The immune rows
@@ -107,14 +111,19 @@ constexpr std::array<RaceResistances, 8> RaceResistanceTable = {{
 // "A, B and C".
 std::string joinedList(const std::vector<std::string> &names)
 {
-    std::string text;
-
-    for (size_t index = 0; index < names.size(); ++index)
+    if (names.empty())
     {
-        text += (index == 0 ? "" : index + 1 == names.size() ? " and " : ", ") + names[index];
+        return {};
     }
 
-    return text;
+    std::string text = names.front();
+
+    for (size_t index = 1; index + 1 < names.size(); ++index)
+    {
+        text += ", " + names[index];
+    }
+
+    return names.size() == 1 ? text : Engine::tr("{list} and {last}", {{"list", text}, {"last", names.back()}});
 }
 }
 
@@ -164,13 +173,15 @@ std::string mawClassLine(const std::string &className)
 
 double MawClassRules::promotionFactor(const ClassMultiplierEntry &entry) const
 {
-    // Two or three worlds' promotions completed make the kind's final classes Elder or Ultimate (CL:62-108).
-    const int worlds = entry.promotionStep == 2 ? m_rules.promotionWorlds(entry.classKind) : 0;
+    // Two or three worlds' promotions completed make the kind's final classes Elder or Ultimate (CL:62-108); all four
+    // (Chedian's too) make them Supreme, x1.75 (ours, the user 2026-11-09: DEVIATIONS 183).
+    const int worlds = entry.promotionStep == 2 ? std::min(m_rules.promotionWorlds(entry.classKind), 4) : 0;
     return worlds >= 2 ? 0.75 + 0.25 * worlds : 1.0;
 }
 
-// The engine keeps HP and SP per level in bytes: Lua's 2.5 for the Elemental Adept (CL:606) stores 2, and an Elder or
-// Ultimate factor (x1.25, x1.5) truncates to a whole number (CL:97-98, RemoveClassLimits.lua:140-147; CLS-5).
+// The engine keeps HP and SP per level in bytes: Lua's 2.5 for the Elemental Adept (CL:606) stores 2, and an Elder,
+// Ultimate or Supreme factor (x1.25, x1.5, x1.75) truncates to a whole number (CL:97-98, RemoveClassLimits.lua:140-147;
+// CLS-5).
 double MawClassRules::healthPerLevel(const ClassMultiplierEntry &entry) const
 {
     return std::floor(double(entry.healthPerLevel) * promotionFactor(entry));
@@ -281,11 +292,21 @@ void MawClassRules::applyClassBonuses(Character &member) const
     }
 
     const std::string line = mawClassLine(member.className);
+    const ClassMultiplierTable *pClassTable = m_rules.classMultiplierTable();
+    const ClassMultiplierEntry *pClassEntry =
+        pClassTable != nullptr ? pClassTable->get(canonicalClassName(member.className)) : nullptr;
 
     // Items give a Death Knight and a dragon-race character no spell points (CL:793-796).
     if (line == "death_knight" || mawIsDragon(member))
     {
         member.magicalBonuses.maxSpellPoints = 0;
+    }
+    else if (line != "assassin" && pClassEntry != nullptr && pClassEntry->manaMode == ClassManaMode::None)
+    {
+        // A class without mana (Knight, Troll) has none at all: no item, potion or fountain gives it spell points
+        // (the user, 2026-11-13). Its base is 0 (baseMaxSpellPoints), so the bonuses cancel to a maximum of 0.
+        member.magicalBonuses.maxSpellPoints = -(member.maxSpellPoints + member.permanentBonuses.maxSpellPoints);
+        member.spellPoints = std::min(member.spellPoints, 0);
     }
     else if (line == "assassin")
     {
@@ -312,7 +333,10 @@ std::string MawClassRules::displayName(const Party &party, const Character &memb
         ? party.classMultiplierTable()->get(canonicalClassName(member.className))
         : nullptr;
     const int worlds = pEntry != nullptr && pEntry->promotionStep == 2 ? m_rules.promotionWorlds(pEntry->classKind) : 0;
-    return worlds >= 3 ? "Ultimate " + name : worlds == 2 ? "Elder " + name : name;
+    return worlds >= 4 ? Engine::tr("Supreme {class}", {{"class", name}})
+        : worlds == 3  ? Engine::tr("Ultimate {class}", {{"class", name}})
+        : worlds == 2  ? Engine::tr("Elder {class}", {{"class", name}})
+                       : name;
 }
 
 PortraitCounter MawClassRules::portraitCounter(const Character &member) const
@@ -328,9 +352,9 @@ PortraitCounter MawClassRules::portraitCounter(const Character &member) const
         counter.kind = PortraitCounterKind::ComboPoints;
         counter.amount = halves / 2.0;
         counter.pips = 5;
-        counter.title = member.name + " - Combo points";
-        counter.notes.push_back(
-            std::to_string(halves / 2) + (halves % 2 != 0 ? ".5" : "") + " of 5 combo points");
+        counter.title = Engine::tr("{name} - Combo points", {{"name", member.name}});
+        counter.notes.push_back(Engine::tr("{points} of 5 combo points",
+            {{"points", std::to_string(halves / 2) + (halves % 2 != 0 ? ".5" : "")}}));
         std::map<int, std::string> spellsByCost;
 
         for (const MawClassSpell &spell : mawClassSpells(member.className))
@@ -338,16 +362,17 @@ PortraitCounter MawClassRules::portraitCounter(const Character &member) const
             if (spell.comboCost > 0 && member.knownSpellIds.contains(spell.spellId))
             {
                 std::string &names = spellsByCost[spell.comboCost];
-                names += (names.empty() ? "" : ", ") + std::string(spell.pName);
+                names += (names.empty() ? "" : ", ") + Engine::localize(spell.pName, "spell");
             }
         }
 
         for (const auto &[cost, names] : spellsByCost)
         {
-            counter.notes.push_back(std::to_string(cost) + (counter.amount >= cost ? " (ready): " : ": ") + names);
+            counter.notes.push_back(Engine::tr(counter.amount >= cost ? "{cost} (ready): {spells}" : "{cost}: {spells}",
+                {{"cost", cost}, {"spells", names}}));
         }
 
-        counter.notes.push_back("+1 per paying blow or kill, +0.5 per arrow");
+        counter.notes.push_back(Engine::tr("+1 per paying blow or kill, +0.5 per arrow"));
     }
     else if (line == "elementalist")
     {
@@ -360,11 +385,12 @@ PortraitCounter MawClassRules::portraitCounter(const Character &member) const
         counter.kind = PortraitCounterKind::Stacks;
         counter.amount = stacks;
         counter.pips = 10;
-        counter.title = member.name + " - Elemental stacks";
-        counter.notes.push_back(std::to_string(stacks) + (stacks == 1 ? " stack" : " stacks"));
-        counter.notes.push_back("Damage " + percent(1 + 0.1 * stacks) + ", cast delay "
-            + percent(1.5 / (1 + 0.05 * stacks)));
-        counter.notes.push_back("+1 per offensive cast; halves when idle");
+        counter.title = Engine::tr("{name} - Elemental stacks", {{"name", member.name}});
+        counter.notes.push_back(
+            Engine::trn("{count} stack", "{count} stacks", uint64_t(std::max(stacks, 0)), {{"count", stacks}}));
+        counter.notes.push_back(Engine::tr("Damage {damage}, cast delay {delay}",
+            {{"damage", percent(1 + 0.1 * stacks)}, {"delay", percent(1.5 / (1 + 0.05 * stacks))}}));
+        counter.notes.push_back(Engine::tr("+1 per offensive cast; halves when idle"));
     }
 
     return counter;
@@ -383,6 +409,8 @@ void MawClassRules::update(Party &party, const IGameplayWorldRuntime &world, flo
     const float deltaSeconds = m_pendingSeconds;
     m_pendingSeconds = 0;
     updatePromotions(party);
+    m_rules.updateStoryBands(party);
+    scaleHirelings(party);
 
     // Austerity: Identify Monster 10 Grandmaster for everyone on each map, none after a respec until the next.
     if (m_rules.options().challengeMode == RulesetChallengeMode::Austerity)
@@ -549,7 +577,7 @@ void MawClassRules::update(Party &party, const IGameplayWorldRuntime &world, flo
 
     const int hour = world.currentHour();
     // MAW's hour is fractional, so its `hour > 21` starts the night at 21:00 (CLS-6).
-    const bool vampireNight = (hour >= 21 || hour < 5 || world.isIndoorMap()) && world.mapName() != "7d25.blv";
+    const bool vampireNight = (hour >= 21 || hour < 5 || !world.isOpenAirMap()) && world.mapName() != "7d25.blv";
 
     for (size_t memberIndex = 0; memberIndex < party.members().size() && vampireNight; ++memberIndex)
     {
@@ -561,6 +589,60 @@ void MawClassRules::update(Party &party, const IGameplayWorldRuntime &world, flo
             party.applyCharacterBuff(
                 memberIndex, CharacterBuffId::Preservation, 10, 0, 0, 0, SkillMastery::None, uint32_t(memberIndex));
         }
+    }
+}
+
+void MawClassRules::scaleHirelings(Party &party) const
+{
+    const Mm9HirelingTable *pTable = party.mm9HirelingTable();
+
+    if (pTable == nullptr || party.hirelings().empty() || party.members().empty())
+    {
+        return;
+    }
+
+    double memberLevels = 0;
+
+    for (const Character &member : party.members())
+    {
+        memberLevels += member.level;
+    }
+
+    const double partyLevel = memberLevels / double(party.members().size());
+    MawBalanceModel &model = m_rules.model(int(party.members().size()));
+    std::vector<uint32_t> rudeIds;
+
+    for (const Mm9PartyHireling &hireling : party.hirelings())
+    {
+        rudeIds.push_back(hireling.rudeId);
+    }
+
+    for (uint32_t rudeId : rudeIds)
+    {
+        Mm9PartyHireling *pHireling = party.findHireling(rudeId);
+        const Mm9Hireling *pRow = pTable->find(rudeId);
+
+        if (pHireling == nullptr || pRow == nullptr || pRow->level == 0)
+        {
+            continue;
+        }
+
+        const double rowLevel = pRow->level;
+        const double level = std::max(rowLevel, std::floor(partyLevel));
+        Character &character = pHireling->character;
+        const int maxHealth = std::max(1, int(std::lround(pRow->hitPoints * model.health(level) / model.health(rowLevel))));
+
+        if (character.maxHealth != maxHealth && character.maxHealth > 0)
+        {
+            character.health = int(std::lround(double(character.health) * maxHealth / character.maxHealth));
+        }
+
+        character.maxHealth = maxHealth;
+        character.level = uint32_t(level);
+        character.armorClassModifier =
+            pRow->armorClass + int(std::lround(model.armorClass(level) - model.armorClass(rowLevel)));
+        pHireling->rulesDamageScale = float(model.power(level) / model.power(rowLevel));
+        pHireling->rulesSkillScale = float(model.skill(level) / std::max(1.0, model.skill(rowLevel)));
     }
 }
 
@@ -919,13 +1001,14 @@ std::vector<std::string> MawClassRules::raceNotes(const Character &character) co
         {
             if (entry.race == character.raceId && pSkill != nullptr)
             {
-                skills.push_back(displaySkillName(pSkill));
+                skills.push_back(Engine::localize(displaySkillName(pSkill), "skill"));
             }
         }
 
         if (!skills.empty())
         {
-            notes.push_back("+3 to " + joinedList(skills) + ", and +1 more per 10 skill levels.");
+            notes.push_back(
+                Engine::tr("+3 to {skills}, and +1 more per 10 skill levels.", {{"skills", joinedList(skills)}}));
         }
     }
 
@@ -937,7 +1020,7 @@ std::vector<std::string> MawClassRules::raceNotes(const Character &character) co
         {
             if (entry.race == character.raceId && pElement != nullptr)
             {
-                elements.push_back(pElement->pName);
+                elements.push_back(Engine::tr(pElement->pName));
             }
         }
 
@@ -947,14 +1030,20 @@ std::vector<std::string> MawClassRules::raceNotes(const Character &character) co
         }
 
         notes.push_back(entry.base == 0
-                ? "Immune to " + joinedList(elements) + " magic."
-                : joinedList(elements) + " resistance +" + std::to_string(entry.base) + ", and +"
-                    + std::to_string(entry.perLevel) + " per level.");
+                ? Engine::tr("Immune to {elements} magic.", {{"elements", joinedList(elements)}})
+                : Engine::tr("{elements} resistance +{base}, and +{perLevel} per level.",
+                    {{"elements", joinedList(elements)}, {"base", entry.base}, {"perLevel", entry.perLevel}}));
     }
 
     if (character.raceId == Vampire)
     {
-        notes.push_back("Preservation at night and in dungeons.");
+        // The race's share of mawLeech, doubled for the Vampire classes (zzMaw-Items.lua:3277-3285).
+        const std::string className = canonicalClassName(character.className);
+        notes.push_back(Engine::tr(className == "Vampire" || className == "Nosferatu"
+                ? "Leeches 10% of melee and 5% of ranged and spell damage as hit points."
+                : "Leeches 5% of melee and 2.5% of ranged and spell damage as hit points, half as much as a "
+                  "Vampire."));
+        notes.push_back(Engine::tr("Preservation at night and in dungeons."));
     }
 
     return notes;
@@ -993,8 +1082,8 @@ std::optional<std::string> MawClassRules::partyCharge(
 
     if (now < m_chargeReadyGameMinutes)
     {
-        return "Charge has " + std::to_string(int(std::ceil((m_chargeReadyGameMinutes - now) * 2)))
-            + " seconds of cooldown";
+        return Engine::tr("Charge has {seconds} seconds of cooldown",
+            {{"seconds", int64_t(std::ceil((m_chargeReadyGameMinutes - now) * 2))}});
     }
 
     GameplayRuntimeActorState target = {};
@@ -1011,7 +1100,7 @@ std::optional<std::string> MawClassRules::partyCharge(
 
     if (distance <= 500 || distance >= 3000)
     {
-        return std::string("Out of range");
+        return Engine::tr("Out of range");
     }
 
     // Twenty steps of a 22nd of the way.
@@ -1035,7 +1124,7 @@ std::optional<std::string> MawClassRules::partyCharge(
         world.stunActor(*targetActorIndex, float(seconds));
     }
 
-    return pKnight->name + " casts Charge stunning the enemy";
+    return Engine::tr("{name} casts Charge stunning the enemy", {{"name", pKnight->name}});
 }
 
 std::optional<float> MawClassRules::unstuckLift(double gameMinutes) const
@@ -1054,8 +1143,13 @@ std::optional<FollowerHireRefusal> MawClassRules::followerHireRefusal(uint32_t h
         return std::nullopt;
     }
 
-    return FollowerHireRefusal{"Following you would be foolish",
-        "I wouldn't join in your reckless adventure, not even for all the wealth in the world."};
+    return FollowerHireRefusal{Engine::tr("Following you would be foolish"),
+        Engine::tr("I wouldn't join in your reckless adventure, not even for all the wealth in the world.")};
+}
+
+std::optional<FollowerHireRefusal> MawClassRules::paidHirelingRefusal() const
+{
+    return followerHireRefusal(0);
 }
 
 std::vector<uint32_t> MawClassRules::mercenaryClassKinds(uint32_t continentId, std::vector<uint32_t>) const

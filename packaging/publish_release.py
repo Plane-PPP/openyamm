@@ -36,6 +36,8 @@ import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
 CHANNEL = "stable"
+# The fields of a pack (tools/runtime_packs.py PACK_RECORD_KEYS); "language" only on a language's optional packs.
+PACK_RECORD_KEYS = ("id", "package", "mount", "file", "size", "content_id", "sha256", "language")
 MANIFEST_SCHEMA = 1
 MIN_UPDATER_SCHEMA = 1
 # Every platform's manifest and the content profile its packs come from.
@@ -226,8 +228,8 @@ def published_packs(manifests, profile):
     packs = {}
     for platform, manifest in manifests.items():
         if manifest and PLATFORMS[platform] == profile:
-            for pack in manifest["packs"]:
-                packs[(pack["content_id"], pack["package"], pack["mount"])] = pack
+            for pack in manifest_packs(manifest):
+                packs[(pack["content_id"], pack["package"], pack["mount"], pack.get("language", ""))] = pack
     return packs
 
 
@@ -238,15 +240,17 @@ def final_index(index, published, release):
     records, new, identical = [], [], []
     for pack in index["packs"]:
         fresh = Path(index["_root"]) / index["store"] / pack["file"]
-        known = published.get((pack["content_id"], pack["package"], pack["mount"]))
+        known = published.get((pack["content_id"], pack["package"], pack["mount"], pack.get("language", "")))
         if known:
             record = {key: known[key] for key in ("file", "size", "sha256")}
             record = {"id": pack["id"], "package": pack["package"], "mount": pack["mount"], **record,
                       "content_id": pack["content_id"]}
+            if pack.get("language"):
+                record["language"] = pack["language"]
             if known["sha256"] == pack["sha256"]:
                 identical.append((record, fresh))
         else:
-            record = {key: pack[key] for key in ("id", "package", "mount", "file", "size", "content_id", "sha256")}
+            record = {key: pack[key] for key in PACK_RECORD_KEYS if key in pack}
             new.append((record, fresh))
         records.append(record)
     files = [record["file"] for record in records]
@@ -254,8 +258,7 @@ def final_index(index, published, release):
         fail("two packs of the release share a published file name")
     document = {key: index[key] for key in ("schema", "profile", "content_format")}
     document.update({"release": release, "build": release, "store": "../../assets/packs",
-                     "packs": [{key: record[key] for key in ("id", "package", "mount", "file", "size", "content_id",
-                                                             "sha256")} for record in records]})
+                     "packs": [{key: record[key] for key in PACK_RECORD_KEYS if key in record} for record in records]})
     return document, new, identical
 
 
@@ -344,7 +347,8 @@ def write_tar_gz(output, files, directories):
 def assemble(platform, stage, index, release, packages_dir, apps_dir):
     """The small download package and the updater's app archive of a desktop platform. Returns (package, app)."""
     files = stage_files(stage, platform, release)
-    files[f"OpenYAMM/app/{release}/index.json"] = ((json.dumps(index, indent=1) + "\n").encode(), 0o644)
+    files[f"OpenYAMM/app/{release}/index.json"] = ((json.dumps(index_document(index), indent=1) + "\n").encode(),
+                                                   0o644)
     package = packages_dir / PACKAGE_NAMES[platform].format(version=release)
     package.parent.mkdir(parents=True, exist_ok=True)
     if platform == "macos-arm64":
@@ -405,7 +409,34 @@ def file_record(path, folder, name, suffix):
     return {"file": name, "url": f"{folder}/{sha256}{suffix}", "size": path.stat().st_size, "sha256": sha256}
 
 
+def manifest_packs(manifest):
+    """Every pack a manifest or release index lists: its packs and the languages' optional packs."""
+    return [*manifest["packs"], *manifest.get("language_packs", [])]
+
+
+def split_language_packs(records):
+    """(packs, language_packs) of a manifest or release index. The languages' optional packs go apart: updaters
+    before 2.0 read only packs and know no language field. They would download every language's packs (on Android
+    and recorded without their language, so mounted in every language), and they check every pack of a new
+    version's index before switching to it, so they would refuse a desktop release missing one."""
+    return ([record for record in records if not record.get("language")],
+            [record for record in records if record.get("language")])
+
+
+def index_document(index):
+    """A release's index.json as the packages and app archives carry it: the languages' packs apart."""
+    packs, language_packs = split_language_packs(index["packs"])
+    return {**index, "packs": packs, **({"language_packs": language_packs} if language_packs else {})}
+
+
 def build_manifest(platform, release, index, app_record, published, notes_url, notes):
+    """2.0 and later read both lists of a manifest; desktop fetches a language's packs only for the languages kept
+    installed, Android (OpenYammUpdater.java) fetches them all (fonts only)."""
+    records = [{"id": pack["id"], "package": pack["package"], "mount": pack["mount"], "file": pack["file"],
+                "url": f"packs/{pack['sha256']}.zip", "size": pack["size"], "content_id": pack["content_id"],
+                "sha256": pack["sha256"], **({"language": pack["language"]} if pack.get("language") else {})}
+               for pack in index["packs"]]
+    packs, language_packs = split_language_packs(records)
     return {
         "schema": MANIFEST_SCHEMA,
         "channel": CHANNEL,
@@ -418,9 +449,8 @@ def build_manifest(platform, release, index, app_record, published, notes_url, n
         "notes_url": notes_url,
         "notes": notes,
         "app": app_record,
-        "packs": [{"id": pack["id"], "package": pack["package"], "mount": pack["mount"], "file": pack["file"],
-                   "url": f"packs/{pack['sha256']}.zip", "size": pack["size"], "content_id": pack["content_id"],
-                   "sha256": pack["sha256"]} for pack in index["packs"]],
+        "packs": packs,
+        **({"language_packs": language_packs} if language_packs else {}),
     }
 
 
@@ -439,13 +469,13 @@ def protected_store_files(site, releases, manifests):
     referenced = set()
     for manifest in manifests:
         referenced.add(manifest["app"]["url"])
-        referenced.update(pack["url"] for pack in manifest["packs"])
+        referenced.update(pack["url"] for pack in manifest_packs(manifest))
     for release in releases[:KEEP_RELEASES]:
         for platform in PLATFORMS:
             manifest = site.fetch_json(f"history/{release}/{platform}.json")
             if manifest:
                 referenced.add(manifest["app"]["url"])
-                referenced.update(pack["url"] for pack in manifest["packs"])
+                referenced.update(pack["url"] for pack in manifest_packs(manifest))
     return sorted(referenced)
 
 
@@ -592,9 +622,16 @@ def check(args):
         log(f"install check: the small Linux package downloads its content from {url}")
         subprocess.run([str(game), "--headless-update", url], cwd=install, check=True)
         index = json.loads((install / "app" / release / "index.json").read_text())
-        for pack in index["packs"]:
+        if any(pack.get("language") for pack in index["packs"]):
+            fail("the release index lists a language's pack among its packs, where updaters before 2.0 require it")
+        # A fresh install in English gets every pack but the languages' optional ones, which download only when
+        # their language is chosen (devdocs/LOCALIZATION.md).
+        for pack in manifest_packs(index):
             path = install / "assets" / "packs" / pack["file"]
-            if not path.is_file() or path.stat().st_size != pack["size"]:
+            if pack.get("language"):
+                if path.exists():
+                    fail(f"the install check installed {pack['file']}, a pack of a language nobody chose")
+            elif not path.is_file() or path.stat().st_size != pack["size"]:
                 fail(f"the install check did not install {pack['file']}")
         for scenario in args.scenario:
             log(f"install check: scenario {scenario}")
@@ -602,7 +639,8 @@ def check(args):
                            cwd=work, check=True)
         if args.scenario and not (install / "app" / release / "healthy").is_file():
             fail("the installed game did not mark itself healthy")
-        log(f"install check passed: {len(index['packs'])} packs installed into {install}")
+        log(f"install check passed: {len(index['packs'])} packs installed into {install}, "
+            f"{len(index.get('language_packs', []))} language packs left for their languages")
     finally:
         server.terminate()
         shutil.rmtree(work, ignore_errors=True)
@@ -666,7 +704,7 @@ def upload(args):
     keep = set(plan["keep_store"])
     for platform in plan["platforms"]:
         manifest = json.loads((channels / f"{platform}.json").read_text())
-        urls = {manifest["app"]["url"], *(pack["url"] for pack in manifest["packs"])}
+        urls = {manifest["app"]["url"], *(pack["url"] for pack in manifest_packs(manifest))}
         if not urls <= keep:
             fail(f"the removal plan drops files {platform} references")
     if not args.remote.endswith(":"):

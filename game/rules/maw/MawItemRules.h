@@ -30,6 +30,11 @@ bool mawRegenerationArtifact(uint32_t itemId, bool spellPoints);
 int mawWornRegenerationArtifacts(const Character &character, bool spellPoints);
 // The product of the attack delay multipliers of the artifacts the character wears (x0.9 each, GetAttackDelay).
 double mawArtifactAttackDelayMultiplier(const MawRules &rules, const Character &character);
+// MAW's halberds (halberdItems, IT:1410): two-handed spears that count as two-handed axes too.
+bool mawIsHalberd(uint32_t itemId);
+// The skill the character wields the weapon with: a halberd takes Axe when Axe is the higher skill (level, then
+// mastery), else Spear; every other weapon its own skill (GetWeaponSkillFor, IT:4446-4456, MAW 8967ae88).
+std::string mawWeaponSkill(const Character &character, const ItemDefinition &itemDefinition);
 
 // An artifact's stats (standard enchantment types, read as worn) and skills from its budget at the party's level.
 struct MawArtifactBonuses
@@ -92,9 +97,11 @@ public:
         const Character &wearer,
         Character &bonuses) const override;
     // Seraphim hold two-handed swords in one hand and never a sword in the off hand; Dwarves and Minotaurs take
-    // one-handed axes in the off hand at Expert Axe, Minotaurs two-handed axes in one hand, and in the off hand at
-    // Master (CL:170-226, S:1787-1800, S:2642-2724).
+    // one-handed axes in the off hand at Expert Axe, Minotaurs two-handed axes and halberds in one hand, and in the
+    // off hand at Master Axe (CL:170-226, S:1787-1800, S:2655-2685).
     ItemWield wield(const Character &character, const ItemDefinition &itemDefinition) const override;
+    // A halberd is wielded with Spear or Axe, whichever is higher, so Axe alone lets a character equip one.
+    std::string weaponSkill(const Character &character, const ItemDefinition &itemDefinition) const override;
     int levelRequirement(const ItemDefinition &itemDefinition, const ItemRulesetFields &fields) const override;
 
     int itemValue(
@@ -159,6 +166,8 @@ public:
         const Party &party,
         const ItemTable &itemTable,
         std::mt19937 &rng) const override;
+    // MM9's shops sell their own items at MAW's power and rarity.
+    bool rollsFixedShopStock() const override;
     // A dimension map (zzMaw-Maps.lua UseMouseItem): its map refills on the next visit with three random families,
     // denser by its affixes and at its power's level, and the party goes to its entrance.
     std::optional<std::string> useTravelItem(Party &party, const InventoryItem &item) const override;
@@ -292,7 +301,7 @@ private:
 // slotMult (zzMaw-Items.lua:1405): what both base enchantments of this kind of item are multiplied by when rolled
 // (two-handed weapons 2, bows, helms, gauntlets and boots 1.25, body armour 1.5, rings 0.75, the rest 1).
 double mawEnchantSlotMultiplier(const ItemDefinition &itemDefinition, const MawBaseItem &base);
-// The stat or skill a base enchantment (standard enchant id 1-24) raises, as the player reads it.
+// The stat or skill a base enchantment (standard enchant id 1-24) raises, as the player reads it (translated).
 std::string mawEnchantStatName(const StandardItemEnchantTable *pTable, int type);
 // An artifact's item text without MMMerge's "(Special ...)" part and a leading "(...)" summary.
 std::string mawArtifactDescription(const std::string &notes);

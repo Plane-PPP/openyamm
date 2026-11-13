@@ -73,8 +73,8 @@ jobs:
     if: ${{ inputs.tests_only != true }}
     name: Windows x64 release
     env:
-      MINOTAUR_UPSTREAM_VERSION: "1.21"
-      MINOTAUR_UPSTREAM_SHA: c24a0aaa6bb6f7956c84beed1bd44c88e62453c4
+      MINOTAUR_UPSTREAM_VERSION: "2.3"
+      MINOTAUR_UPSTREAM_SHA: f4a6b8032759a218505532b2600ac56b6d80c7af
       MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
     runs-on: windows-latest
     timeout-minutes: 240
@@ -114,6 +114,24 @@ jobs:
             /assets_dev/worlds/mm7/
             /assets_dev/worlds/mm8/
 
+      - name: Select the pinned Medusa content
+        shell: pwsh
+        run: |
+          $config = Get-Content packaging/medusa/content.json -Raw | ConvertFrom-Json
+          if ($config.commit -notmatch '^[0-9a-f]{40}$') { throw "Medusa content must be pinned" }
+          "MEDUSA_CONTENT_SHA=$($config.commit)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Check out the pinned Medusa package
+        uses: actions/checkout@v7
+        with:
+          repository: Plane-PPP/project-medusa
+          ref: ${{ env.MEDUSA_CONTENT_SHA }}
+          path: medusa-content
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /content/engine/rulesets/medusa/
+
       - name: Install MSYS2 UCRT64 toolchain
         uses: msys2/setup-msys2@v2
         with:
@@ -132,6 +150,11 @@ jobs:
       - name: Check packaging Python
         run: /ucrt64/bin/python.exe -c "import sys, yaml; print(sys.executable); print(yaml.__version__)"
 
+      - name: Install the pinned Medusa ruleset into the combined build
+        run: |
+          test "$(git -C medusa-content rev-parse HEAD)" = "$MEDUSA_CONTENT_SHA"
+          /ucrt64/bin/python.exe packaging/medusa/install_content.py --source medusa-content --assets assets_dev
+
       - name: Select update base and unique app version
         env:
           REQUESTED_BASE: ${{ inputs.baseline_version }}
@@ -148,7 +171,7 @@ jobs:
           if [ -n "$PREVIOUS_BUILD_SHA" ] && [ "$PREVIOUS_BUILD_SHA" != "$base_sha" ]; then
             echo "previous_build_sha must match the selected baseline"; exit 1
           fi
-          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-1.21-%s-%s-%s\n' \
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-2.3-%s-%s-%s\n' \
             "$base_path" "$base_sha" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
 
       - name: Detect actual runner resources and compilation parallelism
@@ -200,6 +223,10 @@ jobs:
           # MM9 is not shipped by this MM6/MM7/MM8 package; Bloodaxe is not an Axe mechanic test.
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inventory hotfix*,Bottle stacks*,Inspect *,*potion*,*bag*,technology skills are appended*,*summary*,*summaries*,*history*,item search*,*steal*,*creation*,*quick item*,*party item*,*teacher*,*trainer*,*completion*,*basebar*,*carried*,*world completion*,resistance and monster effect*,*lich immunit*,*Lich*immun*,*condition immun*,undead and vampires*' --test-case-exclude='MM9*,*MM9 RUDE*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*,Inventory hotfix*,*steal*'
+
+      - name: Test Medusa and the portrait and doll importer
+        run: |
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase medusa-importer-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*ProjectMedusaTests.cpp,*CustomPortraitTests.cpp,*AssetFileSystemTests.cpp'
 
       - name: Test official updater and upstream world regressions
         run: |

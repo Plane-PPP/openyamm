@@ -1,6 +1,6 @@
 # MAW as an optional ruleset
 
-> Formulas updated to MAW `8fbb48d1` (2026-11-05) where [UPSTREAM_SYNC_8fbb48d1.md](UPSTREAM_SYNC_8fbb48d1.md) lists a change.
+> Formulas updated to MAW `8fbb48d1` (2026-11-05) and `8967ae88` (2026-11-12) where [UPSTREAM_SYNC_8fbb48d1.md](UPSTREAM_SYNC_8fbb48d1.md) and [UPSTREAM_SYNC_8967ae88.md](UPSTREAM_SYNC_8967ae88.md) list a change.
 
 Status: investigation only (2026-10-22). Built since (2026-10-24): the MAW ruleset in `game/rules/maw/` and
 `assets_dev/engine/rulesets/maw/`; what is left is in [GAPS.md](GAPS.md), the deliberate differences in
@@ -10,6 +10,7 @@ are cheap because OpenYAMM is not bound to the vanilla interface.
 
 **To implement, start with [HANDOFF.md](HANDOFF.md)**: decisions taken on 2026-10-23, phase plan, contracts and tests.
 What is still missing or wrong is listed in [GAPS.md](GAPS.md); deliberate differences in [DEVIATIONS.md](DEVIATIONS.md).
+MAW in MM9 (Chedian, MAW's fourth continent): [MM9_SUPPORT.md](MM9_SUPPORT.md) (built), [MM9_BALANCE_DESIGN.md](MM9_BALANCE_DESIGN.md) (the user's decisions, the balance file and tool, what is next).
 
 Source analysed: `/home/pjasicek/github/Maw-Mod-MMMerge` at commit `ef23ee17` (2026-10-22). The copy in
 `reference/Maw-Mod-MMMerge/` is older (87 script files differ) and should not be used.
@@ -37,6 +38,7 @@ Lua where possible):
 | [CRAFTING_BENCH_DESIGN.md](CRAFTING_BENCH_DESIGN.md) | Workbench with Alchemy and Crafting tabs on top of our alchemy bench: layout, behaviour, classes, phasing |
 | [TRAINERS_SKILLS.md](TRAINERS_SKILLS.md) | Trainer relocation, teacher rules and prices, training halls, skill-point economy, respec, class and race table patches |
 | [CLASSES_SPELLS_SPEC.md](CLASSES_SPELLS_SPEC.md) | All 111 spells, Ascension, buff auras, crowd control, the new classes, promotions, races, every potion and recipe |
+| [CLASS_SPELLBOOKS.md](CLASS_SPELLBOOKS.md) | Proposal: the Death Knight's and Assassin's own spellbook pages, pictures and names over unchanged rules; mockup and open decisions |
 | [ITEMS_DATA.md](ITEMS_DATA.md) | Item, random-item and special-enchant patches in our formats; item tooltip spec; item record and save notes |
 | [MAPS_CONTENT.md](MAPS_CONTENT.md) | The 12 edited maps, every map and quest script change, dropped base fixes, overlay operations needed |
 

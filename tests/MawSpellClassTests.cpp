@@ -5,6 +5,7 @@
 #include "game/gameplay/GameplayActorService.h"
 #include "game/gameplay/GameplayCombatController.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
+#include "game/mm9/Mm9HirelingTable.h"
 #include "game/party/EventSpellBuffs.h"
 #include "game/party/Party.h"
 #include "game/party/PartySpellSystem.h"
@@ -193,6 +194,40 @@ TEST_CASE("MAW scroll, pedestal and temple buffs hold fixed auras until the map 
     CHECK_EQ(rules.state().auraHolders.at(3), 0u);
 
     CHECK_FALSE(standardGameRules().spells.castSourceBuff(party, 3, BuffSource::Scroll));
+}
+
+TEST_CASE("MAW auras on members reach MM9 hirelings and end with them (OY-559)")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    const SpellRules &spells = rules.gameRules().spells;
+    PartySeed seed;
+    seed.members = {member("Ariel", "Knight", 10), member("Brom", "Cleric", 10)};
+    Party party;
+    party.seed(seed);
+    party.setRules(&rules.gameRules());
+    Mm9Hireling row;
+    row.rudeId = 42;
+    row.name = "Hrolf Spearmaster";
+    row.kind = Mm9HirelingKind::Paid;
+    row.level = 34;
+    row.hitPoints = 276;
+    REQUIRE(party.addHireling(row));
+    const size_t hirelingIndex = 2;
+    rules.setCurrentMap("oute3.odm");
+    spells.updateAuras(party, 0.5f);
+
+    // A temple's Bless covers the members and the hireling, and gives the hireling its attack bonus.
+    REQUIRE(spells.castSourceBuff(party, 46, BuffSource::Temple));
+    REQUIRE(party.characterBuff(hirelingIndex, CharacterBuffId::Bless) != nullptr);
+    CHECK_EQ(party.characterBuff(hirelingIndex, CharacterBuffId::Bless)->power,
+        party.characterBuff(0, CharacterBuffId::Bless)->power);
+    CHECK(party.combatant(hirelingIndex)->magicalBonuses.meleeAttack > 0);
+
+    // A dungeon ends the temple's blessing for everyone.
+    rules.setCurrentMap("d01.blv");
+    spells.updateAuras(party, 0.5f);
+    CHECK(party.characterBuff(0, CharacterBuffId::Bless) == nullptr);
+    CHECK(party.characterBuff(hirelingIndex, CharacterBuffId::Bless) == nullptr);
 }
 
 TEST_CASE("quick-cast heals go to the endangered, else where they heal the most, in both rulesets (A7.2)")
@@ -437,6 +472,60 @@ TEST_CASE("MAW staffs resist for the whole party (L5.6)")
 
     rules.gameRules().spells.updateAuras(party, 0.5f);
     CHECK_EQ(rules.partyStaffResistance(), master + grandmaster);
+}
+
+TEST_CASE("MAW swords guard by their guard, not by a flat point of Armor Class per skill point")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    Character holder;
+    const ItemDefinition *pElsenrail = gameData.itemTable.get(500);
+    REQUIRE(pElsenrail != nullptr);
+
+    // Discord, 2026-11-10: Grandmaster Sword 20 with Elsenrail (guard 34) gives 2 % x 34 x (20 + 10) = 20, not 40.
+    holder.skills["Sword"] = {"Sword", 20, SkillMastery::Grandmaster};
+    std::optional<MawWeaponGuard> guard = mawWeaponGuard(rules, holder, *pElsenrail, ItemRulesetFields{});
+    REQUIRE(guard.has_value());
+    CHECK_EQ(guard->guard, 34);
+    CHECK_EQ(guard->armorClass, 20);
+    CHECK_EQ(guard->resistance, 0);
+
+    // Below Master the sword gives none; a weapon of another skill has no guard.
+    holder.skills["Sword"] = {"Sword", 20, SkillMastery::Expert};
+    guard = mawWeaponGuard(rules, holder, *pElsenrail, ItemRulesetFields{});
+    REQUIRE(guard.has_value());
+    CHECK_EQ(guard->armorClass, 0);
+    const ItemDefinition *pDagger = gameData.itemTable.get(21);
+    REQUIRE(pDagger != nullptr);
+    REQUIRE(canonicalSkillName(pDagger->skillGroup) == "Dagger");
+    CHECK_FALSE(mawWeaponGuard(rules, holder, *pDagger, ItemRulesetFields{}).has_value());
+}
+
+TEST_CASE("MAW artifact popups give the on-hit damage a blow rolls")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    rules.setItemTable(&gameData.itemTable);
+    Character holder;
+    holder.skills["Sword"] = {"Sword", 10, SkillMastery::Expert};
+
+    // Elsenrail adds Light damage; Snake (it only slows) and Mordred (vampiric) add none.
+    const auto hitOf = [&](uint32_t itemId)
+    {
+        const ItemDefinition *pItem = gameData.itemTable.get(itemId);
+        REQUIRE(pItem != nullptr);
+        InventoryItem item;
+        item.objectDescriptionId = itemId;
+        return mawArtifactHitOnWeapon(rules, holder, *pItem, item);
+    };
+    const std::optional<std::pair<int, int>> elsenrail = hitOf(500);
+    REQUIRE(elsenrail.has_value());
+    CHECK(elsenrail->first > 0);
+    CHECK(elsenrail->second > elsenrail->first);
+    CHECK_FALSE(hitOf(523).has_value());
+    CHECK_FALSE(hitOf(2020).has_value());
 }
 
 TEST_CASE("MAW dragon rules follow the portrait's race (A6.1, A6.3)")
@@ -765,7 +854,7 @@ TEST_CASE("MAW Assassins lose their Assassination bonus to a crowd and without e
     CHECK(double(blow(1, 0)) == doctest::Approx(alone * (200.0 - 48) / 200).epsilon(0.02));
 }
 
-TEST_CASE("MAW names final classes promoted on two or three worlds Elder and Ultimate (L6.5)")
+TEST_CASE("MAW names final classes promoted on two, three or four worlds Elder, Ultimate and Supreme (L6.5)")
 {
     MawRules rules(RulesetOptions{}, MawMapLevels{});
     ClassMultiplierTable multipliers;
@@ -786,6 +875,9 @@ TEST_CASE("MAW names final classes promoted on two or three worlds Elder and Ult
     CHECK_EQ(classes.displayName(party, party.members()[0]), "Cleric");
     rules.setPromotionWorlds({{2, 3}});
     CHECK_EQ(classes.displayName(party, party.members()[1]), "Ultimate Priest of the Light");
+    // All four, Chedian's too: Supreme (ours, DEVIATIONS 183).
+    rules.setPromotionWorlds({{2, 4}});
+    CHECK_EQ(classes.displayName(party, party.members()[1]), "Supreme Priest of the Light");
     CHECK_EQ(standardClassRules().displayName(party, party.members()[1]), "Priest of the Light");
 }
 
@@ -939,6 +1031,11 @@ public:
     bool isIndoorMap() const override
     {
         return indoor;
+    }
+
+    bool isOpenAirMap() const override
+    {
+        return !indoor;
     }
 
     std::vector<std::array<float, 4>> pushes;
@@ -1478,7 +1575,7 @@ TEST_CASE("MAW's Spell Power row counts a healing quick spell, as MAW's calcPowe
     party.setRules(&rules.gameRules());
     Character &healer = *party.member(1);
     healer.skills["BodyMagic"] = {"BodyMagic", 10, SkillMastery::Expert};
-    healer.attackSpellName.clear();
+    healer.battleOrders.clear();
     healer.quickSpellName = "Heal";
     const SkillRules &skills = rules.gameRules().skills;
 

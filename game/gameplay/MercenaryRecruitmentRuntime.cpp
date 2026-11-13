@@ -546,8 +546,9 @@ void applySkills(
 
     for (const std::string &skillName : allCanonicalSkillNames())
     {
-        // Mercenaries are home-world hirelings: they never roll technology skills.
-        if (isTechnologySkill(skillName))
+        // Mercenaries are home-world hirelings: they never roll technology skills, nor a ruleset's own (MAW's Cover,
+        // Mana Shield, Enlightenment, Retaliation), which MAW's mercenaries never get either (OY-192).
+        if (isTechnologySkill(skillName) || isRulesetSkill(skillName))
         {
             continue;
         }
@@ -1155,7 +1156,9 @@ std::optional<uint32_t> findMercenaryRecruitmentHouseId(
 
     for (const auto &[houseId, house] : houseTable.entries())
     {
-        if (house.mapId != static_cast<uint32_t>(std::max(0, map.id)))
+        // Actor-run services have no house lobby in which to place a generated recruit.
+        if (house.dialogueScenePolicy == DialogueScenePolicy::LiveGameplay
+            || house.mapId != static_cast<uint32_t>(std::max(0, map.id)))
         {
             continue;
         }

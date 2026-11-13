@@ -99,6 +99,10 @@ constexpr const char *EngineDevelopmentRootName = "engine";
 constexpr const char *WorldsDevelopmentRootName = "worlds";
 constexpr const char *DefaultActiveWorldId = "mm8";
 constexpr const char *IconsDirectoryName = "icons";
+// The icon folder a language pack may replace images in (mountLanguagePack).
+constexpr const char *LanguageIconsDirectoryName = "icons_x2";
+// The virtual folder of AssetFileSystem::setUserIconDirectory; its "_x2" gives the icons their scale.
+constexpr const char *UserIconMountPoint = "user/icons_x2";
 constexpr const char *AudioDirectoryName = "audio";
 constexpr const char *MusicDirectoryName = "music";
 constexpr const char *VideosDirectoryName = "videos";
@@ -589,7 +593,7 @@ bool AssetFileSystem::initialize(
             return false;
         }
 
-        if (!mountMods(m_installedContentOptions.modsRoot))
+        if (!mountLanguagePack(true) || !mountMods(m_installedContentOptions.modsRoot))
         {
             shutdown();
             return false;
@@ -604,6 +608,22 @@ bool AssetFileSystem::initialize(
         }
 
         if (!mountDevelopmentPackageRoots(assetRoot, m_activeWorldId))
+        {
+            shutdown();
+            return false;
+        }
+
+        if (!mountExtraDevelopmentRoot(m_installedContentOptions.extraMountRoot))
+        {
+            shutdown();
+            return false;
+        }
+    }
+
+    // Mods mount after the pack in a release (a player's mod still wins); Android and development roots have no mods.
+    if (!packagedAssetRoot || androidApkAssetRoot)
+    {
+        if (!mountLanguagePack(packagedAssetRoot))
         {
             shutdown();
             return false;
@@ -665,8 +685,57 @@ bool AssetFileSystem::switchActiveWorld(const std::string &activeWorldId)
     const AssetScaleTier assetScaleTier = m_assetScaleTier;
     const AssetScaleProfile assetScaleProfile = m_assetScaleProfile;
     const InstalledContentOptions installedContentOptions = m_installedContentOptions;
+    // The active ruleset's icons (Project Medusa's portraits) belong to the game, not to the world: initialize()
+    // forgets them, so a map in another world would lose them (Medusa Alpha 0.2 showed an empty HUD portrait).
+    const std::string rulesetIconRoot = m_rulesetIconRoot;
+    // The player's icons belong to the game, not to the world: initialize() forgets them.
+    const std::filesystem::path userIconDirectory = m_userIconDirectory;
 
-    return initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions);
+    if (!initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions))
+    {
+        return false;
+    }
+
+    setRulesetIconRoot(rulesetIconRoot);
+    setUserIconDirectory(userIconDirectory);
+    return true;
+}
+
+bool AssetFileSystem::setUserIconDirectory(const std::filesystem::path &directory)
+{
+    if (!m_mountedUserIconDirectory.empty())
+    {
+        PHYSFS_unmount(m_mountedUserIconDirectory.c_str());
+        m_mountedUserIconDirectory.clear();
+    }
+
+    m_userIconDirectory = directory;
+    bool mounted = true;
+    std::error_code error;
+
+    if (isInitialized() && !directory.empty() && std::filesystem::is_directory(directory, error))
+    {
+        const std::string root = utf8String(directory);
+        mounted = PHYSFS_mount(root.c_str(), UserIconMountPoint, 1) != 0;
+
+        if (mounted)
+        {
+            m_mountedUserIconDirectory = root;
+        }
+        else
+        {
+            std::cerr << "PHYSFS_mount failed for the user icon folder " << root << ": "
+                      << PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()) << '\n';
+        }
+    }
+
+    refreshLookupCache();
+    return mounted;
+}
+
+const std::filesystem::path &AssetFileSystem::getUserIconDirectory() const
+{
+    return m_userIconDirectory;
 }
 
 bool AssetFileSystem::mountDevelopmentRoot(const std::filesystem::path &assetRoot)
@@ -780,6 +849,87 @@ bool AssetFileSystem::mountDevelopmentPackageRoots(
     return true;
 }
 
+bool AssetFileSystem::mountExtraDevelopmentRoot(const std::filesystem::path &extraRoot)
+{
+    if (extraRoot.empty())
+    {
+        return true;
+    }
+
+    std::error_code error;
+
+    if (!std::filesystem::is_directory(extraRoot, error))
+    {
+        std::cerr << "Extra mount is not a directory: " << extraRoot << '\n';
+        return false;
+    }
+
+    // The same places a development root's files are read from, each in front of the root's own: the folder itself,
+    // its engine and active world packages, and the map folders of every world merged by name. The active world's
+    // are mounted last, so they are found first.
+    if (!mountSearchRoot(extraRoot, false))
+    {
+        return false;
+    }
+
+    const std::filesystem::path engineRoot = extraRoot / EngineDevelopmentRootName;
+    const std::filesystem::path worldsRoot = extraRoot / WorldsDevelopmentRootName;
+    const std::filesystem::path activeWorldRoot = worldsRoot / m_activeWorldId;
+    std::vector<std::filesystem::path> worldRoots;
+
+    for (std::filesystem::directory_iterator entry(worldsRoot, error), end; !error && entry != end;
+         entry.increment(error))
+    {
+        std::error_code typeError;
+
+        if (entry->is_directory(typeError) && entry->path() != activeWorldRoot)
+        {
+            worldRoots.push_back(entry->path());
+        }
+    }
+
+    std::sort(worldRoots.begin(), worldRoots.end());
+
+    if (std::filesystem::is_directory(engineRoot, error) && !mountSearchRoot(engineRoot, false))
+    {
+        return false;
+    }
+
+    if (std::filesystem::is_directory(activeWorldRoot, error))
+    {
+        if (!mountSearchRoot(activeWorldRoot, false))
+        {
+            return false;
+        }
+
+        worldRoots.push_back(activeWorldRoot);
+    }
+
+    const AssetScaleTier textureTier = assetScaleTierForCategory(m_assetScaleProfile, AssetScaleCategory::Textures);
+    std::vector<std::string> mergedDirectoryNames = {MapsDirectoryName, EventsDirectoryName, TexturesDirectoryName};
+
+    if (textureTier != AssetScaleTier::X1)
+    {
+        mergedDirectoryNames.push_back(TexturesDirectoryName + assetScaleTierDirectorySuffix(textureTier));
+    }
+
+    for (const std::filesystem::path &worldRoot : worldRoots)
+    {
+        for (const std::string &directoryName : mergedDirectoryNames)
+        {
+            const std::filesystem::path packageRoot = worldRoot / directoryName;
+
+            if (std::filesystem::is_directory(packageRoot, error)
+                && !mountSearchRootAt(packageRoot, "/" + directoryName, false))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 bool AssetFileSystem::isPackagedAssetRoot(const std::filesystem::path &assetRoot) const
 {
     if (isZipArchivePath(assetRoot))
@@ -872,6 +1022,14 @@ bool AssetFileSystem::mountAndroidApkAssetRoot(const std::string &activeWorldId)
         {
             // Packs are stored uncompressed in the APK (noCompress "zip"), so PhysicsFS reads them in place.
             const std::string path = storeRoot + pack.file;
+
+            // The APK ships no language packs: a language's packs are downloaded into app storage.
+            if (!pack.language.empty() && !PHYSFS_exists(path.c_str()))
+            {
+                m_languagePacksMissing = true;
+                return true;
+            }
+
             PHYSFS_File *pPackFile = PHYSFS_openRead(path.c_str());
 
             if (pPackFile == nullptr || PHYSFS_fileLength(pPackFile) != PHYSFS_sint64(pack.size))
@@ -896,6 +1054,7 @@ bool AssetFileSystem::mountAndroidApkAssetRoot(const std::string &activeWorldId)
             packMount.mountPoint = normalizeVirtualPath(pack.mount);
             packMount.packageMountPoint = packageMountFolder(pack.package);
             packMount.archive = true;
+            packMount.languagePack = !pack.language.empty();
             recordSearchMount(std::move(packMount), appendToPath);
             return true;
         });
@@ -946,13 +1105,31 @@ bool AssetFileSystem::mountPackagedAssetRoot(
         return false;
     }
 
+    m_missingLanguageBytes.clear();
+
+    for (const std::string &language : assetPackLanguages(*index))
+    {
+        m_missingLanguageBytes.emplace_back(language, Engine::missingLanguagePackBytes(*index, storeRoot, language));
+    }
+
     return mountContentPacks(
         *index,
         activeWorldId,
         [this, &storeRoot](const AssetPackRecord &pack, bool appendToPath)
         {
             const std::string packageMount = "/" + packageMountFolder(pack.package);
-            return mountSearchRootAt(storeRoot / pack.file, pack.mount, appendToPath, packageMount);
+            std::error_code fileError;
+
+            // A language's packs are optional: downloaded only once the player chooses it.
+            if (!pack.language.empty() && !std::filesystem::is_regular_file(storeRoot / pack.file, fileError))
+            {
+                std::cout << "Language pack not installed: " << pack.id << '\n';
+                m_languagePacksMissing = true;
+                return true;
+            }
+
+            return mountSearchRootAt(storeRoot / pack.file, pack.mount, appendToPath, packageMount,
+                                     !pack.language.empty());
         });
 }
 
@@ -967,7 +1144,7 @@ bool AssetFileSystem::mountContentPacks(
     // single world archive was), then the engine, then the other worlds for unqualified legacy requests.
     for (const AssetPackRecord &pack : index.packs)
     {
-        if (pack.package == normalizedWorldId && !mountPack(pack, false))
+        if (pack.language.empty() && pack.package == normalizedWorldId && !mountPack(pack, false))
         {
             return false;
         }
@@ -977,10 +1154,23 @@ bool AssetFileSystem::mountContentPacks(
     {
         for (const AssetPackRecord &pack : index.packs)
         {
-            if ((pack.package == "engine") == engine && pack.package != normalizedWorldId && !mountPack(pack, true))
+            if (pack.language.empty() && (pack.package == "engine") == engine && pack.package != normalizedWorldId
+                && !mountPack(pack, true))
             {
                 return false;
             }
+        }
+    }
+
+    // The interface language's fonts, sounds and videos in front of the game's (they replace files of the packs
+    // above); the other languages' stay unmounted. A language whose packs were never downloaded has none here.
+    const std::string &languageId = m_installedContentOptions.languageId;
+
+    for (const AssetPackRecord &pack : index.packs)
+    {
+        if (!languageId.empty() && pack.language == languageId && !mountPack(pack, false))
+        {
+            return false;
         }
     }
 
@@ -1126,6 +1316,125 @@ bool AssetFileSystem::mountMods(const std::filesystem::path &modsRoot)
     return true;
 }
 
+bool AssetFileSystem::mountLanguagePack(bool packagedRoot)
+{
+    std::error_code error;
+    const std::filesystem::path &userLanguagesRoot = m_installedContentOptions.userLanguagesRoot;
+
+    if (!userLanguagesRoot.empty() && std::filesystem::is_directory(userLanguagesRoot, error)
+        && !mountSearchRootAt(userLanguagesRoot, "/languages", false))
+    {
+        return false;
+    }
+
+    const std::string &languageId = m_installedContentOptions.languageId;
+
+    if (languageId.empty() || languageId == "en" || languageId.find_first_of("/\\.") != std::string::npos)
+    {
+        return true;
+    }
+
+    const std::optional<std::filesystem::path> pack = resolvePhysicalPath("languages/" + languageId);
+
+    if (!pack || !std::filesystem::is_directory(*pack, error))
+    {
+        return true;
+    }
+
+    // The pack mirrors the game's tree like mods/, but only these folders mount: its text goes through its
+    // translation files, never through replaced game files. A release reads them at their package path
+    // (/engine/fonts, /worlds/mm7/audio); a development root at the merged folder (/fonts, /audio:
+    // mountMerged*Roots), where only the active world's mount. PhysFS mounts a folder once, so each takes one place.
+    constexpr std::array<const char *, 3> OverlayDirectories = {"fonts", "audio", "videos"};
+    const auto mountOverlay = [this, &error, packagedRoot](const std::filesystem::path &folder,
+                                                            const std::string &packagePoint, const char *pDirectory)
+    {
+        if (!std::filesystem::is_directory(folder, error))
+        {
+            return true;
+        }
+
+        const std::string mountPoint = packagedRoot ? packagePoint + "/" + pDirectory : std::string("/") + pDirectory;
+        std::cout << "Language: " << utf8String(folder) << " over " << mountPoint << '\n';
+        return mountSearchRootAt(folder, mountPoint, false);
+    };
+
+    for (const char *pDirectory : OverlayDirectories)
+    {
+        if (!mountOverlay(*pack / EngineDevelopmentRootName / pDirectory, "/engine", pDirectory))
+        {
+            return false;
+        }
+    }
+
+    const std::filesystem::path worldsRoot = *pack / WorldsDevelopmentRootName;
+
+    for (std::filesystem::directory_iterator world(worldsRoot, error), end; packagedRoot && !error && world != end;
+         world.increment(error))
+    {
+        const std::string worldId = utf8String(world->path().filename());
+
+        // The active world's files mount last, in front of the engine's and the other worlds'.
+        if (worldId == m_activeWorldId)
+        {
+            continue;
+        }
+
+        for (const char *pDirectory : {"audio", "videos"})
+        {
+            if (!mountOverlay(world->path() / pDirectory, "/worlds/" + worldId, pDirectory))
+            {
+                return false;
+            }
+        }
+    }
+
+    error.clear();
+
+    for (const char *pDirectory : {"audio", "videos"})
+    {
+        if (!mountOverlay(worldsRoot / m_activeWorldId / pDirectory, "/worlds/" + m_activeWorldId, pDirectory))
+        {
+            return false;
+        }
+    }
+
+    // Images with text in them (the Arcomage card sheet, maps): a pack's icons_x2 folders replace the game's icons of
+    // the same name (OY-579). Icon requests name their package (engine/icons_x2/..., worlds/mm7/icons_x2/...), so
+    // these mount at that path in a release and in a development root alike.
+    const auto mountIcons = [this, &error](const std::filesystem::path &folder, const std::string &mountPoint)
+    {
+        if (!std::filesystem::is_directory(folder, error))
+        {
+            return true;
+        }
+
+        std::cout << "Language: " << utf8String(folder) << " over " << mountPoint << '\n';
+        return mountSearchRootAt(folder, mountPoint, false);
+    };
+
+    if (!mountIcons(*pack / EngineDevelopmentRootName / LanguageIconsDirectoryName,
+            std::string("/") + EngineDevelopmentRootName + "/" + LanguageIconsDirectoryName))
+    {
+        return false;
+    }
+
+    for (std::filesystem::directory_iterator world(worldsRoot, error), end; !error && world != end;
+         world.increment(error))
+    {
+        const std::string worldId = utf8String(world->path().filename());
+
+        if (!mountIcons(world->path() / LanguageIconsDirectoryName,
+                std::string("/") + WorldsDevelopmentRootName + "/" + worldId + "/" + LanguageIconsDirectoryName))
+        {
+            return false;
+        }
+    }
+
+    error.clear();
+    return true;
+}
+
 bool AssetFileSystem::mountSearchRoot(const std::filesystem::path &assetRoot, bool appendToPath)
 {
     return mountSearchRootAt(assetRoot, "/", appendToPath);
@@ -1135,7 +1444,8 @@ bool AssetFileSystem::mountSearchRootAt(
     const std::filesystem::path &assetRoot,
     const std::string &mountPoint,
     bool appendToPath,
-    const std::string &packageMountPoint)
+    const std::string &packageMountPoint,
+    bool languagePack)
 {
     if (!isInitialized())
     {
@@ -1161,6 +1471,7 @@ bool AssetFileSystem::mountSearchRootAt(
     searchMount.packageMountPoint =
         packageMountPoint.empty() ? searchMount.mountPoint : normalizeVirtualPath(packageMountPoint);
     searchMount.archive = isZipArchivePath(assetRoot);
+    searchMount.languagePack = languagePack;
     recordSearchMount(std::move(searchMount), appendToPath);
     return true;
 }
@@ -1634,6 +1945,26 @@ const std::filesystem::path &AssetFileSystem::getEditorDevelopmentRoot() const
     return m_editorDevelopmentRoot;
 }
 
+void AssetFileSystem::setRulesetIconRoot(const std::string &packageRoot)
+{
+    std::string root = normalizeVirtualPath(packageRoot);
+    while (root.ends_with('/'))
+    {
+        root.pop_back();
+    }
+    if (root == m_rulesetIconRoot)
+    {
+        return;
+    }
+    m_rulesetIconRoot = std::move(root);
+    refreshLookupCache();
+}
+
+const std::string &AssetFileSystem::getRulesetIconRoot() const
+{
+    return m_rulesetIconRoot;
+}
+
 const std::string &AssetFileSystem::getActiveWorldId() const
 {
     return m_activeWorldId;
@@ -1671,6 +2002,24 @@ AssetScaleTier AssetFileSystem::getAssetScaleTierForVirtualPath(const std::strin
     return getAssetScaleTier(category);
 }
 
+bool AssetFileSystem::languagePacksMissing() const
+{
+    return m_languagePacksMissing;
+}
+
+uint64_t AssetFileSystem::missingLanguagePackBytes(const std::string &languageId) const
+{
+    for (const auto &[language, bytes] : m_missingLanguageBytes)
+    {
+        if (language == languageId)
+        {
+            return bytes;
+        }
+    }
+
+    return 0;
+}
+
 const AssetScaleProfile &AssetFileSystem::getAssetScaleProfile() const
 {
     return m_assetScaleProfile;
@@ -1694,8 +2043,13 @@ void AssetFileSystem::shutdown()
     m_assetScaleProfile = createUniformAssetScaleProfile(AssetScaleTier::X1);
     m_installedContentOptions = {};
     m_iconPackages.clear();
+    m_rulesetIconRoot.clear();
     m_searchMounts.clear();
+    m_userIconDirectory.clear();
+    m_mountedUserIconDirectory.clear();
     m_androidApkAssetRoot = false;
+    m_languagePacksMissing = false;
+    m_missingLanguageBytes.clear();
 }
 
 bool AssetFileSystem::isInitialized() const
@@ -1892,6 +2246,20 @@ std::vector<std::string> AssetFileSystem::resolveVirtualPathCandidates(const std
                 }
                 resolvedPaths.push_back(root + "/icons" + assetScaleTierDirectorySuffix(tier) + suffix);
             }
+            if (!m_rulesetIconRoot.empty() && (package.empty() || package == "engine"))
+            {
+                const auto engine = std::find_if(m_iconPackages.begin(), m_iconPackages.end(),
+                                                 [](const auto &entry) { return entry.first == "engine"; });
+                if (engine != m_iconPackages.end())
+                {
+                    resolvedPaths.push_back(
+                        m_rulesetIconRoot + "/icons" + assetScaleTierDirectorySuffix(engine->second) + suffix);
+                }
+            }
+            if (package.empty() && !m_mountedUserIconDirectory.empty())
+            {
+                resolvedPaths.push_back(UserIconMountPoint + suffix);
+            }
             // No native or other-package fallback for a qualified icon request.
             return resolvedPaths;
         }
@@ -1911,10 +2279,11 @@ std::vector<std::string> AssetFileSystem::resolveVirtualPathCandidates(const std
     {
         if (!packageQualified)
         {
-            // Once per package, in mount precedence; a package's content packs share its root.
+            // Once per package, in mount precedence; a package's content packs share its root. A language's packs,
+            // mounted in front of all others, would put their package first (an MM7 game read MM8's world.yml).
             for (const SearchMount &mount : m_searchMounts)
             {
-                if (mount.archive)
+                if (mount.archive && !mount.languagePack)
                 {
                     appendCandidate(
                         mount.packageMountPoint.empty() ? candidate : mount.packageMountPoint + "/" + candidate);

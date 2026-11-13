@@ -2200,3 +2200,70 @@ TEST_CASE("inventory sort leaves items in place when they cannot be repacked")
         CHECK_EQ(member.inventory[itemIndex].gridY, before[itemIndex].gridY);
     }
 }
+
+TEST_CASE("an item an event gives arrives identified (OY-182)")
+{
+    const OpenYAMM::Game::ItemTable &itemTable = OpenYAMM::Tests::regressionGameData().itemTable;
+    const OpenYAMM::Game::ItemDefinition *pScroll = itemTable.get(339);
+    REQUIRE(pScroll != nullptr);
+    REQUIRE(OpenYAMM::Game::ItemRuntime::requiresIdentification(*pScroll));
+
+    OpenYAMM::Game::Party party = {};
+    party.seed(createRegressionPartySeed());
+    party.setItemTable(&itemTable);
+    REQUIRE(party.tryGrantItem(339));
+
+    bool found = false;
+
+    for (const OpenYAMM::Game::Character &member : party.members())
+    {
+        for (const OpenYAMM::Game::InventoryItem &item : member.inventory)
+        {
+            if (item.objectDescriptionId == 339)
+            {
+                found = true;
+                CHECK(item.identified);
+            }
+        }
+    }
+
+    CHECK(found);
+}
+
+TEST_CASE("an event's item removal takes an equipped item when no bag holds one (OY-172)")
+{
+    OpenYAMM::Game::Party party = {};
+    party.seed(createRegressionPartySeed());
+    party.setItemTable(&OpenYAMM::Tests::regressionGameData().itemTable);
+    OpenYAMM::Game::Character *pMember = party.member(0);
+    REQUIRE(pMember != nullptr);
+    pMember->equipment.bow = 845;
+
+    CHECK(party.removeItemFromMember(0, 845));
+    CHECK_EQ(pMember->equipment.bow, 0u);
+    CHECK_FALSE(party.removeItemFromMember(0, 845));
+}
+
+TEST_CASE("journal ownership filters quest continents without changing quest conditions")
+{
+    using namespace OpenYAMM::Game;
+    JournalQuestTable table;
+    REQUIRE(table.loadFromRows({
+        {"1", "Jadame quest", "", "Jadame", "1", "2", "Original author"},
+        {"3", "Enroth quest", "", "Enroth"},
+        {"4", "Shared quest", "", "Shared"},
+        {"90001", "Chedian quest", "", "Chedian", "90002", "90003"},
+    }));
+    Party party;
+    for (uint32_t bit : {1u, 3u, 4u, 90002u})
+        party.setQuestBit(bit, true);
+    CHECK(buildCurrentQuestTexts(table, party, "Jadame") == std::vector<std::string>{"Jadame quest"});
+    CHECK(buildCurrentQuestTexts(table, party, "Enroth") == std::vector<std::string>{"Enroth quest"});
+    CHECK(buildCurrentQuestTexts(table, party, "Shared") == std::vector<std::string>{"Shared quest"});
+    CHECK(buildCurrentQuestTexts(table, party, "Chedian") == std::vector<std::string>{"Chedian quest"});
+    CHECK(buildCurrentQuestTexts(table, party, "Antagarich").empty());
+    CHECK_EQ(buildCurrentQuestTexts(table, party).size(), 4);
+    party.setQuestBit(2, true);
+    CHECK(buildCurrentQuestTexts(table, party, "Jadame").empty());
+    CHECK_EQ(buildCurrentQuestTexts(table, party).size(), 3);
+}

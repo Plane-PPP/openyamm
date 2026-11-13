@@ -1,4 +1,5 @@
 #include "game/app/GameSettings.h"
+#include "engine/Localization.h"
 #include "game/render/CombatActorHealthBarPolicy.h"
 
 #include <algorithm>
@@ -484,7 +485,7 @@ GameSettings GameSettings::createDefault()
     settings.bloom = false;
     settings.cinematicGrading = false;
     // Android has no combat log (user, 2026-10-25).
-    settings.combatLog = false;
+    settings.combatLog = CombatLogMode::Off;
 #else
     settings.assetScaleProfile.textures = Engine::AssetScaleTier::X4;
     settings.windowMode = WindowMode::WindowedFullscreen;
@@ -1145,14 +1146,20 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
 #if !defined(__ANDROID__)
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "combat_log"))
     {
-        bool parsed = settings.combatLog;
-
-        if (parseBoolValue(*value, parsed))
+        if (const std::optional<CombatLogMode> mode = parseCombatLogModeValue(*value))
         {
-            settings.combatLog = parsed;
+            settings.combatLog = *mode;
         }
     }
 #endif
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "language"))
+    {
+        if (Engine::validLanguageId(*value))
+        {
+            settings.language = *value;
+        }
+    }
 
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "enemy_health_bars"))
     {
@@ -1194,6 +1201,25 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         settings.saveListNewestFirst = *value == "newest";
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "quicksave_slots"))
+    {
+        int parsed = settings.quickSaveSlots;
+        if (parseIntValue(*value, parsed))
+        {
+            settings.quickSaveSlots = std::clamp(parsed, 1, 20);
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "mm9_loot_in_older_worlds"))
+    {
+        bool parsed = settings.mm9LootInOlderWorlds;
+
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.mm9LootInOlderWorlds = parsed;
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "quest_markers"))
     {
         bool parsed = settings.questMarkers;
@@ -1201,6 +1227,14 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         if (parseBoolValue(*value, parsed))
         {
             settings.questMarkers = parsed;
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "map_style"))
+    {
+        if (*value == "painted" || *value == "lines")
+        {
+            settings.paintedMaps = *value == "painted";
         }
     }
 
@@ -1281,6 +1315,36 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         if (parseBoolValue(*value, parsed))
         {
             settings.meleeCameraKick = parsed;
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "fast_attack_repeat"))
+    {
+        bool parsed = settings.fastAttackRepeat;
+
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.fastAttackRepeat = parsed;
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "formations_everywhere"))
+    {
+        bool parsed = settings.formationsEverywhere;
+
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.formationsEverywhere = parsed;
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "shop_list_view"))
+    {
+        bool parsed = settings.shopListView;
+
+        if (parseBoolValue(*value, parsed))
+        {
+            settings.shopListView = parsed;
         }
     }
 
@@ -1469,6 +1533,25 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
     {
         parseBoolValue(*value, settings.surfaceReflections);
     }
+    if (const std::optional<std::string> value = getIniValue(document, "video", "mist"))
+    {
+        parseBoolValue(*value, settings.mist);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "video", "mist_strength"))
+    {
+        int parsed = settings.mistStrength;
+        if (parseIntValue(*value, parsed))
+        {
+            settings.mistStrength = std::clamp(parsed, 0, 200);
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "video", "mist_wisps"))
+    {
+        parseBoolValue(*value, settings.mistWisps);
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "video", "wet_surfaces"))
     {
         parseBoolValue(*value, settings.wetSurfaces);
@@ -2130,6 +2213,21 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         settings.indoorHoleView = text == "1" || text == "true" || text == "on" || text == "yes";
     }
 
+    // Launch-only: the surface texture tier (x1 draws the native textures, for before/after captures). Players have
+    // no such setting: the packages carry one cooked tier per platform. Never written back.
+    if (const std::optional<std::string> value = getIniValue(document, "debug", "surface_textures"))
+    {
+        const std::optional<Engine::AssetScaleTier> tier = Engine::parseAssetScaleTier(trimCopy(*value));
+
+        if (!tier)
+        {
+            error = "surface_textures must be x1, x2 or x4.";
+            return std::nullopt;
+        }
+
+        settings.assetScaleProfile.textures = *tier;
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "debug", "time_scale"))
     {
         float parsed = 1.0f;
@@ -2492,14 +2590,18 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("keyboard_interaction_depth", std::clamp(settings.keyboardInteractionDepth, 32, 4096));
     serializer.add("mouse_interaction_depth", std::clamp(settings.mouseInteractionDepth, 32, 4096));
     serializer.add("combat_text", boolValue(settings.combatText));
-    serializer.add("combat_log", boolValue(settings.combatLog));
+    serializer.add("combat_log", combatLogModeValue(settings.combatLog));
+    serializer.add("language", settings.language);
     serializer.add("turn_based_monster_speed", turnBasedSpeedValue(settings.turnBasedMonsterSpeed));
     serializer.add("turn_based_party_speed", turnBasedSpeedValue(settings.turnBasedPartySpeed));
     serializer.add("enemy_health_bars", settings.enemyHealthBarMode);
     serializer.add("enemy_health_bar_values", settings.enemyHealthBarValues);
     serializer.add("enemy_health_bar_damage_trail", boolValue(settings.enemyHealthBarDamageTrail));
     serializer.add("quest_markers", boolValue(settings.questMarkers));
+    serializer.add("map_style", settings.paintedMaps ? "painted" : "lines");
     serializer.add("save_list_order", settings.saveListNewestFirst ? "newest" : "name");
+    serializer.add("quicksave_slots", std::clamp(settings.quickSaveSlots, 1, 20));
+    serializer.add("mm9_loot_in_older_worlds", boolValue(settings.mm9LootInOlderWorlds));
     serializer.add("party_frame", boolValue(settings.partyFrame));
     serializer.add("quick_item_rings", boolValue(settings.quickItemRings));
     serializer.add("item_buttons", boolValue(settings.basebarItemButtons));
@@ -2508,6 +2610,9 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("melee_hit_effects", boolValue(settings.meleeHitEffects));
     serializer.add("melee_hit_flash", boolValue(settings.meleeHitFlash));
     serializer.add("melee_camera_kick", boolValue(settings.meleeCameraKick));
+    serializer.add("fast_attack_repeat", boolValue(settings.fastAttackRepeat));
+    serializer.add("formations_everywhere", boolValue(settings.formationsEverywhere));
+    serializer.add("shop_list_view", boolValue(settings.shopListView));
     serializer.add("context_action_popup", boolValue(settings.contextActionPopup));
     serializer.add("rarity_glow", settings.rarityGlow);
     serializer.add("follower_panel", boolValue(settings.followerPanel));
@@ -2579,6 +2684,9 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("light_grid", lightGridQualityValue(settings.lightGrid));
     serializer.add("rain_ripples", boolValue(settings.rainRipples));
     serializer.add("wet_surfaces", boolValue(settings.wetSurfaces));
+    serializer.add("mist", boolValue(settings.mist));
+    serializer.add("mist_strength", settings.mistStrength);
+    serializer.add("mist_wisps", boolValue(settings.mistWisps));
     serializer.add("terrain_specular", boolValue(settings.terrainSpecular));
     serializer.add("surface_materials", boolValue(settings.surfaceMaterials));
     serializer.add("surface_parallax", boolValue(settings.surfaceParallax));

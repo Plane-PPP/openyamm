@@ -408,6 +408,27 @@ TEST_CASE("Actor model locomotion prefers walking to wander and running or sprin
     CHECK(actorModelGait(2.6f, {1, 2, 4}, true, Run) == Run);
     CHECK(actorModelGait(3.12f, {1, 2, 4}, true, Sprint) == Sprint);
     CHECK(actorModelGait(3.12f, {1, 2, 4}, true, Run) == Run);
+    // MM9's gait (`gait: intent`) follows the AI. Sturmford's boy wanders at 1.28 m/s: walk 0.71, run 1.34 authored;
+    // the speed chooser jogs its run at 0.95x, MM9 walks it (x1.8).
+    CHECK(actorModelGait(1.28f, {.71f, 1.34f, 0}, false, Walk) == Run);
+    CHECK(actorModelIntendedGait(1.28f, {.71f, 1.34f, 0}, false, Walk, 2) == Walk);
+    CHECK(actorModelIntendedGait(3.2f, {.71f, 1.34f, 0}, true, Walk, 2) == Run);
+    // A walk past the window gives way to a run inside it (the Grey Wolf trots); with nothing inside it the AI's clip
+    // plays when it is only too fast (a dwarf, walk x5, run x2.9), never a run in slow motion (Giant: walk x1.89, run
+    // x0.59; Phantom Fighter: walk x2.56, run x0.47); the clip playing now keeps its margin at the edge; uncapped:
+    // always the AI's.
+    CHECK(actorModelIntendedGait(3.84f, {2.03f, 6.5f, 0}, true, Run, 2) == Walk);
+    CHECK(actorModelIntendedGait(3.84f, {1.5f, 8.25f, 0}, true, Run, 2) == Walk);
+    CHECK(actorModelIntendedGait(3.58f, {.87f, 4.18f, 0}, false, Walk, 2) == Run);
+    CHECK(actorModelIntendedGait(1.92f, {.39f, .66f, 0}, false, Walk, 2) == Walk);
+    CHECK(actorModelIntendedGait(2.1f, {1, 2.5f, 0}, false, Walk, 2) == Walk);
+    CHECK(actorModelIntendedGait(2.1f, {1, 2.5f, 0}, false, Run, 2) == Run);
+    CHECK(actorModelIntendedGait(1.95f, {1, 2.5f, 0}, false, Run, 2) == Walk);
+    CHECK(actorModelIntendedGait(5, {1, 4, 0}, false, Walk, 0) == Walk);
+    // Hurrying, the run or sprint that suits the speed better: both are the AI's run (the MM9 wolf chases on its
+    // Running at 1.47x, not its Trot at 1.85x).
+    CHECK(actorModelIntendedGait(5, {1, 2, 4}, true, Run, 2) == Sprint);
+    CHECK(actorModelIntendedGait(2.2f, {1, 2, 4}, true, Run, 2) == Run);
     // By default the gait advances by the distance travelled, however fast, so the feet do not slide.
     CHECK(actorModelGaitDistance(5, 50, .1f, 1) == doctest::Approx(5));
     CHECK(actorModelGaitDistance(100, 50, .1f, 1) == doctest::Approx(100));
@@ -892,17 +913,18 @@ TEST_CASE("ModelAnimation clip lengths read from a model file's JSON match the l
         REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", AssetScaleTier::X1));
         const ModelLoadResult loaded = GltfModelLoader().load(assets, "worlds/mm9/models/mm9_skeleton.glb");
         REQUIRE_MESSAGE(loaded, loaded.error);
-        const std::optional<std::unordered_map<std::string, float>> durations =
-            readGltfClipDurations(assets, "worlds/mm9/models/mm9_skeleton.glb");
-        REQUIRE(durations);
-        REQUIRE_EQ(durations->size(), loaded.asset->clips.size());
+        const std::optional<GltfModelSummary> summary =
+            readGltfModelSummary(assets, "worlds/mm9/models/mm9_skeleton.glb");
+        REQUIRE(summary);
+        const std::unordered_map<std::string, float> &durations = summary->clipDurations;
+        REQUIRE_EQ(durations.size(), loaded.asset->clips.size());
         for (const ModelAnimationClip &clip : loaded.asset->clips)
         {
-            REQUIRE_MESSAGE(durations->contains(clip.name), clip.name);
-            CHECK_MESSAGE(durations->at(clip.name) == doctest::Approx(clip.durationSeconds), clip.name);
+            REQUIRE_MESSAGE(durations.contains(clip.name), clip.name);
+            CHECK_MESSAGE(durations.at(clip.name) == doctest::Approx(clip.durationSeconds), clip.name);
         }
-        CHECK(durations->at("AttackMelee") == doctest::Approx(0.8f).epsilon(0.01));
-        CHECK_FALSE(readGltfClipDurations(assets, "worlds/mm9/models/missing.glb"));
+        CHECK(durations.at("AttackMelee") == doctest::Approx(0.8f).epsilon(0.01));
+        CHECK_FALSE(readGltfModelSummary(assets, "worlds/mm9/models/missing.glb"));
     }
 
     const std::filesystem::path temporaryRoot = makeTemporaryRoot();
@@ -911,13 +933,37 @@ TEST_CASE("ModelAnimation clip lengths read from a model file's JSON match the l
     {
         AssetFileSystem fixtureAssets;
         REQUIRE(fixtureAssets.initialize(temporaryRoot, assetRoot, AssetScaleTier::X1));
-        const std::optional<std::unordered_map<std::string, float>> fixture =
-            readGltfClipDurations(fixtureAssets, "engine/models/fixture.gltf");
-        REQUIRE(fixture);
-        CHECK_EQ(fixture->size(), 2);
-        CHECK(fixture->contains("move"));
+        const std::optional<GltfModelSummary> fixtureSummary =
+            readGltfModelSummary(fixtureAssets, "engine/models/fixture.gltf");
+        REQUIRE(fixtureSummary);
+        const std::unordered_map<std::string, float> &fixture = fixtureSummary->clipDurations;
+        CHECK_EQ(fixture.size(), 2);
+        CHECK(fixture.contains("move"));
     }
     std::filesystem::remove_all(temporaryRoot);
+}
+
+TEST_CASE("ModelAnimation bind pose height read from a model file's JSON matches the loaded model's")
+{
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    AssetFileSystem assets;
+    REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", AssetScaleTier::X1));
+    // MM8's Bone Dragon (its origin at its feet) and an MM9 townswoman (centred mesh lifted by its skeleton's bind
+    // matrices, which a header-only read would put half below the ground).
+    for (const char *pPath : {"worlds/mm8/models/mm8_m616.glb", "worlds/mm9/models/mm9_peasantf8.glb"})
+    {
+        const ModelLoadResult loaded = GltfModelLoader().load(assets, pPath);
+        REQUIRE_MESSAGE(loaded, loaded.error);
+        REQUIRE(loaded.asset->staticBounds.valid);
+        const std::optional<GltfModelSummary> summary = readGltfModelSummary(assets, pPath);
+        REQUIRE_MESSAGE(summary, pPath);
+        REQUIRE_MESSAGE(summary->bindPoseHeightRange, pPath);
+        const std::optional<std::array<float, 2>> &range = summary->bindPoseHeightRange;
+        const float height = loaded.asset->staticBounds.max[1] - loaded.asset->staticBounds.min[1];
+        CHECK_MESSAGE(std::abs((*range)[0] - loaded.asset->staticBounds.min[1]) <= 0.03f * height, pPath);
+        CHECK_MESSAGE(std::abs((*range)[1] - loaded.asset->staticBounds.max[1]) <= 0.03f * height, pPath);
+    }
 }
 
 TEST_CASE("ModelAnimation loader rejects unsupported interpolation explicitly")

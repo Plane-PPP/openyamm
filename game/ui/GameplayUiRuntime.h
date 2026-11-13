@@ -23,11 +23,13 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace OpenYAMM::Game
 {
 class ActorModelPreview;
+struct Mm9DialogueSpeaker;
 class IGameplayWorldRuntime;
 class SpriteAtlasCache;
 
@@ -70,7 +72,8 @@ struct GameplayPortraitMeterState
 
 struct GameplayPortraitPresentationState
 {
-    std::array<GameplayPortraitMeterState, 5> meters;
+    // Per combatant: the five members, then up to three MM9 hirelings (Party::combatant).
+    std::array<GameplayPortraitMeterState, 8> meters;
     uint32_t lastAnimationUpdateTicks = 0;
     std::vector<uint32_t> memberSpeechCooldownUntilTicks;
     std::vector<uint32_t> memberCombatSpeechCooldownUntilTicks;
@@ -82,7 +85,6 @@ struct GameplayHudLoopingAnimationState
 {
     bool initialized = false;
     bool advancing = false;
-    std::string animationName;
     uint32_t accumulatedSourceTicks = 0;
     uint32_t lastSourceTicks = 0;
 };
@@ -165,6 +167,7 @@ public:
     void bindAssetFileSystem(const Engine::AssetFileSystem *pAssetFileSystem);
     void bindSpriteAtlasCache(SpriteAtlasCache &cache);
     void bindActorModelPreview(ActorModelPreview &preview);
+    void bindActorTalkPortrait(ActorModelPreview &preview);
     const Engine::AssetFileSystem *assetFileSystem() const;
 
     bool ensureGameplayLayoutsLoaded(const GameplayUiController &uiController);
@@ -197,10 +200,16 @@ public:
     void clearRenderedInspectableHudItems();
     GameplayHudScreenState renderedInspectableHudScreenState() const;
     void setRenderedInspectableHudScreenState(GameplayHudScreenState state);
-    bool ensureTownPortalDestinationsLoaded(const std::string &currentMapFileName);
-    bool ensureDimensionDoorDestinationsLoaded(uint32_t dayIndex, bool crossContinentsUnlocked);
+    // Loads every continent's Town Portal map and shows `continentGroupName`'s (empty: the current map's continent).
+    bool ensureTownPortalDestinationsLoaded(
+        const std::string &currentMapFileName,
+        const std::string &continentGroupName);
+    bool ensureDimensionDoorDestinationsLoaded();
     const std::string &townPortalBackgroundTextureName() const;
     const std::vector<GameplayTownPortalDestination> &townPortalDestinations() const;
+    const std::vector<GameplayTownPortalContinent> &townPortalContinents() const;
+    size_t townPortalContinentIndex() const;
+    size_t townPortalHomeContinentIndex() const;
 
     bool loadHudTexture(const std::string &textureName);
     bool loadItemIconTexture(const std::string &textureName);
@@ -241,11 +250,15 @@ public:
         float fallbackWidth,
         float fallbackHeight) const;
     std::optional<GameplayHudTextureHandle> ensureHudTextureLoaded(const std::string &textureName);
+    // Logs a party portrait the HUD cannot load, once per texture name and session.
+    void reportMissingPortraitTexture(const std::string &textureName);
     std::optional<GameplayHudTextureHandle> ensureItemIconTextureLoaded(const std::string &textureName);
     std::optional<std::string> iconAnimationFrameTextureName(
         const std::string &animationName,
         std::optional<uint32_t> elapsedTicks = std::nullopt) const;
-    std::optional<std::string> flyBuffIconAnimationFrameTextureName(bool active, uint32_t tickDivisor);
+    // A movement indicator's frame (Fly, Levitate, Water Walk): the animation plays while the movement is in use and
+    // holds its frame otherwise, slowed to 50/128 of the data's pace as the original HUD does.
+    std::optional<std::string> movementIconAnimationFrameTextureName(const std::string &animationName, bool active);
     std::optional<GameplayHudTextureHandle> ensureSolidHudTextureLoaded(
         const std::string &textureName,
         uint32_t abgrColor);
@@ -276,6 +289,9 @@ public:
         int &opaqueMaxX,
         int &opaqueMaxY);
     std::optional<GameplayHudFontHandle> findHudFont(const std::string &fontName);
+    // An independent outline face (menu_*, fondamento) rasterized at pixelHeight, the way the menus draw it. The
+    // shared cache owns it and may release it on a resize; the handle finds it again by name and height.
+    std::optional<GameplayHudFontHandle> findHudFont(const std::string &fontName, int pixelHeight);
     float measureHudTextWidth(const GameplayHudFontHandle &font, const std::string &text) const;
     std::vector<std::string> wrapHudTextToWidth(
         const GameplayHudFontHandle &font,
@@ -314,6 +330,11 @@ public:
         const GameplayResolvedHudLayoutElement &rect, float strokeWidth, float startDegrees, float sweepDegrees,
         float begin = 0, float end = 1, float uRepeat = 1) const;
     uint32_t actorInspectAnimationTicks(bool visible, uint32_t nowTicks);
+    // A speaking MM9 actor's live head and shoulders (ActorModelPreview, Talk), or a talking prop's from its
+    // decoration model, drawn into a circle (the talk ring) or a square (a venue's sidebar); false, drawing nothing,
+    // when the speaker has no model.
+    bool renderTalkPortrait(const IGameplayWorldRuntime &world, const Mm9DialogueSpeaker &speaker,
+        const GameplayResolvedHudLayoutElement &rect, bool round);
     // The inspected actor's 3D portrait when it has a model, otherwise its sprite (name, palette).
     void renderActorInspectPreview(const IGameplayWorldRuntime &world, size_t actorIndex, uint32_t animationTicks,
         const std::string &name, int16_t paletteId, const GameplayResolvedHudLayoutElement &rect, float scale,
@@ -347,6 +368,13 @@ public:
     GameplayPortraitPresentationState &portraitPresentationState();
     const GameplayPortraitPresentationState &portraitPresentationState() const;
     std::string resolvePortraitTextureName(const Character &character) const;
+    // The member's own face texture (frame 01): its portraitTextureName, or, for an imported portrait that is not
+    // installed (deleted, or a save from another computer), its base character's face. The save keeps the imported
+    // name, so the portrait returns when it is imported again.
+    std::string availablePortraitTextureName(const Character &character) const;
+    // The doll a member shows: its character_data row, with the body and hands of its imported portrait where they
+    // are installed (game/party/CustomPortraits.h).
+    CharacterDollEntry characterDollEntry(const CharacterDollEntry &base, const Character &character) const;
     bool triggerPortraitFxAnimation(const std::string &animationName, const std::vector<size_t> &memberIndices);
     void triggerPortraitSpellFx(const PartySpellCastResult &result);
     const PortraitFxEventEntry *findPortraitFxEvent(PortraitFxEventKind kind) const;
@@ -369,6 +397,8 @@ public:
 
 private:
     void registerHudTextureUvScales(size_t firstTexture);
+    // The loaded face a handle names: a HUD font, or the shared cache's face at the handle's pixel height.
+    const GameplayHudFontData *hudFontData(const GameplayHudFontHandle &font) const;
     void recordPerformanceAssetLoad(
         GameplayUiAssetLoadKind kind,
         const std::string &name,
@@ -437,6 +467,7 @@ private:
     GameplayUiOverlayFramePerformanceDiagnostics m_lastOverlayFramePerformanceDiagnostics = {};
     const GameDataRepository *m_pDataRepository = nullptr;
     GameplayAssetLoadCache m_assetLoadCache;
+    std::unordered_set<std::string> m_reportedMissingPortraitTextures;
     UiLayoutManager m_layoutManager;
     GameplayHudLayoutCache m_gameplayHudLayoutCache;
     mutable std::unordered_map<std::string, const UiLayoutManager::LayoutElement *> m_hudLayoutElementLookupCache;
@@ -461,20 +492,22 @@ private:
     std::vector<GameplayRenderedInspectableHudItem> m_renderedInspectableHudItems;
     GameplayHudScreenState m_renderedInspectableHudScreenState = GameplayHudScreenState::Gameplay;
     std::string m_townPortalDestinationsMapFileName;
-    std::string m_townPortalBackgroundTextureName;
-    std::vector<GameplayTownPortalDestination> m_townPortalDestinations;
+    std::vector<GameplayTownPortalContinent> m_townPortalContinents;
+    size_t m_townPortalContinentIndex = 0;
+    size_t m_townPortalHomeContinentIndex = 0;
     bool m_townPortalDestinationsLoaded = false;
     GameplayHudRenderBackend m_hudRenderBackend;
     mutable HudArcMeshCache m_hudArcMeshCache;
     SpriteAtlasCache *m_pSpriteAtlasCache = nullptr;
     ActorModelPreview *m_pActorModelPreview = nullptr;
+    ActorModelPreview *m_pActorTalkPortrait = nullptr;
     GameplayActorInspectClock m_actorInspectClock;
     std::array<bgfx::UniformHandle, 6> m_previewUniforms = {{
         BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
         BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE}};
     std::vector<GameplayPortraitFxState> m_portraitFxStates;
     GameplayPortraitPresentationState m_portraitPresentationState;
-    GameplayHudLoopingAnimationState m_flyBuffIconAnimationState;
+    std::unordered_map<std::string, GameplayHudLoopingAnimationState> m_movementIconAnimationStates;
     HouseVideoPlayer m_houseVideoPlayer;
 };
 }

@@ -14,7 +14,9 @@ add_library(openyamm_engine
     update/ReleaseManifest.cpp
     update/Sha256.cpp
     FontAsset.cpp
+    Localization.cpp
     ImageAssetLoader.cpp
+    ImageAssetPaths.cpp
     ImageMipmaps.cpp
     ParallelFor.cpp
     models/CgltfImplementation.cpp
@@ -23,6 +25,7 @@ add_library(openyamm_engine
     models/ModelAsset.cpp
     models/ModelInstance.cpp
     render/CookedTexture.cpp
+    render/CookedTextureHeader.cpp
     render/ModelRenderer.cpp
     render/TextureBlockCodec.cpp
     render/ModelEnvironment.cpp
@@ -31,6 +34,7 @@ add_library(openyamm_engine
     EngineApplication.cpp
     scripting/LuaStateOwner.cpp
     TextTable.cpp
+    TextCatalog.cpp
     # meshoptimizer (MIT, shipped with bgfx): vertex cache order of loaded model triangles.
     ${OPENYAMM_BGFX_SOURCE_DIR}/3rdparty/meshoptimizer/src/allocator.cpp
     ${OPENYAMM_BGFX_SOURCE_DIR}/3rdparty/meshoptimizer/src/vcacheoptimizer.cpp

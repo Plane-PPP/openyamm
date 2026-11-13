@@ -1,4 +1,5 @@
 #include "game/rules/maw/MawItemRules.h"
+#include "engine/Localization.h"
 
 #include "game/items/InventoryBags.h"
 #include "game/items/InventoryItemMixingRuntime.h"
@@ -65,6 +66,45 @@ enum class LegendaryAffix : uint16_t
     Ascension = 25,
     MeleeSkills = 33,
 };
+
+// A world's item rows (world.yml idRanges items: MM9's 10000+).
+constexpr uint32_t MawWorldItemRows = 10000;
+
+// The rarity an item shows. An equipment item MAW never rolled (placed in a chest, sold in a shop, carried from the
+// start) ranks as Common plus one tier per enchantment, as MAW's tooltip colours its name (zzMaw-Items.lua:1722-1749)
+// and its loot filter ranks it (IT:933-944): MM6-MM8's weapons and armour (MAW's id ranges, the Blasters included) and
+// a world's that MAW gives a base (MM9's, rulesets/maw/worlds/mm9/item_bases.yml).
+MawRarity mawShownRarity(const InventoryItem &item, const MawItemData &data)
+{
+    const MawRarity rarity = MawRarity(item.rulesetFields.lootRarity);
+    const uint32_t id = item.objectDescriptionId;
+    const bool baseItem = (id >= 1 && id <= 151) || (id >= 803 && id <= 936) || (id >= 1603 && id <= 1736)
+        || (id >= MawWorldItemRows && data.baseItem(id) != nullptr);
+
+    if (rarity != MawRarity::None || !baseItem)
+    {
+        return rarity;
+    }
+
+    return MawRarity(1 + (item.standardEnchantId != 0 ? 1 : 0) + (item.specialEnchantId != 0 ? 1 : 0)
+        + (item.rulesetFields.secondStandardEnchantId != 0 ? 1 : 0));
+}
+
+// The rarity an item's name is coloured by: MAW keeps the tiers from Ancient up and otherwise counts the item's
+// enchantments (MawCore/Tooltip.lua:364-391), so an item rolled or crafted Common and enchanted later shows them
+// (OY-438). The loot filter keeps ranking by mawShownRarity.
+MawRarity mawNameRarity(const InventoryItem &item, const MawItemData &data)
+{
+    const MawRarity shown = mawShownRarity(item, data);
+
+    if (shown == MawRarity::None || shown >= MawRarity::Ancient)
+    {
+        return shown;
+    }
+
+    return MawRarity(1 + (item.standardEnchantId != 0 ? 1 : 0) + (item.specialEnchantId != 0 ? 1 : 0)
+        + (item.rulesetFields.secondStandardEnchantId != 0 ? 1 : 0));
+}
 
 bool isSkillEnchant(int type)
 {
@@ -293,76 +333,83 @@ int mawSpecialStatAmount(uint16_t specialId, size_t index, int itemPower)
 // MAW's text of a special at an item power (checktext, IT:1835-1890); nothing for the specials that keep the table's.
 std::optional<std::string> mawSpecialText(uint16_t specialId, int itemPower)
 {
-    static const std::array<const char *, 9> Schools = {
-        "Air", "Body", "Dark", "Earth", "Fire", "Light", "Mind", "Spirit", "Water",
+    static constexpr std::array<std::string_view, 9> Schools = {
+        Engine::trNoop("Air"), Engine::trNoop("Body"), Engine::trNoop("Dark"), Engine::trNoop("Earth"),
+        Engine::trNoop("Fire"), Engine::trNoop("Light"), Engine::trNoop("Mind"), Engine::trNoop("Spirit"),
+        Engine::trNoop("Water"),
     };
-    const std::string school = std::to_string(itemPower / 4 + 5);
-    const std::string meditation = std::to_string(itemPower * 3 / 20 + 3);
-    const auto plus = [itemPower, specialId](const char *pText)
+    const int school = itemPower / 4 + 5;
+    const int meditation = itemPower * 3 / 20 + 3;
+    // A stat special's line after a space, as MAW writes it: {amount} and {second} its stats, {meditation} its skill.
+    const auto plus = [itemPower, specialId, meditation](std::string_view pattern)
     {
-        return " +" + std::to_string(mawSpecialStatAmount(specialId, 0, itemPower)) + pText;
+        return " "
+            + Engine::tr(pattern,
+                {{"amount", mawSpecialStatAmount(specialId, 0, itemPower)},
+                    {"second", mawSpecialStatAmount(specialId, 1, itemPower)}, {"meditation", meditation}});
     };
 
     if (specialId >= 26 && specialId <= 34)
     {
-        return std::string(Schools[size_t(specialId - 26)]) + " Magic Skill +" + school;
+        return Engine::tr("{school} Magic Skill +{amount}",
+            {{"school", Engine::tr(Schools[size_t(specialId - 26)])}, {"amount", school}});
     }
 
     switch (specialId)
     {
         case 1:
-            return plus(" to all Resistances.");
+            return plus(Engine::trNoop("+{amount} to all Resistances."));
         case 2:
-            return plus(" to all Seven Statistics.");
+            return plus(Engine::trNoop("+{amount} to all Seven Statistics."));
         case 38:
-            return "Meditation Skill +" + meditation;
+            return Engine::tr("Meditation Skill +{amount}", {{"amount", meditation}});
         case 40:
-            return std::string("Leech 10% of magical damage, increases cast speed (does not stack).");
+            return Engine::tr("Leech 10% of magical damage, increases cast speed (does not stack).");
         case 42:
         case 80:
-            return plus(" to Seven Stats, HP, SP, Armor, Resistances.");
+            return plus(Engine::trNoop("+{amount} to Seven Stats, HP, SP, Armor, Resistances."));
         case 43:
-            return plus(" to Endurance, Armor, Hit points.");
+            return plus(Engine::trNoop("+{amount} to Endurance, Armor, Hit points."));
         case 44:
-            return plus(" Hit points and Regenerate Hit points over time.");
+            return plus(Engine::trNoop("+{amount} Hit points and Regenerate Hit points over time."));
         case 45:
-            return plus(" Speed and Accuracy.");
+            return plus(Engine::trNoop("+{amount} Speed and Accuracy."));
         case 47:
-            return plus(" Spell points and Meditation Skill +") + meditation;
+            return plus(Engine::trNoop("+{amount} Spell points and Meditation Skill +{meditation}"));
         case 48:
-            return plus(" Endurance and +") + std::to_string(mawSpecialStatAmount(48, 1, itemPower)) + " Armor.";
+            return plus(Engine::trNoop("+{amount} Endurance and +{second} Armor."));
         case 49:
-            return plus(" Intellect and Luck.");
+            return plus(Engine::trNoop("+{amount} Intellect and Luck."));
         case 50:
-            return plus(" Fire Resistance and Regenerate Hit points over time.");
+            return plus(Engine::trNoop("+{amount} Fire Resistance and Regenerate Hit points over time."));
         case 51:
-            return plus(" Spell points, Speed, Intellect.");
+            return plus(Engine::trNoop("+{amount} Spell points, Speed, Intellect."));
         case 52:
-            return plus(" Endurance and Accuracy.");
+            return plus(Engine::trNoop("+{amount} Endurance and Accuracy."));
         case 53:
-            return plus(" Might and Personality.");
+            return plus(Engine::trNoop("+{amount} Might and Personality."));
         case 54:
-            return plus(" Endurance and Regenerate Hit points over time.");
+            return plus(Engine::trNoop("+{amount} Endurance and Regenerate Hit points over time."));
         case 55:
-            return plus(" Luck and Meditation Skill +") + meditation;
+            return plus(Engine::trNoop("+{amount} Luck and Meditation Skill +{meditation}"));
         case 56:
-            return plus(" Might and Endurance.");
+            return plus(Engine::trNoop("+{amount} Might and Endurance."));
         case 57:
-            return plus(" Intellect and Personality.");
+            return plus(Engine::trNoop("+{amount} Intellect and Personality."));
         case 66:
-            return "Regenerates Hit Points and Meditation Skill +" + meditation;
+            return Engine::tr("Regenerates Hit Points and Meditation Skill +{amount}", {{"amount", meditation}});
         case 74:
-            return plus(" Personality and Accuracy.");
+            return plus(Engine::trNoop("+{amount} Personality and Accuracy."));
         case 75:
-            return plus(" Intellect and Might.");
+            return plus(Engine::trNoop("+{amount} Intellect and Might."));
         case 76:
-            return plus(" Intellect and Accuracy.");
+            return plus(Engine::trNoop("+{amount} Intellect and Accuracy."));
         case 77:
-            return plus(" Might, Intellect and Personality.");
+            return plus(Engine::trNoop("+{amount} Might, Intellect and Personality."));
         case 78:
-            return plus(" Elemental Resistances.");
+            return plus(Engine::trNoop("+{amount} Elemental Resistances."));
         case 79:
-            return plus(" Body and mind Resistances.");
+            return plus(Engine::trNoop("+{amount} Body and mind Resistances."));
         default:
             return std::nullopt;
     }
@@ -520,37 +567,37 @@ std::vector<std::string> artifactPowerLines(
 
     if (worn.halfMissileDamage)
     {
-        lines.push_back("Permanent Shield");
+        lines.push_back(Engine::tr("Permanent Shield"));
     }
 
     if (worn.waterWalking)
     {
-        lines.push_back("Permanent Water Walk");
+        lines.push_back(Engine::tr("Permanent Water Walk"));
     }
 
     if (worn.featherFalling)
     {
-        lines.push_back("Permanent Feather Fall for the party");
+        lines.push_back(Engine::tr("Permanent Feather Fall for the party"));
     }
 
     // Poison and disease are one word each to the player.
     struct Immunity
     {
         std::vector<CharacterCondition> conditions;
-        const char *pName;
+        std::string_view name;
     };
     const std::array<Immunity, 9> immunities = {{
-        {{CharacterCondition::Cursed}, "Curse"},
-        {{CharacterCondition::Weak}, "Weakness"},
-        {{CharacterCondition::Asleep}, "Sleep"},
-        {{CharacterCondition::Fear}, "Fear"},
-        {{CharacterCondition::Insane}, "Insanity"},
+        {{CharacterCondition::Cursed}, Engine::trNoop("Curse")},
+        {{CharacterCondition::Weak}, Engine::trNoop("Weakness")},
+        {{CharacterCondition::Asleep}, Engine::trNoop("Sleep")},
+        {{CharacterCondition::Fear}, Engine::trNoop("Fear")},
+        {{CharacterCondition::Insane}, Engine::trNoop("Insanity")},
         {{CharacterCondition::PoisonWeak, CharacterCondition::PoisonMedium, CharacterCondition::PoisonSevere},
-            "Poison"},
+            Engine::trNoop("Poison")},
         {{CharacterCondition::DiseaseWeak, CharacterCondition::DiseaseMedium, CharacterCondition::DiseaseSevere},
-            "Disease"},
-        {{CharacterCondition::Paralyzed}, "Paralysis"},
-        {{CharacterCondition::Petrified}, "Stone"},
+            Engine::trNoop("Disease")},
+        {{CharacterCondition::Paralyzed}, Engine::trNoop("Paralysis")},
+        {{CharacterCondition::Petrified}, Engine::trNoop("Stone")},
     }};
     std::vector<std::string> names;
 
@@ -560,21 +607,22 @@ std::vector<std::string> artifactPowerLines(
                 [&worn](CharacterCondition condition)
                 { return worn.magicalConditionImmunities.test(size_t(condition)); }))
         {
-            names.push_back(immunity.pName);
+            names.push_back(Engine::tr(immunity.name));
         }
     }
 
     if (!names.empty())
     {
+        // In the order of the names as shown.
         std::sort(names.begin(), names.end());
-        std::string text = "Immune to " + names.front();
+        std::string conditions = names.front();
 
         for (size_t index = 1; index < names.size(); ++index)
         {
-            text += ", " + names[index];
+            conditions += ", " + names[index];
         }
 
-        lines.push_back(text);
+        lines.push_back(Engine::tr("Immune to {conditions}", {{"conditions", conditions}}));
     }
 
     return lines;
@@ -635,6 +683,32 @@ int mawWornItemCount(const Character &character, std::initializer_list<uint32_t>
     return count;
 }
 
+bool mawIsHalberd(uint32_t itemId)
+{
+    static constexpr std::array<uint32_t, 12> Halberds = {46, 47, 48, 49, 50, 507, 838, 839, 840, 1638, 1639, 1640};
+    return std::find(Halberds.begin(), Halberds.end(), itemId) != Halberds.end();
+}
+
+std::string mawWeaponSkill(const Character &character, const ItemDefinition &itemDefinition)
+{
+    const std::string skill = canonicalSkillName(itemDefinition.skillGroup);
+
+    if (skill != "Spear" || !mawIsHalberd(itemDefinition.itemId))
+    {
+        return skill;
+    }
+
+    const auto held = [&character](const char *pSkill)
+    {
+        const CharacterSkill *pState = character.findSkill(pSkill);
+        const int level = (pState != nullptr ? int(pState->level) : 0) + character.skillBonus(pSkill);
+        return std::pair(level, pState != nullptr ? int(pState->mastery) : 0);
+    };
+    const std::pair<int, int> spear = held("Spear");
+    const std::pair<int, int> axe = held("Axe");
+    return axe > spear ? "Axe" : "Spear";
+}
+
 bool mawRegenerationArtifact(uint32_t itemId, bool spellPoints)
 {
     static constexpr std::array<uint32_t, 6> HealthArtifacts = {509, 520, 1337, 1331, 1335, 2027};
@@ -660,6 +734,12 @@ int mawWornRegenerationArtifacts(const Character &character, bool spellPoints)
 
 namespace
 {
+
+// The words items.yml gives an artifact's on-hit damage kind and the monsters it hurts more, translated where the
+// tooltip names them; Fire, Air and the other schools are marked with mawSpecialText's.
+[[maybe_unused]] constexpr std::array<std::string_view, 7> ArtifactHitWords = {Engine::trNoop("Physical"),
+    Engine::trNoop("Ogre"), Engine::trNoop("Dragon"), Engine::trNoop("Demon"), Engine::trNoop("Elemental"),
+    Engine::trNoop("Elf"), Engine::trNoop("Undead")};
 
 // The skill a skill enchantment raises; MAW reads enchant 18 as Repair (STDITEMS says Stealing).
 std::string enchantSkillName(int type)
@@ -820,11 +900,11 @@ std::string mawEnchantStatName(const StandardItemEnchantTable *pTable, int type)
 {
     if (isSkillEnchant(type))
     {
-        return displaySkillName(enchantSkillName(type));
+        return Engine::localize(displaySkillName(enchantSkillName(type)), "skill");
     }
 
     const StandardItemEnchantEntry *pEntry = pTable != nullptr ? pTable->get(uint16_t(type)) : nullptr;
-    return pEntry != nullptr ? pEntry->statName : std::string();
+    return pEntry != nullptr ? Engine::localize(pEntry->statName) : std::string();
 }
 
 int mawEnchantReadPower(int type, int power, bool first, double slotMultiplier, bool ring)
@@ -858,13 +938,44 @@ bool MawItemRules::rollsRareItem(const ItemGenerationRequest &, Party *, std::mt
 namespace
 {
 constexpr uint32_t FirstSealedBookId = 971;
+// The school's skill without "Magic"; the words are translated where a book's text names them (mawSpecialText).
 constexpr std::array<const char *, 9> SealedBookSchools = {
     "Fire", "Air", "Water", "Earth", "Spirit", "Mind", "Body", "Light", "Dark"};
 
-// The school (1-9) of a spellbook that is sealed when found: the MM8 (400-498), MM7 (1202-1300) and MM6 (1902-2018)
-// books, 11 a school (13 for MM6); 0 for any other item.
-int sealableBookSchool(uint32_t itemId)
+// The spell (1-99) a world's spellbook teaches (MM9's 10901+: mod1 "S<spell>"); 0 for any other item.
+int worldBookSpell(const ItemDefinition &book)
 {
+    if (book.itemId < MawWorldItemRows || book.equipStat != "Book" || book.mod1.size() < 2 || book.mod1[0] != 'S')
+    {
+        return 0;
+    }
+
+    const int spell = std::atoi(book.mod1.c_str() + 1);
+    return spell >= 1 && spell <= 99 ? spell : 0;
+}
+
+// The book whose price a spellbook takes: a world's book costs what MAW asks for its own (MM8) book of the same spell,
+// which MAW reprices (content/items_patch.txt), so MM9's books are not sold at MM9's lower prices; any other item is
+// its own.
+const ItemDefinition &pricedBook(const ItemDefinition &book, const ItemTable *pItemTable)
+{
+    const int spell = worldBookSpell(book);
+    const ItemDefinition *pMawBook =
+        spell > 0 && pItemTable != nullptr ? pItemTable->get(uint32_t(399 + spell)) : nullptr;
+    return pMawBook != nullptr && pMawBook->equipStat == "Book" && pMawBook->mod1 == book.mod1 ? *pMawBook : book;
+}
+
+// The school (1-9) of a spellbook that is sealed when found: the MM8 (400-498), MM7 (1202-1300) and MM6 (1902-2018)
+// books, 11 a school (13 for MM6), and a world's books by their spell; 0 for any other item.
+int sealableBookSchool(const ItemDefinition &book)
+{
+    const uint32_t itemId = book.itemId;
+
+    if (const int spell = worldBookSpell(book); spell > 0)
+    {
+        return (spell - 1) / 11 + 1;
+    }
+
     if (itemId >= 400 && itemId <= 498)
     {
         return int(itemId - 399 + 10) / 11;
@@ -893,9 +1004,16 @@ int sealedBookSchool(const InventoryItem &item)
 }
 
 // A spellbook's place in its school, 1 (the first spell) to 11; MM6's thirteen books per school share places with their
-// neighbours (getBookTier). 0 for any other item.
-int spellbookTier(uint32_t itemId)
+// neighbours (getBookTier); a world's book by its spell. 0 for any other item.
+int spellbookTier(const ItemDefinition &book)
 {
+    const uint32_t itemId = book.itemId;
+
+    if (const int spell = worldBookSpell(book); spell > 0)
+    {
+        return (spell - 1) % 11 + 1;
+    }
+
     if (itemId >= 400 && itemId <= 498)
     {
         return int(itemId - 400) % 11 + 1;
@@ -930,7 +1048,7 @@ void MawItemRules::rollPlainItem(
     const ItemDefinition &itemDefinition,
     const ItemGenerationRequest &request) const
 {
-    if (const int school = sealableBookSchool(item.objectDescriptionId);
+    if (const int school = sealableBookSchool(itemDefinition);
         school > 0 && request.mode != ItemGenerationMode::Shop)
     {
         item.rulesetFields.craftState = uint16_t(item.objectDescriptionId);
@@ -995,7 +1113,7 @@ std::optional<std::string> MawItemRules::sellRefusal(const Party &party, const I
 
     if (once != mawSellOnceItems().end() && m_rules.state().soldUniqueItems.contains(itemId))
     {
-        return std::string("I have already bought an item like that.");
+        return Engine::tr("I have already bought an item like that.");
     }
 
     const auto quest = std::find_if(mawQuestBoundItems().begin(), mawQuestBoundItems().end(),
@@ -1011,8 +1129,8 @@ std::optional<std::string> MawItemRules::sellRefusal(const Party &party, const I
         || std::any_of(quest->awards.begin(), quest->awards.end(),
             [&party](uint32_t award) { return party.hasAward(award); });
     return done ? std::nullopt
-                : std::optional<std::string>("No, no -- you will still need that item. Come back once the task it is "
-                                             "for is done.");
+                : std::optional<std::string>(Engine::tr(
+                    "No, no -- you will still need that item. Come back once the task it is for is done."));
 }
 
 void MawItemRules::itemSold(Party &party, const InventoryItem &item) const
@@ -1389,7 +1507,8 @@ std::optional<MawWeaponDamage> MawItemRules::weaponDamage(
         itemPower = mawItemPower(int(celestialLevel(wearerLevel)), MawRarity::Celestial, 24);
     }
 
-    return mawWeaponDamage(itemPower * 5.0, pBase->twoHanded, pBase->rung, pBase->diceCount, quality);
+    return mawWeaponDamage(
+        itemPower * 5.0, pBase->twoHanded, pBase->rung, pBase->diceCount, quality * pBase->strength);
 }
 
 std::optional<int> MawItemRules::weaponGuardBase(
@@ -1459,7 +1578,7 @@ std::optional<int> MawItemRules::armorClass(
         itemPower = mawItemPower(int(celestialLevel(wearerLevel)), MawRarity::Celestial, 24);
     }
 
-    return mawArmorClass(pBase->baseArmorClass, pBase->referenceArmorClass, itemPower, quality);
+    return mawArmorClass(pBase->baseArmorClass, pBase->referenceArmorClass, itemPower, quality * pBase->strength);
 }
 
 std::optional<ItemBaseStats> MawItemRules::baseStats(
@@ -1775,7 +1894,8 @@ ItemWield MawItemRules::wield(const Character &character, const ItemDefinition &
         wield.twoHanded = false;
         wield.offHand = false;
     }
-    else if (skill == "Axe" && (character.raceId == Dwarf || character.raceId == Minotaur))
+    else if ((skill == "Axe" || mawIsHalberd(itemDefinition.itemId))
+        && (character.raceId == Dwarf || character.raceId == Minotaur))
     {
         if (!wield.twoHanded)
         {
@@ -1789,6 +1909,11 @@ ItemWield MawItemRules::wield(const Character &character, const ItemDefinition &
     }
 
     return wield;
+}
+
+std::string MawItemRules::weaponSkill(const Character &character, const ItemDefinition &itemDefinition) const
+{
+    return mawWeaponSkill(character, itemDefinition);
 }
 
 int MawItemRules::levelRequirement(const ItemDefinition &itemDefinition, const ItemRulesetFields &fields) const
@@ -1858,7 +1983,14 @@ int MawItemRules::itemValue(
         InventoryItem book = item;
         book.objectDescriptionId = pBook->itemId;
         book.rulesetFields.craftState = 0;
-        return ItemRules::itemValue(book, *pBook, pStandardTable, pSpecialTable, minimumValue);
+        return ItemRules::itemValue(
+            book, pricedBook(*pBook, m_rules.itemTable()), pStandardTable, pSpecialTable, minimumValue);
+    }
+
+    if (worldBookSpell(itemDefinition) > 0)
+    {
+        return ItemRules::itemValue(
+            item, pricedBook(itemDefinition, m_rules.itemTable()), pStandardTable, pSpecialTable, minimumValue);
     }
 
     if (pBase == nullptr || item.temporaryBonusRemainingSeconds > 0.0f)
@@ -1880,7 +2012,7 @@ int MawItemRules::shopBuyValue(
 
     // Road to Insanity: spellbooks cost 5, 10 or 20 times as much in shops from the 5th, 8th and 11th of their school
     // (zzMaw-Items.lua:2306-2324).
-    if (const int tier = spellbookTier(itemDefinition.itemId);
+    if (const int tier = spellbookTier(itemDefinition);
         tier > 0 && mawModelConfig(m_rules.options(), 5).insanityMode)
     {
         const int multiplier = tier == 11 ? 20 : tier >= 8 ? 10 : tier >= 5 ? 5 : 1;
@@ -1924,13 +2056,13 @@ std::string MawItemRules::displayName(
     if (m_rules.options().challengeMode == RulesetChallengeMode::Austerity
         && ((itemId >= 232 && itemId <= 237) || (itemId >= 252 && itemId <= 256) || (itemId >= 261 && itemId <= 263)))
     {
-        return "Potion Deleted in Austerity";
+        return Engine::tr("Potion Deleted in Austerity");
     }
 
     // A dimension map is named after its map (Tooltip.lua tooltipMapLevel).
     if (const MapStatsEntry *pMap = dimensionMapTarget(item))
     {
-        return pMap->name + " Map";
+        return Engine::tr("{map} Map", {{"map", Engine::localize(pMap->name)}});
     }
 
     if (m_rules.itemData().baseItem(itemDefinition.itemId) == nullptr)
@@ -1951,7 +2083,7 @@ std::string MawItemRules::displayName(
 
     if (rarity >= MawRarity::Ancient)
     {
-        name = std::string(mawRarityName(rarity)) + " " + name;
+        name = Engine::tr("{rarity} {item}", {{"rarity", Engine::tr(mawRarityName(rarity))}, {"item", name}});
     }
 
     return name;
@@ -1986,25 +2118,26 @@ std::string MawItemRules::enchantDescription(
         const int low = int(std::floor(range.minimum * legendary));
         const int high = int(std::floor(range.maximum * legendary));
         const std::string amount = std::to_string(low) + (high != low ? "-" + std::to_string(high) : std::string());
-        const char *pKind = pEnchant->type == CombatDamageType::Water ? "Cold"
-            : pEnchant->type == CombatDamageType::Air                ? "Electrical"
-            : pEnchant->type == CombatDamageType::Body               ? "Body"
-                                                                      : "Fire";
+        const std::string_view kind = pEnchant->type == CombatDamageType::Water ? Engine::trNoop("Cold")
+            : pEnchant->type == CombatDamageType::Air                         ? Engine::trNoop("Electrical")
+            : pEnchant->type == CombatDamageType::Body                        ? Engine::trNoop("Body")
+                                                                               : Engine::trNoop("Fire");
 
         if (pEnchant->spellOnly)
         {
-            return "Adds " + amount + " to spell damage and +" + std::to_string(mawSpecialStatAmount(39, 0, itemPower))
-                + " Intellect and personality.";
+            return Engine::tr("Adds {amount} to spell damage and +{intellect} Intellect and personality.",
+                {{"amount", amount}, {"intellect", mawSpecialStatAmount(39, 0, itemPower)}});
         }
 
         if (pEnchant->weaponOnly)
         {
-            return "Adds " + amount + " points of Fire damage to "
-                + (itemDefinition.equipStat == "Missile" ? "Bow" : "Melee") + " attacks and +"
-                + std::to_string(mawSpecialStatAmount(46, 0, itemPower)) + " Might.";
+            return Engine::tr(itemDefinition.equipStat == "Missile"
+                    ? "Adds {amount} points of Fire damage to Bow attacks and +{might} Might."
+                    : "Adds {amount} points of Fire damage to Melee attacks and +{might} Might.",
+                {{"amount", amount}, {"might", mawSpecialStatAmount(46, 0, itemPower)}});
         }
 
-        return "Adds " + amount + " points of " + pKind + " damage.";
+        return Engine::tr("Adds {amount} points of {kind} damage.", {{"amount", amount}, {"kind", Engine::tr(kind)}});
     }
 
     if (const std::optional<std::string> text = mawSpecialText(item.specialEnchantId, itemPower))
@@ -2029,7 +2162,7 @@ bool MawItemRules::inventorySearch() const
 
 std::optional<uint32_t> MawItemRules::nameColor(const InventoryItem &item) const
 {
-    switch (MawRarity(item.rulesetFields.lootRarity))
+    switch (mawNameRarity(item, m_rules.itemData()))
     {
         case MawRarity::Uncommon:
             return 0x1eff00;
@@ -2062,7 +2195,7 @@ std::string MawItemRules::enchantLine(
 
     if (pBase == nullptr)
     {
-        return mawEnchantStatName(pStandardTable, type) + " +" + std::to_string(power);
+        return Engine::tr("{stat} +{amount}", {{"stat", mawEnchantStatName(pStandardTable, type)}, {"amount", power}});
     }
 
     const bool ring = itemDefinition.equipStat == "Ring";
@@ -2076,12 +2209,13 @@ std::string MawItemRules::enchantLine(
         points = (points + 10) * (ring ? 0.5 : 1);
         const double percent = mawRound((1 - 1 / (points / 100 + 1)) * 1000) / 10;
         std::ostringstream text;
-        text << mawEnchantStatName(pStandardTable, type) << " +" << percent << "%";
-        return text.str();
+        text << percent;
+        return Engine::tr(
+            "{stat} +{percent}%", {{"stat", mawEnchantStatName(pStandardTable, type)}, {"percent", text.str()}});
     }
 
     const int shown = readEnchantment(type, power, first, itemDefinition, *pBase, ring);
-    return mawEnchantStatName(pStandardTable, type) + " +" + std::to_string(shown);
+    return Engine::tr("{stat} +{amount}", {{"stat", mawEnchantStatName(pStandardTable, type)}, {"amount", shown}});
 }
 
 std::vector<ItemInspectLine> MawItemRules::inspectLines(
@@ -2105,13 +2239,15 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
         const MawDimensionData &dimension = m_rules.dimensionData();
         const MawDimensionMap map = MawDimensionMap::fromFields(fields);
         const double strength = mawDimensionStrength(map.power, map.activeAffixCount());
-        lines.push_back({"Map Level: "
-                + std::to_string(mawDimensionMapLevel(map.power, m_rules.mapLevels().band(pMap->fileName))),
+        lines.push_back({Engine::tr("Map Level: {level}",
+                             {{"level", mawDimensionMapLevel(map.power, m_rules.mapLevels().band(pMap->fileName))}}),
             0xffffff});
-        lines.push_back({"+" + std::to_string(int(mawRound(strength / 8 * 1.5))) + "% craft items drop chances",
+        lines.push_back({Engine::tr("+{percent}% craft items drop chances",
+                             {{"percent", int(mawRound(strength / 8 * 1.5))}}),
             0x007fff});
-        lines.push_back({"+" + std::to_string(int(mawRound(strength / 4))) + "% item quality", 0x007fff});
-        lines.push_back({"+" + std::to_string(int(mawRound(strength / 3))) + "% monster density", 0x007fff});
+        lines.push_back({Engine::tr("+{percent}% item quality", {{"percent", int(mawRound(strength / 4))}}), 0x007fff});
+        lines.push_back(
+            {Engine::tr("+{percent}% monster density", {{"percent", int(mawRound(strength / 3))}}), 0x007fff});
         const std::array<uint8_t, 4> active = map.activeAffixes();
 
         for (size_t slot = 0; slot < map.affixes.size(); ++slot)
@@ -2131,7 +2267,7 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
     {
         const int power =
             mawReagentBasePower(InventoryItemMixingRuntime::reagentPower(itemDefinition), fields.dropLevel);
-        lines.push_back({"Power: " + std::to_string(power), 0xffffff});
+        lines.push_back({Engine::tr("Power: {power}", {{"power", power}}), 0xffffff});
         return lines;
     }
 
@@ -2148,12 +2284,13 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
                 // MAW's immunity value reads as such (Tooltip.lua tooltipArtifactScaling).
                 if (amount >= 65000)
                 {
-                    lines.push_back({mawEnchantStatName(pStandardTable, type) + ": Immune", 0x96c8ffu});
+                    const std::string stat = mawEnchantStatName(pStandardTable, type);
+                    lines.push_back({Engine::tr("{stat}: Immune", {{"stat", stat}}), 0x96c8ffu});
                 }
                 else if (amount != 0)
                 {
-                    lines.push_back({mawEnchantStatName(pStandardTable, type) + (amount > 0 ? " +" : " ")
-                            + std::to_string(amount),
+                    lines.push_back({Engine::tr(amount > 0 ? "{stat} +{amount}" : "{stat} {amount}",
+                                         {{"stat", mawEnchantStatName(pStandardTable, type)}, {"amount", amount}}),
                         amount > 0 ? 0x96c8ffu : 0xff6464u});
                 }
             }
@@ -2163,27 +2300,54 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
         {
             if (amount != 0)
             {
-                lines.push_back({displaySkillName(skill) + (amount > 0 ? " +" : " ") + std::to_string(amount),
+                const std::string name = Engine::localize(displaySkillName(skill), "skill");
+                lines.push_back({Engine::tr(amount > 0 ? "{stat} +{amount}" : "{stat} {amount}",
+                                     {{"stat", name}, {"amount", amount}}),
                     amount > 0 ? 0x96c8ffu : 0xff6464u});
             }
         }
 
-        if (!pArtifact->onHitType.empty())
+        // Mordred and Spiritslayer, MAW's vampiric artifacts, hit for no extra damage: their line reads "Vampiric", as
+        // MAW's MawArtifactOnHitText has it (OY-428); Snake hits for none either and only slows.
+        const std::optional<std::pair<int, int>> hit = pViewer != nullptr && pArtifact->onHitDamage > 0
+            ? mawArtifactHitOnWeapon(m_rules, *pViewer, itemDefinition, item)
+            : std::nullopt;
+
+        if (!pArtifact->onHitType.empty() && pArtifact->onHitDamage <= 0)
         {
-            lines.push_back({pArtifact->onHitType + " damage on hit" + (pArtifact->onHitSlow ? ", slows" : ""),
+            lines.push_back({Engine::tr(pArtifact->onHitSlow ? "Slows its target on hit" : "Vampiric"), 0xffbe5a});
+        }
+        else if (!pArtifact->onHitType.empty() && hit)
+        {
+            // The range in the viewer's hands, as a blow rolls it (Discord, 2026-11-10: "Physical damage on hit" said
+            // nothing of how much).
+            lines.push_back(
+                {Engine::tr(pArtifact->onHitSlow ? "Adds {minimum}-{maximum} {kind} damage to every hit, slows"
+                                                 : "Adds {minimum}-{maximum} {kind} damage to every hit",
+                     {{"minimum", hit->first}, {"maximum", hit->second}, {"kind", Engine::tr(pArtifact->onHitType)}}),
+                    0xffbe5a});
+        }
+        else if (!pArtifact->onHitType.empty())
+        {
+            lines.push_back({Engine::tr(pArtifact->onHitSlow ? "{kind} damage on hit, slows" : "{kind} damage on hit",
+                                 {{"kind", Engine::tr(pArtifact->onHitType)}}),
                 0xffbe5a});
         }
 
         for (const auto &[kind, factor] : pArtifact->onHitVersus)
         {
             std::ostringstream text;
-            text << "x" << factor << " damage vs " << kind;
-            lines.push_back({text.str(), 0xffbe5a});
+            text << factor;
+            lines.push_back(
+                {Engine::tr("x{factor} damage vs {kind}", {{"factor", text.str()}, {"kind", Engine::tr(kind)}}),
+                    0xffbe5a});
         }
 
         for (const std::string &school : pArtifact->spellBonus)
         {
-            lines.push_back({"+50% skill in " + displaySkillName(school), 0x96c8ff});
+            lines.push_back(
+                {Engine::tr("+50% skill in {skill}", {{"skill", Engine::localize(displaySkillName(school), "skill")}}),
+                    0x96c8ff});
         }
 
         // Its lasting powers (MawArtifactOnHitText, zzzMaw_Artifacts.lua:410-460): read off what wearing it does.
@@ -2194,17 +2358,17 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
 
         if (mawRegenerationArtifact(itemDefinition.itemId, false))
         {
-            lines.push_back({"Regenerates Hit Points", 0x96c8ff});
+            lines.push_back({Engine::tr("Regenerates Hit Points"), 0x96c8ff});
         }
 
         if (mawRegenerationArtifact(itemDefinition.itemId, true))
         {
-            lines.push_back({"Regenerates Spell Points", 0x96c8ff});
+            lines.push_back({Engine::tr("Regenerates Spell Points"), 0x96c8ff});
         }
 
         if (pArtifact->attackDelayMultiplier < 1)
         {
-            lines.push_back({"Swift", 0x96c8ff});
+            lines.push_back({Engine::tr("Swift"), 0x96c8ff});
         }
 
         // Who may wear it (artifactWearReq), red when the viewer may not.
@@ -2216,7 +2380,8 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
             lines.push_back({*requirement, barred ? 0xff3232u : 0xffbe5au});
         }
 
-        lines.push_back({"Artifact level: " + std::to_string(int(mawRound(m_rules.state().totalLevel()))), 0x78f0ff});
+        const int artifactLevel = int(mawRound(m_rules.state().totalLevel()));
+        lines.push_back({Engine::tr("Artifact level: {level}", {{"level", artifactLevel}}), 0x78f0ff});
         return lines;
     }
 
@@ -2241,44 +2406,45 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
 
         if (fields.legendaryAffixId != 0)
         {
-            lines.push_back({data.legendaryAffixText(fields.legendaryAffixId), 0xffff1e});
+            lines.push_back({Engine::localize(data.legendaryAffixText(fields.legendaryAffixId)), 0xffff1e});
             const int nearby = m_rules.nearbyMonsters();
 
             // Legendaries 21 and 22 with the monsters near the party now (Tooltip.lua:399-422).
             if (fields.legendaryAffixId == 21)
             {
-                lines.push_back({"Current bonus Damage: " + std::to_string(std::min(nearby * 5, 100)) + "%", 0xffff1e});
+                const int bonus = std::min(nearby * 5, 100);
+                lines.push_back({Engine::tr("Current bonus Damage: {percent}%", {{"percent", bonus}}), 0xffff1e});
             }
             else if (fields.legendaryAffixId == 22)
             {
                 std::ostringstream text;
-                text << "Current Reduction: " << mawRound(std::min(1 - std::pow(0.97, nearby), 0.5) * 10000) / 100
-                     << "%";
-                lines.push_back({text.str(), 0xffff1e});
+                text << mawRound(std::min(1 - std::pow(0.97, nearby), 0.5) * 10000) / 100;
+                lines.push_back({Engine::tr("Current Reduction: {percent}%", {{"percent", text.str()}}), 0xffff1e});
             }
         }
 
         if (MawRarity(fields.lootRarity) == MawRarity::Celestial)
         {
             const bool madness = m_rules.options().challengeMode == RulesetChallengeMode::BeyondMadness;
-            lines.push_back({"Grows with its wearer up to level "
-                    + std::to_string(madness ? MadnessCelestialLevelCap : CelestialLevelCap),
+            lines.push_back({Engine::tr("Grows with its wearer up to level {level}",
+                                 {{"level", madness ? MadnessCelestialLevelCap : CelestialLevelCap}}),
                 0x78f0ff});
         }
     }
 
     if (isWeapon(itemDefinition))
     {
-        const std::string skill = canonicalSkillName(itemDefinition.skillGroup);
+        // A halberd's pace is that of the skill the viewer would wield it with (Tooltip.lua:709-716).
+        const std::string skill = pViewer != nullptr ? mawWeaponSkill(*pViewer, itemDefinition)
+                                                     : canonicalSkillName(itemDefinition.skillGroup);
         const bool twoHanded = pBase->twoHanded;
-        lines.push_back({"Attack speed: " + formatSpeed(mawItemRecovery(weaponBaseRecovery(skill),
-                    fields.itemPower * 5, twoHanded)),
-            0xffffff});
+        const int recovery = mawItemRecovery(weaponBaseRecovery(skill), fields.itemPower * 5, twoHanded);
+        lines.push_back({Engine::tr("Attack speed: {speed}", {{"speed", formatSpeed(recovery)}}), 0xffffff});
     }
 
     if (fields.qualityPercent > 0)
     {
-        lines.push_back({"Quality bonus: +" + std::to_string(fields.qualityPercent) + "%", 0xffbe5a});
+        lines.push_back({Engine::tr("Quality bonus: +{percent}%", {{"percent", fields.qualityPercent}}), 0xffbe5a});
     }
 
     // The held auras on a weapon in the viewer's hands (tooltipFireAura).
@@ -2286,26 +2452,29 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
     {
         if (const std::optional<MawAuraSource> fire = m_rules.memberAura(4, *pViewer))
         {
-            static const std::array<const char *, 5> Names = {"", "Fire", "Flame", "Inferno", "Hell"};
+            static constexpr std::array<std::string_view, 5> Names = {
+                "", Engine::trNoop("Fire"), Engine::trNoop("Flame"), Engine::trNoop("Inferno"), Engine::trNoop("Hell")};
+            const std::string_view aura = Names[size_t(std::clamp(int(fire->mastery), 0, 4))];
             const int damage = mawFireAuraOnWeapon(m_rules, *pViewer, itemDefinition, item);
-            lines.push_back({std::string(Names[size_t(std::clamp(int(fire->mastery), 0, 4))]) + " Aura: adds "
-                    + std::to_string(damage) + " Fire Damage to any attack",
+            lines.push_back({Engine::tr("{aura} Aura: adds {damage} Fire Damage to any attack",
+                                 {{"aura", aura.empty() ? std::string() : Engine::tr(aura)}, {"damage", damage}}),
                 0xffff99});
         }
 
         if (m_rules.memberAura(91, *pViewer))
         {
-            lines.push_back({"Vampiric Aura: damage done will restore player HP.", 0xffff99});
+            lines.push_back({Engine::tr("Vampiric Aura: damage done will restore player HP."), 0xffff99});
         }
     }
 
-    lines.push_back({"Item level: " + std::to_string(fields.itemPower * 5), 0xc8c8c8});
+    lines.push_back({Engine::tr("Item level: {level}", {{"level", fields.itemPower * 5}}), 0xc8c8c8});
     const int requiredLevel = levelRequirement(itemDefinition, fields);
 
     if (requiredLevel > 1)
     {
         const bool tooLow = pViewer != nullptr && int(pViewer->level) < requiredLevel;
-        lines.push_back({"Level required: " + std::to_string(requiredLevel), tooLow ? 0xff3232u : 0xffffffu});
+        lines.push_back(
+            {Engine::tr("Level required: {level}", {{"level", requiredLevel}}), tooLow ? 0xff3232u : 0xffffffu});
     }
 
     return lines;
@@ -2325,18 +2494,38 @@ std::optional<int> MawItemRules::merchantValue(const Character &member) const
     return std::min(7 + value, 100);
 }
 
+namespace
+{
+// MM6-MM8's magic shops (wands, jewellery) and alchemists sell MAW's crafting materials; MM9's "Magic" vendors sell
+// spellbooks only, and its apothecaries (rings, amulets, potions, scrolls) take the alchemist's and magic shop's place.
+bool magicShop(const HouseEntry &house)
+{
+    return house.type == "Magic Shop" && house.vendorStockProfile == VendorStockProfile::None;
+}
+
+bool sellsCraftingMaterials(const HouseEntry &house)
+{
+    return magicShop(house) || house.type == "Alchemist" || house.type == "Apothecary Shop";
+}
+}
+
+bool MawItemRules::rollsFixedShopStock() const
+{
+    return true;
+}
+
 std::optional<int> MawItemRules::shopRerollCost(const Party &, const HouseEntry &house) const
 {
-    if (house.type != "Weapon Shop" && house.type != "Armor Shop" && house.type != "Magic Shop")
+    if (house.type != "Weapon Shop" && house.type != "Armor Shop" && !magicShop(house))
     {
         return std::nullopt;
     }
 
-    // MMMerge's continents: Jadame (MM8) 1, Antagarich (MM7) 2, Enroth (MM6) 3.
-    const uint32_t continent = house.worldId == "mm7" ? 2 : house.worldId == "mm6" ? 3 : 1;
+    // MMMerge's continents: Jadame (MM8) 1, Antagarich (MM7) 2, Enroth (MM6) 3; MAW's Chedian (MM9) 5.
+    const uint32_t continent = house.worldId == "mm7" ? 2 : house.worldId == "mm6" ? 3 : house.worldId == "mm9" ? 5 : 1;
     const MawGameState &state = m_rules.state();
-    const double ownLevel = state.continentLevels[MawGameState::continentIndex(continent)];
-    const double partyLevel = state.levelOutside(4) - std::min(ownLevel / 2, 54.0);
+    const double ownLevel = state.levelOn(continent);
+    const double partyLevel = state.totalLevel() - std::min(ownLevel / 2, 54.0);
     const int strength = std::min(int(ownLevel / 18) + 2, 5);
     const int tier = int(std::floor(std::max(0.0, partyLevel) / 15)) + strength;
     return tier * tier * 250;
@@ -2351,7 +2540,7 @@ void MawItemRules::adjustShopStock(
 {
     const MawCraftingData &crafting = m_rules.craftingData();
 
-    if ((house.type != "Magic Shop" && house.type != "Alchemist") || crafting.gemTiers() <= 0
+    if (!sellsCraftingMaterials(house) || crafting.gemTiers() <= 0
         || m_rules.lootConfig().austerity)
     {
         return;
@@ -2378,7 +2567,7 @@ void MawItemRules::adjustShopStock(
     const double specialChance =
         std::min(std::pow(std::max(0, party.gold()) / crafting.shopSpecialGold(), 0.7), 1.0);
     const std::vector<double> &bonusWeights = crafting.shopGemTierBonusWeights();
-    const double bankedLevel = m_rules.state().levelOutside(4);
+    const double bankedLevel = m_rules.state().totalLevel();
 
     for (InventoryItem &item : stock)
     {
@@ -2450,7 +2639,7 @@ std::optional<std::string> MawItemRules::useTravelItem(Party &, const InventoryI
     std::string mapFileName = pMap->fileName;
     std::transform(mapFileName.begin(), mapFileName.end(), mapFileName.begin(),
         [](unsigned char character) { return char(std::tolower(character)); });
-    const std::vector<int16_t> &families = data.families(mapFileName.ends_with(".blv"));
+    const std::vector<int16_t> &families = data.families(!m_rules.outdoorMap(mapFileName));
     MawDimensionRun run;
     run.affixes = map.activeAffixes();
     run.power = map.power;
@@ -2484,6 +2673,13 @@ std::optional<LootFilterFacts> MawItemRules::lootFilterFacts(
     // Items without a price (the blasters, Wetsuit, quest artifacts) are never filtered; MAW's chest filter sold the
     // Control Center's blasters for nothing (DEVIATIONS 182).
     if (itemDefinition.value <= 0)
+    {
+        return std::nullopt;
+    }
+
+    // Crafting gems, cubes and the other Workbench materials carry the Gem stat but are no gems to sell: never
+    // filtered, and Sell trash never picks them.
+    if (m_rules.gameRules().crafting.isMaterial(item))
     {
         return std::nullopt;
     }
@@ -2530,17 +2726,7 @@ std::optional<LootFilterFacts> MawItemRules::lootFilterFacts(
         return std::nullopt;
     }
 
-    MawRarity rarity = MawRarity(item.rulesetFields.lootRarity);
-    const uint32_t id = item.objectDescriptionId;
-    const bool baseItem = (id >= 1 && id <= 151) || (id >= 803 && id <= 936) || (id >= 1603 && id <= 1736);
-
-    // An equipment item MAW never rolled (placed in a chest) ranks as Common plus one tier per enchantment (IT:933-944).
-    if (rarity == MawRarity::None && baseItem)
-    {
-        rarity = MawRarity(1 + (item.standardEnchantId != 0 ? 1 : 0) + (item.specialEnchantId != 0 ? 1 : 0)
-            + (item.rulesetFields.secondStandardEnchantId != 0 ? 1 : 0));
-    }
-
+    const MawRarity rarity = mawShownRarity(item, m_rules.itemData());
     facts.rarity = std::min(int(rarity), LootFilterRarityCount);
     facts.itemLevel = item.rulesetFields.dropLevel;
     facts.alwaysKept = rarity >= MawRarity::Legendary || item.rulesetFields.legendaryAffixId != 0
@@ -2648,13 +2834,13 @@ std::optional<std::string> MawItemRules::chestOpenRefusal(const Party &party, in
         }
     }
 
-    return "Not enough disarm skill";
+    return Engine::tr("Not enough disarm skill");
 }
 
 std::optional<std::string> MawItemRules::wearRefusal(const InventoryItem &item) const
 {
     return mawModelConfig(m_rules.options(), 5).doomMode && !item.identified
-        ? std::optional<std::string>("Identify the item first")
+        ? std::optional<std::string>(Engine::tr("Identify the item first"))
         : std::nullopt;
 }
 
@@ -2690,11 +2876,11 @@ std::optional<std::string> MawItemRules::pickAlchemist(Party &party, size_t memb
     if (alchemist(party) == memberIndex)
     {
         alchemistMember = -1;
-        return "No alchemy preference when sorting";
+        return Engine::tr("No alchemy preference when sorting");
     }
 
     alchemistMember = int32_t(memberIndex);
-    return pMember->name + " will now take alchemy items when sorting";
+    return Engine::tr("{name} will now take alchemy items when sorting", {{"name", pMember->name}});
 }
 
 std::optional<int> MawItemRules::alchemySortRank(const InventoryItem &item) const
@@ -2808,7 +2994,7 @@ std::vector<ItemInspectLine> MawItemRules::comparisonLines(
     const double powerBefore = std::max({before.melee, before.ranged, before.spell});
     const double powerAfter = std::max({after.melee, after.ranged, after.spell});
     std::vector<ItemInspectLine> &lines = m_lastComparison->lines;
-    const auto addLine = [&lines](const char *pName, double before, double after)
+    const auto addLine = [&lines](std::string_view name, double before, double after)
     {
         const double change = before > 0 ? mawRound((after / before - 1) * 10000) / 100 : 0;
 
@@ -2818,11 +3004,12 @@ std::vector<ItemInspectLine> MawItemRules::comparisonLines(
         }
 
         std::ostringstream text;
-        text << pName << ": " << (change > 0 ? "+" : "") << change << "%";
-        lines.push_back({text.str(), change > 0 ? 0x00ff00u : 0xff0000u});
+        text << (change > 0 ? "+" : "") << change;
+        lines.push_back({Engine::tr("{name}: {change}%", {{"name", Engine::tr(name)}, {"change", text.str()}}),
+            change > 0 ? 0x00ff00u : 0xff0000u});
     };
-    addLine("Power", powerBefore, powerAfter);
-    addLine("Vitality", before.vitality, after.vitality);
+    addLine(Engine::trNoop("Power"), powerBefore, powerAfter);
+    addLine(Engine::trNoop("Vitality"), before.vitality, after.vitality);
     return lines;
 }
 
@@ -2837,11 +3024,14 @@ std::optional<std::string> MawItemRules::itemDescription(const InventoryItem &it
 
         if (pSealed != nullptr && pBook != nullptr)
         {
-            static constexpr std::array<const char *, 5> MasteryNames = {
-                "", "Novice", "Expert", "Master", "Grandmaster"};
-            return pSealed->notes + "\n\n\f63488You need at least "
-                + MasteryNames[size_t(sealedBookMastery(*pBook))] + " skill in " + SealedBookSchools[school - 1]
-                + " Magic to open the book\f00000";
+            static constexpr std::array<std::string_view, 5> MasteryNames = {"", Engine::trNoop("Novice"),
+                Engine::trNoop("Expert"), Engine::trNoop("Master"), Engine::trNoop("Grandmaster")};
+            const std::string_view mastery = MasteryNames[size_t(sealedBookMastery(*pBook))];
+            return Engine::localize(pSealed->notes) + "\n\n\f63488"
+                + Engine::tr("You need at least {mastery} skill in {school} Magic to open the book",
+                    {{"mastery", mastery.empty() ? std::string() : Engine::tr(mastery)},
+                        {"school", Engine::tr(SealedBookSchools[school - 1])}})
+                + "\f00000";
         }
     }
 

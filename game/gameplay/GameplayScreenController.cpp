@@ -1,4 +1,6 @@
 #include "game/gameplay/GameplayScreenController.h"
+#include "engine/Localization.h"
+#include "game/ui/GameplayFormationBuilder.h"
 #include "game/ui/GameplayLootSummaryRenderer.h"
 
 #include "game/debug/GameplayDebugTrace.h"
@@ -78,8 +80,7 @@ void dropBagOverflow(GameplayScreenRuntime &context)
 
     if (dropped > 0)
     {
-        context.setStatusBarEvent(std::to_string(dropped) + (dropped == 1 ? " item" : " items")
-            + " did not fit in the inventory and lie at your feet");
+        context.setStatusBarEvent(Engine::trn("{count} item from the old bags did not fit and lie at your feet", "{count} items from the old bags did not fit and lie at your feet", uint64_t(int64_t(dropped)), {{"count", int64_t(dropped)}}));
     }
 }
 
@@ -316,6 +317,7 @@ bool GameplayScreenController::canUpdateStandardWorldInspectOverlayFromMouse(
         || config.hasPendingSpellTarget
         || config.hasActiveLootView
         || context.lootSummaryOverlayReadOnly().active
+        || GameplayFormationBuilder::isOpen(context)
         || context.activeEventDialog().isActive
         || context.characterScreenReadOnly().open
         || context.spellbookReadOnly().active
@@ -337,6 +339,7 @@ bool GameplayScreenController::canRunStandardGameplayAction(
 {
     if (config.hasActiveLootView
         || config.hasPendingSpellCast
+        || GameplayFormationBuilder::isOpen(context)
         || context.activeEventDialog().isActive
         || context.spellbookReadOnly().active
         || context.restScreenState().active
@@ -378,7 +381,8 @@ bool GameplayScreenController::canEnableGameplayMouseLook(
     }
 
     // The quick item ring or popup and the loot summary need the cursor.
-    if (GameplayQuickItems::needsCursor(context) || context.lootSummaryOverlayReadOnly().active)
+    if (GameplayQuickItems::needsCursor(context) || context.lootSummaryOverlayReadOnly().active
+        || GameplayFormationBuilder::isOpen(context))
     {
         return false;
     }
@@ -636,7 +640,7 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
                     : SpeechId::IdentifyGreatItem;
             playSingleReaction(speechId);
         }
-        else if (statusText == "Identify Failed")
+        else if (statusText == Engine::tr("Identify Failed"))
         {
             context.setStatusBarEvent(statusText);
             playSingleReaction(SpeechId::IdentifyFailItem);
@@ -652,7 +656,7 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
             refreshOverlayItemState();
             playSingleReaction(SpeechId::RepairSuccess);
         }
-        else if (statusText == "Repair Failed")
+        else if (statusText == Engine::tr("Repair Failed"))
         {
             context.setStatusBarEvent(statusText);
             playSingleReaction(SpeechId::RepairFail);
@@ -706,25 +710,31 @@ void GameplayScreenController::updateRestOverlayProgress(
     const float gameMinutesPerSecond = animationDurationSeconds > 0.0f
         ? restScreen.totalMinutes / animationDurationSeconds
         : restScreen.totalMinutes;
-    const float advancedMinutes = std::min(
+    float advancedMinutes = std::min(
         restScreen.remainingMinutes,
         gameMinutesPerSecond * safeDeltaSeconds);
+    const std::optional<float> minutesToAlarm = context.minutesToRestAlarm(advancedMinutes);
+    if (minutesToAlarm)
+    {
+        advancedMinutes = *minutesToAlarm;
+    }
 
     if (advancedMinutes > 0.0f)
     {
         IGameplayWorldRuntime *pWorldRuntime = context.worldRuntime();
         pWorldRuntime->advanceGameMinutes(advancedMinutes);
-        EventRuntimeState *pEventRuntimeState = pWorldRuntime->eventRuntimeState();
         Party *pParty = context.party();
         if (pParty != nullptr)
         {
             pParty->advanceTimedStates(advancedMinutes * 60.0f);
         }
-        if (pEventRuntimeState != nullptr && pParty != nullptr)
-        {
-            context.itemService().updateConnectorStoneRecharge(*pParty, *pEventRuntimeState, pWorldRuntime->gameMinutes());
-        }
         restScreen.remainingMinutes = std::max(0.0f, restScreen.remainingMinutes - advancedMinutes);
+    }
+
+    if (minutesToAlarm)
+    {
+        context.interruptRestAction();
+        return;
     }
 
     if (restScreen.remainingMinutes > 0.0f)
@@ -869,6 +879,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !activeEventDialog && !characterScreenOpen && !spellbookActive && !hasActiveLootView && !restActive
         && !menuActive && !controlsActive && !keyboardActive && !videoOptionsActive && !saveGameActive
         && !loadGameActive && !journalActive && !quickReferenceActive && !houseShopActive && !houseBankInputActive
+        && !GameplayFormationBuilder::isOpen(context)
         && context.currentHudScreenState() == GameplayHudScreenState::Gameplay;
     const bool quickItemClick =
         GameplayQuickItems::handleHudInput(context, input, config.width, config.height, quickItemsAllowed,
@@ -1022,6 +1033,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
         && !context.inventoryNestedOverlay().active
         && !context.readableScrollOverlayReadOnly().active
         && !context.lootSummaryOverlayReadOnly().active
+        && !GameplayFormationBuilder::isOpen(context)
         && !context.utilitySpellOverlayReadOnly().active
         && !context.pendingSpellTargetActive();
 
@@ -1054,13 +1066,14 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
 
     // Keys typed into the journal or inventory search are text, not journal shortcuts.
     const bool journalTyping = GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly())
-        || GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly());
+        || GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
+        || GameplayUiController::spellbookSearchActive(context.spellbookReadOnly());
     const bool mapShortcutPressed = !journalTyping
         && (input.isScancodeHeld(SDL_SCANCODE_M) || input.action(KeyboardAction::MapBook).held)
         && !(input.action(KeyboardAction::SkillManaShield).held
             && GameplayPartyOverlayInputController::skillSwitchForAction(context, KeyboardAction::SkillManaShield));
     const bool storyShortcutPressed = !journalTyping && input.action(KeyboardAction::History).held;
-    const bool notesShortcutPressed = false;
+    const bool questsShortcutPressed = !journalTyping && input.action(KeyboardAction::QuestBook).held;
     const bool progressShortcutPressed =
         !journalTyping && input.action(KeyboardAction::OpenProgress).held && journalHasProgressTab(context);
     const bool zoomInPressed = !journalTyping && input.action(KeyboardAction::ZoomIn).held;
@@ -1074,7 +1087,7 @@ GameplayUiOverlayInputResult GameplayScreenController::handleStandardUiInput(
             .canToggleJournal = canToggleJournal,
             .mapShortcutPressed = mapShortcutPressed,
             .storyShortcutPressed = storyShortcutPressed,
-            .notesShortcutPressed = notesShortcutPressed,
+            .questsShortcutPressed = questsShortcutPressed,
             .progressShortcutPressed = progressShortcutPressed,
             .zoomInPressed = zoomInPressed,
             .zoomOutPressed = zoomOutPressed,
@@ -1109,6 +1122,18 @@ GameplayStandardWorldInputGateResult GameplayScreenController::gateStandardWorld
         if (config.pInputFrame != nullptr)
         {
             GameplayLootSummaryRenderer::handleInput(
+                context, *config.pInputFrame, config.pInputFrame->screenWidth, config.pInputFrame->screenHeight);
+        }
+
+        return {.blocked = true};
+    }
+
+    // The formation builder pauses the game and takes the pointer.
+    if (GameplayFormationBuilder::isOpen(context))
+    {
+        if (config.pInputFrame != nullptr)
+        {
+            GameplayFormationBuilder::handleInput(
                 context, *config.pInputFrame, config.pInputFrame->screenWidth, config.pInputFrame->screenHeight);
         }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/Localization.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/party/Party.h"
 #include "game/party/SkillData.h"
@@ -158,12 +159,19 @@ struct PartySpellDescriptor
     uint32_t spellId = 0;
     PartySpellCastTargetKind targetKind = PartySpellCastTargetKind::None;
     PartySpellCastEffectKind effectKind = PartySpellCastEffectKind::Unsupported;
+    // The party buff a PartyBuff spell gives (at Grandmaster; its first, for a spell that gives several).
+    std::optional<PartyBuffId> partyBuff;
 };
 
 class PartySpellSystem
 {
 public:
+    // The refusal of a spell cast underwater (OY-350), the original's "You can't do that while underwater".
+    static constexpr const char *UnderwaterText = Engine::trNoop("You can't do that while underwater").data();
+
     static std::optional<PartySpellDescriptor> describeSpell(uint32_t spellId);
+    // The party buff the spell gives in the party's world (describeSpell's, but MM9's Fleet Foot for Fly's slot there).
+    static std::optional<PartyBuffId> partyBuffOfSpell(const Party &party, uint32_t spellId);
     // Mana an ordinary cast would spend, or nullopt when the caster lacks the skill for the spell.
     // What the spell costs this caster, under the party's rules.
     static std::optional<uint32_t> manaCost(
@@ -171,6 +179,9 @@ public:
         const Character &caster,
         const SpellTable &spellTable,
         uint32_t spellId);
+    // Whether the place and the hour let the spell be cast: the outdoor-only spells indoors (Sunray where the rules
+    // allow it), the indoor-only ones outdoors and Sunray outdoors at night fail with recovery (castSpell).
+    static bool worldAllowsSpell(const Party &party, const IGameplayWorldRuntime &worldRuntime, uint32_t spellId);
     // Whether a quick or attack cast of this spell on a member picks its own target (quickCastCharacterTarget): the
     // heals, cures and revivals. A buff on one member asks for its target.
     static bool hasQuickCastCharacterTarget(uint32_t spellId);
@@ -184,6 +195,33 @@ public:
         size_t casterIndex,
         uint32_t spellId,
         const SpellTable *pSpellTable);
+    // Upkeep (devdocs/BATTLE_ORDERS.md): the spells a member's upkeep list takes. The party buffs but Invisibility
+    // (any other cast ends it), the buffs on members (Bless, Preservation, Regeneration, Hammerhands, Pain Reflection,
+    // Glamour, Mistform), the heals, cures and revivals of hasQuickCastCharacterTarget, Power Cure and Awaken.
+    static bool isUpkeepSpell(uint32_t spellId);
+    // An upkeep spell that is a buff: on the party, on members or several party buffs at once (not a heal, cure,
+    // revival, Power Cure or Awaken). An attack order skips one while it is up on everyone it reaches (OY-487).
+    static bool isUpkeepBuffSpell(uint32_t spellId);
+    struct UpkeepNeed
+    {
+        // The member a spell on one member goes to; none for a spell on the whole party.
+        std::optional<size_t> targetCharacterIndex;
+    };
+    // Whether an upkeep cast of the spell by this member is due now, and at whom:
+    // - a buff: it is gone, or less of it is left than renewBelowMinutes allows (upkeepBuffDue, against what this
+    //   member's cast gives); for a spell of several party buffs, any of them; for a buff on members, on any member
+    //   who can still be healed, and the one with the least left is the target (the spell's party-wide masteries
+    //   ignore it);
+    // - a heal, cure or revival: quickCastCharacterTarget finds a member; Power Cure: someone is wounded; Awaken:
+    //   someone sleeps.
+    // Nothing for a spell the rules cast as an aura (a press would switch it off again) or one that is not an upkeep
+    // spell. Mana, the place and the order's other conditions are the caller's.
+    static std::optional<UpkeepNeed> upkeepNeed(
+        const Party &party,
+        size_t casterIndex,
+        uint32_t spellId,
+        const SpellTable *pSpellTable,
+        std::optional<uint16_t> renewBelowMinutes);
     // The monster a quick cast takes when none is under the cursor: the closest visible hostile within
     // SpellActorTargetRange, whether or not it has noticed the party, or, for a spell the
     // rules spread (SpellRules::quickCastSpreadsDebuff, MAW), the visible hostile within 4800 whose debuff of the spell

@@ -1,4 +1,5 @@
 #include "game/maps/OutdoorSceneYml.h"
+#include "game/maps/MistYml.h"
 
 #include "game/FaceEnums.h"
 #include "game/StringUtils.h"
@@ -119,6 +120,36 @@ bool parsePatrolNode(const YAML::Node &node, std::vector<std::array<int32_t, 3>>
         }
 
         points.push_back({point[0].as<int32_t>(), point[1].as<int32_t>(), point[2].as<int32_t>()});
+    }
+
+    return true;
+}
+
+// A placed actor's held items (scene held_items): a list of {model, node}; absent is none.
+bool parseHeldItemsNode(const YAML::Node &node, std::vector<MapDeltaHeldItem> &items, std::string &errorMessage)
+{
+    items.clear();
+
+    if (!node)
+    {
+        return true;
+    }
+
+    if (!node.IsSequence())
+    {
+        errorMessage = "held_items must be a list of {model, node}";
+        return false;
+    }
+
+    for (const YAML::Node &item : node)
+    {
+        if (!item.IsMap() || !item["model"] || !item["node"] || item.size() != 2)
+        {
+            errorMessage = "held_items must be a list of {model, node}";
+            return false;
+        }
+
+        items.push_back({item["model"].as<std::string>(), item["node"].as<std::string>()});
     }
 
     return true;
@@ -1564,13 +1595,16 @@ bool parseOutdoorActor(
             actor.mm9CanReceiveDamage,
             errorMessage,
             false)
+        || !readScalarNode(actorNode, "respawns_on_refill", actor.respawnsOnRefill, errorMessage, false)
         || !readScalarNode(actorNode, "mm9_civilian", actor.mm9Civilian, errorMessage, false)
         || !readScalarNode(actorNode, "mm9_guard", actor.mm9Guard, errorMessage, false)
+            || !readScalarNode(actorNode, "draw_scale", actor.drawScale, errorMessage, false)
         || !readScalarNode(actorNode, "initial_yaw_units", actor.initialYawUnits, errorMessage, false)
         || !readScalarNode(actorNode, "immobile", actor.immobile, errorMessage, false)
         || !readScalarNode(actorNode, "leash_radius", actor.leashRadius, errorMessage, false)
         || !readScalarNode(actorNode, "dormant", actor.dormant, errorMessage, false)
             || !parsePatrolNode(actorNode["patrol"], actor.patrolPoints, errorMessage)
+        || !parseHeldItemsNode(actorNode["held_items"], actor.heldItems, errorMessage)
         || !readScalarNode(actorNode, "attributes", actor.attributes, errorMessage)
         || !readScalarNode(actorNode, "hp", actor.hp, errorMessage)
         || !readScalarNode(actorNode, "hostility_type", actor.hostilityType, errorMessage)
@@ -1848,6 +1882,12 @@ std::optional<OutdoorSceneData> OutdoorSceneYmlLoader::loadFromText(
     }
 
     if (!parseOptionalMovement(rootNode, sceneData.movement, errorMessage))
+    {
+        return std::nullopt;
+    }
+
+    if (const YAML::Node mistNode = rootNode["mist"];
+        mistNode && !parseSceneMistNode(mistNode, sceneData.mist, errorMessage))
     {
         return std::nullopt;
     }
@@ -2581,6 +2621,13 @@ bool OutdoorSceneYmlLoader::applyOverlayFromText(
         return false;
     }
 
+    // An overlay's mist replaces the base scene's.
+    if (const YAML::Node mistNode = rootNode["mist"];
+        mistNode && !parseSceneMistNode(mistNode, sceneData.mist, errorMessage))
+    {
+        return false;
+    }
+
     const YAML::Node sourceNode = rootNode["source"];
 
     if (sourceNode)
@@ -3192,6 +3239,7 @@ bool buildOutdoorMapStateFromScene(
     outdoorMapData.locationType = sceneData.environment.locationType;
     outdoorMapData.lightmapBrightnessScale = sceneData.lighting.lightmapBrightnessScale;
     outdoorMapData.flightCeiling = sceneData.movement.flightCeiling;
+    outdoorMapData.mist = sceneData.mist;
     outdoorMapData.viewDistanceScale = sceneData.rendering.viewDistanceScale.value_or(
         sceneData.sceneProfile == OutdoorSceneProfile::BModelWorld
                 && sceneData.environment.locationType == OutdoorLocationType::Enclosed

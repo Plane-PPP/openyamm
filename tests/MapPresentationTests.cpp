@@ -143,52 +143,45 @@ TEST_CASE("outdoor map presentation crop and flips preserve saved exploration co
     CHECK(flipped.y == doctest::Approx(cropped.y));
 }
 
-TEST_CASE("promoted MM9 map catalog and PCX asset are runtime decodable")
+TEST_CASE("promoted MM9 map catalog covers every rebuilt map with runtime decodable 2x images")
 {
     const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
-    const std::filesystem::path assetRoot = sourceRoot / "assets_dev" / "worlds" / "mm9" / "ui" / "maps";
-    const std::vector<uint8_t> catalogBytes = readMapAsset(assetRoot / "catalog.yml");
-    const std::vector<uint8_t> pcxBytes = readMapAsset(assetRoot / "bootcamp.pcx");
+    const std::filesystem::path worldRoot = sourceRoot / "assets_dev" / "worlds" / "mm9";
+    const std::vector<uint8_t> catalogBytes = readMapAsset(worldRoot / "ui" / "maps" / "catalog.yml");
 
     REQUIRE_FALSE(catalogBytes.empty());
-    REQUIRE_FALSE(pcxBytes.empty());
     const std::string catalog(catalogBytes.begin(), catalogBytes.end());
     std::string errorMessage;
     const std::optional<OpenYAMM::Game::MapPresentation> bootcamp =
-        OpenYAMM::Game::loadMapPresentationFromCatalog(catalog, "bootcamp.odm", errorMessage);
+        OpenYAMM::Game::loadMapPresentationFromCatalog(catalog, "bootcamp.blv", errorMessage);
     REQUIRE(bootcamp.has_value());
     CHECK(errorMessage.empty());
-    CHECK(bootcamp->worldMinX == doctest::Approx(-11796.48f));
-    CHECK(bootcamp->worldMaxX == doctest::Approx(60293.12f));
+    // The rebuilt Boot Camp's frame: the old import's bounds moved by the conversion offset (-25646, -1777).
+    CHECK(bootcamp->worldMinX == doctest::Approx(-37442.48f));
+    CHECK(bootcamp->worldMaxX == doctest::Approx(34647.12f));
 
     OpenYAMM::Game::GameplayMinimapState bootcampState = {};
     REQUIRE(OpenYAMM::Game::applyMapPresentationToMinimapState(*bootcamp, 0.0f, bootcampState));
     const OpenYAMM::Game::GameplayMinimapPoint ravensfordParty =
-        OpenYAMM::Game::gameplayMinimapWorldToUv(bootcampState, 25969.0f, -6717.0f);
+        OpenYAMM::Game::gameplayMinimapWorldToUv(bootcampState, 323.0f, -8494.0f);
     CHECK(ravensfordParty.x == doctest::Approx(0.52387f));
     CHECK(ravensfordParty.y == doctest::Approx(0.88933f));
+    // The catalog keeps the native size (the zoom); the image is the 2x Real-ESRGAN map.
+    CHECK(bootcampState.zoomWidth == doctest::Approx(1000.0f));
+    CHECK(bootcampState.textureName == "ui/maps/bootcamp.png");
 
-    // MM9's own floor choice (cshell.dll): A over 512-1728 LT, B over -256-512, C above and below, by body centre.
+    // MM9 picks a dungeon's floor image by the party's height (1000 Terrors: three floors).
     const std::optional<OpenYAMM::Game::MapPresentation> terrors =
-        OpenYAMM::Game::loadMapPresentationFromCatalog(catalog, "1000terrors.odm", errorMessage);
+        OpenYAMM::Game::loadMapPresentationFromCatalog(catalog, "1000terrors.blv", errorMessage);
     REQUIRE(terrors.has_value());
-    CHECK(OpenYAMM::Game::resolveMapPresentationVariant(*terrors, 1000.0f * 2.56f)->textureName
-        == "ui/maps/1000terrorsa.pcx");
+    REQUIRE(terrors->variants.size() == 3);
+    CHECK(OpenYAMM::Game::resolveMapPresentationVariant(*terrors, 2000.0f)->textureName
+        == "ui/maps/1000terrorsa.png");
     CHECK(OpenYAMM::Game::resolveMapPresentationVariant(*terrors, 0.0f)->textureName
-        == "ui/maps/1000terrorsb.pcx");
-    CHECK(OpenYAMM::Game::resolveMapPresentationVariant(*terrors, -800.0f * 2.56f)->textureName
-        == "ui/maps/1000terrorsc.pcx");
-    CHECK_FALSE(OpenYAMM::Game::loadMapPresentationFromCatalog(
-        catalog,
-        "greatgate.odm",
-        errorMessage).has_value());
-    CHECK(errorMessage.empty());
-
-    const std::optional<OpenYAMM::Engine::ImagePixelsBgra> image =
-        OpenYAMM::Engine::decodeImagePixelsBgra(pcxBytes, "ui/maps/bootcamp.pcx");
-    REQUIRE(image.has_value());
-    CHECK(image->width == 1000);
-    CHECK(image->height == 570);
+        == "ui/maps/1000terrorsb.png");
+    CHECK(OpenYAMM::Game::resolveMapPresentationVariant(*terrors, -2000.0f)->textureName
+        == "ui/maps/1000terrorsc.png");
+    CHECK_FALSE(OpenYAMM::Game::loadMapPresentationFromCatalog(catalog, "greatgate.odm", errorMessage).has_value());
 
     OpenYAMM::Engine::AssetFileSystem assetFileSystem;
     REQUIRE(assetFileSystem.initialize(
@@ -196,19 +189,36 @@ TEST_CASE("promoted MM9 map catalog and PCX asset are runtime decodable")
         sourceRoot / "assets_dev",
         OpenYAMM::Engine::AssetScaleTier::X1,
         "mm9"));
-    REQUIRE(assetFileSystem.readTextFile("worlds/mm9/ui/maps/catalog.yml").has_value());
     OpenYAMM::Engine::DirectoryAssetPathCache directoryCache;
     OpenYAMM::Engine::AssetPathLookupCache pathCache;
     OpenYAMM::Engine::BinaryAssetCache binaryCache;
-    const std::optional<OpenYAMM::Engine::ImagePixelsBgra> mountedImage =
-        OpenYAMM::Engine::loadImageAssetPixelsBgra(
-            assetFileSystem,
-            "ui/maps",
-            "bootcamp.pcx",
-            directoryCache,
-            pathCache,
-            binaryCache);
-    REQUIRE(mountedImage.has_value());
-    CHECK(mountedImage->width == 1000);
-    CHECK(mountedImage->height == 570);
+    size_t mapCount = 0;
+
+    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(worldRoot / "maps"))
+    {
+        if (entry.path().extension() != ".blv")
+        {
+            continue;
+        }
+
+        const std::string mapFileName = entry.path().filename().string();
+        CAPTURE(mapFileName);
+        const std::optional<OpenYAMM::Game::MapPresentation> presentation =
+            OpenYAMM::Game::loadMapPresentationFromCatalog(catalog, mapFileName, errorMessage);
+        REQUIRE(presentation.has_value());
+        ++mapCount;
+
+        for (const OpenYAMM::Game::MapPresentationVariant &variant : presentation->variants)
+        {
+            CAPTURE(variant.textureName);
+            const std::string fileName = variant.textureName.substr(variant.textureName.find_last_of('/') + 1);
+            const std::optional<OpenYAMM::Engine::ImagePixelsBgra> image = OpenYAMM::Engine::loadImageAssetPixelsBgra(
+                assetFileSystem, "ui/maps", fileName, directoryCache, pathCache, binaryCache);
+            REQUIRE(image.has_value());
+            CHECK(image->width == variant.pixelWidth * 2);
+            CHECK(image->height == variant.pixelHeight * 2);
+        }
+    }
+
+    CHECK(mapCount == 44);
 }

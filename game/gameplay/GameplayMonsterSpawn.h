@@ -1,11 +1,13 @@
 #pragma once
 
+#include "game/tables/MonsterTable.h"
 #include "game/tables/Mm9MonsterAi.h"
 
 #include <array>
 #include <cstdint>
 #include <optional>
 #include <random>
+#include <vector>
 
 namespace OpenYAMM::Game
 {
@@ -41,12 +43,19 @@ struct GameplayMonsterSpawnRequest
     uint64_t seed = 0;
     // The facing of every monster (an AI arena's placement); none keeps the world's default.
     std::optional<float> yawRadians;
-    // An MM9 placement for every monster (an AI arena's mm9_ai, a death spawn's ScriptParams 1).
+    // An MM9 placement for every monster (an AI arena's mm9_ai, a death spawn's ScriptParams 1, a script's summon:
+    // its wander path, its spawn-in).
     std::optional<Mm9AiPlacementRecord> mm9Ai;
+    // Waypoints every monster walks in turn while it has nothing to fight (a scene actor's patrol).
+    std::vector<std::array<int32_t, 3>> patrolPoints;
 };
 
 // The monster id of one spawned monster: the family's A, B or C as the weights pick, or the request's own id.
-int16_t gameplaySpawnMonsterId(const GameplayMonsterSpawnRequest &request, std::mt19937_64 &rng);
+// The monster a spawn makes: the request's own, or with tier weights a tier of its family drawn. MM6-MM8's rows come in
+// families of three by id (A at id % 3 == 1); a world's rows (MM9's 9000+) by their picture's tier letter ("MM9 Guard
+// A"), where they may lie apart. Without a monster table the id triples are used.
+int16_t gameplaySpawnMonsterId(
+    const GameplayMonsterSpawnRequest &request, std::mt19937_64 &rng, const MonsterTable *pMonsterTable = nullptr);
 // A random point within the request's radius of its centre.
 std::array<float, 2> gameplaySpawnOffset(const GameplayMonsterSpawnRequest &request, std::mt19937_64 &rng);
 std::mt19937_64 gameplaySpawnRng(const GameplayMonsterSpawnRequest &request);

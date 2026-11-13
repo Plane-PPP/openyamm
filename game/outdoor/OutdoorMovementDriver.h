@@ -110,7 +110,8 @@ public:
         const std::optional<OutdoorSpriteObjectCollisionSet> &outdoorSpriteObjectCollisionSet
     );
 
-    void initialize(float x, float y, float footZHint);
+    // keepHeight: the party stays at footZHint in the air and falls (OutdoorPartyRuntime::teleportTo).
+    void initialize(float x, float y, float footZHint, bool keepHeight = false);
     void restoreState(const OutdoorMoveState &state, const OutdoorPartyMovementState &partyMovementState);
     void update(
         const OutdoorMovementInput &input,
@@ -139,6 +140,8 @@ public:
     void toggleFeatherFall();
     void setFlying(bool active);
     void setFlyingAvailable(bool active);
+    // Swimming (an underwater map): the party is held as in flight, so it neither falls nor takes fall damage.
+    void setSwimming(bool active);
     void setRunning(bool active);
     void setWaterWalkActive(bool active);
     void setFeatherFallActive(bool active);
@@ -183,6 +186,7 @@ private:
     float m_dashVelocityY = 0.0f;
     float m_dashSeconds = 0.0f;
     bool m_flyingAvailable = false;
+    bool m_swimming = false;
     bool m_levitateActive = false;
     float m_movementAccumulatorSeconds = 0.0f;
     float m_startedFallingEventSeconds = 0.0f;

@@ -12,8 +12,10 @@
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string>
@@ -53,6 +55,9 @@ public:
         bool hasCustomDefaultStats = false;
         std::array<int, static_cast<size_t>(StatId::Count)> defaultStats = {};
         std::array<std::string, 2> defaultOptionalSkills = {};
+        // An imported portrait's face texture names without the frame number (user_<id>-, game/party/CustomPortraits.h);
+        // empty for the character_data row's own face.
+        std::string portraitPrefix;
     };
 
     using ContinueAction = std::function<void(const std::vector<Character> &, const NewGameOptions &)>;
@@ -78,6 +83,9 @@ public:
     void onExit() override;
     void handleSdlEvent(const SDL_Event &event) override;
     bool textInputActive() const override;
+    // Where imported portraits live (the user data's portraits folder) and what runs after an import changes them (the
+    // game mounts their icon folder). Without a folder the portrait picker offers no import.
+    void setCustomPortraits(std::filesystem::path portraitsFolder, std::function<void()> portraitsChangedAction);
 
   private:
     friend struct NewGameScreenTestAccess;
@@ -93,6 +101,8 @@ public:
         uint32_t id = 1;
         std::string key = "jadame";
         std::string name = "Jadam";
+        // "Begin in ..." for the party creation title; empty uses the continent card's line from the layout.
+        std::string startText;
     };
 
     struct CreationState
@@ -106,6 +116,9 @@ public:
         std::vector<std::string> defaultSkills;
         std::vector<std::string> optionalSkills;
         std::vector<std::string> selectedOptionalSkills;
+        // How many optional skills the character picks: two, plus one for each of the class's free skills its race
+        // cannot learn (a MAW dragon Knight picks four: OY-165).
+        size_t skillPickCount = 2;
         bool nameEditing = false;
         // The player typed the name: a new portrait or Default keeps it.
         bool nameTyped = false;
@@ -135,6 +148,9 @@ public:
 
     void drawScreen(float deltaSeconds) override;
     void drawContinentSelection(float deltaSeconds);
+    // Whether the continent can start a game: its selection row, its start map (continent_settings.txt death map 1)
+    // and that map in its world's package.
+    bool continentOffered(const std::string &continentKey) const;
     void drawCharacterCreation(float deltaSeconds);
     void drawCreationHeader();
     void drawCreationRoster(bool input);
@@ -166,6 +182,11 @@ public:
     void sheetText(const Rect &rect, const std::string &text, const std::string &font, float cssPixels,
                    uint32_t color, int align = -1);
     float sheetTextWidth(const std::string &text, const std::string &font, float cssPixels);
+    // The font size (css pixels) at which the voice lines' buttons fit in a row of the given width: 15, or less for a
+    // language whose lines are longer.
+    float voiceLineSize(float rowWidth);
+    // The width of a button whose label is text: at least minimum, wider for a longer label.
+    float labelButtonWidth(const std::string &text, float minimum);
     void glyph(const std::string &name, const Rect &rect, uint32_t color);
     void horizontalGradient(const Rect &rect, uint32_t left, uint32_t right);
     void verticalGradient(const Rect &rect, uint32_t top, uint32_t bottom);
@@ -173,6 +194,7 @@ public:
     // The voice's number as players see it: the lowest portrait whose own voice it is (portrait #N speaks with
     // Voice N), or the voice id plus one for a voice no portrait owns.
     int voiceDisplayNumber(int voiceId) const;
+    std::string voiceLabel(int voiceId) const;
     void openSheetPopup(SheetPopup popup);
     void chooseCandidateForActiveSlot(size_t candidateIndex);
     void removePartySlotAt(size_t slotIndex);
@@ -182,6 +204,9 @@ public:
     std::array<RaceStatLine, CreationStatCount> raceStatLinesForState(const CreationState &state) const;
     CreationPartyMember creationPartyMember(const CreationState &state) const;
     std::vector<CreationPartyMember> creationPartyMembers() const;
+    // The chosen ruleset's own start cards (ruleset.yml newGame.starts) in place of the continents; returns the
+    // chosen card's continent key, or empty.
+    std::string drawStartCards(const std::vector<RulesetStartCard> &cards);
     void drawRulesetSwitch();
     void drawRulesPanel();
     // One rule setting: name and control on a line, description below; returns the y after it.
@@ -229,6 +254,12 @@ public:
     std::vector<std::string> wrapTextToWidth(const std::string &fontName, const std::string &text, float maxWidth, float scale);
     const CharacterDollEntry *selectedCharacterEntry() const;
     const CharacterDollEntry *characterEntryForState(const CreationState &state) const;
+    std::string candidatePortraitTextureName(const CreationCandidate &candidate) const;
+    std::string portraitTextureNameForState(const CreationState &state) const;
+    // The imported portraits, each a copy of its base character's candidate with its own face.
+    void appendCustomPortraitCandidates();
+    void requestPortraitImport();
+    void finishPortraitImport();
     const CreationCandidate &selectedCandidate() const;
     const CreationCandidate &candidateForState(const CreationState &state) const;
     bool isGodLichState(const CreationState &state) const;
@@ -297,6 +328,8 @@ public:
     float m_tableContentHeight = 0;
     // The portrait grid's filter: 0 everyone, 1 men, 2 women.
     int m_portraitFilter = 0;
+    // The portrait picker's world filter: a world id (CharacterDollEntry::worldId), or empty for every world.
+    std::string m_portraitWorldFilter;
     uint32_t m_classPreviewId = 0;
     // The skill under the pointer and for how long, for the skill card.
     std::string m_hoverSkill;
@@ -307,5 +340,14 @@ public:
     CreationHelp m_help;
     bool m_escapePressed = false;
     bool m_returnPressed = false;
+    std::filesystem::path m_customPortraitsFolder;
+    std::function<void()> m_customPortraitsChangedAction;
+    struct PortraitFolderPick
+    {
+        std::mutex mutex;
+        bool finished = false;
+        std::optional<std::filesystem::path> folder;
+    };
+    std::shared_ptr<PortraitFolderPick> m_portraitFolderPick;
 };
 }

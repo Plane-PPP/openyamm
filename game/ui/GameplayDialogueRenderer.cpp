@@ -1,8 +1,11 @@
 #include "game/ui/GameplayUiSkin.h"
+#include "engine/Localization.h"
 #include "game/ui/GameplayDialogueRenderer.h"
 #include "game/ui/GameplayMm9TalkBar.h"
 #include "game/ui/GameplayHudCommon.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
+#include "game/gameplay/Mm9DialogueSpeaker.h"
+#include "game/ui/GameplayHouseShopLedgerRenderer.h"
 #include "game/ui/HouseShopLayout.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
@@ -53,7 +56,7 @@ std::optional<std::string> pendingInputPromptHint(const GameplayScreenRuntime &v
         return std::nullopt;
     }
 
-    return std::string("Answer: _");
+    return Engine::tr("Answer: _");
 }
 
 constexpr uint16_t HudViewId = 2;
@@ -606,7 +609,7 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
 
     if (view.houseBankState().inputActive())
     {
-        dialogueResponseHintText = "Type amount  Enter accept  E/Esc cancel";
+        dialogueResponseHintText = Engine::tr("Type amount  Enter accept  E/Esc cancel");
     }
 
     if (view.statusBarEventRemainingSeconds() > 0.0f && !view.statusBarEventText().empty())
@@ -627,17 +630,19 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
         {
             if (view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
             {
-                dialogueResponseHintText = "Select the Item to Sell";
+                dialogueResponseHintText = view.inventoryNestedOverlay().sellTrashPicking
+                    ? Engine::tr("Click items to add or remove them")
+                    : Engine::tr("Select the Item to Sell");
             }
             else if (view.inventoryNestedOverlay().mode
                 == GameplayUiController::InventoryNestedOverlayMode::ShopIdentify)
             {
-                dialogueResponseHintText = "Select the Item to Identify";
+                dialogueResponseHintText = Engine::tr("Select the Item to Identify");
             }
             else if (view.inventoryNestedOverlay().mode
                 == GameplayUiController::InventoryNestedOverlayMode::ShopRepair)
             {
-                dialogueResponseHintText = "Select the Item to Repair";
+                dialogueResponseHintText = Engine::tr("Select the Item to Repair");
             }
         }
 
@@ -655,7 +660,9 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
 
                 if (pItem != nullptr)
                 {
-                    if (view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
+                    // Sell trash's buttons take the merchant's panel while picking: no offer text there.
+                    if (view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell
+                        && !view.inventoryNestedOverlay().sellTrashPicking)
                     {
                         hoveredHouseServiceTopicText = HouseServiceRuntime::buildSellHoverText(
                             *view.party(),
@@ -736,6 +743,14 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
         renderAboveHud);
     view.interactionState().dialogueStatusHint = dialogueResponseHintText;
 
+    if (pHostHouseEntry != nullptr
+        && view.inventoryNestedOverlay().active
+        && view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
+    {
+        renderSellTrashButtons(
+            view, width, height, *pHostHouseEntry, hoveredHouseServiceTopicText.has_value(), renderAboveHud);
+    }
+
     if (view.activeEventDialog().presentation == EventDialogPresentation::Transition
         && !view.activeEventDialog().actions.empty())
     {
@@ -784,12 +799,144 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
             dialogueBodyLines);
     }
 
+    if (transitionResetPopupOpen(view.activeEventDialog()))
+    {
+        renderTransitionResetPopup(view, width, height, renderAboveHud);
+    }
+
     view.clearHudLayoutRuntimeHeightOverrides();
 }
 
 bool GameplayDialogueRenderer::shouldRenderInCurrentPass(bool renderAboveHud, int hudZThreshold, int zIndex)
 {
     return renderAboveHud ? zIndex >= hudZThreshold : zIndex < hudZThreshold;
+}
+
+void GameplayDialogueRenderer::renderTransitionResetPopup(
+    GameplayScreenRuntime &view,
+    int width,
+    int height,
+    bool renderAboveHud)
+{
+    const GameplayScreenRuntime::HudLayoutElement *pPanelLayout = view.findHudLayoutElement("DialogueResetPopup");
+    const GameplayScreenRuntime::HudLayoutElement *pTextLayout = view.findHudLayoutElement("DialogueResetPopupText");
+
+    if (pPanelLayout == nullptr || pTextLayout == nullptr
+        || !shouldRenderInCurrentPass(
+            renderAboveHud, view.defaultHudLayoutZIndexForScreen("OutdoorHud"), pPanelLayout->zIndex))
+    {
+        return;
+    }
+
+    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> panel =
+        view.resolveHudLayoutElement("DialogueResetPopup", width, height, pPanelLayout->width, pPanelLayout->height);
+    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> textArea =
+        view.resolveHudLayoutElement("DialogueResetPopupText", width, height, pTextLayout->width, pTextLayout->height);
+
+    if (!panel || !textArea)
+    {
+        return;
+    }
+
+    GameplayUiSkin::renderPanel(view, *panel, false, 0.75f);
+    renderDialogueLabelById(view, "DialogueResetPopupTitle", Engine::tr("Reset Dungeon"), width, height,
+        renderAboveHud);
+
+    if (const std::optional<GameplayScreenRuntime::HudFontHandle> font = view.findHudFont(pTextLayout->fontName))
+    {
+        const float fontScale = snappedHudFontScale(textArea->scale * pTextLayout->textScale);
+        const float lineHeight = float(font->fontHeight) * fontScale;
+        const std::vector<std::string> lines =
+            view.wrapHudTextToWidth(*font, view.activeEventDialog().resetPrompt, textArea->width / fontScale);
+        GameplayScreenRuntime::ResolvedHudLayoutElement line = *textArea;
+        line.height = lineHeight;
+
+        for (const std::string &text : lines)
+        {
+            view.renderLayoutLabel(*pTextLayout, line, text);
+            line.y += lineHeight;
+        }
+    }
+
+    const std::vector<EventDialogAction> &actions = view.activeEventDialog().actions;
+    const auto resetAction = std::find_if(actions.begin(), actions.end(),
+        [](const EventDialogAction &action)
+        {
+            return action.kind == EventDialogActionKind::MapTransitionReset;
+        });
+    const std::string resetLabel = resetAction != actions.end() ? resetAction->label : Engine::tr("Reset");
+    const std::string cancelLabel = Engine::tr("Cancel");
+    GameplayUiSkin::renderButton(view, "DialogueResetPopupResetButton", width, height, false, true, &resetLabel);
+    GameplayUiSkin::renderButton(view, "DialogueResetPopupCancelButton", width, height, false, true, &cancelLabel);
+}
+
+void GameplayDialogueRenderer::renderSellTrashButtons(
+    GameplayScreenRuntime &view,
+    int width,
+    int height,
+    const HouseEntry &houseEntry,
+    bool offerShown,
+    bool renderAboveHud)
+{
+    const Party *pParty = view.partyReadOnly();
+    const GameplayScreenRuntime::HudLayoutElement *pLayout = view.findHudLayoutElement("DialogueShopSellTrashButton");
+
+    // The merchant's offer for the hovered item takes the panel; the button is out of reach then anyway.
+    if (offerShown
+        || pParty == nullptr
+        || view.itemTable() == nullptr
+        || pLayout == nullptr
+        || !HouseServiceRuntime::offersSellTrash(*pParty, houseEntry)
+        || !shouldRenderInCurrentPass(renderAboveHud, view.defaultHudLayoutZIndexForScreen("OutdoorHud"),
+            pLayout->zIndex))
+    {
+        return;
+    }
+
+    const GameplayUiController::InventoryNestedOverlayState &overlay = view.inventoryNestedOverlay();
+    const std::string toggle = overlay.sellTrashPicking ? Engine::tr("Cancel") : Engine::tr("Sell trash");
+    GameplayUiSkin::renderButton(view, "DialogueShopSellTrashButton", width, height, false, true, &toggle);
+
+    if (!overlay.sellTrashPicking)
+    {
+        return;
+    }
+
+    // The confirm button's two lines: the count over the price.
+    const std::string confirmId = "DialogueShopSellTrashConfirmButton";
+    const GameplayScreenRuntime::HudLayoutElement *pConfirm = view.findHudLayoutElement(confirmId);
+    const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> confirmRect =
+        view.resolveHudLayoutElement(confirmId, width, height, 0, 0);
+
+    if (pConfirm == nullptr || !confirmRect)
+    {
+        return;
+    }
+
+    const size_t count = overlay.sellTrashItems.size();
+    const int gold = HouseServiceRuntime::sellTrashPrice(*pParty, *view.itemTable(), *view.standardItemEnchantTable(),
+        *view.specialItemEnchantTable(), houseEntry, overlay.sellTrashItems, effectiveReputationForView(view));
+    const std::string empty;
+    GameplayUiSkin::renderButton(view, confirmId, width, height, false, count > 0, &empty);
+    const std::array<std::string, 2> lines = {
+        Engine::trn("Sell {count} item", "Sell {count} items", count, {{"count", int(count)}}),
+        Engine::tr("for {gold} gold", {{"gold", gold}})};
+    // The button's label colours (GameplayUiSkin::renderButton) over the whole button, not each line.
+    const GameplayInputFrame *pInput = view.currentGameplayInputFrame();
+    const bool hover = count > 0 && pInput != nullptr
+        && view.isPointerInsideResolvedElement(*confirmRect, pInput->pointerX, pInput->pointerY);
+    GameplayScreenRuntime::HudLayoutElement lineLayout = *pConfirm;
+    lineLayout.textColorAbgr = count == 0 ? 0xff7e8b96u : hover ? 0xffd4efffu : pConfirm->textColorAbgr;
+    const float inset = 4.0f * confirmRect->scale;
+    const float pressedShift = hover && pInput->leftMouseButton.held ? confirmRect->scale : 0.0f;
+
+    for (size_t line = 0; line < lines.size(); ++line)
+    {
+        GameplayScreenRuntime::ResolvedHudLayoutElement lineRect = *confirmRect;
+        lineRect.height = (confirmRect->height - 2.0f * inset) / 2.0f;
+        lineRect.y = confirmRect->y + inset + float(line) * lineRect.height + pressedShift;
+        view.renderLayoutLabel(lineLayout, lineRect, lines[line], false);
+    }
 }
 
 bool GameplayDialogueRenderer::isDialogueFrameSubtree(GameplayScreenRuntime &view, const std::string &layoutId)
@@ -842,6 +989,19 @@ void GameplayDialogueRenderer::updateHouseShopHoverTopicText(
         || view.itemTable() == nullptr
         || view.houseTable() == nullptr)
     {
+        return;
+    }
+
+    // A Ledger shop lists its stock instead of shelving it.
+    if (const std::optional<GameplayHouseShopLedgerView> ledger =
+            GameplayHouseShopLedgerRenderer::resolve(view, width, height))
+    {
+        if (std::optional<std::string> text =
+                GameplayHouseShopLedgerRenderer::hoverText(view, *ledger, dialogMouseX, dialogMouseY))
+        {
+            hoveredHouseServiceTopicText = std::move(text);
+        }
+
         return;
     }
 
@@ -1005,8 +1165,11 @@ void GameplayDialogueRenderer::renderHouseShopOverlay(
 
     const GameplayScreenRuntime::HudLayoutElement *pFrameLayout = view.findHudLayoutElement("DialogueShopOverlayFrame");
     const int hudZThreshold = view.defaultHudLayoutZIndexForScreen("OutdoorHud");
+    const std::optional<GameplayHouseShopLedgerView> ledger =
+        GameplayHouseShopLedgerRenderer::resolve(view, width, height);
 
-    if (pFrameLayout != nullptr && shouldRenderInCurrentPass(renderAboveHud, hudZThreshold, pFrameLayout->zIndex))
+    if (!ledger && pFrameLayout != nullptr
+        && shouldRenderInCurrentPass(renderAboveHud, hudZThreshold, pFrameLayout->zIndex))
     {
         const HouseShopVisualLayout overlayLayout =
             buildHouseShopVisualLayout(
@@ -1069,9 +1232,21 @@ void GameplayDialogueRenderer::renderHouseShopOverlay(
             *pHouseEntry,
             view.houseShopOverlay().mode == GameplayUiController::HouseShopMode::BuySpellbooks);
     bool hoveredItem = false;
+    bool ledgerScrolls = false;
+
+    // The ledger draws once, above the HUD where the shelf items also end up.
+    if (ledger)
+    {
+        ledgerScrolls = houseShopLedgerMaximumFirstRow(ledger->layout, ledger->model.rows.size()) > 0;
+        hoveredItem = renderAboveHud
+            ? GameplayHouseShopLedgerRenderer::render(view, *ledger, dialogMouseX, dialogMouseY)
+            : houseShopLedgerRowAt(ledger->layout, ledger->model.rows.size(), ledger->firstRow, dialogMouseX,
+                dialogMouseY).has_value();
+    }
 
     for (size_t slotIndex = 0;
-         slotIndex < slotCount && shelfStart + slotIndex < stock.size() && slotIndex < overlayLayout.slots.size();
+         !ledger && slotIndex < slotCount && shelfStart + slotIndex < stock.size()
+         && slotIndex < overlayLayout.slots.size();
          ++slotIndex)
     {
         const InventoryItem &item = stock[shelfStart + slotIndex];
@@ -1155,14 +1330,15 @@ void GameplayDialogueRenderer::renderHouseShopOverlay(
     if (rerollCost && pRerollLayout != nullptr
         && shouldRenderInCurrentPass(renderAboveHud, hudZThreshold, pRerollLayout->zIndex))
     {
-        const std::string label = "New stock: " + std::to_string(*rerollCost) + " gold";
+        const std::string label = Engine::tr("New stock: {gold} gold", {{"gold", *rerollCost}});
         GameplayUiSkin::renderButton(
             view, "DialogueShopRerollButton", width, height, false, party.gold() >= *rerollCost, &label);
     }
 
     if (!hoveredItem && (view.statusBarEventRemainingSeconds() <= 0.0f || view.statusBarEventText().empty()))
     {
-        dialogueResponseHintText = "LMB buy  RMB inspect  Esc close";
+        dialogueResponseHintText = ledgerScrolls ? Engine::tr("LMB buy  RMB inspect  Wheel scroll  Esc close")
+                                                 : Engine::tr("LMB buy  RMB inspect  Esc close");
     }
 }
 
@@ -1192,7 +1368,10 @@ void GameplayDialogueRenderer::renderDialogueTextureElement(
     if (normalizedLayoutId == "dialoguenpcportrait"
         || normalizedLayoutId == "dialoguetext"
         || normalizedLayoutId == "dialogueshopoverlayframe"
-        || normalizedLayoutId == "dialogueshoprerollbutton")
+        || normalizedLayoutId == "dialogueshoprerollbutton"
+        || normalizedLayoutId == "dialogueshopselltrashbutton"
+        || normalizedLayoutId == "dialogueshopselltrashconfirmbutton"
+        || normalizedLayoutId.starts_with("dialogueresetpopup"))
     {
         return;
     }
@@ -1467,7 +1646,7 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
                     ? view.activeEventDialog().title
                     : (!view.activeEventDialog().houseTitle.empty()
                         ? view.activeEventDialog().houseTitle
-                        : pHostHouseEntry->name);
+                        : Engine::localize(pHostHouseEntry->name));
             const float renderedTitleHeight =
                 renderWrappedCenteredDialogueTitle(
                     view,
@@ -1506,7 +1685,8 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
             float cardNameWidth,
             const std::string &name,
             uint32_t pictureId,
-            EventDialogParticipantVisual participantVisual) -> float
+            EventDialogParticipantVisual participantVisual,
+            const Mm9DialogueSpeaker &speaker) -> float
         {
             const float portraitY = std::round(startY);
             const float portraitX =
@@ -1515,6 +1695,8 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
             float nextY = portraitY + portraitAreaHeight;
             std::optional<GameplayScreenRuntime::HudTextureHandle> transitionIcon;
             const bool isMapIcon = participantVisual == EventDialogParticipantVisual::MapIcon;
+            // An MM9 speaker has no portrait picture: their live head and shoulders from their model instead.
+            const bool liveSpeaker = !isMapIcon && pictureId == 0 && speaker && view.worldRuntime() != nullptr;
 
             if (isMapIcon && !view.activeEventDialog().participantTextureName.empty())
             {
@@ -1522,7 +1704,7 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
                     view.gameplayUiRuntime().ensureHudTextureLoaded(view.activeEventDialog().participantTextureName);
             }
 
-            if (!isMapIcon && pictureId > 0)
+            if ((!isMapIcon && pictureId > 0) || liveSpeaker)
             {
                 // Keep the native portrait aperture; scale the shared carved frame to its four-unit rim.
                 GameplayUiSkin::renderPanel(view,
@@ -1594,6 +1776,17 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
                         v1);
                 }
             }
+            else if (liveSpeaker)
+            {
+                const float portraitScaleX = portraitBorderWidth / EventNpcFrameNativeWidth;
+                const float portraitScaleY = portraitBorderHeight / EventNpcFrameNativeHeight;
+                const GameplayResolvedHudLayoutElement aperture = {
+                    std::round(portraitX + EventNpcPortraitNativeX * portraitScaleX),
+                    std::round(portraitBorderY + EventNpcPortraitNativeY * portraitScaleY),
+                    std::round(EventNpcPortraitNativeWidth * portraitScaleX),
+                    std::round(EventNpcPortraitNativeHeight * portraitScaleY), panelScale};
+                view.gameplayUiRuntime().renderTalkPortrait(*view.worldRuntime(), speaker, aperture, false);
+            }
 
             if (pNpcNameLayout != nullptr
                 && !name.empty()
@@ -1605,8 +1798,8 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
                 resolvedName.width = cardNameWidth;
                 resolvedName.height = nameHeight;
                 resolvedName.scale = nameScale;
-                const float renderedNameHeight =
-                    renderWrappedCenteredDialogueTitle(view, *pNpcNameLayout, resolvedName, name);
+                const float renderedNameHeight = renderWrappedCenteredDialogueTitle(
+                    view, *pNpcNameLayout, resolvedName, Engine::localizeKnown(name));
                 nextY = resolvedName.y + std::max(resolvedName.height, renderedNameHeight);
             }
 
@@ -1646,7 +1839,8 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
                 cardNameWidth,
                 useTwoColumns ? std::string() : action.label,
                 pictureId,
-                action.participantVisual);
+                action.participantVisual,
+                Mm9DialogueSpeaker{});
 
             if (useTwoColumns)
             {
@@ -1683,7 +1877,10 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
             nameWidth,
             isTransitionDialog ? std::string() : view.activeEventDialog().title,
             pictureId,
-            view.activeEventDialog().participantVisual);
+            view.activeEventDialog().participantVisual,
+            view.worldRuntime() != nullptr
+                ? findMm9DialogueSpeaker(*view.worldRuntime(), view.activeEventDialog(), pHostHouseEntry)
+                : Mm9DialogueSpeaker{});
         contentY += isTransitionDialog ? 15.0f * panelScale : sectionGap;
 
         if (isTransitionDialog)

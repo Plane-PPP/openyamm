@@ -1,4 +1,5 @@
 #include "game/ui/GameplayUiController.h"
+#include "engine/Localization.h"
 
 #include <algorithm>
 #include <iostream>
@@ -28,6 +29,7 @@ const std::vector<std::string> GameplayLayoutFiles = {
     "Data/ui/gameplay/load_game.yml",
     "Data/ui/gameplay/journal.yml",
     "Data/ui/gameplay/quick_reference.yml",
+    "Data/ui/gameplay/statistics.yml",
     "Data/ui/gameplay/alchemy_bench.yml",
     "Data/ui/gameplay/town_portal.yml",
     "Data/ui/gameplay/lloyds_beacon.yml",
@@ -38,7 +40,8 @@ const std::vector<std::string> GameplayLayoutFiles = {
     "Data/ui/gameplay/character_detail.yml",
     "Data/ui/gameplay/actor_inspect.yml",
     "Data/ui/gameplay/spell_inspect.yml",
-    "Data/ui/gameplay/loot_summary.yml"
+    "Data/ui/gameplay/loot_summary.yml",
+    "Data/ui/gameplay/mm9_formation.yml"
 };
 }
 
@@ -63,6 +66,12 @@ bool GameplayUiController::journalSearchActive(const JournalScreenState &screen)
     return screen.active
         && ((screen.view == JournalView::Notes && screen.notesSearchActive)
             || (screen.view == JournalView::Map && screen.mapNoteEditing));
+}
+
+bool GameplayUiController::spellbookSearchActive(const SpellbookState &spellbook)
+{
+    return spellbook.active && spellbook.battleOrders.open
+        && (spellbook.battleOrders.paletteSearchActive || spellbook.battleOrders.capturingUpkeepKey);
 }
 
 bool GameplayUiController::characterScreenSupportsInspection(const CharacterScreenState &screen)
@@ -459,6 +468,8 @@ void GameplayUiController::closeSpellbook()
     State &state = resolvedState();
     state.spellbook.active = false;
     state.spellbook.selectedSpellId = 0;
+    state.spellbook.battleOrders = {};
+    state.spellbook.spellMenu = {};
     state.spellInspectOverlay = {};
 }
 
@@ -488,6 +499,8 @@ void GameplayUiController::openInventoryNestedOverlay(InventoryNestedOverlayMode
     state.inventoryNestedOverlay.mode = mode;
     state.inventoryNestedOverlay.houseId = houseId;
     state.inventoryNestedOverlay.bagZoomed = false;
+    state.inventoryNestedOverlay.sellTrashPicking = false;
+    state.inventoryNestedOverlay.sellTrashItems.clear();
 }
 
 void GameplayUiController::closeInventoryNestedOverlay()
@@ -510,6 +523,9 @@ void GameplayUiController::openHouseShopOverlay(uint32_t houseId, HouseShopMode 
     state.houseShopOverlay.houseId = houseId;
     state.houseShopOverlay.mode = mode;
     state.houseShopOverlay.spellbookShelf = spellbookShelf;
+    state.houseShopOverlay.ledgerFirstRow = 0;
+    state.houseShopOverlay.ledgerFilter = HouseShopLedgerCategory::All;
+    state.houseShopOverlay.ledgerSort = {};
 }
 
 void GameplayUiController::closeHouseShopOverlay()
@@ -535,6 +551,15 @@ void GameplayUiController::openTransportSchedule(uint32_t houseId)
     schedule = {};
     schedule.active = houseId != 0;
     schedule.houseId = houseId;
+}
+
+void GameplayUiController::openMm9TransportSchedule(uint32_t dockId)
+{
+    closeInventoryNestedOverlay();
+    TransportScheduleState &schedule = resolvedState().transportSchedule;
+    schedule = {};
+    schedule.active = dockId != 0;
+    schedule.mm9DockId = dockId;
 }
 
 void GameplayUiController::closeTransportSchedule()
@@ -598,6 +623,7 @@ void GameplayUiController::openUtilitySpellOverlay(
     state.utilitySpellOverlay.bypassRequiredMastery = false;
     state.utilitySpellOverlay.bypassGameplayCasterValidation = false;
     state.utilitySpellOverlay.lloydRecallMode = lloydRecallMode;
+    state.utilitySpellOverlay.townPortalContinent.clear();
 }
 
 void GameplayUiController::closeUtilitySpellOverlay()
@@ -651,7 +677,7 @@ void GameplayUiController::setStatusBarEvent(
         return;
     }
 
-    state.statusBar.eventText = text;
+    state.statusBar.eventText = Engine::localize(text);
     state.statusBar.eventRemainingSeconds = std::max(0.0f, durationSeconds);
     state.statusBar.eventPriority = priority;
 }
@@ -677,7 +703,7 @@ void GameplayUiController::setStatusBarHoverText(const std::string &text, bool f
         return;
     }
 
-    state.statusBar.hoverText = text;
+    state.statusBar.hoverText = Engine::localize(text);
     state.statusBar.hoverTextFromWorld = fromWorld;
 }
 

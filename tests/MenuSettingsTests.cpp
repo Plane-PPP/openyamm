@@ -336,6 +336,27 @@ TEST_CASE("minotaur damage trace setting persists and enables only its file chan
     std::filesystem::remove(log);
 }
 
+TEST_CASE("the quicksaves kept setting defaults to three, validates one to twenty and persists")
+{
+    GameSettings settings = GameSettings::createDefault();
+    CHECK(settings.quickSaveSlots == 3);
+    REQUIRE(setMenuSettingValue(settings, "quicksave_slots", "20"));
+    REQUIRE(setMenuSettingValue(settings, "quicksave_slots", "1"));
+    REQUIRE(setMenuSettingValue(settings, "quicksave_slots", "7"));
+    for (const std::string value : {"0", "21", "-1", "7junk", ""})
+    {
+        CHECK_FALSE(setMenuSettingValue(settings, "quicksave_slots", value));
+    }
+    CHECK(menuSettingValue(settings, "quicksave_slots") == "7");
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "openyamm-quicksave-slots-settings.ini";
+    std::string error;
+    REQUIRE(saveGameSettings(path, settings, error));
+    const std::optional<GameSettings> loaded = loadGameSettings(path, error);
+    REQUIRE(loaded);
+    CHECK(loaded->quickSaveSlots == 7);
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("sharpening defaults to the desktop profile and its strength validates and persists")
 {
     GameSettings settings = GameSettings::createDefault();
@@ -469,12 +490,19 @@ TEST_CASE("party portrait frame defaults on and persists menu changes")
 
     {
         std::ofstream file(path);
-        file << "[gameplay]\nquest_markers=true\n";
+        file << "[profile]\nname=desktop\nversion=5\n[gameplay]\nquest_markers=false\nmap_style=painted\n";
     }
     const std::optional<GameSettings> loaded = loadGameSettings(path, error);
     REQUIRE_MESSAGE(loaded.has_value(), error.c_str());
     CHECK(loaded->partyFrame);
-    CHECK(loaded->questMarkers);
+    CHECK_FALSE(loaded->questMarkers);
+    CHECK(loaded->paintedMaps);
+    CHECK(menuSettingValue(*loaded, "map_style") == "painted");
+    CHECK(menuSettingValue(GameSettings::createDefault(), "map_style") == "lines");
+    REQUIRE(setMenuSettingValue(settings, "map_style", "painted"));
+    const std::vector<SettingsEntry> paintedEntries = settingsEntriesToSave(settings);
+    CHECK(std::find(paintedEntries.begin(), paintedEntries.end(), SettingsEntry{"gameplay", "map_style", "painted"})
+        != paintedEntries.end());
     std::filesystem::remove(path);
 }
 

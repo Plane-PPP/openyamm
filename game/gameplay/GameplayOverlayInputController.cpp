@@ -1,8 +1,9 @@
 #include "game/items/ReagentStacks.h"
 #include "game/ui/InventoryIconGeometry.h"
+#include "engine/Utf8Text.h"
+#include "engine/Localization.h"
 #include "game/gameplay/GameplayOverlayInputController.h"
 
-#include "engine/Utf8Text.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayPartyOverlayInputController.h"
@@ -26,6 +27,8 @@
 #include "game/ui/GameplayTransportSchedule.h"
 #include "game/ui/KeyboardScreenLayout.h"
 #include "game/ui/GameplayJournalMapUi.h"
+#include "game/ui/GameplayHouseShopLedgerRenderer.h"
+#include "game/ui/GameplayUiSkin.h"
 #include "game/ui/HouseShopLayout.h"
 
 #include <SDL3/SDL.h>
@@ -51,6 +54,176 @@ int effectiveReputationForView(const GameplayScreenRuntime &view)
     return pWorldRuntime != nullptr
         ? effectivePartyReputation(pWorldRuntime->currentLocationReputation(), pWorldRuntime->eventRuntimeState())
         : 0;
+}
+
+bool pointerOnLayoutElement(const GameplayScreenRuntime &view, const std::string &id, int screenWidth,
+    int screenHeight, float mouseX, float mouseY)
+{
+    const std::optional<GameplayResolvedHudLayoutElement> rect =
+        view.resolveHudLayoutElement(id, screenWidth, screenHeight, 0, 0);
+    return rect && view.isPointerInsideResolvedElement(*rect, mouseX, mouseY);
+}
+
+// A click on the sell screen for Sell trash (HouseServiceRuntime::findSellTrash): its button starts the pick and, as
+// Cancel, ends it; the confirm button above sells it; and while picking an item under the pointer joins or leaves it. False when the click
+// is not Sell trash's, so that it sells the item.
+bool handleSellTrashClick(GameplayScreenRuntime &view, const HouseEntry &houseEntry,
+    const std::optional<GameplayHudOverlaySupport::InventoryCell> &cell, int screenWidth, int screenHeight,
+    float mouseX, float mouseY)
+{
+    GameplayUiController::InventoryNestedOverlayState &overlay = view.inventoryNestedOverlay();
+    Party *pParty = view.party();
+
+    if (pParty == nullptr || view.itemTable() == nullptr || !HouseServiceRuntime::offersSellTrash(*pParty, houseEntry))
+    {
+        return false;
+    }
+
+    const auto playError = [&view]()
+    {
+        if (view.audioSystem() != nullptr)
+        {
+            view.audioSystem()->playCommonSound(SoundId::Error, GameAudioSystem::PlaybackGroup::Ui);
+        }
+    };
+
+    // Sell trash starts the pick; the same button is Cancel while picking.
+    if (pointerOnLayoutElement(view, "DialogueShopSellTrashButton", screenWidth, screenHeight, mouseX, mouseY))
+    {
+        overlay.sellTrashPicking = !overlay.sellTrashPicking;
+        overlay.sellTrashItems = overlay.sellTrashPicking
+            ? HouseServiceRuntime::findSellTrash(*pParty, *view.itemTable(), houseEntry)
+            : std::vector<BagItemRef>();
+
+        if (overlay.sellTrashPicking && overlay.sellTrashItems.empty())
+        {
+            view.setStatusBarEvent(Engine::tr("Nothing here counts as trash; click items to add them."));
+        }
+
+        return true;
+    }
+
+    if (!overlay.sellTrashPicking)
+    {
+        return false;
+    }
+
+    if (pointerOnLayoutElement(view, "DialogueShopSellTrashConfirmButton", screenWidth, screenHeight, mouseX, mouseY))
+    {
+        if (overlay.sellTrashItems.empty())
+        {
+            playError();
+            return true;
+        }
+
+        std::string statusText;
+        const size_t sold = HouseServiceRuntime::trySellTrash(*pParty, *view.itemTable(),
+            *view.standardItemEnchantTable(), *view.specialItemEnchantTable(), houseEntry, overlay.sellTrashItems,
+            statusText, effectiveReputationForView(view));
+        overlay.sellTrashPicking = false;
+        overlay.sellTrashItems.clear();
+
+        if (sold > 0)
+        {
+            view.markHouseShopTransactionPerformed(houseEntry.id);
+            view.playSpeechReaction(pParty->activeMemberIndex(), SpeechId::ItemSold, true);
+            view.setStatusBarEvent(statusText);
+        }
+
+        return true;
+    }
+
+    const size_t memberIndex = pParty->activeMemberIndex();
+    const InventoryItem *pItem = cell && memberIndex < pParty->members().size()
+        ? InventoryBags::itemInBagAt(pParty->members()[memberIndex], cell->bag, cell->gridX, cell->gridY)
+        : nullptr;
+
+    if (pItem == nullptr)
+    {
+        // Elsewhere on the screen: no sale while picking.
+        return cell.has_value();
+    }
+
+    const BagItemRef ref = {memberIndex, cell->bag, pItem->gridX, pItem->gridY};
+    const auto picked = std::find(overlay.sellTrashItems.begin(), overlay.sellTrashItems.end(), ref);
+
+    if (picked != overlay.sellTrashItems.end())
+    {
+        overlay.sellTrashItems.erase(picked);
+    }
+    else if (HouseServiceRuntime::canSellTrashItem(*pParty, *view.itemTable(), houseEntry, *pItem))
+    {
+        overlay.sellTrashItems.push_back(ref);
+    }
+    else
+    {
+        playError();
+        view.setStatusBarEvent(Engine::tr("That item cannot be sold here."));
+    }
+
+    return true;
+}
+
+// A Ledger shop's list scrolls by whole rows: the wheel moves one, the scrollbar track pages and its thumb drags.
+void scrollHouseShopLedger(GameplayScreenRuntime &view, const GameplayHouseShopLedgerView &ledger,
+    const GameplayInputFrame &input)
+{
+    GameplayOverlayInteractionState &interaction = view.interactionState();
+    size_t &firstRow = view.houseShopOverlay().ledgerFirstRow;
+    const size_t rowCount = ledger.model.rows.size();
+    const size_t maximumFirstRow = houseShopLedgerMaximumFirstRow(ledger.layout, rowCount);
+    const GameplayResolvedHudLayoutElement &list = ledger.layout.list;
+    firstRow = ledger.firstRow;
+
+    if (maximumFirstRow == 0)
+    {
+        interaction.houseShopLedgerScrollDrag = false;
+        return;
+    }
+
+    if (input.mouseWheelDelta != 0.0f)
+    {
+        const size_t steps = std::max<size_t>(1, size_t(std::lround(std::fabs(input.mouseWheelDelta))));
+        firstRow = input.mouseWheelDelta > 0.0f ? (firstRow > steps ? firstRow - steps : 0)
+                                                : std::min(firstRow + steps, maximumFirstRow);
+    }
+
+    const GameplayResolvedHudLayoutElement thumb = GameplayUiSkin::scrollbarThumb(list,
+        float(firstRow) / float(maximumFirstRow), float(ledger.layout.visibleRows) / float(rowCount));
+
+    if (interaction.houseShopLedgerScrollDrag)
+    {
+        if (!input.leftMouseButton.held)
+        {
+            interaction.houseShopLedgerScrollDrag = false;
+            return;
+        }
+
+        const float travel = std::max(1.0f, list.height - thumb.height);
+        const float fraction =
+            std::clamp((input.pointerY - list.y - interaction.houseShopLedgerScrollGrab) / travel, 0.0f, 1.0f);
+        firstRow = size_t(std::lround(fraction * float(maximumFirstRow)));
+        return;
+    }
+
+    const bool press = input.leftMouseButton.held && !interaction.houseShopClickLatch;
+
+    if (!press || !houseShopLedgerOnScrollbar(ledger.layout, input.pointerX, input.pointerY))
+    {
+        return;
+    }
+
+    if (input.pointerY >= thumb.y && input.pointerY <= thumb.y + thumb.height)
+    {
+        interaction.houseShopLedgerScrollDrag = true;
+        interaction.houseShopLedgerScrollGrab = input.pointerY - thumb.y;
+    }
+    else
+    {
+        const size_t page = ledger.layout.visibleRows;
+        firstRow = input.pointerY < thumb.y ? (firstRow > page ? firstRow - page : 0)
+                                            : std::min(firstRow + page, maximumFirstRow);
+    }
 }
 
 bool hasPendingInputPrompt(const GameplayScreenRuntime &view)
@@ -79,7 +252,7 @@ constexpr uint64_t SaveGameDoubleClickWindowMs = 500;
 constexpr uint64_t SaveGameEraseInitialRepeatDelayMs = 350;
 constexpr uint64_t SaveGameEraseRepeatIntervalMs = 65;
 constexpr size_t SaveLoadVisibleSlotCount = 10;
-constexpr const char *pDuplicateSaveGameNameError = "Save name already exists.";
+constexpr std::string_view DuplicateSaveGameNameError = Engine::trNoop("Save name already exists.");
 
 struct SaveGameKeyBinding
 {
@@ -230,7 +403,7 @@ bool commitSaveGameEditAndSave(
                 saveGameScreen.editBuffer,
                 saveGameScreen.editSlotIndex))
         {
-            saveGameScreen.errorText = pDuplicateSaveGameNameError;
+            saveGameScreen.errorText = Engine::tr(DuplicateSaveGameNameError);
             view.setStatusBarEvent(saveGameScreen.errorText);
             return false;
         }
@@ -523,7 +696,7 @@ enum class JournalShortcutView : uint8_t
     None = 0,
     Map,
     Story,
-    Notes,
+    Quests,
     Progress,
     Auras
 };
@@ -685,9 +858,11 @@ InventoryItem chestItemAsInventoryItem(const GameplayChestItemState &chestItem)
     return item;
 }
 
+} // namespace
+
 // Takes all gold, then (unless goldOnly) every item that fits somewhere in the party (largest first), each into a bag
 // tagged for it as a ground pickup goes; the rest stays in the chest.
-void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
+void GameplayOverlayInputController::takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
 {
     IGameplayWorldRuntime *pWorldRuntime = view.worldRuntime();
     Party *pParty = view.party();
@@ -760,8 +935,8 @@ void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
 
         if (removedItem.isGold)
         {
-            const FoundGold foundGold = resolveFoundGold(removedItem.goldAmount, pWorldRuntime->eventRuntimeState());
-            pParty->addGold(static_cast<int>(foundGold.partyAmount));
+            const FoundGold foundGold = resolveFoundGold(removedItem.goldAmount, pWorldRuntime->eventRuntimeState(), pParty);
+            pParty->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootChest);
             totalGold.amount += foundGold.amount;
             totalGold.followerShare += foundGold.followerShare;
             totalGold.partyAmount += foundGold.partyAmount;
@@ -779,7 +954,7 @@ void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
 
     if (!leftBehindCells.empty())
     {
-        status += status.empty() ? "Inventory full." : " Inventory full.";
+        status += status.empty() ? Engine::tr("Inventory full.") : " " + Engine::tr("Inventory full.");
     }
 
     if (!status.empty())
@@ -787,7 +962,6 @@ void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
         view.setStatusBarEvent(status);
     }
 }
-} // namespace
 
 bool GameplayOverlayInputController::handleRestOverlayInput(
     GameplayScreenRuntime &view,
@@ -1101,7 +1275,7 @@ bool GameplayOverlayInputController::handleMenuOverlayInput(
                     menuScreen.newGameConfirmationArmed = true;
                     menuScreen.quitConfirmationArmed = false;
                     menuScreen.bottomBarTextUseWhite = true;
-                    menuScreen.bottomBarText = "Press New Game again to abandon current progress.";
+                    menuScreen.bottomBarText = Engine::tr("Press New Game again to abandon current progress.");
 
                     if (GameAudioSystem *pAudio = view.audioSystem())
                     {
@@ -1169,7 +1343,7 @@ bool GameplayOverlayInputController::handleMenuOverlayInput(
                     menuScreen.newGameConfirmationArmed = false;
                     menuScreen.quitConfirmationArmed = true;
                     menuScreen.bottomBarTextUseWhite = true;
-                    menuScreen.bottomBarText = "Press Quit again to exit.";
+                    menuScreen.bottomBarText = Engine::tr("Press Quit again to exit.");
 
                     if (GameAudioSystem *pAudio = view.audioSystem())
                     {
@@ -2179,7 +2353,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
     bool canToggleJournal,
     bool mapShortcutPressed,
     bool storyShortcutPressed,
-    bool notesShortcutPressed,
+    bool questsShortcutPressed,
     bool progressShortcutPressed,
     bool zoomInPressed,
     bool zoomOutPressed,
@@ -2207,9 +2381,9 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
     {
         requestedJournalView = JournalShortcutView::Story;
     }
-    else if (notesShortcutPressed)
+    else if (questsShortcutPressed)
     {
-        requestedJournalView = JournalShortcutView::Notes;
+        requestedJournalView = JournalShortcutView::Quests;
     }
     else if (progressShortcutPressed)
     {
@@ -2243,8 +2417,8 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                         journalScreen.mapDragActive = false;
                         break;
 
-                    case JournalShortcutView::Notes:
-                        journalScreen.view = GameplayUiController::JournalView::Notes;
+                    case JournalShortcutView::Quests:
+                        journalScreen.view = GameplayUiController::JournalView::Quests;
                         journalScreen.mapDragActive = false;
                         break;
 
@@ -2280,7 +2454,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                         return JournalShortcutView::Story;
 
                     case GameplayUiController::JournalView::Notes:
-                        return JournalShortcutView::Notes;
+                        return JournalShortcutView::None;
 
                     case GameplayUiController::JournalView::Progress:
                         return JournalShortcutView::Progress;
@@ -2289,7 +2463,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                         return JournalShortcutView::Auras;
 
                     case GameplayUiController::JournalView::Quests:
-                        return JournalShortcutView::None;
+                        return JournalShortcutView::Quests;
                     }
 
                     return JournalShortcutView::None;
@@ -2604,6 +2778,13 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 }
             }
 
+            if (journalOwnerTabsShown(journalScreen))
+            {
+                if (const auto page = resolveTrainerPage())
+                    if (const uint32_t continent = journalOwnerTargetAt(*page, pointerX, pointerY))
+                        return {GameplayJournalPointerTargetType::JournalContinent, continent};
+            }
+
             if (journalScreen.view == GameplayUiController::JournalView::Progress)
             {
                 const GameplayScreenRuntime::HudLayoutElement *pPage = view.findHudLayoutElement("JournalProgressPage");
@@ -2630,6 +2811,8 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                         return {GameplayJournalPointerTargetType::ProgressMap, uint32_t(target.index)};
                     case JournalProgressTargetKind::Guide:
                         return {GameplayJournalPointerTargetType::ProgressGuide, 0};
+                    case JournalProgressTargetKind::AllContinents:
+                        return {GameplayJournalPointerTargetType::ProgressAllContinents, 0};
                     case JournalProgressTargetKind::None:
                         break;
                 }
@@ -2884,9 +3067,24 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 journalScreen.mapDragActive = false;
                 break;
 
+            case GameplayJournalPointerTargetType::JournalContinent:
+                if (journalScreen.view == GameplayUiController::JournalView::Quests)
+                    journalScreen.questContinent = target.noteId;
+                else
+                    journalScreen.notesContinent = target.noteId;
+                journalScreen.questPage = 0;
+                journalScreen.notesPage = 0;
+                break;
+
             case GameplayJournalPointerTargetType::ProgressContinent:
                 journalScreen.progressContinent = target.noteId;
+                journalScreen.progressAllContinents = false;
                 journalScreen.progressSelectedMap.clear();
+                journalScreen.progressScroll = 0;
+                break;
+
+            case GameplayJournalPointerTargetType::ProgressAllContinents:
+                journalScreen.progressAllContinents = !journalScreen.progressAllContinents;
                 journalScreen.progressScroll = 0;
                 break;
 
@@ -2926,30 +3124,35 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
             case GameplayJournalPointerTargetType::NotesPotionButton:
                 journalScreen.view = GameplayUiController::JournalView::Notes;
                 journalScreen.notesCategory = GameplayUiController::JournalNotesCategory::Potion;
+                journalScreen.notesContinent = 0;
                 journalScreen.notesPage = 0;
                 break;
 
             case GameplayJournalPointerTargetType::NotesFountainButton:
                 journalScreen.view = GameplayUiController::JournalView::Notes;
                 journalScreen.notesCategory = GameplayUiController::JournalNotesCategory::Fountain;
+                journalScreen.notesContinent = 0;
                 journalScreen.notesPage = 0;
                 break;
 
             case GameplayJournalPointerTargetType::NotesObeliskButton:
                 journalScreen.view = GameplayUiController::JournalView::Notes;
                 journalScreen.notesCategory = GameplayUiController::JournalNotesCategory::Obelisk;
+                journalScreen.notesContinent = 0;
                 journalScreen.notesPage = 0;
                 break;
 
             case GameplayJournalPointerTargetType::NotesSeerButton:
                 journalScreen.view = GameplayUiController::JournalView::Notes;
                 journalScreen.notesCategory = GameplayUiController::JournalNotesCategory::Seer;
+                journalScreen.notesContinent = 0;
                 journalScreen.notesPage = 0;
                 break;
 
             case GameplayJournalPointerTargetType::NotesMiscButton:
                 journalScreen.view = GameplayUiController::JournalView::Notes;
                 journalScreen.notesCategory = GameplayUiController::JournalNotesCategory::Misc;
+                journalScreen.notesContinent = 0;
                 journalScreen.notesPage = 0;
                 break;
 
@@ -3337,7 +3540,8 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
     const bool *pKeyboardState = input.keyboardState();
     const int screenWidth = input.screenWidth;
     const int screenHeight = input.screenHeight;
-    // The MM9 conversation bar takes the number keys for its choices; its party is picked on the live basebar.
+    // The MM9 conversation bar takes the number keys for its choices; a talk hides the party, and a trainer lists its
+    // lessons per member.
     const bool mm9Talk = view.activeEventDialog().presentation == EventDialogPresentation::Mm9Rude;
 
     if (view.partyReadOnly() != nullptr && !mm9Talk)
@@ -3540,11 +3744,14 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
         return;
     }
 
+    // The reset popup takes no keys but Esc (its Cancel).
+    const bool resetPopupOpen = transitionResetPopupOpen(view.activeEventDialog());
+
     if (mm9Talk && !view.activeEventDialog().actions.empty())
     {
         handleMm9TalkKeys(view, input);
     }
-    else if (!view.activeEventDialog().actions.empty() && !isResidentSelectionMode)
+    else if (!view.activeEventDialog().actions.empty() && !isResidentSelectionMode && !resetPopupOpen)
     {
         if (pKeyboardState[SDL_SCANCODE_UP])
         {
@@ -3592,7 +3799,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
 
     const bool acceptPressed = pKeyboardState[SDL_SCANCODE_RETURN] || pKeyboardState[SDL_SCANCODE_SPACE];
 
-    if (acceptPressed && !isResidentSelectionMode)
+    if (acceptPressed && !isResidentSelectionMode && !resetPopupOpen)
     {
         if (!view.interactionState().eventDialogAcceptLatch)
         {
@@ -3669,13 +3876,25 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             const HouseShopVisualLayout overlayLayout = buildHouseShopVisualLayout(
                 *pDialogueHouseEntry,
                 view.houseShopOverlay().mode == GameplayUiController::HouseShopMode::BuySpellbooks);
-            // The stock reroll button (a ruleset's, MAW) takes a slot index of its own.
+            // The stock reroll button (a ruleset's, MAW) takes a slot index of its own, and a Ledger shop's
+            // merchant tabs a range of their own; other targets are stock indices.
             constexpr size_t RerollSlotIndex = std::numeric_limits<size_t>::max() - 1;
+            constexpr size_t LedgerChipIndexBase = std::numeric_limits<size_t>::max() - 32;
+            // A Ledger shop's sorting column headings, by HouseShopLedgerSortKey.
+            constexpr size_t LedgerColumnIndexBase = LedgerChipIndexBase - 8;
             const bool canReroll = *stockMode != HouseStockMode::GuildSpellbooks
                 && gameRulesFor(&party).items.shopRerollCost(party, *pDialogueHouseEntry).has_value();
+            const std::optional<GameplayHouseShopLedgerView> ledger =
+                GameplayHouseShopLedgerRenderer::resolve(view, screenWidth, screenHeight);
+
+            if (ledger)
+            {
+                scrollHouseShopLedger(view, *ledger, input);
+            }
+
             const auto resolveHoveredSlotIndex =
                 [&view, &stock, slotCount, shelfStart, resolvedFrame, &overlayLayout, canReroll, screenWidth,
-                    screenHeight](
+                    screenHeight, &ledger](
                     float mouseX, float mouseY) -> size_t
                 {
                     if (canReroll)
@@ -3687,6 +3906,26 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                         {
                             return RerollSlotIndex;
                         }
+                    }
+
+                    if (ledger)
+                    {
+                        if (const std::optional<size_t> chip =
+                                houseShopLedgerChipAt(ledger->layout, ledger->model.chips.size(), mouseX, mouseY))
+                        {
+                            return LedgerChipIndexBase + *chip;
+                        }
+
+                        if (const std::optional<HouseShopLedgerSortKey> column =
+                                houseShopLedgerColumnAt(ledger->layout, mouseX, mouseY))
+                        {
+                            return LedgerColumnIndexBase + size_t(*column);
+                        }
+
+                        GameplayHouseShopLedgerView scrolled = *ledger;
+                        scrolled.firstRow = view.houseShopOverlay().ledgerFirstRow;
+                        return GameplayHouseShopLedgerRenderer::stockIndexAt(scrolled, mouseX, mouseY)
+                            .value_or(std::numeric_limits<size_t>::max());
                     }
 
                     for (size_t slotIndex = 0;
@@ -3748,7 +3987,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                             && mouseY >= drawRect.y
                             && mouseY < drawRect.y + drawRect.height)
                         {
-                            return slotIndex;
+                            return shelfStart + slotIndex;
                         }
                     }
 
@@ -3766,8 +4005,30 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                 view.interactionState().houseShopPressedSlotIndex,
                 std::numeric_limits<size_t>::max(),
                 resolveHoveredSlotIndex,
-                [&view, pDialogueHouseEntry, stockMode, shelfStart, &input](size_t slotIndex)
+                [&view, pDialogueHouseEntry, stockMode, &input, &ledger](size_t slotIndex)
                 {
+                    if (ledger && slotIndex >= LedgerColumnIndexBase && slotIndex < LedgerChipIndexBase)
+                    {
+                        GameplayUiController::HouseShopOverlayState &overlay = view.houseShopOverlay();
+                        overlay.ledgerSort = nextHouseShopLedgerSort(
+                            overlay.ledgerSort, HouseShopLedgerSortKey(slotIndex - LedgerColumnIndexBase));
+                        overlay.ledgerFirstRow = 0;
+                        return;
+                    }
+
+                    if (ledger && slotIndex >= LedgerChipIndexBase && slotIndex < RerollSlotIndex)
+                    {
+                        const size_t chip = slotIndex - LedgerChipIndexBase;
+
+                        if (chip < ledger->model.chips.size())
+                        {
+                            view.houseShopOverlay().ledgerFilter = ledger->model.chips[chip].category;
+                            view.houseShopOverlay().ledgerFirstRow = 0;
+                        }
+
+                        return;
+                    }
+
                     if (slotIndex == std::numeric_limits<size_t>::max()
                         || view.party() == nullptr
                         || view.itemTable() == nullptr
@@ -3814,7 +4075,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                             *pDialogueHouseEntry,
                             view.worldRuntime()->gameMinutes(),
                             *stockMode,
-                            shelfStart + slotIndex,
+                            slotIndex,
                             std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
                             std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
                             statusText,
@@ -3831,7 +4092,7 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                             *pDialogueHouseEntry,
                             view.worldRuntime()->gameMinutes(),
                             *stockMode,
-                            shelfStart + slotIndex,
+                            slotIndex,
                             statusText,
                             &serviceResult,
                             effectiveReputationForView(view));
@@ -3882,7 +4143,17 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             GameplayHudOverlaySupport::nestedInventoryCellAt(view, screenWidth, screenHeight, dialogMouseX,
                 dialogMouseY);
 
-        if (cell && isLeftMousePressed && !view.interactionState().inventoryNestedOverlayItemClickLatch)
+        const bool clickStarted =
+            isLeftMousePressed && !view.interactionState().inventoryNestedOverlayItemClickLatch;
+
+        if (clickStarted
+            && view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell
+            && handleSellTrashClick(view, *pDialogueHouseEntry, cell, screenWidth, screenHeight, dialogMouseX,
+                dialogMouseY))
+        {
+            view.interactionState().inventoryNestedOverlayItemClickLatch = true;
+        }
+        else if (cell && clickStarted)
         {
             const uint8_t gridX = cell->gridX;
             const uint8_t gridY = cell->gridY;
@@ -4023,6 +4294,36 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
         {
             if (screenWidth <= 0 || screenHeight <= 0)
             {
+                return {};
+            }
+
+            // The reset popup is modal: only its Reset and Cancel answer.
+            if (transitionResetPopupOpen(view.activeEventDialog()))
+            {
+                const std::vector<EventDialogAction> &actions = view.activeEventDialog().actions;
+                const auto resetAction = std::find_if(actions.begin(), actions.end(),
+                    [](const EventDialogAction &action)
+                    {
+                        return action.kind == EventDialogActionKind::MapTransitionReset;
+                    });
+                const auto inside = [&](const char *pLayoutId)
+                {
+                    const std::optional<GameplayResolvedHudLayoutElement> rect =
+                        view.resolveHudLayoutElement(pLayoutId, screenWidth, screenHeight, 0, 0);
+                    return rect && view.isPointerInsideResolvedElement(*rect, mouseX, mouseY);
+                };
+
+                if (resetAction != actions.end() && inside("DialogueResetPopupResetButton"))
+                {
+                    return {GameplayDialoguePointerTargetType::Action,
+                        size_t(std::distance(actions.begin(), resetAction))};
+                }
+
+                if (inside("DialogueResetPopupCancelButton"))
+                {
+                    return {GameplayDialoguePointerTargetType::ResetPopupCancel, 0};
+                }
+
                 return {};
             }
 
@@ -4418,6 +4719,11 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                 view.handleDialogueCloseRequest();
                 latchGameplayMenuEscape(view);
             }
+            else if (target.type == GameplayDialoguePointerTargetType::ResetPopupCancel)
+            {
+                dismissTransitionResetPopup(view.activeEventDialog());
+                view.eventDialogSelectionIndex() = 0;
+            }
         });
 
     const bool closePressed = pKeyboardState[SDL_SCANCODE_ESCAPE];
@@ -4430,7 +4736,12 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
             const std::optional<size_t> exitAction =
                 mm9Talk ? GameplayMm9TalkBar::exitAction(view.activeEventDialog()) : std::nullopt;
 
-            if (exitAction)
+            if (transitionResetPopupOpen(view.activeEventDialog()))
+            {
+                dismissTransitionResetPopup(view.activeEventDialog());
+                view.eventDialogSelectionIndex() = 0;
+            }
+            else if (exitAction)
             {
                 view.eventDialogSelectionIndex() = *exitAction;
                 view.executeActiveDialogAction();
@@ -4824,8 +5135,9 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                     {
                         const FoundGold foundGold = resolveFoundGold(
                             takenItem.goldAmount,
-                            view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
-                        view.party()->addGold(static_cast<int>(foundGold.partyAmount));
+                            view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr,
+                            view.party());
+                        view.party()->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootChest);
                         view.setStatusBarEvent(foundGoldStatusText(foundGold));
                     }
                     else
@@ -4983,8 +5295,9 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                         {
                             const FoundGold foundGold = resolveFoundGold(
                                 removedItem.goldAmount,
-                                view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
-                            view.party()->addGold(static_cast<int>(foundGold.partyAmount));
+                                view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr,
+                                view.party());
+                            view.party()->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootChest);
                             view.setStatusBarEvent(foundGoldStatusText(foundGold));
                         }
                         else
@@ -5095,36 +5408,50 @@ bool GameplayOverlayInputController::handleQuickReferenceOverlayInput(
         return false;
     }
 
+    // The Party page has Exit; the Statistics page its two tabs and Exit (statistics.yml).
+    const bool statisticsPage =
+        view.quickReferenceScreenStateReadOnly().page == GameplayUiController::QuickReferencePage::Statistics;
     const auto findQuickReferencePointerTarget =
-        [&view, &input](float pointerX, float pointerY) -> GameplayQuickReferencePointerTarget
+        [&view, &input, statisticsPage](float pointerX, float pointerY) -> GameplayQuickReferencePointerTarget
         {
-            const GameplayScreenRuntime::HudLayoutElement *pExitLayout =
-                view.findHudLayoutElement("QuickReferenceExitButton");
+            using TargetType = GameplayQuickReferencePointerTargetType;
+            const std::array<std::pair<const char *, TargetType>, 3> statisticsButtons = {{
+                {"StatisticsOverviewButton", TargetType::StatisticsOverviewTab},
+                {"StatisticsPartyButton", TargetType::StatisticsPartyTab},
+                {"StatisticsExitButton", TargetType::ExitButton},
+            }};
+            const std::array<std::pair<const char *, TargetType>, 1> partyButtons = {{
+                {"QuickReferenceExitButton", TargetType::ExitButton},
+            }};
+            const std::span<const std::pair<const char *, TargetType>> buttons = statisticsPage
+                ? std::span<const std::pair<const char *, TargetType>>(statisticsButtons)
+                : std::span<const std::pair<const char *, TargetType>>(partyButtons);
 
-            if (pExitLayout == nullptr)
+            for (const auto &[layoutId, targetType] : buttons)
             {
-                return {};
-            }
+                const GameplayScreenRuntime::HudLayoutElement *pLayout = view.findHudLayoutElement(layoutId);
 
-            const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolvedExit =
-                view.resolveHudLayoutElement(
-                    "QuickReferenceExitButton",
-                    input.screenWidth,
-                    input.screenHeight,
-                    pExitLayout->width,
-                    pExitLayout->height);
+                if (pLayout == nullptr)
+                {
+                    continue;
+                }
 
-            if (!resolvedExit)
-            {
-                return {};
-            }
+                const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> resolved =
+                    view.resolveHudLayoutElement(
+                        layoutId,
+                        input.screenWidth,
+                        input.screenHeight,
+                        pLayout->width,
+                        pLayout->height);
 
-            if (pointerX >= resolvedExit->x
-                && pointerX < resolvedExit->x + resolvedExit->width
-                && pointerY >= resolvedExit->y
-                && pointerY < resolvedExit->y + resolvedExit->height)
-            {
-                return {GameplayQuickReferencePointerTargetType::ExitButton};
+                if (resolved
+                    && pointerX >= resolved->x
+                    && pointerX < resolved->x + resolved->width
+                    && pointerY >= resolved->y
+                    && pointerY < resolved->y + resolved->height)
+                {
+                    return {targetType};
+                }
             }
 
             return {};
@@ -5148,6 +5475,13 @@ bool GameplayOverlayInputController::handleQuickReferenceOverlayInput(
             if (target.type == GameplayQuickReferencePointerTargetType::ExitButton)
             {
                 view.closeQuickReferenceOverlay();
+                activated = true;
+            }
+            else if (target.type == GameplayQuickReferencePointerTargetType::StatisticsOverviewTab
+                || target.type == GameplayQuickReferencePointerTargetType::StatisticsPartyTab)
+            {
+                view.quickReferenceScreenState().statisticsPartyTab =
+                    target.type == GameplayQuickReferencePointerTargetType::StatisticsPartyTab;
                 activated = true;
             }
         });

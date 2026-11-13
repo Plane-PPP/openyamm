@@ -11,6 +11,7 @@
 #include "game/audio/SoundIds.h"
 #include "game/gameplay/GameplaySpeechRules.h"
 #include "game/items/InventoryItemUseRuntime.h"
+#include "game/tables/ItemTable.h"
 #include "game/party/Party.h"
 #include "game/party/SpellIds.h"
 
@@ -266,6 +267,116 @@ TEST_CASE("music streams decode a track the same way every time")
     CHECK(firstSamples == secondSamples);
     CHECK(std::any_of(firstSamples.begin(), firstSamples.end(), [](float sample) { return sample != 0.0f; }));
     CHECK_FALSE(first.finished());
+}
+
+TEST_CASE("a music stream with a repeat gap plays the track, the silence, then the track again")
+{
+    // MM9 plays a map's song once, waits 10 s and plays it again (world.yml music repeatGapSeconds).
+    std::ifstream file(std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/engine/audio/01Female_Wince.wav",
+        std::ios::binary);
+    REQUIRE(file);
+    const std::shared_ptr<const std::vector<uint8_t>> pTrack = std::make_shared<const std::vector<uint8_t>>(
+        std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    constexpr uint32_t GapFrames = 48000;
+    OpenYAMM::Game::MusicStream stream(pTrack, 1.0f);
+    const std::vector<float> samples = readMusicStream(stream, 3 * 48000);
+    REQUIRE_EQ(samples.size(), size_t(3 * 48000 * 2));
+    const size_t frames = samples.size() / 2;
+    const auto silent = [&samples](size_t frame)
+    {
+        return samples[frame * 2] == 0.0f && samples[frame * 2 + 1] == 0.0f;
+    };
+
+    size_t firstSound = 0;
+    while (firstSound < frames && silent(firstSound))
+    {
+        ++firstSound;
+    }
+
+    // the first long silence after the sound starts, at least the gap long, and the track again after it
+    size_t runStart = firstSound;
+    size_t runEnd = firstSound;
+    for (size_t frame = firstSound; frame < frames; ++frame)
+    {
+        if (!silent(frame))
+        {
+            if (runEnd - runStart >= GapFrames)
+            {
+                break;
+            }
+            runStart = frame + 1;
+        }
+        runEnd = frame + 1;
+    }
+
+    REQUIRE(runEnd - runStart >= GapFrames);
+    REQUIRE(runEnd + 2000 < frames);
+    CHECK(runEnd - runStart < GapFrames + 48000 / 2);
+    bool repeats = true;
+    for (size_t frame = 0; frame < 2000; ++frame)
+    {
+        repeats = repeats && samples[(runEnd + frame) * 2] == samples[(firstSound + frame) * 2];
+    }
+    CHECK(repeats);
+}
+
+TEST_CASE("battle music suspends the map track and resumes it after its fade")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Engine::AssetFileSystem assetFileSystem;
+    OpenYAMM::Game::GameAudioSystem audioSystem;
+    std::string failure;
+
+    REQUIRE_MESSAGE(
+        initializeRegressionAudioSystem(gameData, assetFileSystem, audioSystem, failure),
+        failure.c_str());
+
+    audioSystem.setBackgroundMusicTrack(38, 10.0f);
+    for (int attempt = 0; attempt < 10000 && audioSystem.currentBackgroundMusicTrack() != 38; ++attempt)
+    {
+        audioSystem.update(0.0f, 0.0f, 0.0f, 0.001f);
+    }
+    REQUIRE_EQ(audioSystem.currentBackgroundMusicTrack(), 38);
+
+    // nothing without a battle track or while inactive
+    audioSystem.setBattleMusic(0, true, 0.2f);
+    audioSystem.setBattleMusic(14, false, 0.2f);
+    CHECK_FALSE(audioSystem.isBattleMusicPlaying());
+
+    audioSystem.setBattleMusic(14, true, 0.2f);
+    CHECK(audioSystem.isBattleMusicPlaying());
+    audioSystem.update(0.0f, 0.0f, 0.0f, 0.05f);
+    CHECK(audioSystem.isBattleMusicPlaying());
+    CHECK_EQ(audioSystem.currentBackgroundMusicTrack(), 38);
+
+    // a map track asked for under it stays the same track (suspended), and the battle music fades out
+    audioSystem.setBackgroundMusicTrack(38, 10.0f);
+    audioSystem.setBattleMusic(14, false, 0.2f);
+    for (int step = 0; step < 3; ++step)
+    {
+        audioSystem.update(0.0f, 0.0f, 0.0f, 0.05f);
+    }
+    CHECK(audioSystem.isBattleMusicPlaying());
+    for (int step = 0; step < 4; ++step)
+    {
+        audioSystem.update(0.0f, 0.0f, 0.0f, 0.05f);
+    }
+    CHECK_FALSE(audioSystem.isBattleMusicPlaying());
+    CHECK_EQ(audioSystem.currentBackgroundMusicTrack(), 38);
+
+    // another map's track under battle music starts once the battle music has ended
+    audioSystem.setBattleMusic(14, true, 0.2f);
+    audioSystem.setBackgroundMusicTrack(90007);
+    audioSystem.update(0.0f, 0.0f, 0.0f, 0.05f);
+    CHECK_EQ(audioSystem.currentBackgroundMusicTrack(), 0);
+    audioSystem.setBattleMusic(14, false, 0.2f);
+    for (int attempt = 0; attempt < 10000 && audioSystem.currentBackgroundMusicTrack() != 90007; ++attempt)
+    {
+        audioSystem.update(0.0f, 0.0f, 0.0f, 0.01f);
+    }
+    CHECK_FALSE(audioSystem.isBattleMusicPlaying());
+    CHECK_EQ(audioSystem.currentBackgroundMusicTrack(), 90007);
+    audioSystem.shutdown();
 }
 
 TEST_CASE("a music stream that cannot be decoded finishes")
@@ -1231,4 +1342,21 @@ TEST_CASE("actor audio owns four moving voices and replaces only quieter actors"
     CHECK(audio.playActorSound(0, worldSound(1030), {8192, 0, 0}) != 0);
     audio.stopAllPlayback();
     CHECK_FALSE(audio.isSoundInstancePlaying(ui));
+}
+
+TEST_CASE("instruments play their own sound and a flute is not a lute")
+{
+    const auto instrumentSound = [](const std::string &name)
+    {
+        OpenYAMM::Game::ItemDefinition definition;
+        definition.name = name;
+        return OpenYAMM::Game::InventoryItemUseRuntime::instrumentSound(definition);
+    };
+
+    CHECK(instrumentSound("Flute") == OpenYAMM::Game::SoundId::Flute);
+    CHECK(instrumentSound("Pan Flute") == OpenYAMM::Game::SoundId::PanFlute);
+    CHECK(instrumentSound("Faerie Pipes") == OpenYAMM::Game::SoundId::PanFlute);
+    CHECK(instrumentSound("Lute") == OpenYAMM::Game::SoundId::LuteGuitar);
+    CHECK(instrumentSound("Trumpet") == OpenYAMM::Game::SoundId::Trumpet);
+    CHECK_FALSE(instrumentSound("Iron Longsword").has_value());
 }

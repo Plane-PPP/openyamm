@@ -24,6 +24,7 @@
 #include "game/mm9/Mm9TeacherSchedule.h"
 #include "game/mm9/Mm9QuestMarkers.h"
 #include "game/mm9/Mm9RudeDialogue.h"
+#include "game/mm9/Mm9HirelingTable.h"
 #include "game/mm9/Mm9SkillTrainer.h"
 #include "game/mm9/Mm9TransportRoute.h"
 #include "game/outdoor/WeatherModel.h"
@@ -73,6 +74,9 @@ class GameDataLoader
 {
 public:
     void setActiveWorldId(const std::string &worldId);
+    // (Re)loads the tables only one world has (MM9's RUDE dialogue, hirelings, trainers, routes, ...) for the active
+    // world, as the full load does; a world switch calls it after setActiveWorldId and rebinds GameDataRepository.
+    bool loadWorldScopedTables(const Engine::AssetFileSystem &assetFileSystem);
     // The ruleset whose table overrides the next load applies; Standard (no overrides) until set.
     void setActiveRuleset(const RulesetDefinition &ruleset);
     const RulesetDefinition &activeRuleset() const;
@@ -140,6 +144,8 @@ public:
     const Mm9TeacherScheduleTable &getMm9TeacherScheduleTable() const;
     const Mm9RudeDialogueTable &getMm9RudeDialogueTable() const;
     const Mm9SkillTrainerTable &getMm9SkillTrainerTable() const;
+    // The MM9 world's hirelings; empty in other worlds.
+    const Mm9HirelingTable &getMm9HirelingTable() const;
     const Mm9TransportRouteTable &getMm9TransportRouteTable() const;
     const Mm9QuestInteractionTable &getMm9QuestInteractionTable() const;
     const RosterTable &getRosterTable() const;
@@ -236,7 +242,15 @@ private:
     bool loadMm9MapTransitionTable(const Engine::AssetFileSystem &assetFileSystem);
     bool loadMm9TeacherScheduleTable(const Engine::AssetFileSystem &assetFileSystem);
     bool loadMm9RudeDialogueTable(const Engine::AssetFileSystem &assetFileSystem);
+    bool loadRulesetMm9DialogueRows(const Engine::AssetFileSystem &assetFileSystem);
+    bool addRulesetMm9DialogueRows(const Engine::AssetFileSystem &assetFileSystem, Mm9RudeDialogueTable &table) const;
     bool loadMm9SkillTrainerTable(const Engine::AssetFileSystem &assetFileSystem);
+    // MM9's lesson table over its dialogue table, from the skill_trainers contribution of worlds/mm9/world.yml
+    // (whichever world is active); null, with the reason printed, when it cannot be read.
+    std::shared_ptr<Mm9SkillTrainerTable> readMm9SkillTrainerTable(
+        const Engine::AssetFileSystem &assetFileSystem,
+        const Mm9RudeDialogueTable &dialogue);
+    bool loadMm9HirelingTable(const Engine::AssetFileSystem &assetFileSystem);
     bool loadMm9TransportRouteTable(const Engine::AssetFileSystem &assetFileSystem);
     bool loadMm9QuestInteractionTable(const Engine::AssetFileSystem &assetFileSystem);
     bool loadRosterTable(const Engine::AssetFileSystem &assetFileSystem);
@@ -272,8 +286,8 @@ private:
     ) const;
     bool loadPotionEffects(const Engine::AssetFileSystem &assetFileSystem);
     bool loadRulesetData(const Engine::AssetFileSystem &assetFileSystem);
-    // Every skill teacher from the loaded tables, with trainer_places.txt (and the active world's own rows) and the
-    // Ledger of Teachers' teacher_ledger.yml.
+    // Every skill teacher from the loaded tables, with trainer_places.txt (and the mounted worlds' own rows), the
+    // Ledger of Teachers' teacher_ledger.yml and, when MM9 is mounted, Chedian's actor teachers.
     bool loadTrainerDirectory(const Engine::AssetFileSystem &assetFileSystem);
     // Applies the active ruleset's override or replacement of this engine table, if it has one.
     bool applyActiveRulesetTable(
@@ -324,6 +338,7 @@ private:
     std::shared_ptr<Mm9TeacherScheduleTable> m_pMm9TeacherScheduleTable;
     std::shared_ptr<Mm9RudeDialogueTable> m_pMm9RudeDialogueTable;
     std::shared_ptr<Mm9SkillTrainerTable> m_pMm9SkillTrainerTable;
+    std::shared_ptr<Mm9HirelingTable> m_pMm9HirelingTable;
     std::shared_ptr<Mm9TransportRouteTable> m_pMm9TransportRouteTable;
     Mm9QuestInteractionTable m_mm9QuestInteractionTable;
     RosterTable m_rosterTable;

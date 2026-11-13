@@ -109,6 +109,8 @@ public:
     // How the character holds the weapon. Standard: two-handed weapons take both hands; one-handed daggers at Expert
     // and swords at Master may go in the off hand.
     virtual ItemWield wield(const Character &character, const ItemDefinition &itemDefinition) const;
+    // The skill the character wields the weapon with, which equipping it needs. Standard: the item's own skill.
+    virtual std::string weaponSkill(const Character &character, const ItemDefinition &itemDefinition) const;
     // Why a shop will not buy this item, or nothing; Standard refuses only items without a price (the house's own
     // checks come first).
     virtual std::optional<std::string> sellRefusal(const Party &party, const InventoryItem &item) const;
@@ -168,6 +170,10 @@ public:
     virtual std::optional<int> merchantValue(const Character &member) const;
     // What rerolling a shop's stock costs, or nothing when its stock cannot be rerolled (Standard).
     virtual std::optional<int> shopRerollCost(const Party &party, const HouseEntry &house) const;
+    // Whether a vendor's fixed stock (a world's vendor_stock: MM9's shops) is rolled by the rules as shop stock: the
+    // vendor keeps its items, the rules give them their power and enchantments, as on the other shops (MAW). Standard:
+    // no, the stock is sold as written.
+    virtual bool rollsFixedShopStock() const;
     // Changes a shop's freshly rolled stock (MAW: magic shops and alchemists sell crafting materials). Standard:
     // nothing.
     virtual void adjustShopStock(

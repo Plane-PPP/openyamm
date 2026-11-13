@@ -143,6 +143,11 @@ ItemWield ItemRules::wield(const Character &character, const ItemDefinition &ite
     return wield;
 }
 
+std::string ItemRules::weaponSkill(const Character &, const ItemDefinition &itemDefinition) const
+{
+    return canonicalSkillName(itemDefinition.skillGroup);
+}
+
 int ItemRules::levelRequirement(const ItemDefinition &, const ItemRulesetFields &) const
 {
     return 0;
@@ -224,6 +229,11 @@ std::optional<int> ItemRules::merchantValue(const Character &) const
 std::optional<int> ItemRules::shopRerollCost(const Party &, const HouseEntry &) const
 {
     return std::nullopt;
+}
+
+bool ItemRules::rollsFixedShopStock() const
+{
+    return false;
 }
 
 void ItemRules::adjustShopStock(

@@ -42,6 +42,20 @@ struct MapDeltaLocationTime
     std::array<uint8_t, 24> reserved = {};
 };
 
+// A rigid item an actor holds on one of its 3D model's nodes (scene held_items: MM9's AttachProp, a monk's broom, a
+// miner's axe): the item's model, its origin on the node.
+struct MapDeltaHeldItem
+{
+    std::string model;
+    std::string node;
+
+    bool operator==(const MapDeltaHeldItem &other) const = default;
+};
+
+// Puts the item on its node, replacing what the node held; detachHeldItem empties the node (empty: every node).
+void attachHeldItem(std::vector<MapDeltaHeldItem> &items, const std::string &model, const std::string &node);
+void detachHeldItem(std::vector<MapDeltaHeldItem> &items, const std::string &node);
+
 struct MapDeltaActor
 {
     std::string name;
@@ -49,14 +63,27 @@ struct MapDeltaActor
     int32_t mm9RudeId = 0;
     uint32_t mm9SourceObjectIndex = 0;
     bool mm9CanReceiveDamage = true;
+    // MM9's ShouldRepopulate (scene respawns_on_refill; false: MM9's 0): a map refill keeps it as it was left (dead,
+    // gone, moved) instead of placing it anew. Read from the scene at each refill, not saved.
+    bool respawnsOnRefill = true;
     bool mm9Civilian = false;
     bool mm9Guard = false;
+    // Its 3D model's scale against its binding's (scene `draw_scale`); 0: none, the model then follows its height over
+    // its descriptor's. Lets a placement keep a collision body that is not its drawn size (MM9's).
+    float drawScale = 0.0f;
     bool proceduralDeathLoot = true;
     uint16_t initialYawUnits = 0;
     bool immobile = false;
     // A placed actor that keeps its stored height (scene keeps_height: a Brood Sac on its cradle socket) instead of
     // standing on the floor under it; indoors only, outdoor placements keep theirs already.
     bool keepsHeight = false;
+    // A posed prop (scene posed: MM9's RUDEProps, people sitting at a table or behind a bar who loop one pose): the
+    // world never moves it, neither its initial placement nor collision pushes, nor gravity; it stays exactly where
+    // placed, overlapping its seat. Indoors only. Its pose and facing come from its map script (evt.PlayActorClip).
+    bool posed = false;
+    // Items it holds (scene held_items), drawn on its 3D model beside its binding's own attachments; map scripts change
+    // them (evt.AttachActorItem, evt.DetachActorItem). Saved with the map.
+    std::vector<MapDeltaHeldItem> heldItems;
     // A leash for this placement (scene leash_radius): it fights at most this far from where it was placed and walks
     // back there with no target, whatever its monster's tactics say (0: none).
     uint16_t leashRadius = 0;
@@ -124,6 +151,9 @@ struct MapDeltaSpriteObject
     int initialX = 0;
     int initialY = 0;
     int initialZ = 0;
+    // The object's identity while it exists (indoors: what an item's ground yaw and model are keyed by), unlike its index,
+    // which shifts when an object before it is taken. 0 until assigned (appendSpriteObject, assignSpriteObjectKeys).
+    uint32_t objectKey = 0;
     float lifetimeTickAccumulator = 0.0f;
     std::vector<uint8_t> rawContainingItem;
     // The item as the game made it (a drop, a monster's loot), with what the record's 0x24 bytes have no room for:
@@ -134,6 +164,11 @@ struct MapDeltaSpriteObject
     bool semanticPlacedPickup = false;
     bool semanticLootContainer = false;
     bool semanticPolicyHidden = false;
+    // Runtime only (not saved): a placed world item shown but not yet takeable (MapWorldItemSource::pickupQBits),
+    // set by the visibility sync; it draws no sparkle.
+    bool semanticPickupLocked = false;
+    // Runtime only: a placed world item's authored pose (yaw, pitch, roll radians; MapWorldItemSource::poseDegrees).
+    std::optional<std::array<float, 3>> semanticPose;
 };
 
 struct MapDeltaChest
@@ -190,6 +225,15 @@ struct MapDeltaMm9BarrelState
     bool used = false;
 };
 
+// One of a ruleset's extra pack members (MAW's density in MM9: a ruleset scene overlay's `pack_reserve`): a copy of a
+// pack's member, placed beside it by tools/maw/mm9_pack_reserve.py with the converter's placement rules. It joins the
+// map when the rules' density factor reaches `fromFactor` (MonsterRules::packDensityFactor).
+struct MapDeltaPackReserveActor
+{
+    MapDeltaActor actor;
+    float fromFactor = 0.0f;
+};
+
 struct MapDeltaData
 {
     MapDeltaLocationInfo locationInfo = {};
@@ -200,6 +244,10 @@ struct MapDeltaData
     std::vector<uint32_t> faceAttributes;
     std::vector<uint16_t> decorationFlags;
     std::vector<MapDeltaActor> actors;
+    // The map's pack reserve, by rising fromFactor, from its assets only (never saved): the first fill and each refill
+    // append those the rules' density factor reaches right after the scene's actors (before encounter spawns), so the
+    // k-th appended actor is always reserve entry k.
+    std::vector<MapDeltaPackReserveActor> packReserve;
     std::vector<MapDeltaSpriteObject> spriteObjects;
     std::vector<MapDeltaChest> chests;
     uint32_t doorSlotCount = 0;
@@ -208,9 +256,22 @@ struct MapDeltaData
     MapDeltaPersistentVariables eventVariables = {};
     MapDeltaLocationTime locationTime = {};
     std::vector<MapDeltaMm9BarrelState> mm9Barrels;
+    // The source ids of the scene's placed world items the party took (MapWorldItemSource): never placed again,
+    // through refills too.
+    std::vector<std::string> takenWorldItems;
 };
 
 void normalizeIndoorDoorTextureDeltas(MapDeltaData &mapDeltaData, const IndoorMapData &indoorMapData);
+
+// Appends an object under a key no present object has (MapDeltaSpriteObject::objectKey).
+void appendSpriteObject(MapDeltaData &mapDeltaData, MapDeltaSpriteObject spriteObject);
+
+// Gives each object without a key one, in order (a map's authored objects, a save from before keys).
+void assignSpriteObjectKeys(MapDeltaData &mapDeltaData);
+
+// A map refill places its scene actors anew (refilled, fresh from the scene); a scene actor with respawnsOnRefill false
+// takes back its record from the saved map (the same index, name and monster) instead. Returns how many it kept.
+size_t keepActorsThroughRefill(const MapDeltaData &saved, MapDeltaData &refilled);
 
 class MapDeltaDataLoader
 {

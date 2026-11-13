@@ -1,6 +1,18 @@
 [Русский](MINOTAUR_REBALANCE.md) | **English**
 
 
+## OpenYAMM 2.3 — integration, checks in progress
+
+Target: `f4a6b8032759a218505532b2600ac56b6d80c7af` (v2.3). Project Medusa and the portrait/paperdoll
+importer changes are ported while retaining the current C2 party creation sheet. Medusa content is pinned to
+`347fb2185a29dfd3d2eca47e61f2a13e476cf65b`: Mount Nighon, `out10.odm`, position `3114, -11055, 513`.
+The new `OYMINO1/v180` envelope maps to upstream179; previous production155 explicitly maps to154.
+A frozen155 fixture was captured with the previous writer before merging. Lethal Strike, Axe and Minotaur DR
+retain their agreed formulas; inherited upstream behavior is listed in the [report](research/minotaur-2.3-integration.md).
+The Linux game and both test targets build. Focused unit profiles:269 cases/49,765assertions; runtime:26/3,328.
+These are selected profiles, not the full suite. No Windows package or manual/GPU verification is claimed.
+The Roguelike skeleton is a separate final step; run rules are outside this task.
+
 ## OpenYAMM 1.21 — Windows ZIP ready
 
 Official `c24a0aaa6bb6f7956c84beed1bd44c88e62453c4`; balance preserved. Save mod155/official154,

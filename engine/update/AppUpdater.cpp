@@ -1,8 +1,10 @@
 #include "engine/update/AppUpdater.h"
 
 #include "engine/AssetPackIndex.h"
+#include "engine/Localization.h"
 #include "engine/update/Sha256.h"
 
+#include <algorithm>
 #include <physfs.h>
 
 #include <array>
@@ -184,13 +186,20 @@ void removeLegacyRelease(const AppInstallation &installation, std::ostream &log)
 }
 }
 
-UpdatePlan planUpdate(const ReleaseManifest &manifest, const std::filesystem::path &packStore, bool includeApp)
+UpdatePlan planUpdate(const ReleaseManifest &manifest, const std::filesystem::path &packStore, bool includeApp,
+                      const std::vector<std::string> &languages)
 {
     UpdatePlan plan;
 
     for (size_t index = 0; index < manifest.packs.size(); ++index)
     {
         const AssetPackRecord &pack = manifest.packs[index];
+
+        if (!pack.language.empty() && std::find(languages.begin(), languages.end(), pack.language) == languages.end())
+        {
+            continue;
+        }
+
         std::error_code error;
         const uintmax_t size = std::filesystem::file_size(packStore / pack.file, error);
 
@@ -250,6 +259,11 @@ AppUpdater::~AppUpdater()
 void AppUpdater::setTrustedKeys(std::vector<ManifestPublicKey> keys)
 {
     m_trustedKeys = std::move(keys);
+}
+
+void AppUpdater::setLanguages(std::vector<std::string> languages)
+{
+    m_languages = std::move(languages);
 }
 
 void AppUpdater::check()
@@ -315,7 +329,7 @@ void AppUpdater::setStatus(UpdateState state, const std::string &message)
 
 void AppUpdater::fail(const std::string &message)
 {
-    setStatus(UpdateState::Failed, m_cancel ? "The update was cancelled." : message);
+    setStatus(UpdateState::Failed, m_cancel ? Engine::tr("The update was cancelled.") : message);
 }
 
 bool AppUpdater::fetchText(const std::string &url, std::string &text, std::string &error)
@@ -344,7 +358,7 @@ void AppUpdater::runCheck()
 
     if (!m_pTransport)
     {
-        fail("This version of OpenYAMM cannot update itself.");
+        fail(Engine::tr("This version of OpenYAMM cannot update itself."));
         return;
     }
 
@@ -355,13 +369,14 @@ void AppUpdater::runCheck()
 
     if (!fetchText(manifestUrl, manifestText, error) || !fetchText(manifestUrl + ".sig", signatureText, error))
     {
-        fail("The update server is unreachable; try again later. (" + error + ")");
+        fail(Engine::tr("The update server is unreachable; try again later. ({error})", {{"error", error}}));
         return;
     }
 
     if (!verifyManifestSignature(manifestText, signatureText, m_trustedKeys, error))
     {
-        fail("The update's signature is invalid; download the complete package from the website. (" + error + ")");
+        fail(Engine::tr("The update's signature is invalid; download the complete package from the website. ({error})",
+            {{"error", error}}));
         return;
     }
 
@@ -369,13 +384,15 @@ void AppUpdater::runCheck()
 
     if (!manifest || manifest->platform != m_platform)
     {
-        fail("The update server sent an unexpected release (" + (manifest ? manifest->platform : error) + ").");
+        fail(Engine::tr("The update server sent an unexpected release ({release}).",
+            {{"release", manifest ? manifest->platform : error}}));
         return;
     }
 
     if (manifest->minUpdaterSchema > UpdaterSchema)
     {
-        fail("OpenYAMM " + manifest->release + " needs the complete package from the website.");
+        fail(Engine::tr("OpenYAMM {version} needs the complete package from the website.",
+            {{"version", manifest->release}}));
         return;
     }
 
@@ -383,7 +400,7 @@ void AppUpdater::runCheck()
 
     if (!comparison)
     {
-        fail("This build of OpenYAMM (" + m_installedVersion + ") does not take updates.");
+        fail(Engine::tr("This build of OpenYAMM ({version}) does not take updates.", {{"version", m_installedVersion}}));
         return;
     }
 
@@ -396,7 +413,7 @@ void AppUpdater::runCheck()
     {
         // The installed version itself: complete when all of its packs are there, else a fresh installation whose
         // small package carries no packs. Its index must name exactly the published packs.
-        if (planUpdate(*manifest, m_installation.packStore(), false).packsToDownload.empty())
+        if (planUpdate(*manifest, m_installation.packStore(), false, m_languages).packsToDownload.empty())
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_status.release = manifest->release;
@@ -423,8 +440,9 @@ void AppUpdater::runCheck()
 
         if (!installed || installedFiles != publishedFiles)
         {
-            fail("This OpenYAMM " + m_installedVersion
-                 + " package does not match the published release; download it again from the website.");
+            fail(Engine::tr("This OpenYAMM {version} package does not match the published release; download it "
+                            "again from the website.",
+                {{"version", m_installedVersion}}));
             return;
         }
 
@@ -444,7 +462,7 @@ void AppUpdater::runCheck()
         return;
     }
 
-    const UpdatePlan plan = planUpdate(*manifest, m_installation.packStore(), !contentOnly);
+    const UpdatePlan plan = planUpdate(*manifest, m_installation.packStore(), !contentOnly, m_languages);
     m_status.state = UpdateState::Available;
     m_status.contentOnly = contentOnly;
     m_status.totalBytes = plan.downloadBytes;
@@ -572,21 +590,22 @@ void AppUpdater::runDownload()
 {
     if (!m_manifest)
     {
-        fail("Check for updates first.");
+        fail(Engine::tr("Check for updates first."));
         return;
     }
 
     const ReleaseManifest &manifest = *m_manifest;
     const bool contentOnly = status().contentOnly;
-    const UpdatePlan plan = planUpdate(manifest, m_installation.packStore(), !contentOnly);
+    const UpdatePlan plan = planUpdate(manifest, m_installation.packStore(), !contentOnly, m_languages);
     std::error_code fileError;
     std::filesystem::create_directories(m_installation.updateDirectory(), fileError);
     std::filesystem::create_directories(m_installation.packStore(), fileError);
 
     if (fileError || !writeTextFileAtomically(m_installation.updateDirectory() / "writable", ""))
     {
-        fail("OpenYAMM cannot write to its folder " + utf8(m_installation.root())
-             + ". Move it to a folder you can write to, or download the complete package.");
+        fail(Engine::tr("OpenYAMM cannot write to its folder {folder}. Move it to a folder you can write to, or "
+                        "download the complete package.",
+            {{"folder", utf8(m_installation.root())}}));
         return;
     }
 
@@ -594,8 +613,8 @@ void AppUpdater::runDownload()
 
     if (!fileError && double(space.available) < double(plan.downloadBytes) * FreeSpaceMargin)
     {
-        fail("Not enough disk space: " + megabytes(uint64_t(double(plan.downloadBytes) * FreeSpaceMargin))
-             + " needed.");
+        fail(Engine::tr("Not enough disk space: {size} needed.",
+            {{"size", megabytes(uint64_t(double(plan.downloadBytes) * FreeSpaceMargin))}}));
         return;
     }
 
@@ -656,27 +675,29 @@ void AppUpdater::runDownload()
     {
         const bool cancelledByPlayer = firstError.empty() || firstError == "cancelled";
         m_cancel = cancelledByPlayer;
-        fail(cancelledByPlayer ? "The update was cancelled."
-                               : "The download failed; try again later. (" + firstError + ")");
+        fail(cancelledByPlayer ? Engine::tr("The update was cancelled.")
+                               : Engine::tr("The download failed; try again later. ({error})", {{"error", firstError}}));
         return;
     }
 
     if (contentOnly)
     {
-        setStatus(UpdateState::Ready, "The game content of OpenYAMM " + manifest.release + " is installed.");
+        setStatus(UpdateState::Ready,
+            Engine::tr("The game content of OpenYAMM {version} is installed.", {{"version", manifest.release}}));
         return;
     }
 
-    setStatus(UpdateState::Downloading, "Installing OpenYAMM " + manifest.release + "...");
+    setStatus(UpdateState::Downloading, Engine::tr("Installing OpenYAMM {version}...", {{"version", manifest.release}}));
     std::string error;
 
     if (!stageApp(archive, error))
     {
-        fail("The update could not be installed: " + error);
+        fail(Engine::tr("The update could not be installed: {error}", {{"error", error}}));
         return;
     }
 
-    setStatus(UpdateState::Ready, "OpenYAMM " + manifest.release + " is ready. Restart to play it.");
+    setStatus(UpdateState::Ready,
+        Engine::tr("OpenYAMM {version} is ready. Restart to play it.", {{"version", manifest.release}}));
 }
 
 bool AppUpdater::stageApp(const std::filesystem::path &archive, std::string &error)

@@ -1,0 +1,7 @@
+Frozen original Minotaur1.21 writer output, captured2026-11-13 before upstream integration.
+Source54efa0e975420b7544837244ec5d465923cf1dc4; OYMINO1/v155, upstream schema154.
+Unchanged existing unit binary SHA25628454a34a4337521b68ef2b90be06934c1fa99f1481dab248ac5c9aed966d1da.
+Test: Lethal Strike production 1.14 v132 migrates to current schema without losing named skills.
+18 assertions passed; helper copied the completed temporary save before remove(), without changing its bytes.
+11030bytes; SHA2566c7bd4a8b2600e00e97068b50307c46e197541a6f3261d1043d4fdbbc8697e04.
+Capture runner20261113T120847Z-8292b754c3. No private player save used or changed.

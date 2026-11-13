@@ -16,6 +16,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -120,11 +121,25 @@ void writeBytes(const std::filesystem::path &path, const std::vector<uint8_t> &b
     file.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 }
 
+// The layout identities of minimalSave's current outdoor and indoor states (save version 162).
+constexpr uint64_t OutdoorLayoutMarker = 0x0dd0a11ce0dd0a11ull;
+constexpr uint64_t IndoorLayoutMarker = 0x0bb1a5e0bb1a5e01ull;
+// The time left of the party's last buff (MM9's Fleet Foot, version 168), which older saves lack.
+constexpr float FleetFootBuffMarker = 4321.875f;
+// The time left of the indoor state's Armageddon (version 170), which older saves lack.
+constexpr float IndoorArmageddonMarker = 6543.125f;
+constexpr float IndoorMovementMarker = 1234.375f;
+
 OpenYAMM::Game::GameSaveData minimalSave()
 {
     OpenYAMM::Game::GameSaveData save;
     save.mapFileName = "oute3.odm";
     save.saveName = "ruleset check";
+    save.outdoorWorld.mapLayoutIdentity = OutdoorLayoutMarker;
+    save.indoorScene.mapLayoutIdentity = IndoorLayoutMarker;
+    save.indoorScene.partyRuntime.movementAccumulatorSeconds = IndoorMovementMarker;
+    save.party.partyBuffs[size_t(OpenYAMM::Game::PartyBuffId::FleetFoot)].remainingSeconds = FleetFootBuffMarker;
+    save.indoorScene.worldRuntime.armageddon.remainingSeconds = IndoorArmageddonMarker;
     return save;
 }
 
@@ -325,6 +340,60 @@ TEST_CASE("ruleset definitions reject invalid packages")
         "maw"));
 }
 
+TEST_CASE("a ruleset's table contributions name an engine table or a world's table")
+{
+    std::string error;
+    const std::optional<RulesetDefinition> ruleset = OpenYAMM::Game::parseRulesetDefinition(
+        "id: maw\nname: MAW\ntables:\n"
+        "  - {table: monster_data.txt, mode: override, path: patches/monster_data.txt}\n"
+        "  - {world: mm9, table: data_tables/monster_data.txt, mode: override, path: worlds/mm9/monster_data.txt}\n"
+        "  - {world: mm9, table: data_tables/vendor_stock.txt, mode: replace, path: worlds/mm9/vendor_stock.txt}\n",
+        "maw", error);
+    REQUIRE_MESSAGE(ruleset.has_value(), error);
+
+    const std::vector<const OpenYAMM::Game::RulesetTableContribution *> engine =
+        ruleset->findTables("engine/data_tables/monster_data.txt");
+    REQUIRE_EQ(engine.size(), 1u);
+    CHECK_EQ(engine.front()->path, "patches/monster_data.txt");
+
+    const std::vector<const OpenYAMM::Game::RulesetTableContribution *> world =
+        ruleset->findTables("worlds/mm9/data_tables/monster_data.txt");
+    REQUIRE_EQ(world.size(), 1u);
+    CHECK_EQ(world.front()->world, "mm9");
+    CHECK_EQ(world.front()->path, "worlds/mm9/monster_data.txt");
+    CHECK_EQ(ruleset->findTables("worlds/mm9/data_tables/vendor_stock.txt").size(), 1u);
+
+    // Another world's table of the same name, and the engine path of a world's table, are left alone.
+    CHECK(ruleset->findTables("worlds/mm8/data_tables/monster_data.txt").empty());
+    CHECK(ruleset->findTables("engine/data_tables/data_tables/monster_data.txt").empty());
+
+    CHECK_FALSE(OpenYAMM::Game::parseRulesetDefinition(
+        "id: maw\nname: MAW\ntables:\n  - {world: ../mm9, table: data_tables/a.txt, mode: override, path: a.txt}\n",
+        "maw", error).has_value());
+    // The same patch may name the engine table and a world's table of the same name.
+    CHECK(OpenYAMM::Game::parseRulesetDefinition(
+        "id: maw\nname: MAW\ntables:\n  - {table: a.txt, mode: override, path: b.txt}\n"
+        "  - {world: mm9, table: a.txt, mode: override, path: b.txt}\n",
+        "maw", error).has_value());
+}
+
+TEST_CASE("a ruleset plays in the worlds it lists, or in every world")
+{
+    std::string error;
+    const std::optional<RulesetDefinition> limited = OpenYAMM::Game::parseRulesetDefinition(
+        "id: maw\nname: MAW\nworlds: [mm6, mm7, mm8]\n", "maw", error);
+    REQUIRE_MESSAGE(limited.has_value(), error);
+    CHECK(limited->supportsWorld("mm8"));
+    CHECK_FALSE(limited->supportsWorld("mm9"));
+    CHECK(OpenYAMM::Game::standardRulesetDefinition().supportsWorld("mm9"));
+    // MAW's four continents: Jadame, Antagarich, Enroth and Chedian (devdocs/maw/MM9_SUPPORT.md).
+    for (const char *pWorld : {"mm6", "mm7", "mm8", "mm9"})
+    {
+        CHECK(parseMaw().supportsWorld(pWorld));
+    }
+    CHECK_FALSE(OpenYAMM::Game::parseRulesetDefinition("id: maw\nname: MAW\nworlds: mm8\n", "maw", error).has_value());
+}
+
 TEST_CASE("rulesets offer only their listed options")
 {
     const RulesetDefinition maw = parseMaw();
@@ -457,6 +526,15 @@ TEST_CASE("saves with out-of-range ruleset options are refused")
 
 namespace
 {
+// These synthetic upstream fixtures contain no map actors (and hence no mod combatLevel fields).
+// Their envelope must be official: a numeric upstream version is not an OYMINO1 version.
+void stampOfficialSaveVersion(std::vector<uint8_t> &bytes, uint32_t version)
+{
+    constexpr char magic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
+    std::memcpy(bytes.data(), magic, sizeof(magic));
+    std::memcpy(bytes.data() + 8, &version, sizeof(version));
+}
+
 void eraseBytes(std::vector<uint8_t> &bytes, size_t offset, size_t count)
 {
     bytes.erase(
@@ -475,6 +553,76 @@ size_t findValue(const std::vector<uint8_t> &bytes, const T &value)
     return static_cast<size_t>(found - bytes.begin());
 }
 
+// Saves from version 175 end the summary block with the playthrough id and the time played up to the save (an empty
+// string and 0 in these saves); older ones keep the id before the statistics timeline, at the save's end. Moves the
+// id back and cuts the time, the first step for a save then stamped with an older version.
+void moveSummaryPlaythroughToLegacyPlace(std::vector<uint8_t> &bytes)
+{
+    constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
+    constexpr size_t PlaythroughSize = sizeof(uint64_t) + sizeof(double);
+    uint32_t summarySize = 0;
+    std::memcpy(&summarySize, bytes.data() + HeaderSize, sizeof(summarySize));
+    REQUIRE(summarySize >= PlaythroughSize);
+    const size_t offset = HeaderSize + sizeof(summarySize) + summarySize - PlaythroughSize;
+    REQUIRE(std::all_of(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+        bytes.begin() + static_cast<std::ptrdiff_t>(offset + PlaythroughSize),
+        [](uint8_t value) { return value == 0; }));
+    eraseBytes(bytes, offset, PlaythroughSize);
+    summarySize -= uint32_t(PlaythroughSize);
+    std::memcpy(bytes.data() + HeaderSize, &summarySize, sizeof(summarySize));
+    // The empty id before the empty timeline that ends the save.
+    bytes.insert(bytes.end() - static_cast<std::ptrdiff_t>(sizeof(uint64_t)), sizeof(uint64_t), uint8_t(0));
+}
+
+// Saves before version 162 have no map layout identities: cuts minimalSave's two, for a save stamped older.
+// Saves from version 163 end with the playthrough id and its statistics timeline: two strings, empty in these saves.
+void erasePlaythroughStatistics(std::vector<uint8_t> &bytes)
+{
+    REQUIRE(bytes.size() >= 2 * sizeof(uint64_t));
+    const size_t offset = bytes.size() - 2 * sizeof(uint64_t);
+    REQUIRE(std::all_of(bytes.begin() + static_cast<std::ptrdiff_t>(offset), bytes.end(),
+        [](uint8_t value) { return value == 0; }));
+    eraseBytes(bytes, offset, 2 * sizeof(uint64_t));
+}
+
+// Cuts `count` empty counts or strings (a zero length each) at offset.
+void eraseEmptyCounts(std::vector<uint8_t> &bytes, size_t offset, size_t count)
+{
+    for (size_t index = 0; index < count; ++index)
+    {
+        uint64_t value = 1;
+        std::memcpy(&value, bytes.data() + offset + index * sizeof(uint64_t), sizeof(value));
+        REQUIRE_EQ(value, 0u);
+    }
+
+    eraseBytes(bytes, offset, count * sizeof(uint64_t));
+}
+
+void eraseMapLayoutIdentities(std::vector<uint8_t> &bytes)
+{
+    eraseBytes(bytes, findValue(bytes, OutdoorLayoutMarker), sizeof(uint64_t));
+    eraseBytes(bytes, findValue(bytes, IndoorLayoutMarker), sizeof(uint64_t));
+    // These fixtures also predate swim memory (166): two bools after the movement accumulator and pending jump.
+    eraseBytes(bytes, findValue(bytes, IndoorMovementMarker) + sizeof(float) + sizeof(bool), 2 * sizeof(bool));
+}
+
+// Saves before version 168 have one party buff fewer: cuts minimalSave's last (Fleet Foot), its time left, spell id,
+// skill level, mastery, power and caster.
+void eraseFleetFootBuff(std::vector<uint8_t> &bytes)
+{
+    eraseBytes(bytes, findValue(bytes, FleetFootBuffMarker),
+        sizeof(float) + 2 * sizeof(uint32_t) + sizeof(std::underlying_type_t<OpenYAMM::Game::SkillMastery>)
+            + sizeof(int) + sizeof(uint32_t));
+}
+
+// Saves before version 170 have no indoor Armageddon: cuts minimalSave's, its time left, skill level, mastery, caster,
+// shake steps and sequence, and shake yaw and pitch.
+void eraseIndoorArmageddon(std::vector<uint8_t> &bytes)
+{
+    eraseBytes(bytes, findValue(bytes, IndoorArmageddonMarker),
+        3 * sizeof(float) + 4 * sizeof(uint32_t) + sizeof(std::underlying_type_t<OpenYAMM::Game::SkillMastery>));
+}
+
 // Saves from version 140 lead with the summary block (its size, the map, the time, the ruleset, the name and the
 // preview); older ones keep the map after the scene kind, the time before the camera yaw, the ruleset before the
 // random root seed and the name and preview at the end. Moves them back, for a save then stamped with an older version.
@@ -484,12 +632,41 @@ void eraseWorldCompletions(std::vector<uint8_t> &bytes, const std::string &marke
     const auto markerIt = std::search(bytes.begin(), bytes.end(), marker.begin(), marker.end());
     REQUIRE(markerIt != bytes.end());
     // The record count and the id's length before the id; game minutes, score, real time and the timed flag after it,
-    // then the untracked flag, and the empty counts of chosen MM9 talk rows (version 146) and of bought Ledgers of
-    // Teachers (153) that follow.
+    // then the untracked flag, and the empty counts of chosen MM9 talk rows (version 146), of bought Ledgers of
+    // Teachers (153), of MM9 hirelings (157) and of member formation cells (158) and the empty last outdoor map (155)
+    // that follow.
     const size_t offset = static_cast<size_t>(markerIt - bytes.begin()) - 2 * sizeof(uint64_t);
     eraseBytes(bytes, offset,
         2 * sizeof(uint64_t) + marker.size() + sizeof(float) + sizeof(uint64_t) + sizeof(int64_t) + 2 * sizeof(bool)
-            + 2 * sizeof(uint64_t));
+            + 5 * sizeof(uint64_t));
+}
+
+// The party's empty count of member formation cells (version 158) and its empty last outdoor map (155), the last of
+// the party, after its one completion record (named by marker), the untracked flag and the empty counts of chosen MM9
+// talk rows, Ledgers of Teachers and MM9 hirelings.
+void eraseMemberFormationCount(std::vector<uint8_t> &bytes, const std::string &marker)
+{
+    const auto markerIt = std::search(bytes.begin(), bytes.end(), marker.begin(), marker.end());
+    REQUIRE(markerIt != bytes.end());
+    const size_t offset = static_cast<size_t>(markerIt - bytes.begin()) + marker.size() + sizeof(float)
+        + sizeof(uint64_t) + sizeof(int64_t) + 2 * sizeof(bool) + 3 * sizeof(uint64_t);
+    eraseEmptyCounts(bytes, offset, 2);
+}
+
+// The party's empty count of MM9 hirelings (version 157), after its one completion record (named by marker), the
+// untracked flag and the empty counts of chosen MM9 talk rows and Ledgers of Teachers; with the formation cells'
+// count after it (158) and the last outdoor map (155), so the party ends as before version 155.
+void eraseMm9HirelingCount(std::vector<uint8_t> &bytes, const std::string &marker)
+{
+    eraseMemberFormationCount(bytes, marker);
+    const auto markerIt = std::search(bytes.begin(), bytes.end(), marker.begin(), marker.end());
+    REQUIRE(markerIt != bytes.end());
+    const size_t offset = static_cast<size_t>(markerIt - bytes.begin()) + marker.size() + sizeof(float)
+        + sizeof(uint64_t) + sizeof(int64_t) + 2 * sizeof(bool) + 2 * sizeof(uint64_t);
+    uint64_t count = 1;
+    std::memcpy(&count, bytes.data() + offset, sizeof(count));
+    REQUIRE_EQ(count, 0u);
+    eraseBytes(bytes, offset, sizeof(uint64_t));
 }
 
 void moveSummaryToLegacyPlaces(
@@ -516,8 +693,8 @@ void moveSummaryToLegacyPlaces(
     const std::vector<uint8_t> map = piece(0, mapSize);
     const std::vector<uint8_t> minutes = piece(mapSize, minutesSize);
     const size_t rulesetOffset = mapSize + minutesSize;
-    // Without its last two bytes, the trainer hints and bow preferences of versions 152 and 154, which no summary-less
-    // save has.
+    // Without its last two bytes, the trainer hints and the bow preference of versions 152 and 154, which no
+    // summary-less save has.
     const std::vector<uint8_t> ruleset =
         piece(rulesetOffset, summary.size() - rulesetOffset - nameAndPreviewSize - 2 * sizeof(bool));
     const std::vector<uint8_t> nameAndPreview = piece(summary.size() - nameAndPreviewSize, nameAndPreviewSize);
@@ -552,6 +729,8 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
     REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
 
     std::vector<uint8_t> bytes = readBytes(path);
+    moveSummaryPlaythroughToLegacyPlace(bytes);
+    erasePlaythroughStatistics(bytes);
     eraseWorldCompletions(bytes, completionMarker);
     moveSummaryToLegacyPlaces(bytes, save, yawMarker, seedMarker);
     // The seed directly follows the ruleset and the MAW state's presence byte follows the seed, so cut them first.
@@ -567,8 +746,11 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
         sizeof(uint64_t) + marker.size() + 10);
     // The held item ends with the bonus timer, the hardened flag, the ruleset-fields byte and the Workshop mod (136).
     eraseBytes(bytes, findValue(bytes, heldItemMarker) + sizeof(float) + 1, 1 + sizeof(uint16_t));
+    eraseMapLayoutIdentities(bytes);
+    eraseFleetFootBuff(bytes);
+    eraseIndoorArmageddon(bytes);
     const uint32_t previousVersion = 95;
-    std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
+    stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
 
     const std::optional<OpenYAMM::Game::GameSaveData> restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
@@ -616,11 +798,15 @@ TEST_CASE("the save list reads a save's summary alone, and older saves' summary 
         restored->ruleset, restored->saveName, restored->previewBmp});
 
     std::vector<uint8_t> bytes = readBytes(path);
+    moveSummaryPlaythroughToLegacyPlace(bytes);
+    erasePlaythroughStatistics(bytes);
     eraseWorldCompletions(bytes, completionMarker);
     moveSummaryToLegacyPlaces(bytes, save, yawMarker, seedMarker);
-    // The fork's pre-summary140 envelope contains the official139 schema.
-    const uint32_t previousVersion = 140;
-    std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
+    eraseMapLayoutIdentities(bytes);
+    eraseFleetFootBuff(bytes);
+    eraseIndoorArmageddon(bytes);
+    const uint32_t previousVersion = 139;
+    stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
     checkSummary(OpenYAMM::Game::loadGameSaveSummaryFromPath(path, error));
 
@@ -636,12 +822,60 @@ TEST_CASE("the save list reads a save's summary alone, and older saves' summary 
     std::filesystem::remove(path);
 }
 
+TEST_CASE("saves with the retired per-game loot choice load without it")
+{
+    OpenYAMM::Game::GameSaveData save = minimalSave();
+    save.ruleset.id = "maw";
+    save.ruleset.options.preferences.trainerHints = true;
+    save.ruleset.options.preferences.bowDisabled = true;
+    const std::filesystem::path path = makeTemporaryRoot("retired_world_loot").replace_extension(".oysav");
+    std::string error;
+    REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
+
+    // Versions 172 to 177 wrote the choice as the ruleset's last byte, in the summary block before the name, the
+    // preview and the playthrough id and time. Put one back (off) and stamp version 177.
+    std::vector<uint8_t> bytes = readBytes(path);
+    constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
+    constexpr size_t PlaythroughSize = sizeof(uint64_t) + sizeof(double);
+    uint32_t summarySize = 0;
+    std::memcpy(&summarySize, bytes.data() + HeaderSize, sizeof(summarySize));
+    const size_t nameAndPreviewSize =
+        sizeof(uint64_t) + save.saveName.size() + sizeof(uint64_t) + save.previewBmp.size();
+    const size_t offset =
+        HeaderSize + sizeof(summarySize) + summarySize - PlaythroughSize - nameAndPreviewSize;
+    REQUIRE_EQ(bytes[offset - 1], 1);
+    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(offset), uint8_t(0));
+    ++summarySize;
+    std::memcpy(bytes.data() + HeaderSize, &summarySize, sizeof(summarySize));
+    const uint32_t previousVersion = 177;
+    stampOfficialSaveVersion(bytes, previousVersion);
+    writeBytes(path, bytes);
+
+    const std::optional<OpenYAMM::Game::GameSaveData> restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
+    const std::optional<OpenYAMM::Game::GameSaveSummary> summary =
+        OpenYAMM::Game::loadGameSaveSummaryFromPath(path, error);
+    std::filesystem::remove(path);
+    REQUIRE_MESSAGE(restored.has_value(), error);
+    CHECK(restored->ruleset == save.ruleset);
+    CHECK_EQ(restored->saveName, "ruleset check");
+    REQUIRE(summary.has_value());
+    CHECK(summary->ruleset == save.ruleset);
+    constexpr char modMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
+    std::memcpy(bytes.data(), modMagic, sizeof(modMagic));
+    writeBytes(path, bytes);
+    CHECK_FALSE(OpenYAMM::Game::loadGameDataFromPath(path, error));
+    CHECK_FALSE(OpenYAMM::Game::loadGameSaveSummaryFromPath(path, error));
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("saves before the Bow preference load with the bow on")
 {
     OpenYAMM::Game::GameSaveData save = minimalSave();
     save.ruleset.id = "maw";
     save.ruleset.options.preferences.trainerHints = true;
     save.ruleset.options.preferences.bowDisabled = true;
+    const std::string completionMarker = "completionmarker";
+    save.party.worldCompletions.push_back({completionMarker});
     const std::filesystem::path path = makeTemporaryRoot("bow_preference").replace_extension(".oysav");
     std::string error;
     REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
@@ -649,6 +883,8 @@ TEST_CASE("saves before the Bow preference load with the bow on")
     // The summary block holds the map, the time, the ruleset, the name and the preview; the Bow preference (version
     // 154) is the ruleset's last byte, after the trainer hints (152). Cut it and stamp version 153.
     std::vector<uint8_t> bytes = readBytes(path);
+    moveSummaryPlaythroughToLegacyPlace(bytes);
+    erasePlaythroughStatistics(bytes);
     constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
     uint32_t summarySize = 0;
     std::memcpy(&summarySize, bytes.data() + HeaderSize, sizeof(summarySize));
@@ -660,8 +896,12 @@ TEST_CASE("saves before the Bow preference load with the bow on")
     eraseBytes(bytes, bowOffset, sizeof(bool));
     --summarySize;
     std::memcpy(bytes.data() + HeaderSize, &summarySize, sizeof(summarySize));
+    eraseMm9HirelingCount(bytes, completionMarker);
+    eraseMapLayoutIdentities(bytes);
+    eraseFleetFootBuff(bytes);
+    eraseIndoorArmageddon(bytes);
     const uint32_t previousVersion = 153;
-    std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
+    stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
 
     const std::optional<OpenYAMM::Game::GameSaveData> restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
@@ -674,6 +914,99 @@ TEST_CASE("saves before the Bow preference load with the bow on")
     CHECK_EQ(restored->saveName, "ruleset check");
     REQUIRE(summary.has_value());
     CHECK_FALSE(summary->ruleset.options.preferences.bowDisabled);
+}
+
+TEST_CASE("saves before the MM9 hirelings load with none")
+{
+    OpenYAMM::Game::GameSaveData save = minimalSave();
+    save.ruleset.options.preferences.bowDisabled = true;
+    const std::string completionMarker = "completionmarker";
+    save.party.worldCompletions.push_back({completionMarker});
+    const std::filesystem::path path = makeTemporaryRoot("mm9_hirelings").replace_extension(".oysav");
+    std::string error;
+    REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
+
+    // Cut the party's hireling count (version 157) and stamp version 154 (before the last outdoor map, 155).
+    std::vector<uint8_t> bytes = readBytes(path);
+    moveSummaryPlaythroughToLegacyPlace(bytes);
+    erasePlaythroughStatistics(bytes);
+    eraseMm9HirelingCount(bytes, completionMarker);
+    eraseMapLayoutIdentities(bytes);
+    eraseFleetFootBuff(bytes);
+    eraseIndoorArmageddon(bytes);
+    const uint32_t previousVersion = 154;
+    stampOfficialSaveVersion(bytes, previousVersion);
+    writeBytes(path, bytes);
+
+    const std::optional<OpenYAMM::Game::GameSaveData> restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
+    std::filesystem::remove(path);
+    REQUIRE_MESSAGE(restored.has_value(), error);
+    CHECK(restored->party.mm9Hirelings.empty());
+    REQUIRE_EQ(restored->party.worldCompletions.size(), 1u);
+    CHECK_EQ(restored->party.worldCompletions[0].certificateId, completionMarker);
+    CHECK(restored->ruleset.options.preferences.bowDisabled);
+    CHECK_EQ(restored->saveName, "ruleset check");
+}
+
+TEST_CASE("saves before the MM9 formation load without member cells and with neutral hireling stats")
+{
+    OpenYAMM::Game::GameSaveData save = minimalSave();
+    OpenYAMM::Game::Mm9PartyHireling hireling;
+    hireling.rudeId = 42;
+    hireling.character.name = "Hrolf Spearmaster";
+    hireling.character.quickSpellName = "quickspellmarker";
+    // The hireling's last saved field, found again in the bytes: the formation cell count follows it.
+    const int32_t cellMarker = 0x7e57ce11;
+    hireling.formationCell = cellMarker;
+    // Its character's condition expiry times (version 159, after the formation): found by the first one's value.
+    const float expiryMarker = 123456.5f;
+    hireling.character.conditionExpireGameMinutes[0] = expiryMarker;
+    save.party.mm9Hirelings.push_back(hireling);
+    const std::filesystem::path path = makeTemporaryRoot("mm9_formation").replace_extension(".oysav");
+    std::string error;
+    REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
+
+    // Cut the party's formation cell count (version 158) and stamp version 157.
+    std::vector<uint8_t> bytes = readBytes(path);
+    moveSummaryPlaythroughToLegacyPlace(bytes);
+    std::array<uint8_t, sizeof(cellMarker)> markerBytes = {};
+    std::memcpy(markerBytes.data(), &cellMarker, sizeof(cellMarker));
+    const auto markerIt = std::search(bytes.begin(), bytes.end(), markerBytes.begin(), markerBytes.end());
+    REQUIRE(markerIt != bytes.end());
+    // The party's empty last outdoor map after it (version 155) stays.
+    const size_t countOffset = static_cast<size_t>(markerIt - bytes.begin()) + sizeof(cellMarker);
+    eraseEmptyCounts(bytes, countOffset, 1);
+    // A157 character has neither expiry times nor stats/battle/upkeep fields at its end. Its empty attack spell
+    // belongs after the quick spell, not where the current empty battle-orders count sits.
+    std::array<uint8_t, sizeof(expiryMarker)> expiryBytes = {};
+    std::memcpy(expiryBytes.data(), &expiryMarker, sizeof(expiryMarker));
+    const auto expiryIt = std::search(bytes.begin(), bytes.end(), expiryBytes.begin(), expiryBytes.end());
+    REQUIRE(expiryIt != bytes.end());
+    eraseBytes(bytes, static_cast<size_t>(expiryIt - bytes.begin()),
+        sizeof(float) * hireling.character.conditionExpireGameMinutes.size() + 2 * sizeof(uint64_t) + sizeof(uint8_t)
+            + sizeof(uint64_t));
+    const std::string quickMarker = hireling.character.quickSpellName;
+    const auto quickIt = std::search(bytes.begin(), bytes.end(), quickMarker.begin(), quickMarker.end());
+    REQUIRE(quickIt != bytes.end());
+    bytes.insert(quickIt + static_cast<std::ptrdiff_t>(quickMarker.size()), sizeof(uint64_t), uint8_t(0));
+    erasePlaythroughStatistics(bytes);
+    eraseMapLayoutIdentities(bytes);
+    eraseFleetFootBuff(bytes);
+    eraseIndoorArmageddon(bytes);
+    const uint32_t previousVersion = 157;
+    stampOfficialSaveVersion(bytes, previousVersion);
+    writeBytes(path, bytes);
+
+    const std::optional<OpenYAMM::Game::GameSaveData> restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
+    std::filesystem::remove(path);
+    REQUIRE_MESSAGE(restored.has_value(), error);
+    CHECK(restored->party.memberFormationCells.empty());
+    REQUIRE_EQ(restored->party.mm9Hirelings.size(), 1u);
+    const OpenYAMM::Game::Character &character = restored->party.mm9Hirelings[0].character;
+    CHECK_EQ(character.might, OpenYAMM::Game::Party::Mm9HirelingPrimaryStat);
+    CHECK_EQ(character.speed, OpenYAMM::Game::Party::Mm9HirelingPrimaryStat);
+    CHECK_EQ(character.luck, OpenYAMM::Game::Party::Mm9HirelingPrimaryStat);
+    CHECK_EQ(restored->saveName, "ruleset check");
 }
 
 TEST_CASE("saves keep a character's experience past 32 bits")
@@ -997,8 +1330,8 @@ TEST_CASE("the installed MAW ruleset parses with MAW's own defaults")
     CHECK_FALSE(defaults.preferences.friendlyFire);
     CHECK_FALSE(defaults.preferences.trainerHints);
     CHECK_FALSE(defaults.preferences.bowDisabled);
-    // The loot filter starts on the Regular preset (the approved study, 2026-10-25).
-    CHECK(defaults.preferences.lootFilter.preset == RulesetLootFilterPreset::Regular);
+    // The loot filter starts off; a player picks a preset in Settings (OY-216).
+    CHECK(defaults.preferences.lootFilter.preset == RulesetLootFilterPreset::Off);
 
     // Every offered difficulty has a full row in the Rules panel.
     for (const RulesetDifficulty difficulty : maw->choices.difficulties)
@@ -1112,8 +1445,8 @@ TEST_CASE("the generated MAW patches apply cleanly to the engine tables")
     CHECK_EQ(
         OpenYAMM::Game::spellNumbersAtMastery(*pMeteor, OpenYAMM::Game::SkillMastery::Grandmaster).recoveryTicks, 180);
 
-    // Costs keyed by spell id (GAPS.md A7.6, A7.7): Mind Charm 5, the vampires' Charm keeps 15; Chain Lightning and
-    // Lifedrain at Master and Grandmaster.
+    // Costs keyed by spell id (GAPS.md A7.6, A7.7): Mind Charm 5, the vampires' Charm keeps 15. The damage spells'
+    // costs by mastery come from MAW's spellPowers (8967ae88): Lightning Bolt, Lifedrain, Inferno and Flame Blast.
     const auto manaAt = [&spellTable](int spellId, OpenYAMM::Game::SkillMastery mastery)
     {
         const OpenYAMM::Game::SpellEntry *pSpell = spellTable.findById(spellId);
@@ -1122,8 +1455,10 @@ TEST_CASE("the generated MAW patches apply cleanly to the engine tables")
     };
     CHECK_EQ(manaAt(60, OpenYAMM::Game::SkillMastery::Normal), 5);
     CHECK_EQ(manaAt(113, OpenYAMM::Game::SkillMastery::Normal), 15);
-    CHECK_EQ(manaAt(18, OpenYAMM::Game::SkillMastery::Master), 20);
-    CHECK_EQ(manaAt(18, OpenYAMM::Game::SkillMastery::Grandmaster), 30);
+    CHECK_EQ(manaAt(18, OpenYAMM::Game::SkillMastery::Master), 15);
+    CHECK_EQ(manaAt(18, OpenYAMM::Game::SkillMastery::Grandmaster), 20);
+    CHECK_EQ(manaAt(10, OpenYAMM::Game::SkillMastery::Normal), 25);
+    CHECK_EQ(manaAt(123, OpenYAMM::Game::SkillMastery::Grandmaster), 60);
     CHECK_EQ(manaAt(111, OpenYAMM::Game::SkillMastery::Master), 10);
     CHECK_EQ(manaAt(111, OpenYAMM::Game::SkillMastery::Grandmaster), 15);
 
@@ -1168,8 +1503,23 @@ TEST_CASE("the generated MAW patches apply cleanly to the engine tables")
     CHECK_EQ(rowOf("monster_data.txt", "406").at(16), "BrkItemx2");
     CHECK_EQ(rowOf("monster_data.txt", "6").at(11), "Suicidal");
     CHECK_EQ(rowOf("monster_data.txt", "1").at(11), "Wimp");
-    CHECK_EQ(rowOf("hostile.txt", "Zombie").at(1), "4");
-    CHECK_EQ(rowOf("hostile.txt", "Ghoul").at(1), "4");
+    // A monster's attitude toward the party is the Party row's cell in the monster's column.
+    const std::vector<std::string> &hostileHeader = composed["hostile.txt"].front();
+    const std::vector<std::string> partyRelations = rowOf("hostile.txt", "Party");
+    const auto partyRelationTo = [&](const std::string &faction) -> std::string
+    {
+        for (size_t column = 1; column < hostileHeader.size(); ++column)
+        {
+            if (hostileHeader[column] == faction)
+            {
+                return partyRelations.at(column);
+            }
+        }
+
+        return {};
+    };
+    CHECK_EQ(partyRelationTo("Zombie"), "4");
+    CHECK_EQ(partyRelationTo("Ghoul"), "4");
     // Houses that opened at 6 open at 5 (GAPS.md A5.11).
     CHECK_EQ(rowOf("house_data.txt", "1").at(18), "5");
     // Spellbook shops of types 1 and 5 sell one quality higher (GAPS.md E.5).
@@ -1262,6 +1612,12 @@ TEST_CASE("the MAW ruleset's every table contribution reaches a loader")
 
     for (const OpenYAMM::Game::RulesetTableContribution &table : maw->tables)
     {
+        // A world's tables are read only while that world is active (the default world here is MM8's).
+        if (!table.world.empty() && table.world != "mm8")
+        {
+            continue;
+        }
+
         CAPTURE(table.table);
         CHECK(data.appliedRulesetContributions().contains(table.path));
     }
@@ -1310,4 +1666,49 @@ TEST_CASE("the MAW ruleset's global events leave the base game's events alone")
 
     CHECK(global->hasEvent(65400));
     CHECK(global->hasEvent(65401));
+}
+
+TEST_CASE("a member's timed condition keeps its end time across a save")
+{
+    using OpenYAMM::Game::CharacterCondition;
+    constexpr size_t Paralyzed = static_cast<size_t>(CharacterCondition::Paralyzed);
+    OpenYAMM::Game::GameSaveData save = minimalSave();
+    OpenYAMM::Game::Character member;
+    member.name = "Timed";
+    member.conditions.set(Paralyzed);
+    member.conditionStartGameMinutes[Paralyzed] = 600.0f;
+    member.conditionExpireGameMinutes[Paralyzed] = 610.0f;
+    save.party.members.push_back(member);
+    std::string error;
+    const std::optional<OpenYAMM::Game::GameSaveData> restored = roundTrip(save, error);
+    REQUIRE_MESSAGE(restored.has_value(), error);
+    REQUIRE_EQ(restored->party.members.size(), 1u);
+    CHECK(restored->party.members[0].conditions.test(Paralyzed));
+    CHECK(restored->party.members[0].conditionExpireGameMinutes[Paralyzed] == doctest::Approx(610.0f));
+}
+
+TEST_CASE("saves keep the outdoor map the party was last on (OY-303)")
+{
+    OpenYAMM::Game::GameSaveData save = minimalSave();
+    save.party.lastOutdoorMapFileName = "oute3.odm";
+    std::string error;
+    const std::optional<OpenYAMM::Game::GameSaveData> restored = roundTrip(save, error);
+    REQUIRE_MESSAGE(restored.has_value(), error);
+    CHECK_EQ(restored->party.lastOutdoorMapFileName, "oute3.odm");
+}
+
+TEST_CASE("saves keep a solo character's bag tags past the eighth bag (OY-344)")
+{
+    OpenYAMM::Game::GameSaveData save = minimalSave();
+    OpenYAMM::Game::Character member;
+    member.name = "Solo";
+    member.rulesetState.craftingBags = 1u << 20;
+    member.rulesetState.alchemyBags = 1u << 24;
+    save.party.members.push_back(member);
+    std::string error;
+    const std::optional<OpenYAMM::Game::GameSaveData> restored = roundTrip(save, error);
+    REQUIRE_MESSAGE(restored.has_value(), error);
+    REQUIRE_EQ(restored->party.members.size(), 1u);
+    CHECK_EQ(restored->party.members[0].rulesetState.craftingBags, 1u << 20);
+    CHECK_EQ(restored->party.members[0].rulesetState.alchemyBags, 1u << 24);
 }

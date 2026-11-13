@@ -234,20 +234,11 @@ float indoorMoverOpenFraction(const MapDeltaDoor &door, const IndoorMoverDefinit
     return indoorMoverEase(pMover != nullptr ? pMover->easing : IndoorMoverEasing::Linear, fraction);
 }
 
-std::optional<IndoorRigidMotion> indoorRotatingMoverMotion(
-    const MapDeltaDoor &door,
-    const IndoorMoverDefinition *pMover,
-    float distance,
-    int8_t rotationDirection)
+IndoorRigidMotion indoorAxisRotationMotion(const std::array<float, 3> &pivot, const std::array<float, 3> &axisValue,
+    float degrees)
 {
-    if (pMover == nullptr || !pMover->rotation)
-    {
-        return std::nullopt;
-    }
-    const IndoorMoverRotation &rotation = *pMover->rotation;
-    const float sign = rotation.openAway && rotationDirection < 0 ? -1.0f : 1.0f;
-    const float radians = bx::toRad(sign * rotation.openDegrees * indoorMoverOpenFraction(door, pMover, distance));
-    const bx::Vec3 axis = moverNormalized(toVec(rotation.axis));
+    const float radians = bx::toRad(degrees);
+    const bx::Vec3 axis = moverNormalized(toVec(axisValue));
     const float c = std::cos(radians);
     const float s = std::sin(radians);
     const float t = 1.0f - c;
@@ -256,8 +247,80 @@ std::optional<IndoorRigidMotion> indoorRotatingMoverMotion(
         t * axis.x * axis.x + c, t * axis.x * axis.y - s * axis.z, t * axis.x * axis.z + s * axis.y,
         t * axis.x * axis.y + s * axis.z, t * axis.y * axis.y + c, t * axis.y * axis.z - s * axis.x,
         t * axis.x * axis.z - s * axis.y, t * axis.y * axis.z + s * axis.x, t * axis.z * axis.z + c};
-    motion.pivot = rotation.pivot;
+    motion.pivot = pivot;
     return motion;
+}
+
+std::optional<IndoorRigidMotion> indoorRotatingMoverMotion(
+    const MapDeltaDoor &door,
+    const IndoorMoverDefinition *pMover,
+    float distance,
+    int8_t rotationDirection,
+    float spinDegrees)
+{
+    if (pMover == nullptr || (!pMover->rotation && !pMover->spin))
+    {
+        return std::nullopt;
+    }
+
+    // The door's own motion from its stored offsets: the swing, or for a linear door its travel (offsets + direction
+    // x distance; the offsets are the pose at distance 0).
+    IndoorRigidMotion motion;
+    std::array<float, 3> storedFromOffsets = {0.0f, 0.0f, 0.0f};
+
+    if (pMover->rotation)
+    {
+        const IndoorMoverRotation &rotation = *pMover->rotation;
+        const float sign = rotation.openAway && rotationDirection < 0 ? -1.0f : 1.0f;
+        motion = indoorAxisRotationMotion(
+            rotation.pivot, rotation.axis, sign * rotation.openDegrees * indoorMoverOpenFraction(door, pMover, distance));
+    }
+    else
+    {
+        const std::array<float, 3> direction = {static_cast<float>(door.directionX) / 65536.0f,
+            static_cast<float>(door.directionY) / 65536.0f, static_cast<float>(door.directionZ) / 65536.0f};
+        const float stored = static_cast<float>(door.moveLength);
+
+        for (size_t axis = 0; axis < 3; ++axis)
+        {
+            motion.translation[axis] = direction[axis] * distance;
+            storedFromOffsets[axis] = direction[axis] * stored;
+        }
+    }
+
+    if (!pMover->spin)
+    {
+        return motion;
+    }
+
+    // The spin turns the offsets about its pivot, given in the stored pose (the offsets' frame differs from it by a
+    // linear door's full travel), before the door's own motion carries them.
+    const IndoorMoverSpin &spin = *pMover->spin;
+    const std::array<float, 3> pivot = {spin.pivot[0] - storedFromOffsets[0], spin.pivot[1] - storedFromOffsets[1],
+        spin.pivot[2] - storedFromOffsets[2]};
+    return composeIndoorRigidMotions(motion, indoorAxisRotationMotion(pivot, spin.axis, spinDegrees));
+}
+
+float indoorMoverSpinRateStep(const IndoorMoverSpin &spin, float rate, float targetRate, float seconds)
+{
+    if (rate == targetRate)
+    {
+        return rate;
+    }
+
+    // Toward full speed (in either direction) at the spin-up pace, toward a stop at the spin-down pace; a reversal
+    // slows to a stop before it speeds up the other way.
+    const bool slowing = std::fabs(targetRate) < std::fabs(rate) || targetRate * rate < 0.0f;
+    const float rampSeconds = slowing ? spin.spinDownSeconds : spin.spinUpSeconds;
+
+    if (rampSeconds <= 0.0f)
+    {
+        return slowing && targetRate * rate < 0.0f && spin.spinUpSeconds > 0.0f ? 0.0f : targetRate;
+    }
+
+    const float step = seconds / rampSeconds;
+    const float goal = targetRate * rate < 0.0f ? 0.0f : targetRate;
+    return rate < goal ? std::min(rate + step, goal) : std::max(rate - step, goal);
 }
 
 void applyIndoorRotatingMoverToVertices(
@@ -403,6 +466,44 @@ bool indoorBodyTouchesPolygon(const IndoorMoverBody &body, std::span<const bx::V
     return indoorBodyAxisPolygonDistance(body, polygon) < body.radius;
 }
 
+bool indoorMoverFaceApproachesBody(
+    const IndoorMoverBody &body,
+    std::span<const bx::Vec3> previous,
+    std::span<const bx::Vec3> current)
+{
+    const float distance = indoorBodyAxisPolygonDistance(body, current);
+    return distance < body.radius && distance < indoorBodyAxisPolygonDistance(body, previous) - 0.001f;
+}
+
+bool indoorMoverFaceBlocksBody(
+    const IndoorMoverBody &body,
+    std::span<const bx::Vec3> previous,
+    std::span<const bx::Vec3> current)
+{
+    // The support movement lifts the feet after each mechanism step, so they lie on the floor's previous pose.
+    constexpr float FootTolerance = 2.0f;
+    const bool beneath = std::all_of(previous.begin(), previous.end(), [&body](const bx::Vec3 &point)
+    {
+        return point.z <= body.footZ + FootTolerance;
+    });
+    if (beneath || !indoorMoverFaceApproachesBody(body, previous, current))
+    {
+        return false;
+    }
+    // A face the body is wholly behind (the trailing edge of a floor grate sliding away under a falling party, the
+    // underside of a door rising beside it) moves the solid away from the body, not into it.
+    const bx::Vec3 normal = polygonNormal(current);
+    if (moverLength(normal) <= 0.5f)
+    {
+        return true;
+    }
+    bx::Vec3 low = {0.0f, 0.0f, 0.0f};
+    bx::Vec3 high = {0.0f, 0.0f, 0.0f};
+    bodyAxis(body, low, high);
+    return moverDot(moverSub(low, current.front()), normal) >= 0.0f
+        || moverDot(moverSub(high, current.front()), normal) >= 0.0f;
+}
+
 bx::Vec3 indoorBodyPolygonClearance(
     const IndoorMoverBody &body,
     std::span<const bx::Vec3> polygon,
@@ -518,21 +619,29 @@ bool indoorLadderCanGrabAtTop(
         return false;
     }
 
-    const float fromExitX = body.x - ladder.topExit[0];
-    const float fromExitY = body.y - ladder.topExit[1];
+    // Near the hole's edge: within reach of the strip's top edge (its width), not anywhere around the top exit.
+    const IndoorLadderFrame frame = indoorLadderFrame(ladder);
+    const bx::Vec3 line = indoorLadderLinePoint(ladder, ladder.top[2]);
+    const bx::Vec3 offset = {body.x - line.x, body.y - line.y, 0.0f};
+    const float halfWidth = ladder.width * 0.5f;
+    const float lateral = moverDot(offset, frame.side);
+    const float beyondEnd = std::max(0.0f, std::fabs(lateral) - halfWidth);
+    const float depth = moverDot(offset, frame.facing);
     const float reach = ladder.reach + body.radius;
 
-    if (fromExitX * fromExitX + fromExitY * fromExitY > reach * reach)
+    if (depth * depth + beyondEnd * beyondEnd > reach * reach)
     {
         return false;
     }
 
-    const float toTopX = ladder.top[0] - body.x;
-    const float toTopY = ladder.top[1] - body.y;
-    const float distance = std::sqrt(toTopX * toTopX + toTopY * toTopY);
+    // Walking toward the spot where the climb starts.
+    const bx::Vec3 entry = indoorLadderTopEntryPosition(ladder, body);
+    const float toEntryX = entry.x - body.x;
+    const float toEntryY = entry.y - body.y;
+    const float distance = std::sqrt(toEntryX * toEntryX + toEntryY * toEntryY);
     const float speed = std::sqrt(desiredVelocityX * desiredVelocityX + desiredVelocityY * desiredVelocityY);
     return speed >= 1.0f && distance >= 1.0f
-        && (desiredVelocityX * toTopX + desiredVelocityY * toTopY) >= 0.5f * speed * distance;
+        && (desiredVelocityX * toEntryX + desiredVelocityY * toEntryY) >= 0.5f * speed * distance;
 }
 
 bx::Vec3 indoorLadderTopEntryPosition(const IndoorLadder &ladder, const IndoorMoverBody &body)
@@ -541,7 +650,14 @@ bx::Vec3 indoorLadderTopEntryPosition(const IndoorLadder &ladder, const IndoorMo
     const float footZ = std::max(ladder.bottom[2], ladder.top[2] - IndoorLadderTopEntryDrop);
     const bx::Vec3 line = indoorLadderLinePoint(ladder, footZ);
     const float holdDistance = body.radius + IndoorLadderHoldGap;
-    return {line.x - frame.facing.x * holdDistance, line.y - frame.facing.y * holdDistance, footZ};
+    // Where along the strip the body arrives, kept a body's radius inside its ends.
+    const float lateralLimit = std::max(0.0f, ladder.width * 0.5f - body.radius);
+    const float lateral = std::clamp(
+        moverDot({body.x - line.x, body.y - line.y, 0.0f}, frame.side), -lateralLimit, lateralLimit);
+    return {
+        line.x - frame.facing.x * holdDistance + frame.side.x * lateral,
+        line.y - frame.facing.y * holdDistance + frame.side.y * lateral,
+        footZ};
 }
 
 IndoorLadderClimbStep indoorLadderClimbStep(

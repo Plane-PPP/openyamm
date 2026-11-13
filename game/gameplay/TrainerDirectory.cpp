@@ -1,5 +1,8 @@
 #include "game/gameplay/TrainerDirectory.h"
 
+#include "engine/Utf8Text.h"
+#include "engine/Localization.h"
+
 #include "game/gameplay/MasteryTeacherDialog.h"
 #include "game/party/Party.h"
 #include "game/tables/HouseTable.h"
@@ -177,8 +180,9 @@ bool TeacherLedgerSettings::loadFromYaml(const std::string &text, std::string &e
 
 std::string TeacherLedgerSettings::fill(const std::string &text, const std::string &continentName) const
 {
-    std::string result = text;
-    replaceAll(result, "{continent}", continentName);
+    // teacher_ledger.yml is English; a language pack translates its texts and the continents as terms.
+    std::string result = Engine::localize(text);
+    replaceAll(result, "{continent}", Engine::localize(continentName));
     replaceAll(result, "{price}", std::to_string(price));
     return result;
 }
@@ -488,6 +492,9 @@ TrainerDirectory TrainerDirectory::buildFrom(
         }
     }
 
+    for (const TrainerEntry &entry : source.actorTeachers)
+        directory.m_skills[entry.skill][teacherSlot(entry.mastery)].push_back(entry);
+
     directory.m_pSource = std::move(pSource);
     return directory;
 }
@@ -499,7 +506,8 @@ TrainerDirectory TrainerDirectory::build(
     const HouseTable &houses,
     const MapStats &maps,
     TrainerPlaceTable places,
-    TeacherLedgerSettings ledger)
+    TeacherLedgerSettings ledger,
+    std::vector<TrainerEntry> actorTeachers)
 {
     TrainerDirectorySource source;
     const auto addTopic = [&](uint32_t topicId)
@@ -596,6 +604,7 @@ TrainerDirectory TrainerDirectory::build(
     }
 
     source.places = std::move(places);
+    source.actorTeachers = std::move(actorTeachers);
     return buildFrom(std::make_shared<const TrainerDirectorySource>(std::move(source)), {}, links, ledger);
 }
 
@@ -770,6 +779,8 @@ std::string trainerContinentName(uint32_t continent)
             return "Antagarich";
         case 3:
             return "Enroth";
+        case 5:
+            return "Chedian";
         default:
             return {};
     }
@@ -787,6 +798,16 @@ bool trainerKnown(const TrainerEntry &entry, const Party &party)
         return true;
     }
 
+    if (entry.rudeId != 0)
+    {
+        if (party.findJournalMapNote(entry.mapFileName, 90000 + entry.rudeId) != nullptr)
+            return true;
+        // Older saves already remember dialogue choices, including teacher offers.
+        for (size_t row = 0; row < entry.dialogueRowCount; ++row)
+            if (party.hasChosenMm9RudeRow(entry.rudeId, row))
+                return true;
+        return false;
+    }
     if (entry.autonoteId)
     {
         return party.hasAutonote(*entry.autonoteId);
@@ -797,16 +818,37 @@ bool trainerKnown(const TrainerEntry &entry, const Party &party)
             != nullptr;
 }
 
+void discoverActorTeacher(Party &party, uint32_t rudeId)
+{
+    if (party.trainerDirectory() == nullptr)
+        return;
+    for (const auto &[skill, masteries] : party.trainerDirectory()->skills())
+        for (const auto &entries : masteries)
+            for (const TrainerEntry &entry : entries)
+            {
+                if (entry.rudeId != rudeId || !entry.place
+                    || party.findJournalMapNote(entry.mapFileName, 90000 + rudeId) != nullptr)
+                    continue;
+                JournalMapNote note;
+                note.id = 90000 + rudeId;
+                note.mapFileName = entry.mapFileName;
+                note.x = entry.place->x;
+                note.y = entry.place->y;
+                note.text = entry.name;
+                party.setJournalMapNote(note);
+            }
+}
+
 bool trainerSearchMatches(const std::string &search, const std::vector<std::string> &fields)
 {
     std::string hay;
 
     for (const std::string &field : fields)
     {
-        hay += lowerCopy(field) + '\n';
+        hay += Engine::Utf8::lower(field) + '\n';
     }
 
-    const std::string lowered = lowerCopy(search);
+    const std::string lowered = Engine::Utf8::lower(search);
     size_t start = 0;
 
     while (start < lowered.size())
@@ -833,7 +875,7 @@ bool buyTeacherLedger(Party &party, const TrainerDirectory &directory, uint32_t 
         return false;
     }
 
-    party.addGold(-price);
+    party.addGold(-price, GoldReason::Guild);
     party.addTeacherLedger(continent);
 
     for (uint32_t autonoteId : directory.forParty(party).continentAutonotes(continent))

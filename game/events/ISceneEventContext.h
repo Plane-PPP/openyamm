@@ -12,8 +12,9 @@ struct GameplayMonsterSpawnRequest;
 struct InventoryItem;
 
 // evt.FireMissile: a world missile (a monster_projectiles.yml token) from one point to another, over flightSeconds
-// (0: at its object's speed). It passes the party, whose damage the event deals itself, and bursts at the target, or on
-// whatever it strikes first, with damage of damageType to every actor within radius.
+// (0: at its object's speed). It bursts at the target, or on whatever it strikes first, with damage of damageType to
+// every actor within radius. It passes the party, whose damage the event deals itself, unless strikesParty: then it
+// strikes the party in its path like a monster's missile (a trap's bolt), with damage of damageType.
 struct EventMissileRequest
 {
     std::string missile;
@@ -27,6 +28,7 @@ struct EventMissileRequest
     std::string damageType;
     float radius = 0.0f;
     float flightSeconds = 0.0f;
+    bool strikesParty = false;
 };
 
 class ISceneEventContext
@@ -39,10 +41,23 @@ public:
     virtual MapDeltaData *mapDeltaData() = 0;
     // Every face of a cog number, or one indoor face by EventRuntime::indoorFaceReferenceKey; false when none matches.
     virtual bool setFacetBit(uint32_t cogNumber, uint32_t bit, bool isOn) = 0;
+    // The sprite override key (evt.SetSprite's cog) of the one decoration whose click runs eventId; none when no
+    // decoration, or more than one, carries it.
+    virtual std::optional<uint32_t> decorationSpriteKeyForScriptEvent(uint16_t eventId) const
+    {
+        (void)eventId;
+        return std::nullopt;
+    }
     virtual std::vector<uint32_t> resolveIndoorLightReferenceIds(int32_t rawReferenceId) const
     {
         (void)rawReferenceId;
         return {};
+    }
+    // Whether an indoor door's spin (scene `mover.spin`) starts on; none for a door without one.
+    virtual std::optional<bool> indoorMoverSpinStartsOn(uint32_t doorId) const
+    {
+        (void)doorId;
+        return std::nullopt;
     }
 
     virtual bool registerOutdoorModelMechanism(
@@ -165,12 +180,76 @@ public:
         return false;
     }
 
+    // evt.PushParty: the world runtimes' IGameplayWorldRuntime::dashParty (same signature, one override serves both).
+    virtual bool dashParty(float directionX, float directionY, float distance)
+    {
+        (void)directionX;
+        (void)directionY;
+        (void)distance;
+        return false;
+    }
+
     virtual bool setMapActorPosition(size_t actorIndex, float x, float y, float z)
     {
         (void)actorIndex;
         (void)x;
         (void)y;
         (void)z;
+        return false;
+    }
+
+    // evt.KillMapActor: the living actor dies as any death (its dying clip, corpse and loot; no experience to the
+    // party and no hostility: MM9's script `Die`). False for an actor already dead or none.
+    virtual bool killMapActor(size_t actorIndex)
+    {
+        (void)actorIndex;
+        return false;
+    }
+
+    // evt.SetMapActorHp: the living actor's hit points become the amount, kept within 1 and its maximum (MM9's
+    // dying adventurer on his last hit point, which the load-time bolster fills up). False for a dead actor or none.
+    virtual bool setMapActorHp(size_t actorIndex, int hp)
+    {
+        (void)actorIndex;
+        (void)hp;
+        return false;
+    }
+
+    // evt.SetActorImmobile: the map's `immobile` placement of an actor, saved with the map. Off, the actor walks as its
+    // AI decides (MM9's BaseInit or AddEnemy on an actor the converter placed still because MM9 gives it no wander);
+    // a monster whose row never moves (Stationary, the Immobile kind) still stays. False for no such actor.
+    virtual bool setMapActorImmobile(size_t actorIndex, bool immobile)
+    {
+        (void)actorIndex;
+        (void)immobile;
+        return false;
+    }
+
+    // evt.AttachActorItem / evt.DetachActorItem: MM9's AttachProp and DetachProp on a map actor's held items
+    // (MapDeltaActor::heldItems, saved with the map). Attaching puts the item's model on the node, replacing what the
+    // node held; detaching empties the node (an empty node: every node). False for no such actor.
+    virtual bool attachMapActorItem(size_t actorIndex, const std::string &model, const std::string &node)
+    {
+        (void)actorIndex;
+        (void)model;
+        (void)node;
+        return false;
+    }
+
+    virtual bool detachMapActorItem(size_t actorIndex, const std::string &node)
+    {
+        (void)actorIndex;
+        (void)node;
+        return false;
+    }
+
+    // evt.SetMm9ActorCanReceiveDamage: MM9's `SetPropNumber CanDamage` on a map actor (the scene's
+    // mm9_can_receive_damage, saved with the map): while off no hit hurts it (melee, missiles, spells, areas, stuns).
+    // False for no such actor.
+    virtual bool setMm9ActorCanReceiveDamage(size_t actorIndex, bool canReceiveDamage)
+    {
+        (void)actorIndex;
+        (void)canReceiveDamage;
         return false;
     }
 
@@ -189,6 +268,17 @@ public:
     {
         (void)actorIndex;
         (void)group;
+        return false;
+    }
+
+    // evt.SetActorTarget: a living map actor goes for the party (targetActorIndex none) or another living map actor at
+    // once. It wakes from a dormant start; a party target makes it hostile to the party; an MM9 monster's loop holds
+    // the target from its next AI step, whatever their relation (EventRuntimeState::scriptedActorTargets). False for
+    // no such actor or target, or an actor target for a monster without the MM9 loop.
+    virtual bool setMapActorTarget(size_t actorIndex, std::optional<size_t> targetActorIndex)
+    {
+        (void)actorIndex;
+        (void)targetActorIndex;
         return false;
     }
 
@@ -230,6 +320,14 @@ public:
     }
 
     virtual bool isMapActorHostile(size_t actorIndex) const
+    {
+        (void)actorIndex;
+        return false;
+    }
+
+    // evt.IsMapActorDead: the actor is dead or dying (no hit points left); a hidden actor is alive. False for a living
+    // actor or none.
+    virtual bool isMapActorDead(size_t actorIndex) const
     {
         (void)actorIndex;
         return false;

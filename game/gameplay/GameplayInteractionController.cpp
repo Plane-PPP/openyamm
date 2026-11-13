@@ -1,5 +1,7 @@
 #include "game/gameplay/GameplayInteractionController.h"
+#include "engine/Localization.h"
 
+#include "game/ui/GameplayFormationBuilder.h"
 #include "game/ui/GameplayQuickItems.h"
 
 #include "game/gameplay/GameplayHeldItemController.h"
@@ -19,6 +21,7 @@
 #include "game/rules/GameRules.h"
 #include "game/rules/ItemRules.h"
 #include "game/tables/ItemTable.h"
+#include "game/gameplay/ActorNameText.h"
 
 #include <SDL3/SDL_timer.h>
 
@@ -48,28 +51,36 @@ constexpr uint32_t ThrowingDaggerProjectileObjectId = 307;
 constexpr uint32_t ThrowingAxeProjectileObjectId = 309;
 constexpr uint32_t BlasterProjectileObjectId = 555;
 
-// "Orange Barrel (+2 Intellect)": the effect of the hovered event once the party has the autonote recording it.
+// "Orange Barrel (+2 Intellect)", "Drink from the Fountain (+50 Might (Temporary))": the effect of the hovered event
+// once the party has the autonote recording it.
 void appendLearnedEventEffect(
     GameplayHoverStatusPayload &payload,
     const IGameplayWorldRuntime &worldRuntime,
     const GameplayScreenRuntime *pScreenRuntime)
 {
     const std::optional<GameplayEventTargetHit> &eventTarget = payload.worldHit.eventTarget;
-    const std::optional<ScriptedEventProgram> *pGlobalEventProgram = worldRuntime.globalEventProgram();
 
     if (pScreenRuntime == nullptr || !eventTarget || eventTarget->nameEventId == 0
-        || !payload.eventTargetStatusText || payload.eventTargetStatusText->empty()
-        || pGlobalEventProgram == nullptr || !*pGlobalEventProgram)
+        || !payload.eventTargetStatusText || payload.eventTargetStatusText->empty())
     {
         return;
     }
 
-    const ScriptedEventProgram::LearnedEffect *pEffect =
-        (*pGlobalEventProgram)->learnedEffect(eventTarget->nameEventId);
+    const std::optional<ScriptedEventProgram> *pProgram = eventTarget->nameEventIsLocal
+        ? worldRuntime.localEventProgram()
+        : worldRuntime.globalEventProgram();
 
-    if (pEffect != nullptr && pScreenRuntime->isAutonoteUnlocked(pEffect->autonoteId))
+    if (pProgram == nullptr || !*pProgram)
     {
-        *payload.eventTargetStatusText += " (" + pEffect->effect + ")";
+        return;
+    }
+
+    const std::optional<ScriptedEventProgram::LearnedEffect> effect =
+        (*pProgram)->learnedEffect(eventTarget->nameEventId);
+
+    if (effect && pScreenRuntime->isAutonoteUnlocked(effect->autonoteId))
+    {
+        *payload.eventTargetStatusText += " (" + effect->effect + ")";
     }
 }
 
@@ -135,7 +146,8 @@ void updateWorldItemHoverLabel(
     }
 
     const uint32_t colorAbgr = 0xff000000u | ((*color & 0xffu) << 16) | (*color & 0xff00u) | ((*color >> 16) & 0xffu);
-    runtime.setWorldItemHoverLabel(hover.worldHit.worldItem->displayName, colorAbgr, screenX, screenY);
+    runtime.setWorldItemHoverLabel(
+        Engine::localizeKnown(hover.worldHit.worldItem->displayName), colorAbgr, screenX, screenY);
 }
 
 #if defined(__ANDROID__) || defined(OPENYAMM_IOS)
@@ -217,35 +229,35 @@ const char *contextActionIconId(GameplayContextActionKind kind)
     return "context_generic_event";
 }
 
-const char *contextActionDefaultLabel(GameplayContextActionKind kind)
+std::string contextActionDefaultLabel(GameplayContextActionKind kind)
 {
     switch (kind)
     {
     case GameplayContextActionKind::Talk:
-        return "Talk";
+        return Engine::tr("Talk");
     case GameplayContextActionKind::PickUpItem:
-        return "Pick Up";
+        return Engine::tr("Pick Up");
     case GameplayContextActionKind::LootCorpse:
-        return "Loot";
+        return Engine::tr("Loot");
     case GameplayContextActionKind::OpenChest:
-        return "Open Chest";
+        return Engine::tr("Open Chest");
     case GameplayContextActionKind::EnterHouse:
-        return "Enter";
+        return Engine::tr("Enter");
     case GameplayContextActionKind::OpenDoor:
-        return "Open Door";
+        return Engine::tr("Open Door");
     case GameplayContextActionKind::PressButton:
-        return "Press";
+        return Engine::tr("Press");
     case GameplayContextActionKind::UseLever:
-        return "Use Lever";
+        return Engine::tr("Use Lever");
     case GameplayContextActionKind::GenericEvent:
         return "";
     case GameplayContextActionKind::DropHeldItem:
-        return "Drop Item";
+        return Engine::tr("Drop Item");
     case GameplayContextActionKind::None:
         break;
     }
 
-    return "Use";
+    return Engine::tr("Use");
 }
 
 GameplayContextActionKind contextActionKindFromMetadataKind(const std::string &kind)
@@ -300,67 +312,67 @@ std::string contextActionDefaultLabelFromMetadata(
 
     if (metadata.kind == "leave_dungeon")
     {
-        return "Exit";
+        return Engine::tr("Exit");
     }
 
     if (metadata.kind == "travel")
     {
-        return "Travel";
+        return Engine::tr("Travel");
     }
 
     if (metadata.kind == "passage")
     {
-        return "Passage";
+        return Engine::tr("Passage");
     }
 
     if (metadata.kind == "teleport")
     {
-        return "Teleport";
+        return Engine::tr("Teleport");
     }
 
     if (metadata.kind == "use_switch")
     {
-        return "Use Switch";
+        return Engine::tr("Use Switch");
     }
 
     if (metadata.kind == "use_elevator")
     {
-        return "Use Elevator";
+        return Engine::tr("Use Elevator");
     }
 
     if (metadata.kind == "use_pedestal")
     {
-        return "Use Pedestal";
+        return Engine::tr("Use Pedestal");
     }
 
     if (metadata.kind == "fountain")
     {
-        return "Fountain";
+        return Engine::tr("Fountain");
     }
 
     if (metadata.kind == "well")
     {
-        return "Well";
+        return Engine::tr("Well");
     }
 
     if (metadata.kind == "shrine")
     {
-        return "Shrine";
+        return Engine::tr("Shrine");
     }
 
     if (metadata.kind == "obelisk")
     {
-        return "Obelisk";
+        return Engine::tr("Obelisk");
     }
 
     if (metadata.kind == "boost")
     {
-        return "Boost";
+        return Engine::tr("Boost");
     }
 
     if (metadata.kind == "read")
     {
-        return "Read";
+        return Engine::tr("Read");
     }
 
     if (metadata.kind == "secret_event")
@@ -376,14 +388,14 @@ std::string contextActionDefaultLabelFromMetadata(
     return contextActionDefaultLabel(actionKind);
 }
 
-std::string contextActionLabelWithName(const char *pVerb, const std::string &name)
+std::string contextActionLabelWithName(const std::string &verb, const std::string &name)
 {
     if (name.empty())
     {
-        return pVerb != nullptr ? pVerb : "";
+        return verb;
     }
 
-    return std::string(pVerb != nullptr ? pVerb : "") + " (" + name + ")";
+    return Engine::tr("{action} ({target})", {{"action", verb}, {"target", name}});
 }
 
 GameplayContextActionKind classifyEventTargetContextAction(const GameplayWorldHit &hit)
@@ -434,19 +446,20 @@ std::optional<GameplayContextAction> buildContextAction(
         if (action.kind == GameplayContextActionKind::Talk)
         {
             action.label = !hit.actor->displayName.empty()
-                ? hit.actor->displayName
+                ? localizedActorName(hit.actor->displayName)
                 : contextActionDefaultLabel(action.kind);
         }
         else
         {
-            action.label = contextActionLabelWithName(contextActionDefaultLabel(action.kind), hit.actor->displayName);
+            action.label = contextActionLabelWithName(
+                contextActionDefaultLabel(action.kind), localizedActorName(hit.actor->displayName));
         }
     }
     else if (hit.kind == GameplayWorldHitKind::WorldItem && hit.worldItem)
     {
         action.kind = GameplayContextActionKind::PickUpItem;
         action.label =
-            contextActionLabelWithName("Pick", hit.worldItem->displayName);
+            contextActionLabelWithName(Engine::tr("Pick"), Engine::localizeKnown(hit.worldItem->displayName));
     }
     else if (hit.kind == GameplayWorldHitKind::Chest && hit.container)
     {
@@ -456,8 +469,8 @@ std::optional<GameplayContextAction> buildContextAction(
     else if (hit.kind == GameplayWorldHitKind::Corpse && hit.container)
     {
         action.kind = GameplayContextActionKind::LootCorpse;
-        action.label =
-            contextActionLabelWithName(contextActionDefaultLabel(action.kind), hit.container->displayName);
+        action.label = contextActionLabelWithName(
+            contextActionDefaultLabel(action.kind), Engine::localizeKnown(hit.container->displayName));
     }
     else if (hit.kind == GameplayWorldHitKind::EventTarget && hit.eventTarget)
     {
@@ -475,10 +488,11 @@ std::optional<GameplayContextAction> buildContextAction(
         }
         else
         {
+            // In the interface language, as the status bar shows the same text (issue #31, OY-578).
             action.label = hasStatusText(eventTargetStatusText)
-                ? *eventTargetStatusText
+                ? Engine::localize(*eventTargetStatusText)
                 : (!hit.eventTarget->name.empty()
-                    ? hit.eventTarget->name
+                    ? Engine::localize(hit.eventTarget->name)
                     : contextActionDefaultLabel(action.kind));
         }
     }
@@ -523,8 +537,8 @@ void setSingleContextAction(
 
 std::string formatFoundItemStatusText(const std::string &itemName)
 {
-    const std::string resolvedItemName = itemName.empty() ? "item" : itemName;
-    return "You found an item (" + resolvedItemName + ")!";
+    const std::string resolvedItemName = itemName.empty() ? Engine::tr("item") : itemName;
+    return Engine::tr("You found an item ({item})!", {{"item", resolvedItemName}});
 }
 
 std::string heldItemDisplayName(const GameplayScreenRuntime &runtime)
@@ -541,7 +555,7 @@ void setHeldItemDropContextAction(GameplayScreenRuntime &runtime)
 {
     GameplayContextAction action = {};
     action.kind = GameplayContextActionKind::DropHeldItem;
-    action.label = "Drop " + heldItemDisplayName(runtime);
+    action.label = Engine::tr("Drop {item}", {{"item", heldItemDisplayName(runtime)}});
     action.iconId = contextActionIconId(action.kind);
 
     GameplayContextActionState &state = runtime.contextActionState();
@@ -573,7 +587,7 @@ bool dropHeldItemToActiveWorld(
 
     if (pWorldRuntime == nullptr || !droppable)
     {
-        runtime.setStatusBarEvent("Can't drop " + itemName);
+        runtime.setStatusBarEvent(Engine::tr("Can't drop {item}", {{"item", itemName}}));
         return false;
     }
 
@@ -582,11 +596,11 @@ bool dropHeldItemToActiveWorld(
 
     if (!pWorldRuntime->dropHeldItemToWorld(resolvedDropRequest))
     {
-        runtime.setStatusBarEvent("Can't drop " + itemName);
+        runtime.setStatusBarEvent(Engine::tr("Can't drop {item}", {{"item", itemName}}));
         return false;
     }
 
-    runtime.setStatusBarEvent("Dropped " + itemName);
+    runtime.setStatusBarEvent(Engine::tr("Dropped {item}", {{"item", itemName}}));
     GameplayHeldItemController::clearHeldInventoryItem(heldItem);
     if (Party *pParty = runtime.party())
     {
@@ -602,7 +616,7 @@ std::string worldItemDisplayName(
     const ItemDefinition *pItemDefinition =
         pItemTable != nullptr ? pItemTable->get(worldItemState.item.objectDescriptionId) : nullptr;
 
-    return pItemDefinition != nullptr ? ItemRuntime::foundItemName(*pItemDefinition) : "item";
+    return pItemDefinition != nullptr ? ItemRuntime::foundItemName(*pItemDefinition) : Engine::tr("item");
 }
 
 bool canStoreWorldItemInInventory(
@@ -682,7 +696,7 @@ bool tryActivateWorldItem(
     {
         if (!worldItemState.isGold && !canStoreInInventory && heldItem.active)
         {
-            runtime.setStatusBarEvent("Pack is Full!");
+            runtime.setStatusBarEvent(Engine::tr("Pack is Full!"));
             runtime.playSpeechReaction(pParty->activeMemberIndex(), SpeechId::InventoryRoom, true);
         }
 
@@ -700,8 +714,9 @@ bool tryActivateWorldItem(
     {
         const FoundGold foundGold = resolveFoundGold(
             static_cast<uint32_t>(std::max(0, pickupDecision.goldAmount)),
-            worldRuntime.eventRuntimeState());
-        pParty->addGold(static_cast<int>(foundGold.partyAmount));
+            worldRuntime.eventRuntimeState(),
+            pParty);
+        pParty->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootGround);
         pParty->requestSound(SoundId::Gold);
         runtime.setStatusBarEvent(foundGoldStatusText(foundGold));
         recordWorldItemActivationResult(
@@ -945,7 +960,8 @@ void executePartyAttack(
             return;
         }
 
-        if (!turnBasedCombatRuntime.canBeginPlayerAction(*pParty))
+        // Also makes the member whose turn it is the attacker, whoever the player selected.
+        if (!turnBasedCombatRuntime.beginPlayerActionOrFinishMovement(*pParty))
         {
             return;
         }
@@ -955,9 +971,10 @@ void executePartyAttack(
         currentHit.kind == GameplayWorldHitKind::Actor && currentHit.actor
             ? std::optional<size_t>(currentHit.actor->actorIndex)
             : std::nullopt;
+    // Shown in combat messages, in the interface language.
     const std::string directTargetName =
         currentHit.kind == GameplayWorldHitKind::Actor && currentHit.actor
-            ? currentHit.actor->displayName
+            ? localizedActorName(currentHit.actor->displayName)
             : "";
     const std::optional<size_t> directTargetBModelIndex =
         currentHit.kind == GameplayWorldHitKind::EventTarget
@@ -998,6 +1015,7 @@ void executePartyAttack(
             .pMonsterTable = runtime.monsterTable(),
             .pMonsterProjectileTable = runtime.monsterProjectileTable(),
             .pSpecialItemEnchantTable = runtime.specialItemEnchantTable(),
+            .pMm9HirelingTable = runtime.mm9HirelingTable(),
             .directTargetActorIndex = directActorIndex,
             .directTargetHitPoint = directTargetHitPoint,
             .directTargetBModelIndex = directTargetBModelIndex,
@@ -1028,6 +1046,11 @@ void executePartyAttack(
             *pParty,
             attackResult.actingMemberIndex,
             attackResult.attack.recoverySeconds);
+    }
+    // A member whose battle orders hold passes the turn, as the Pass key does.
+    else if (turnBasedCombatRuntime.active() && attackResult.held)
+    {
+        runtime.passTurnBasedTurn();
     }
 }
 
@@ -1372,15 +1395,16 @@ std::optional<std::string> GameplayInteractionController::resolveHoverStatusText
             return std::nullopt;
         }
 
+        const std::string itemName = Engine::localizeKnown(hit.worldItem->displayName);
         std::string text = !heldItemActive && hit.worldItem->distance < WorldItemGetStatusDistance
-            ? "Get " + hit.worldItem->displayName
-            : hit.worldItem->displayName;
+            ? Engine::tr("Get {item}", {{"item", itemName}})
+            : itemName;
 
         // An item drawing the missing-model placeholder says so, so that players report it.
         if (hit.worldItem->missingGroundModelItemId != 0)
         {
-            text += " [missing 3D model for item " + std::to_string(hit.worldItem->missingGroundModelItemId)
-                + " - please report]";
+            text = Engine::tr("{text} [missing 3D model for item {id} - please report]",
+                {{"text", text}, {"id", hit.worldItem->missingGroundModelItemId}});
         }
 
         return text;
@@ -1393,7 +1417,7 @@ std::optional<std::string> GameplayInteractionController::resolveHoverStatusText
             return std::nullopt;
         }
 
-        return hit.actor->displayName;
+        return localizedActorName(hit.actor->displayName);
     }
 
     if (hit.kind != GameplayWorldHitKind::EventTarget
@@ -1519,8 +1543,9 @@ GameplayInteractionController::updateWorldInteractionFrame(
     const bool rightMousePressed = input.rightMouseButton.held;
     const bool mouseLookActive = sharedInput.mouseLookPolicy.mouseLookActive;
     const bool cursorModeActive = sharedInput.mouseLookPolicy.cursorModeActive;
+    // A combatant: the members' portraits and the MM9 hirelings' faces (a spell's character target).
     const std::optional<size_t> hoveredPortraitMemberIndex =
-        runtime.resolvePartyPortraitIndexAtPoint(
+        runtime.resolveCombatantPortraitIndexAtPoint(
             input.screenWidth,
             input.screenHeight,
             input.pointerX,
@@ -2137,6 +2162,8 @@ GameplayInteractionController::updateWorldInteractionFrame(
             GameplayActionController::AttackActionConfig{
                 .attackPressed = worldAttackPressed,
                 .hasReadyMember = hasReadyMember,
+                .turnBased = runtime.turnBasedCombatRuntime().active(),
+                .fastRepeat = runtime.settingsSnapshot().fastAttackRepeat,
             });
 
     if (attackActionDecision.shouldAttemptAttack)
@@ -2180,7 +2207,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
     }
 
     // The quick item ring or popup hides the world's hover text: its plate would lie over the ring's lowest slot.
-    if (GameplayQuickItems::needsCursor(runtime))
+    if (GameplayQuickItems::needsCursor(runtime) || GameplayFormationBuilder::isOpen(runtime))
     {
         runtime.clearWorldStatusBarHoverText();
         runtime.setWorldItemHoverLabel({}, 0, 0, 0);

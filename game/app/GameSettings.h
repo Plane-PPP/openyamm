@@ -57,6 +57,38 @@ enum class LightGridQuality
     High
 };
 
+// The combat log's button, docked panel and recording (gameplay.combat_log: auto, on, off). Auto shows it in a ruleset
+// other than Standard, in worlds that show it (world.yml combatLog; not MM9): the user, 2026-11-06. INI files from
+// before the choice read true as auto and false as off.
+enum class CombatLogMode
+{
+    Auto,
+    On,
+    Off
+};
+
+inline const char *combatLogModeValue(CombatLogMode mode)
+{
+    return mode == CombatLogMode::On ? "on" : mode == CombatLogMode::Off ? "off" : "auto";
+}
+
+inline std::optional<CombatLogMode> parseCombatLogModeValue(std::string_view value)
+{
+    if (value == "auto" || value == "true")
+    {
+        return CombatLogMode::Auto;
+    }
+    if (value == "on")
+    {
+        return CombatLogMode::On;
+    }
+    if (value == "off" || value == "false")
+    {
+        return CombatLogMode::Off;
+    }
+    return std::nullopt;
+}
+
 // "off", "hold" or "always" (gameplay.rarity_glow).
 inline bool validRarityGlowValue(std::string_view value)
 {
@@ -223,6 +255,12 @@ struct GameSettings
     // Rain rings on water (with the water shader) and darker, glossier surfaces while wet.
     bool rainRipples = true;
     bool wetSurfaces = true;
+    // A map's mist (devdocs/MIST.md); off draws the map without it.
+    bool mist = true;
+    // Percent of each map's authored mist density, 0..200.
+    int mistStrength = 100;
+    // Drifting wisps near the party on maps with mist (devdocs/MIST.md "Wisps").
+    bool mistWisps = false;
     // Sun and point-light highlights on smooth and wet ground (the materials terrain).
     bool terrainSpecular = true;
     // Building and dungeon faces drawn with their material maps (relief, roughness, metal, glow;
@@ -356,14 +394,27 @@ struct GameSettings
     // (GrayFace MM8Patch TurnBasedSpeed and TurnBasedPartySpeed). The party's own movement stage stays at 1.
     float turnBasedMonsterSpeed = 1.0f;
     float turnBasedPartySpeed = 1.0f;
-    // The combat log button and its docked log of hits (MAW GAPS H.3); off, nothing is recorded.
-    bool combatLog = true;
+    // The combat log button and its docked log of hits (MAW GAPS H.3); hidden, nothing is recorded
+    // (GameplayScreenRuntime::combatLogShown).
+    CombatLogMode combatLog = CombatLogMode::Auto;
+    // The interface language (devdocs/LOCALIZATION.md): "en", the pseudo-language "qps" or a language pack's id.
+    // It takes effect at the next start, when its fonts mount.
+    std::string language = "en";
     std::string enemyHealthBarMode = "combat";
     std::string enemyHealthBarValues = "target";
     bool enemyHealthBarDamageTrail = true;
-    bool questMarkers = false;
+    // On by default; only MM9 marks quest givers, so the other worlds show nothing either way.
+    bool questMarkers = true;
+    // Maps with a painted map (MM9's) show it on the minimap and the journal map; false shows the MM6-MM8 line map
+    // where the map also has outlines (MM9's dungeons, the default). Maps without outlines always show the painted map.
+    bool paintedMaps = false;
     // The load and save lists: false keeps Quicksave, Autosave, then the rest by name; true puts the newest first.
     bool saveListNewestFirst = false;
+    // How many quicksaves a playthrough keeps (1 to 20): a new one pushes the earlier ones down, the oldest goes.
+    int quickSaveSlots = 3;
+    // Random loot (drops, chests, map treasure) on MM6-MM8 maps may roll MM9's equipment; off, those maps roll only
+    // the merged MM6-MM8 base's, as their shops already sell (Party::mm9LootInOlderWorlds, devdocs/LOOT_POOL.md).
+    bool mm9LootInOlderWorlds = false;
     // Obsidian basebar frame behind the gameplay party portraits; fullscreen overlays always draw their own strip.
     bool partyFrame = true;
     // The quick item rings: the round button at each gameplay portrait opening its ring of six quick slots, and the
@@ -381,6 +432,16 @@ struct GameSettings
     bool meleeHitFlash = false;
     // Small camera turn along the blow on critical hits and kills.
     bool meleeCameraKick = false;
+    // A held Attack or Quick Cast key repeats after 0.14 s, as before 2026-11-07, instead of the original's key-repeat
+    // pause of 0.5 s that lets an ordinary tap act once (OY-189).
+    bool fastAttackRepeat = false;
+    // MM9's party formation in every world, not only where world.yml turns it on: monsters strike the front rank more
+    // often, and the formation button and key work (OY-538). On by default on all four continents (the user,
+    // 2026-11-13); off, MM6-MM8 pick their victims among the members as the originals do.
+    bool formationsEverywhere = true;
+    // The MM6-MM8 shops' buy screens as MM9's merchant list (one row per kind of item, filtered by tabs) instead of the
+    // shelf picture (OY-590). MM9's own merchants always use the list.
+    bool shopListView = false;
     // A glow in the item's rarity colour around its icon in the inventory, chest and shop grids (rulesets with item
     // rarities, such as MAW; Common items have none; artifacts, relics and special items glow teal): "off", "hold"
     // (while the Show Item Rarity key, Left Alt, is held) or "always".

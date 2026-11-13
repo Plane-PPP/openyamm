@@ -174,6 +174,9 @@ Inside the root: `settings.ini`, `saves/`, `output/screenshots/`, logs, and late
 - Saves keep their existing version handling: older saves migrate on load; a save written by a newer build is refused
   with a clear message instead of being loaded partially. *Implemented:* the Load screen says how many saves need a
   newer version instead of hiding them silently.
+- An update that ships a rebuilt map does not break saves made before it: each saved map state records its map's
+  layout identity, and a map whose layout changed starts afresh when the party enters it, keeping the party's own
+  state ([saved map states](../devdocs/SAVED_MAP_STATE_IDENTITY.md), save version 160).
 
 ### 4.3 Settings and new defaults
 
@@ -450,6 +453,12 @@ schema. The Flatpak uses OSTree and needs no manifest.
 ```
 
 - `url` is relative to the channel's base URL, so the host can move without changing manifests.
+- A manifest lists the languages' optional packs (`"language": "<id>"`, devdocs/LOCALIZATION.md) apart, under
+  `language_packs`, with the same fields, and so does the release's `index.json` in the packages and app archives.
+  Updaters before 2.0 read only `packs` and know no language field, so an update from them downloads none of them,
+  and their check of the new version's index (every listed pack present) passes. 2.0 and later read both lists:
+  desktop fetches a language's packs only for the languages kept installed, Android fetches them all (fonts only) and
+  offers the installed release's missing packs as an update.
 - `content_format` is an integer bumped whenever a binary needs new content or content needs a new binary
   (a file format version, a new required table). The app and packs of one manifest always match. The client always
   installs a manifest as a whole; `content_format` is a safety check that refuses a mismatched combination.

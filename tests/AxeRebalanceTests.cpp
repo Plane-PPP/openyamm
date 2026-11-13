@@ -78,7 +78,7 @@ public:
             .position = {100, 0, 0}, .currentHp = 100000, .maxHp = 100000, .hostileToParty = true};
     }
 
-    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier, const ShieldHitModifiers & = {}) override
+    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier, const ShieldHitModifiers & = {}, bool = false) override
     {
         damage = value;
         return true;
@@ -267,15 +267,15 @@ TEST_CASE("Axe GM two-handed doubles complete physical damage only before target
     member.equipment.mainHand = weapon("Axe", "Weapon2");
     member.might = 100;
     member.skills["Armsmaster"] = {"Armsmaster", 12, SkillMastery::Grandmaster};
-    member.weaponEnchantmentDamageBonus = 18; // Physical +9 and Fire +9.
+    member.meleeWeaponDamageBonus = 9; // Flat physical bonus; Fire +9 is supplied per hit below.
     member.permanentBonuses.meleeDamage = 7;
     member.magicalBonuses.meleeDamage = 11;
     const CharacterAttackProfile attack = profile(member);
     CHECK_EQ(attack.axe.armsmasterBonus, 24);
     CHECK_EQ(attack.axe.weaponSkillBonus, 10);
-    CHECK_EQ(attack.axe.enchantmentBonus, 18);
+    CHECK_EQ(attack.axe.enchantmentBonus, 9);
     CHECK_EQ(attack.axe.flatBonus, 18);
-    CHECK_EQ(attack.meleeMinDamage, attack.axe.weaponMin + attack.axe.mightBonus + 24 + 10 + 18 + 18);
+    CHECK_EQ(attack.meleeMinDamage, attack.axe.weaponMin + attack.axe.mightBonus + 24 + 10 + 9 + 18);
     ElementalDamageBonuses elemental;
     elemental.fire = 9;
     for (uint32_t seed = 0; seed < 128; ++seed)
@@ -289,18 +289,18 @@ TEST_CASE("Axe GM two-handed doubles complete physical damage only before target
             AxeAttackObservation observed;
             std::mt19937 rng(seed), reference(seed), unobserved(seed);
             const int expected = GameMechanics::resolveMonsterIncomingWeaponDamage(
-                2 * (rolled - 9) + 9, CombatDamageType::Physical, elemental, defenses, 0, reference);
+                2 * rolled + 9, CombatDamageType::Physical, elemental, defenses, 0, reference);
             const int actual = GameMechanics::resolveAxeMeleeWeaponDamage(member, &data().itemTable,
-                rolled, CombatDamageType::Physical, elemental, defenses, 0, rng, &observed);
+                rolled + 9, CombatDamageType::Physical, elemental, defenses, 0, rng, &observed);
             CHECK_EQ(actual, expected);
             CHECK(rng == reference);
             CHECK_EQ(observed.damageMultiplier, 2);
-            CHECK_EQ(observed.physicalBefore, rolled - 9);
-            CHECK_EQ(observed.physicalAfter, 2 * (rolled - 9));
+            CHECK_EQ(observed.physicalBefore, rolled);
+            CHECK_EQ(observed.physicalAfter, 2 * rolled);
             CHECK_EQ(observed.elementalDamage, 9);
             CHECK_EQ(actual, observed.physicalFinal + 9);
             CHECK_EQ(GameMechanics::resolveAxeMeleeWeaponDamage(member, &data().itemTable,
-                rolled, CombatDamageType::Physical, elemental, defenses, 0, unobserved), actual);
+                rolled + 9, CombatDamageType::Physical, elemental, defenses, 0, unobserved), actual);
             CHECK(rng == unobserved);
         }
         member.equippedItemEffectFlags.insert("PerfectAccuracy");

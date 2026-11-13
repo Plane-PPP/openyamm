@@ -1,4 +1,7 @@
 #include "game/gameplay/GameplayInputController.h"
+#include "engine/Localization.h"
+#include "game/ui/GameplayBattleOrders.h"
+#include "game/ui/GameplayFormationBuilder.h"
 #include "game/ui/GameplayLootSummaryRenderer.h"
 
 #include "game/audio/SoundIds.h"
@@ -177,10 +180,11 @@ void GameplayInputController::handleStandardUiHotkeys(
     GameplayScreenRuntime &context,
     const GameplayStandardUiHotkeyConfig &config)
 {
-    // Letters typed into the alchemy bench, inventory or journal search are text, not hotkeys; each handles Escape
-    // itself.
+    // Letters typed into the alchemy bench, inventory, journal or Battle Orders search are text, not hotkeys; each
+    // handles Escape itself.
     if (GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
-        || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly()))
+        || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly())
+        || GameplayUiController::spellbookSearchActive(context.spellbookReadOnly()))
     {
         return;
     }
@@ -204,6 +208,7 @@ void GameplayInputController::handleStandardUiHotkeys(
     const bool houseShopActive = context.houseShopOverlay().active;
     const bool houseBankInputActive = context.houseBankState().inputActive();
     const bool gameplayHudActive = context.currentHudScreenState() == GameplayHudScreenState::Gameplay;
+    const bool formationBuilderOpen = GameplayFormationBuilder::isOpen(context);
     // Play with nothing open: the rest key and MAW's play keys act.
     const bool gameplayIdle =
         gameplayHudActive
@@ -223,6 +228,7 @@ void GameplayInputController::handleStandardUiHotkeys(
         && !context.inventoryNestedOverlay().active
         && !context.readableScrollOverlayReadOnly().active
         && !context.lootSummaryOverlayReadOnly().active
+        && !formationBuilderOpen
         && !context.utilitySpellOverlayReadOnly().active
         && !houseShopActive
         && !houseBankInputActive;
@@ -249,9 +255,22 @@ void GameplayInputController::handleStandardUiHotkeys(
             return;
         }
 
+        // Escape keeps the old formation, as Cancel.
+        if (formationBuilderOpen)
+        {
+            GameplayFormationBuilder::close(context);
+            context.interactionState().menuToggleLatch = true;
+            return;
+        }
+
         if (spellbookActive)
         {
-            context.closeSpellbookOverlay();
+            // The Battle Orders window and the spell menu take their own Escape (the spellbook's input).
+            if (!GameplayBattleOrders::isOpen(context) && !GameplayBattleOrders::spellMenuOpen(context))
+            {
+                context.closeSpellbookOverlay();
+            }
+
             context.interactionState().menuToggleLatch = true;
             return;
         }
@@ -289,6 +308,7 @@ void GameplayInputController::handleStandardUiHotkeys(
     const bool canToggleMenu =
         !activeEventDialog
         && !GameplayQuickItems::needsCursor(context)
+        && !formationBuilderOpen
         && !hasActiveLootView
         && !characterScreenOpen
         && !spellbookActive
@@ -333,7 +353,7 @@ void GameplayInputController::handleStandardUiHotkeys(
             {
                 if (!context.interactionState().restToggleLatch)
                 {
-                    context.setStatusBarEvent("You can't rest in turn-based mode!");
+                    context.setStatusBarEvent(Engine::tr("You can't rest in turn-based mode!"));
                     context.playCantRestHereReaction();
                     context.interactionState().restToggleLatch = true;
                 }
@@ -384,7 +404,26 @@ void GameplayInputController::handleStandardUiHotkeys(
         && !quickReferenceActive
         && !houseShopActive
         && !houseBankInputActive
+        && !formationBuilderOpen
         && !config.blockSpellbookToggle;
+
+    // The Battle Orders key opens the window over the book (the book with it), and closes it again.
+    if (isActionNewlyPressed(context, KeyboardAction::BattleOrders, config.pInputFrame, config.pKeyboardState))
+    {
+        if (GameplayBattleOrders::isOpen(context))
+        {
+            GameplayBattleOrders::close(context);
+        }
+        else if (context.spellbookReadOnly().active)
+        {
+            GameplayBattleOrders::open(context, false);
+        }
+        else if (canToggleSpellbook)
+        {
+            context.openSpellbookOverlay();
+            GameplayBattleOrders::open(context, true);
+        }
+    }
 
     if (isActionNewlyPressed(context, KeyboardAction::Cast, config.pInputFrame, config.pKeyboardState))
     {
@@ -409,9 +448,10 @@ void GameplayInputController::handleStandardUiHotkeys(
         && !loadGameActive
         && !journalActive
         && !quickReferenceActive
+        && !formationBuilderOpen
         && !config.blockInventoryToggle;
 
-    if (isActionNewlyPressed(context, KeyboardAction::Quest, config.pInputFrame, config.pKeyboardState)
+    if (isActionNewlyPressed(context, KeyboardAction::Inventory, config.pInputFrame, config.pKeyboardState)
         && canToggleInventory)
     {
         if (hasActiveLootView)
@@ -428,6 +468,19 @@ void GameplayInputController::handleStandardUiHotkeys(
         else
         {
             context.toggleCharacterInventoryScreen();
+        }
+    }
+
+    // MM9's formation key opens the builder over play and closes it again (keeping the old formation).
+    if (isActionNewlyPressed(context, KeyboardAction::PartyFormation, config.pInputFrame, config.pKeyboardState))
+    {
+        if (formationBuilderOpen)
+        {
+            GameplayFormationBuilder::close(context);
+        }
+        else if (gameplayIdle && GameplayFormationBuilder::available(context))
+        {
+            GameplayFormationBuilder::open(context);
         }
     }
 
@@ -468,8 +521,9 @@ void GameplayInputController::handleStandardUiHotkeys(
     }
 
     // MMMerge's follower keys (NPCFollowers.lua:345-351): the follower panel, and a word with each of the first four
-    // followers.
-    if (gameplayIdle)
+    // followers; none in a world without followers (MM9).
+    const Party *pFollowerParty = context.partyReadOnly();
+    if (gameplayIdle && pFollowerParty != nullptr && pFollowerParty->npcFollowersActive())
     {
         if (isActionNewlyPressed(context, KeyboardAction::FollowerPanel, config.pInputFrame, config.pKeyboardState))
         {
@@ -543,19 +597,32 @@ void GameplayInputController::handleStandardUiHotkeys(
         && !context.inventoryNestedOverlay().active
         && !context.readableScrollOverlayReadOnly().active
         && !context.lootSummaryOverlayReadOnly().active
+        && !formationBuilderOpen
         && !context.utilitySpellOverlayReadOnly().active
         && !houseShopActive
         && !houseBankInputActive;
 
-    if (isActionNewlyPressed(context, KeyboardAction::QuickRef, config.pInputFrame, config.pKeyboardState))
+    // Quick Ref and Statistics open their page of the overlay; the key of the page shown closes it.
+    using QuickReferencePage = GameplayUiController::QuickReferencePage;
+    const std::array<std::pair<KeyboardAction, QuickReferencePage>, 2> pageKeys = {{
+        {KeyboardAction::QuickRef, QuickReferencePage::Party},
+        {KeyboardAction::Statistics, QuickReferencePage::Statistics},
+    }};
+
+    for (const auto &[action, page] : pageKeys)
     {
-        if (quickReferenceActive)
+        if (!isActionNewlyPressed(context, action, config.pInputFrame, config.pKeyboardState))
+        {
+            continue;
+        }
+
+        if (quickReferenceActive && context.quickReferenceScreenStateReadOnly().page == page)
         {
             context.closeQuickReferenceOverlay();
         }
-        else if (canToggleQuickReference)
+        else if (quickReferenceActive || canToggleQuickReference)
         {
-            context.openQuickReferenceOverlay();
+            context.openQuickReferenceOverlay(page);
         }
     }
 
@@ -591,7 +658,8 @@ void GameplayInputController::handleSharedGameplayHotkeys(
 {
     if (config.pKeyboardState == nullptr
         || GameplayUiController::characterScreenSearchActive(context.characterScreenReadOnly())
-        || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly()))
+        || GameplayUiController::journalSearchActive(context.journalScreenStateReadOnly())
+        || GameplayUiController::spellbookSearchActive(context.spellbookReadOnly()))
     {
         context.interactionState().alwaysRunToggleLatch = false;
         context.interactionState().adventurersInnToggleLatch = false;
@@ -719,7 +787,7 @@ void GameplayInputController::handleSharedGameplayHotkeys(
             }
             else
             {
-                context.setStatusBarEvent("The Adventurer's Inn is empty.");
+                context.setStatusBarEvent(Engine::tr("The Adventurer's Inn is empty."));
             }
 
             context.interactionState().adventurersInnToggleLatch = true;
@@ -819,7 +887,8 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
                             .blockJournalToggle =
                                 hasPendingSpellCast
                                 || context.characterScreenReadOnly().open
-                                || heldInventoryItem.active,
+                                || heldInventoryItem.active
+                                || GameplayFormationBuilder::isOpen(context),
                             .requireGameplayReadyForPortraitSelection = !hasPendingSpellCast,
                             .onPortraitActivated =
                                 [&screenState, &context, &spellService, &config, hasPendingSpellCast](
@@ -949,6 +1018,8 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
                     .canRunAction = true,
                     .quickCastPressed = isQuickCastPressed,
                     .hasReadyMember = config.hasReadyMember,
+                    .turnBased = context.turnBasedCombatRuntime().active(),
+                    .fastRepeat = context.settingsSnapshot().fastAttackRepeat,
                 });
 
         if (quickCastDecision.shouldBeginQuickCast)
@@ -998,6 +1069,38 @@ GameplaySharedInputFrameResult GameplayInputController::updateSharedGameplayInpu
         GameplayActionController::updateQuickCastAction(
             quickSpellState,
             GameplayActionController::QuickCastActionConfig{});
+    }
+
+    // The Upkeep key (devdocs/BATTLE_ORDERS.md "Upkeep"): a ready member casts the first due spell of their list.
+    if (config.processQuickCast)
+    {
+        const bool turnBased = context.turnBasedCombatRuntime().active();
+        const GameplayActionController::UpkeepActionDecision upkeepDecision =
+            GameplayActionController::updateUpkeepAction(
+                screenState.upkeepActionState(),
+                canRunStandardGameplayAction
+                    && isActionHeld(context, KeyboardAction::Upkeep, config.pInputFrame, config.pKeyboardState),
+                turnBased);
+
+        if (upkeepDecision.shouldAttemptUpkeep && config.canBeginQuickCast)
+        {
+            if (turnBased && context.turnBasedCombatRuntime().stage() == TurnBasedCombatStage::Movement)
+            {
+                context.turnBasedCombatRuntime().finishMovementPhase();
+            }
+            else
+            {
+                GameplayActionController::executePartyUpkeep(
+                    GameplayActionController::PartyUpkeepConfig{
+                        .pRuntime = &context,
+                        .pSpellService = &spellService,
+                        .pWorldRuntime = context.worldRuntime(),
+                        .pParty = context.party(),
+                        .pSpellTable = context.spellTable(),
+                        .pressedThisFrame = upkeepDecision.pressedThisFrame,
+                    });
+            }
+        }
     }
 
     const GameplayStandardWorldInputGateResult worldInputGateResult =

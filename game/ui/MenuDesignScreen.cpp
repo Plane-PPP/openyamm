@@ -237,7 +237,7 @@ void MenuDesignScreen::cancelContentDrag()
     m_contentDrag.reset();
 }
 
-void MenuDesignScreen::drawDesign()
+void MenuDesignScreen::drawDesign(const std::vector<std::string> &hiddenPrefixes)
 {
     if (m_overGameplay)
     {
@@ -271,7 +271,9 @@ void MenuDesignScreen::drawDesign()
             clipped = clipped || pAncestor->parentId.find("Viewport") != std::string::npos;
             pAncestor = m_designLayouts.findElement(pAncestor->parentId);
         }
-        if (!element.visible || element.interactive || clipped || id.ends_with("Background"))
+        const bool hidden = std::any_of(hiddenPrefixes.begin(), hiddenPrefixes.end(),
+                                        [&id](const std::string &prefix) { return id.starts_with(prefix); });
+        if (!element.visible || element.interactive || clipped || hidden || id.ends_with("Background"))
         {
             continue;
         }
@@ -315,10 +317,15 @@ void MenuDesignScreen::textInRect(const Rect &rect, const std::string &text, con
     const int faceHeight = std::max(1, fontHeight(font));
     float scale = designScale() * logicalSize / faceHeight;
     std::string encoded = text;
-    if (encoded.find('\n') == std::string::npos && rect.height < logicalSize * designScale() * 1.9f)
+    // One line, shrunk or cut with an ellipsis, unless a second line fits by the draw loop's own rule below: otherwise
+    // the text wrapped, its second line was dropped and the first was centred as if both were drawn (OY-266).
+    const float singleGlyphHeight = logicalSize * designScale();
+    const bool secondLineFits = singleGlyphHeight * 2.2f <= rect.height + 3 * designScale();
+    if (encoded.find('\n') == std::string::npos && !secondLineFits)
     {
         const float width = measureTextWidth(font, encoded, scale);
-        const float fit = width > 0 ? std::min(1.0f, std::max(0.85f, rect.width / width)) : 1.0f;
+        // A longer language's label is set down to 60 % of its size before it is cut.
+        const float fit = width > 0 ? std::min(1.0f, std::max(0.6f, rect.width / width)) : 1.0f;
         if (fit < 1.0f)
         {
             // A fractional reduction can round back to the same raster size and wrongly trigger an ellipsis.
@@ -374,7 +381,8 @@ float MenuDesignScreen::textBlockHeight(const std::string &text, const std::stri
     return lineCount == 0 ? 0 : glyphHeight + (lineCount - 1) * glyphHeight * 1.2f;
 }
 
-void MenuDesignScreen::label(const std::string &id, const std::string &text, uint32_t color, float offsetY)
+void MenuDesignScreen::label(const std::string &id, const std::string &text, uint32_t color, float offsetY,
+                             float offsetX)
 {
     const UiLayoutManager::LayoutElement *pElement = m_designLayouts.findElement(id);
     if (pElement == nullptr || pElement->fontName.empty())
@@ -383,6 +391,8 @@ void MenuDesignScreen::label(const std::string &id, const std::string &text, uin
     }
     Rect rect = designRect(id);
     rect.y += offsetY * designScale();
+    rect.x += offsetX * designScale();
+    rect.width = std::max(1.0f, rect.width - offsetX * designScale());
     const float padding = pElement->textPadX * designScale();
     rect.x += padding;
     rect.width = std::max(1.0f, rect.width - padding * 2);
@@ -490,7 +500,7 @@ MenuDesignScreen::Hotspot MenuDesignScreen::hotspot(const std::string &id, const
 }
 
 bool MenuDesignScreen::button(const std::string &id, const Rect &rect, const std::string &text, const std::string &name,
-                              bool enabled, bool selected)
+                              bool enabled, bool selected, const std::string &font)
 {
     const bool available = enabled && (!modalOpen() || m_drawingConfirmation);
     const Hotspot input = hotspot(id, rect, enabled);
@@ -511,14 +521,14 @@ bool MenuDesignScreen::button(const std::string &id, const Rect &rect, const std
         Rect textRect = rect;
         textRect.x += 5 * designScale();
         textRect.width -= 10 * designScale();
-        textInRect(textRect, text, "fondamento", name == "button_square" ? 11.7f : 13.8667f,
+        textInRect(textRect, text, font, name == "button_square" ? 11.7f : 13.8667f,
                    enabled ? hovered ? 0xffc0f0ffu : 0xffa4d1e8u : 0xff6b777au, true);
     }
     return activated;
 }
 
 bool MenuDesignScreen::selectBox(const std::string &id, const Rect &rect, const std::string &value, bool enabled,
-                                float logicalSize)
+                                float logicalSize, const std::string &font)
 {
     const bool available = enabled && (!modalOpen() || m_drawingConfirmation);
     const bool hovered = available && pointerInside(rect);
@@ -530,7 +540,7 @@ bool MenuDesignScreen::selectBox(const std::string &id, const Rect &rect, const 
     skin("button_square_" + state, arrow, true, 6);
     const uint32_t color = !enabled ? 0xff6b777au : hovered ? 0xffc0f0ffu : 0xffc6dfeau;
     textInRect({rect.x + 9 * scale, rect.y, rect.width - arrow.width - 18 * scale, rect.height},
-               value, "menu_lucida", logicalSize, color);
+               value, font, logicalSize, color);
     const float centerX = arrow.x + arrow.width / 2;
     const float centerY = arrow.y + arrow.height / 2;
     drawTextureColor(ArtRoot + "chevron_down.png",
@@ -587,6 +597,13 @@ void MenuDesignScreen::setModalNotes(const std::string &text)
     {
         m_confirmation->notes = text;
         m_confirmation->notesScroll = 0;
+    }
+}
+void MenuDesignScreen::setModalChoiceFont(const std::string &font)
+{
+    if (m_confirmation)
+    {
+        m_confirmation->choiceFont = font;
     }
 }
 
@@ -823,7 +840,8 @@ void MenuDesignScreen::drawConfirmation()
         const bool hasIcon = index < int(m_confirmation->choiceIcons.size())
             && !m_confirmation->choiceIcons[index].empty();
         if (button("modal-" + std::to_string(index), rect, hasIcon ? "" : m_confirmation->choices[index],
-                   index == count - 1 && !list && !twoColumns ? "button_primary" : "button_quiet"))
+                   index == count - 1 && !list && !twoColumns ? "button_primary" : "button_quiet", true, false,
+                   m_confirmation->choiceFont))
         {
             selected = index;
         }
@@ -832,7 +850,7 @@ void MenuDesignScreen::drawConfirmation()
             drawTexture(m_confirmation->choiceIcons[index],
                         {rect.x + 8 * scale, rect.y + (rect.height - 28 * scale) / 2, 28 * scale, 28 * scale});
             textInRect({rect.x + 44 * scale, rect.y, rect.width - 52 * scale, rect.height},
-                       m_confirmation->choices[index], "fondamento", 13.8667f,
+                       m_confirmation->choices[index], m_confirmation->choiceFont, 13.8667f,
                        pointerInside(rect) ? 0xffc0f0ffu : 0xffa4d1e8u);
         }
     }

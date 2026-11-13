@@ -25,6 +25,7 @@ namespace OpenYAMM::Game
 inline constexpr std::array<float, 3> LootGatherDistances = {192.0f, 128.0f, 64.0f};
 
 class ActorAiTrace;
+class ISceneEventContext;
 class ActorBehaviorRuntime;
 class GameplayActorHitFeedback;
 class GameplayProjectileService;
@@ -32,6 +33,7 @@ class MergedBolsterMonsterTable;
 struct MapStatsEntry;
 struct WorldAmbientSound;
 struct GameplayMonsterSpawnRequest;
+struct MapDeltaHeldItem;
 struct MapKillProgress;
 struct GameplayMinimapState;
 struct GameplayMinimapLineState;
@@ -211,6 +213,15 @@ struct GameplayRuntimeActorState
     uint16_t height = 0;
     // The actor's own height (map placement or descriptor), unpadded; presentation (3D model scale) uses this.
     uint16_t bodyHeight = 0;
+    // Its 3D model's scale against its binding's (scene draw_scale); when set it replaces bodyHeight's ratio to the
+    // descriptor's height. 0: none.
+    float drawScale = 0.0f;
+    // Where the party aims at it, above its feet (actorTargetHeight: on its 3D model when that is shorter).
+    float targetHeight = 0.0f;
+    // The items it holds (MapDeltaActor::heldItems), owned by the world runtime for the frame; null or empty: none.
+    // heldItemsHidden: a routine put them down for now (Mm9AiRoutineStep hide_items).
+    const std::vector<MapDeltaHeldItem> *pHeldItems = nullptr;
+    bool heldItemsHidden = false;
     bool isDead = false;
     bool isInvisible = false;
     bool hostileToParty = false;
@@ -222,9 +233,19 @@ struct GameplayRuntimeActorState
     int maxHp = 0;
     // What the ruleset resolved for the actor (empty under Standard).
     ActorRulesetFacts rulesetFacts;
-    // A behaviour script's clip role (actors.yml `script_clips`) and its playback time; empty when none plays.
+    // A behaviour script's clip role (actors.yml `script_clips`; `fidget` the binding's own fidget) and its playback
+    // time; empty when none plays. Past its end it holds its last frame, loops, or releases the actor's own animation.
     std::string scriptedClip;
+    // Clips that follow scriptedClip in order (a map script's clip sequence); the end rule applies to the last one.
+    std::vector<std::string> scriptedClipThen;
     float scriptedClipSeconds = 0.0f;
+    enum class ScriptedClipEnd : uint8_t
+    {
+        Hold,
+        Loop,
+        Release,
+    };
+    ScriptedClipEnd scriptedClipEnd = ScriptedClipEnd::Hold;
     // Hit flash mixed over the sprite or model (GameplayActorHitFeedback), 0 when none.
     float hitFlash = 0.0f;
     // Multiplier of the model's emission (a frenzy's glow, GameplayActorModifiers), 1 when none.
@@ -265,6 +286,8 @@ struct GameplayCombatFeedbackEvent
     float z = 0.0f;
     float height = 0.0f;
     bool killed = false;
+    // A critical hit: its number pops (CombatFloatingText).
+    bool critical = false;
 };
 
 enum class GameplayActorControlMode : uint8_t
@@ -398,6 +421,9 @@ struct GameplayActorTargetPolicyState
     uint16_t height = 0;
     bool hostileToParty = false;
     GameplayActorControlMode controlMode = GameplayActorControlMode::None;
+    uint32_t actorId = 0;
+    // The monster that last hit it (the original's lastCharacterIdToHit): it fights that one back at long range.
+    std::optional<uint32_t> lastActorAttackerId;
 };
 
 struct GameplayActorTargetPolicyResult
@@ -494,6 +520,8 @@ struct GameplayWorldItemPresentationState
     // A treasure bag holding loot rather than an item: it draws lootBagModelBinding().
     bool lootBag = false;
     WorldItemSparkle sparkle = WorldItemSparkle::None;
+    // A placed item's authored pose (a scene world item's `pose`): drawn turned so, resting on its position.
+    std::optional<WorldItemPose> pose;
 };
 
 // A projectile that ended (hit something or ran out of lifetime) and where it stopped, so its flight effect can
@@ -557,6 +585,8 @@ struct GameplayPartyAttackActorFacts
     GameplayWorldPoint position = {};
     uint16_t radius = 0;
     uint16_t height = 0;
+    // GameplayRuntimeActorState::targetHeight.
+    float targetHeight = 0.0f;
     int currentHp = 0;
     int maxHp = 0;
     int effectiveArmorClass = 0;
@@ -594,10 +624,13 @@ struct GameplayCombatActorInfo
     bool damageDebuffed = false;
     // What the ruleset resolved for the attacker (empty under Standard).
     ActorRulesetFacts rulesetFacts;
-    // spell_conditions (MonsterModifiers.h): the condition a hit by its Spell1 / Spell2 leaves, and the chance (0-1).
+    // spell_conditions (MonsterModifiers.h): the condition a hit by its Spell1 / Spell2 leaves, the chance (0-1), and
+    // the game minutes until it wears off (0: until cured).
     MonsterSpecialAttackKind spell1Condition = MonsterSpecialAttackKind::None;
     MonsterSpecialAttackKind spell2Condition = MonsterSpecialAttackKind::None;
     float spellConditionChance = 1.0f;
+    float spell1ConditionMinutes = 0.0f;
+    float spell2ConditionMinutes = 0.0f;
 };
 
 struct GameplayPartyAttackSpellRequest
@@ -630,6 +663,9 @@ struct GameplayPartyAttackProjectileRequest
     bool weakerOfPhysicalAndFire = false;
     // The radius the missile's damage reaches around its impact (Carnage arrows); 0 strikes only what it hits.
     float explosionRadius = 0.0f;
+    // The shot's damage range, rolled again for each monster its blast reaches (Carnage arrows); 0: its one damage.
+    int blastMinimumDamage = 0;
+    int blastMaximumDamage = 0;
     GameplayWorldPoint source = {};
     GameplayWorldPoint target = {};
     bool turnBasedPendingAction = false;
@@ -689,6 +725,13 @@ public:
         return GameplayWorldPoint{partyX() + 1024.0f, partyY(), partyFootZ()};
     }
     virtual bool isIndoorMap() const = 0;
+    // Whether the map lies open to the sky for spells: an outdoor map that is not enclosed, or a BLV its world declares
+    // open (world.yml openAirMaps, MapStatsEntry::openAir). Meteor Shower and the other outdoor spells work there,
+    // Inferno and Prismatic Light do not.
+    virtual bool isOpenAirMap() const
+    {
+        return !isIndoorMap();
+    }
     // The party is on a ladder (the flight arrows then climb it).
     virtual bool partyClimbingLadder() const
     {
@@ -709,6 +752,10 @@ public:
         return false;
     }
     virtual bool allowsLloydsBeacon() const
+    {
+        return true;
+    }
+    virtual bool allowsTownPortal() const
     {
         return true;
     }
@@ -737,6 +784,12 @@ public:
     {
         static_cast<void>(syncPersistentHostilityMasks);
     }
+    // The world's event context (map actors, faces, mechanisms) for shared systems outside the event runtime (a
+    // cinematic's actor steps); null in a world without one.
+    virtual ISceneEventContext *sceneEventContext()
+    {
+        return nullptr;
+    }
     virtual Party *party() = 0;
     virtual const Party *party() const = 0;
     virtual float partyX() const = 0;
@@ -760,6 +813,13 @@ public:
     {
         return 10240.0f;
     }
+    // How far from the party its shots, targeted spells and area spells reach a monster (GameplayActorService::
+    // partyHitReach): the yellow alert range, 5120, or a world's shorter one (MM9's 3800). Armageddon strikes the
+    // whole map.
+    virtual float partyHitReach() const
+    {
+        return 5120.0f;
+    }
     virtual float gameplayCameraYawRadians() const
     {
         return 0.0f;
@@ -782,6 +842,11 @@ public:
         return false;
     }
     virtual bool partyIsActivelyFlyingForHud() const
+    {
+        return false;
+    }
+    // The party stands on water it would otherwise drown in (Water Walk carries it).
+    virtual bool partyIsWalkingOnWaterForHud() const
     {
         return false;
     }
@@ -832,6 +897,12 @@ public:
     {
         (void)mode;
     }
+    // Turn-based combat: the monsters' spell effects (stun, paralysis, slow, their buffs) run down once per completed
+    // turn by its game time, in equivalent real seconds, instead of by actor AI time (the original's game clock).
+    virtual void advanceTurnBasedActorTimers(float seconds)
+    {
+        (void)seconds;
+    }
     // Lets the actor take its queued action (attack when it can) in the next actor AI step.
     virtual void grantTurnBasedActorAction(size_t actorIndex)
     {
@@ -875,6 +946,10 @@ public:
         return false;
     }
     virtual const std::optional<ScriptedEventProgram> *globalEventProgram() const = 0;
+    virtual const std::optional<ScriptedEventProgram> *localEventProgram() const
+    {
+        return nullptr;
+    }
     virtual const MapDeltaData *mapDeltaData() const
     {
         return nullptr;
@@ -1294,7 +1369,8 @@ public:
         int damage,
         const GameplayWorldPoint &source,
         ShieldAttackTier shieldTier,
-        const ShieldHitModifiers &shieldModifiers = {}) = 0;
+        const ShieldHitModifiers &shieldModifiers = {},
+        bool critical = false) = 0;
     virtual bool debugSetActorHealth(size_t actorIndex, int health)
     {
         (void)actorIndex;
@@ -1422,4 +1498,24 @@ public:
     virtual bool takeActiveCorpseItem(size_t itemIndex, GameplayChestItemState &item) = 0;
     virtual void closeActiveCorpseView() = 0;
 };
+
+// Where a world hit lands on a standing destructible a party blow or missile damages (a face, BModel or prop), or
+// none: a party missile with no actor under the crosshair flies there (devdocs/INDOOR_DESTRUCTIBLES.md "Aiming").
+inline std::optional<bx::Vec3> standingDestructibleHitPoint(
+    const IGameplayWorldRuntime &worldRuntime,
+    const GameplayWorldHit &hit)
+{
+    if (!hit.hasHit || hit.kind != GameplayWorldHitKind::EventTarget || !hit.eventTarget)
+    {
+        return std::nullopt;
+    }
+
+    const GameplayEventTargetHit &target = *hit.eventTarget;
+    const bool standing =
+        (target.targetKind == GameplayWorldEventTargetKind::Surface
+            && worldRuntime.isPartyAttackMeleeBModelTarget(target.targetIndex))
+        || (target.targetKind == GameplayWorldEventTargetKind::Entity
+            && worldRuntime.isPartyAttackMeleeEntityTarget(target.targetIndex));
+    return standing ? std::optional<bx::Vec3>(target.hitPoint) : std::nullopt;
+}
 }

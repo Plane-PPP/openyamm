@@ -11,7 +11,9 @@
 #include "tests/PartySpellTestHarness.h"
 #include "tests/RegressionGameData.h"
 
+#include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 // MAW audit 2026-10-24, stream 3: monsters, items and content (devdocs/maw/AUDIT_20261024_PLAN.md).
@@ -74,6 +76,37 @@ TEST_CASE("MAW keeps a map cleared only until its monsters refill; the reward st
     CHECK(rules.state().clearedSinceRefill.contains("d08.blv"));
     monsters.mapLoaded("d08.blv", false);
     CHECK(monsters.mapResetOffer("d08.blv").has_value());
+}
+
+TEST_CASE("MAW pays a map clear by the level of its monsters, else by the map's level (MAW 8967ae88)")
+{
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    const auto clearExperience = [](int levelledMonsters, double levelSum)
+    {
+        MawRules rules(RulesetOptions{}, MawMapLevels{});
+        Party party = mawTestParty(rules);
+        MapKillProgress progress = clearedDungeon("d08.blv");
+        progress.levelledMonsters = levelledMonsters;
+        progress.monsterLevelSum = levelSum;
+        const size_t members = party.members().size();
+        const std::string message = rules.gameRules().experience.rewardMapProgress(party, progress);
+        return std::pair(message, members);
+    };
+    // The bank's experience by level L for 20 monsters, and a member's share of five times it (mapClearLevel).
+    const auto memberShare = [](double level, size_t members)
+    {
+        const double experience =
+            std::ceil(std::pow(20.0, 0.7) * (level * 20 + std::pow(level, 1.8)) / 3 / 1000) * 1000;
+        return std::to_string(int64_t(std::round(experience * 5 / double(members) / 1000) * 1000));
+    };
+
+    // Twenty monsters of average level 60.
+    const auto [byMonsters, members] = clearExperience(20, 20 * 60.0);
+    CHECK_NE(byMonsters.find("You gain " + memberShare(60, members) + " Exp"), std::string::npos);
+
+    // No levels known: the map's own level (none in these tables, so 1) as before.
+    const auto [byMap, sameMembers] = clearExperience(0, 0);
+    CHECK_NE(byMap.find("You gain " + memberShare(1, sameMembers) + " Exp"), std::string::npos);
 }
 
 TEST_CASE("MAW risen monsters give full experience in Nightmare and Doom, none in Road to Insanity (MON-1)")
@@ -291,7 +324,7 @@ TEST_CASE("MAW bounty texts name the spawned boss and its map note goes with it 
     const BountyHuntInteractionResult plain = performBountyHuntInteraction(world, &party, true);
     REQUIRE_EQ(plain.messages.size(), 1u);
     CHECK_EQ(plain.messages.front().find("Omnipotent"), std::string::npos);
-    CHECK_FALSE(state.namedGlobalVars.contains("MMerge.BountyHunt.map_b.odm.BossAffix"));
+    CHECK_EQ(state.namedGlobalVars["MMerge.BountyHunt.map_b.odm.BossAffix"], 0);
 }
 
 TEST_CASE("MAW calls a bounty off when anyone but the party slays its target; Standard does not")
@@ -321,8 +354,9 @@ TEST_CASE("MAW calls a bounty off when anyone but the party slays its target; St
     CHECK_EQ(slain(true, true).at("MMerge.BountyHunt.map_b.odm.Done"), 1);
     // An ally, another monster or a trap: MAW drops the bounty (BountyHunt.lua:247-250), so the town offers a new one.
     const std::unordered_map<std::string, int32_t> dropped = slain(true, false);
-    CHECK_FALSE(dropped.contains("MMerge.BountyHunt.map_b.odm.MonsterId"));
-    CHECK_FALSE(dropped.contains("MMerge.BountyHunt.map_b.odm.Done"));
+    CHECK_EQ(dropped.at("MMerge.BountyHunt.map_b.odm.MonsterId"), 0);
+    CHECK_EQ(dropped.at("MMerge.BountyHunt.map_b.odm.Month"), 0);
+    CHECK_EQ(dropped.at("MMerge.BountyHunt.map_b.odm.Done"), 0);
     // Standard: any death fulfils it.
     CHECK_EQ(slain(false, false).at("MMerge.BountyHunt.map_b.odm.Done"), 1);
 }
@@ -395,4 +429,98 @@ TEST_CASE("MAW keeps the Hall under the Hill's unicorns at 1-3 on every difficul
     CHECK_EQ(hall.encounter3.minCount, 1);
     CHECK_EQ(hall.encounter3.maxCount, 3);
     CHECK(other.encounter3.maxCount > 3);
+}
+
+TEST_CASE("an MM9 Jarl posts his region's bounty and its target appears when the party enters the region")
+{
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    std::vector<std::string> row(38);
+    row[0] = "195";
+    row[1] = "Human Mercenary C";
+    row[2] = "Human Mercenary C";
+    row[3] = "10";   // within an empty party's reach (Standard: level 20)
+    row[4] = "100";
+    row[10] = "Short";
+    row[11] = "Normal";
+    row[17] = "Phys";
+    row[18] = "1d6";
+    MonsterTable monsterTable;
+    REQUIRE(monsterTable.loadStatsFromRows({row}));
+    const BountyHuntRemoteMap region = {"Sturmford", "sturmford.blv"};
+
+    // MAW: the region, not the city, must be cleared first.
+    {
+        MawRules rules(RulesetOptions{}, MawMapLevels{});
+        Party party = mawTestParty(rules);
+        OpenYAMM::Tests::PartySpellTestWorldRuntime city = {};
+        EventRuntimeState state = {};
+        city.bindParty(&party);
+        city.bindEventRuntimeState(&state);
+        city.bindMonsterTable(&monsterTable);
+        city.setMapName("Sturmford City");
+        const BountyHuntInteractionResult refused = performBountyHuntInteraction(city, &party, true, nullptr, &region);
+        REQUIRE_EQ(refused.messages.size(), 1u);
+        CHECK_NE(refused.messages.front().find("Sturmford"), std::string::npos);
+        CHECK_FALSE(state.namedGlobalVars.contains("MMerge.BountyHunt.Sturmford.MonsterId"));
+        rules.state().clearedSinceRefill.insert("sturmford.blv");
+        performBountyHuntInteraction(city, &party, true, nullptr, &region);
+        CHECK_EQ(state.namedGlobalVars["MMerge.BountyHunt.Sturmford.Pending"], 1);
+    }
+
+    // Posted in the city: the hunt is the region's, waiting; nothing appears in the city.
+    Party party = {};
+    OpenYAMM::Tests::PartySpellTestWorldRuntime city = {};
+    EventRuntimeState state = {};
+    city.bindParty(&party);
+    city.bindEventRuntimeState(&state);
+    city.bindMonsterTable(&monsterTable);
+    city.setMapName("Sturmford City");
+    const BountyHuntInteractionResult posted = performBountyHuntInteraction(city, &party, true, nullptr, &region);
+    REQUIRE_EQ(posted.messages.size(), 1u);
+    CHECK(posted.succeeded);
+    CHECK_EQ(state.namedGlobalVars["MMerge.BountyHunt.Sturmford.MonsterId"], 195);
+    CHECK_EQ(state.namedGlobalVars["MMerge.BountyHunt.Sturmford.Pending"], 1);
+    CHECK(city.hostileSummonRequests().empty());
+    spawnPendingBountyHunt(city, &party);
+    CHECK(city.hostileSummonRequests().empty());
+
+    // Entering the region places the target once.
+    std::unordered_map<std::string, int32_t> sessionGlobals = state.namedGlobalVars;
+    OpenYAMM::Tests::PartySpellTestWorldRuntime regionWorld = {};
+    regionWorld.bindParty(&party);
+    regionWorld.bindEventRuntimeState(&state);
+    regionWorld.bindMonsterTable(&monsterTable);
+    regionWorld.setMapName("Sturmford");
+    spawnPendingBountyHunt(regionWorld, &party);
+    REQUIRE_EQ(regionWorld.hostileSummonRequests().size(), 1u);
+    CHECK_EQ(regionWorld.hostileSummonRequests().front().monsterId, 195);
+    // Cleared as 0, not erased: the session merges a map's global vars back, so an erased key returned with the next
+    // map load and the target appeared again on every entry that month.
+    CHECK_EQ(state.namedGlobalVars.at("MMerge.BountyHunt.Sturmford.Pending"), 0);
+    spawnPendingBountyHunt(regionWorld, &party);
+    CHECK_EQ(regionWorld.hostileSummonRequests().size(), 1u);
+
+    // Leaving and entering again the same month: the session merges the map's globals back
+    // (GameSession::mergeNamedGlobalVarsFromRuntime) and gives them to the next load; the target stays placed once.
+    for (const auto &[name, value] : state.namedGlobalVars)
+    {
+        sessionGlobals[name] = value;
+    }
+
+    EventRuntimeState reentered = {};
+    reentered.namedGlobalVars = sessionGlobals;
+    OpenYAMM::Tests::PartySpellTestWorldRuntime regionAgain = {};
+    regionAgain.bindParty(&party);
+    regionAgain.bindEventRuntimeState(&reentered);
+    regionAgain.bindMonsterTable(&monsterTable);
+    regionAgain.setMapName("Sturmford");
+    spawnPendingBountyHunt(regionAgain, &party);
+    CHECK(regionAgain.hostileSummonRequests().empty());
+
+    // Slain in the region, the Jarl pays it.
+    markRuntimeBountyHuntMonsterKilled(regionWorld, 195, &monsterTable);
+    CHECK_EQ(state.namedGlobalVars["MMerge.BountyHunt.Sturmford.Done"], 1);
+    const int goldBefore = party.gold();
+    performBountyHuntInteraction(city, &party, true, nullptr, &region);
+    CHECK_GT(party.gold(), goldBefore);
 }

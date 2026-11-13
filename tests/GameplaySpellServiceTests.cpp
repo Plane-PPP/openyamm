@@ -3,6 +3,7 @@
 #include "game/data/GameDataLoader.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayActionController.h"
+#include "game/items/ItemEnchantRuntime.h"
 #include "game/party/SpellIds.h"
 #include "game/rules/GameRules.h"
 #include "game/rules/SpellRules.h"
@@ -548,7 +549,9 @@ TEST_CASE("an attack spell without a target swings the weapon instead")
     REQUIRE(pAttacker != nullptr);
     pAttacker->skills["VampireAbility"] = {"VampireAbility", 5, Game::SkillMastery::Normal};
     pAttacker->learnSpell(Game::spellIdValue(Game::SpellId::Lifedrain));
-    pAttacker->attackSpellName = pLifedrain->name;
+    Game::BattleOrder lifedrain;
+    lifedrain.spellName = pLifedrain->name;
+    pAttacker->battleOrders = {lifedrain};
     pAttacker->spellPoints = 100;
     Tests::PartySpellTestWorldRuntime world;
     world.bindParty(&party);
@@ -591,5 +594,493 @@ TEST_CASE("an attack spell without a target swings the weapon instead")
         CHECK(result.attempted);
         CHECK_FALSE(result.actionPerformed);
         CHECK_EQ(scene.casts, 1);
+    }
+}
+
+TEST_CASE("battle orders: a spell with no target passes to the next order, and a holder hands the press on")
+{
+    using namespace OpenYAMM;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    Engine::AssetFileSystem assets;
+    REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", Engine::AssetScaleTier::X1));
+    Game::GameDataLoader loader;
+    REQUIRE(loader.loadForHeadlessGameplay(assets));
+    Game::GameDataRepository data;
+    data.bind(loader);
+    const Game::SpellEntry *pLifedrain =
+        loader.getSpellTable().findById(int(Game::spellIdValue(Game::SpellId::Lifedrain)));
+    const Game::SpellEntry *pHeal = loader.getSpellTable().findById(int(Game::spellIdValue(Game::SpellId::Heal)));
+    REQUIRE(pLifedrain != nullptr);
+    REQUIRE(pHeal != nullptr);
+    Game::Party party;
+    party.seed(Tests::createSpellRegressionPartySeed());
+
+    // Nobody is hurt: a Heal finds no target.
+    for (size_t index = 0; index < party.members().size(); ++index)
+    {
+        party.member(index)->health = party.reachableMaximumHealth(index);
+    }
+
+    Game::Character *pHealer = party.member(0);
+    REQUIRE(pHealer != nullptr);
+    pHealer->skills["VampireAbility"] = {"VampireAbility", 5, Game::SkillMastery::Normal};
+    pHealer->skills["BodyMagic"] = {"BodyMagic", 5, Game::SkillMastery::Normal};
+    pHealer->learnSpell(Game::spellIdValue(Game::SpellId::Lifedrain));
+    pHealer->learnSpell(Game::spellIdValue(Game::SpellId::Heal));
+    pHealer->spellPoints = 100;
+    Game::BattleOrder heal;
+    heal.spellName = pHeal->name;
+    Game::BattleOrder lifedrain;
+    lifedrain.spellName = pLifedrain->name;
+    Tests::PartySpellTestWorldRuntime world;
+    world.bindParty(&party);
+    world.setPartyPosition(0.0f, 0.0f, 0.0f);
+    Game::GameSession session;
+    session.bindDataRepository(&data);
+    session.bindActiveWorldRuntime(&world);
+    Game::GameplayScreenRuntime &runtime = session.gameplayScreenRuntime();
+    Game::GameSettings settings = Game::GameSettings::createDefault();
+    runtime.bindSettings(&settings);
+    StartingSceneAdapter scene;
+    runtime.bindSceneAdapter(&scene);
+    REQUIRE_EQ(party.activeMemberIndex(), 0);
+    Game::GameplayActionController::PartyAttackConfig config = {
+        .pRuntime = &runtime,
+        .pSpellService = &session.gameplaySpellService(),
+        .pWorldRuntime = &world,
+        .pParty = &party,
+        .pItemTable = &loader.getItemTable(),
+        .pSpellTable = &loader.getSpellTable(),
+        .pMonsterTable = &loader.getMonsterTable(),
+        .pSpecialItemEnchantTable = &loader.getSpecialItemEnchantTable(),
+    };
+
+    SUBCASE("a Heal with nobody hurt passes to Lifedrain at the target")
+    {
+        pHealer->battleOrders = {heal, lifedrain};
+        config.directTargetActorIndex = world.addActor(spellTargetActor(300.0f, true));
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.attempted);
+        CHECK_FALSE(result.held);
+        CHECK_EQ(result.actingMemberIndex, 0);
+        CHECK_EQ(scene.casts, 1);
+    }
+    SUBCASE("an order that is off is skipped")
+    {
+        lifedrain.enabled = false;
+        pHealer->battleOrders = {lifedrain};
+        config.directTargetActorIndex = world.addActor(spellTargetActor(300.0f, true));
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.actionPerformed);
+        CHECK_EQ(scene.casts, 0);
+    }
+    SUBCASE("nothing to do and otherwise hold: the next ready member takes the press")
+    {
+        pHealer->battleOrders = {heal};
+        pHealer->battleOrderFallback = Game::BattleOrderFallback::Hold;
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK_FALSE(result.held);
+        CHECK(result.actionPerformed);
+        CHECK_EQ(result.actingMemberIndex, 1);
+        CHECK_EQ(scene.casts, 0);
+        // The holder spent nothing and is still ready.
+        CHECK_EQ(pHealer->recoverySecondsRemaining, doctest::Approx(0.0f));
+    }
+    SUBCASE("a member without orders blows again as soon as the recovery is over")
+    {
+        pHealer->battleOrders.clear();
+        const Game::GameplayActionController::PartyAttackExecutionResult first =
+            Game::GameplayActionController::executePartyAttack(config);
+        REQUIRE(first.actionPerformed);
+        CHECK_EQ(first.actingMemberIndex, 0);
+        CHECK_GT(pHealer->recoverySecondsRemaining, 0.0f);
+        pHealer->recoverySecondsRemaining = 0.0f;
+        REQUIRE(party.setActiveMemberIndex(0));
+        const Game::GameplayActionController::PartyAttackExecutionResult second =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(second.actionPerformed);
+        CHECK_EQ(second.actingMemberIndex, 0);
+    }
+    SUBCASE("everyone ready holds: nothing happens and the first holder stays selected")
+    {
+        for (size_t index = 0; index < party.members().size(); ++index)
+        {
+            party.member(index)->battleOrders.clear();
+            party.member(index)->battleOrderFallback = Game::BattleOrderFallback::Hold;
+        }
+
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.held);
+        CHECK_FALSE(result.attempted);
+        CHECK_FALSE(result.actionPerformed);
+        CHECK_EQ(party.activeMemberIndex(), 0);
+        CHECK_EQ(scene.casts, 0);
+    }
+}
+
+namespace
+{
+// A scene that carries the party's casts out, so their buffs and heals land, and keeps the requests.
+class CastingSceneAdapter : public StartingSceneAdapter
+{
+public:
+    CastingSceneAdapter(OpenYAMM::Game::Party &party, OpenYAMM::Game::IGameplayWorldRuntime &world,
+        const OpenYAMM::Game::SpellTable &spellTable)
+        : m_party(party)
+        , m_world(world)
+        , m_spellTable(spellTable)
+    {
+    }
+
+    bool tryCastSpellRequest(const OpenYAMM::Game::PartySpellCastRequest &request, const std::string &) override
+    {
+        ++casts;
+        requests.push_back(request);
+        return OpenYAMM::Game::PartySpellSystem::castSpell(m_party, m_world, m_spellTable, request).succeeded();
+    }
+
+    std::vector<OpenYAMM::Game::PartySpellCastRequest> requests;
+
+private:
+    OpenYAMM::Game::Party &m_party;
+    OpenYAMM::Game::IGameplayWorldRuntime &m_world;
+    const OpenYAMM::Game::SpellTable &m_spellTable;
+};
+}
+
+TEST_CASE("upkeep: a press casts the first due spell of a ready member's list")
+{
+    using namespace OpenYAMM;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    Engine::AssetFileSystem assets;
+    REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", Engine::AssetScaleTier::X1));
+    Game::GameDataLoader loader;
+    REQUIRE(loader.loadForHeadlessGameplay(assets));
+    Game::GameDataRepository data;
+    data.bind(loader);
+    const Game::SpellTable &spellTable = loader.getSpellTable();
+    const auto order = [&spellTable](Game::SpellId spell)
+    {
+        const Game::SpellEntry *pSpell = spellTable.findById(int(Game::spellIdValue(spell)));
+        REQUIRE(pSpell != nullptr);
+        Game::BattleOrder upkeep;
+        upkeep.spellName = pSpell->name;
+        return upkeep;
+    };
+    Game::Party party;
+    party.seed(Tests::createSpellRegressionPartySeed());
+
+    for (size_t index = 0; index < party.members().size(); ++index)
+    {
+        party.member(index)->health = party.reachableMaximumHealth(index);
+        party.member(index)->recoverySecondsRemaining = 0.0f;
+    }
+
+    Game::Character *pCaster = party.member(0);
+    REQUIRE(pCaster != nullptr);
+    pCaster->skills["FireMagic"] = {"FireMagic", 5, Game::SkillMastery::Normal};
+    pCaster->skills["BodyMagic"] = {"BodyMagic", 10, Game::SkillMastery::Master};
+
+    for (const Game::SpellId spell : {Game::SpellId::TorchLight, Game::SpellId::Heal, Game::SpellId::Regeneration})
+    {
+        pCaster->learnSpell(Game::spellIdValue(spell));
+    }
+
+    pCaster->spellPoints = 200;
+    Tests::PartySpellTestWorldRuntime world;
+    world.bindParty(&party);
+    world.setPartyPosition(0.0f, 0.0f, 0.0f);
+    Game::GameSession session;
+    session.bindDataRepository(&data);
+    session.bindActiveWorldRuntime(&world);
+    Game::GameplayScreenRuntime &runtime = session.gameplayScreenRuntime();
+    Game::GameSettings settings = Game::GameSettings::createDefault();
+    runtime.bindSettings(&settings);
+    CastingSceneAdapter scene(party, world, spellTable);
+    runtime.bindSceneAdapter(&scene);
+    REQUIRE_EQ(party.activeMemberIndex(), 0);
+    const Game::GameplayActionController::PartyUpkeepConfig config = {
+        .pRuntime = &runtime,
+        .pSpellService = &session.gameplaySpellService(),
+        .pWorldRuntime = &world,
+        .pParty = &party,
+        .pSpellTable = &spellTable,
+        .pressedThisFrame = true,
+    };
+    const auto press = [&config]()
+    {
+        return Game::GameplayActionController::executePartyUpkeep(config);
+    };
+
+    SUBCASE("a missing party buff is cast once, and not again while it lasts")
+    {
+        pCaster->upkeepOrders = {order(Game::SpellId::TorchLight)};
+        const Game::GameplayActionController::PartyUpkeepResult first = press();
+        CHECK(first.castStarted);
+        CHECK_EQ(first.actingMemberIndex, 0);
+        CHECK(party.hasPartyBuff(Game::PartyBuffId::TorchLight));
+        CHECK_LT(pCaster->spellPoints, 200);
+        pCaster->recoverySecondsRemaining = 0.0f;
+        const int spellPoints = pCaster->spellPoints;
+        CHECK_FALSE(press().attempted);
+        CHECK_EQ(scene.casts, 1);
+        CHECK_EQ(pCaster->spellPoints, spellPoints);
+    }
+    SUBCASE("a buff under its renew time is cast again; one with more left is not")
+    {
+        Game::BattleOrder torch = order(Game::SpellId::TorchLight);
+        torch.renewBelowMinutes = 30;
+        pCaster->upkeepOrders = {torch};
+        party.applyPartyBuff(Game::PartyBuffId::TorchLight, 31 * 60.0f, 3, 0, 5, Game::SkillMastery::Normal, 0);
+        CHECK_FALSE(press().attempted);
+        party.clearPartyBuff(Game::PartyBuffId::TorchLight);
+        party.applyPartyBuff(Game::PartyBuffId::TorchLight, 29 * 60.0f, 3, 0, 5, Game::SkillMastery::Normal, 0);
+        CHECK(press().castStarted);
+        REQUIRE(party.partyBuff(Game::PartyBuffId::TorchLight) != nullptr);
+        CHECK_GT(party.partyBuff(Game::PartyBuffId::TorchLight)->remainingSeconds, 3600.0f);
+    }
+    SUBCASE("a spell that is off, or for another place, is passed over")
+    {
+        Game::BattleOrder off = order(Game::SpellId::TorchLight);
+        off.enabled = false;
+        pCaster->upkeepOrders = {off};
+        CHECK_FALSE(press().attempted);
+        // The test world is outdoors.
+        Game::BattleOrder indoors = order(Game::SpellId::TorchLight);
+        indoors.place = Game::BattleOrderPlace::Indoors;
+        pCaster->upkeepOrders = {indoors};
+        CHECK_FALSE(press().attempted);
+        world.setIndoorMap(true);
+        CHECK(press().castStarted);
+    }
+    SUBCASE("a buff on one member goes to a living member without it, each in turn")
+    {
+        pCaster->upkeepOrders = {order(Game::SpellId::Regeneration)};
+        party.member(1)->conditions.set(size_t(Game::CharacterCondition::Dead));
+        std::vector<size_t> targets;
+
+        for (size_t cast = 0; cast < party.members().size(); ++cast)
+        {
+            pCaster->recoverySecondsRemaining = 0.0f;
+            REQUIRE(party.setActiveMemberIndex(0));
+
+            if (press().castStarted)
+            {
+                REQUIRE(scene.requests.back().targetCharacterIndex.has_value());
+                targets.push_back(*scene.requests.back().targetCharacterIndex);
+            }
+        }
+
+        // Everyone but the dead member, once each.
+        CHECK_EQ(targets.size(), party.members().size() - 1);
+        CHECK(std::find(targets.begin(), targets.end(), size_t(1)) == targets.end());
+
+        for (size_t index = 0; index < party.members().size(); ++index)
+        {
+            CHECK_EQ(party.hasCharacterBuff(index, Game::CharacterBuffId::Regeneration), index != 1);
+        }
+    }
+    SUBCASE("a heal waits for a wound, then goes to the wounded member")
+    {
+        pCaster->upkeepOrders = {order(Game::SpellId::Heal), order(Game::SpellId::TorchLight)};
+        // Nobody is hurt: the list goes on to the torch.
+        REQUIRE(press().castStarted);
+        CHECK(party.hasPartyBuff(Game::PartyBuffId::TorchLight));
+        party.member(2)->health = 1;
+        pCaster->recoverySecondsRemaining = 0.0f;
+        REQUIRE(party.setActiveMemberIndex(0));
+        REQUIRE(press().castStarted);
+        CHECK_EQ(scene.requests.back().targetCharacterIndex, std::optional<size_t>(2));
+        CHECK_GT(party.member(2)->health, 1);
+    }
+    SUBCASE("a member in recovery leaves the press to the next ready member")
+    {
+        Game::Character *pSecond = party.member(1);
+        pSecond->skills["FireMagic"] = {"FireMagic", 5, Game::SkillMastery::Normal};
+        pSecond->learnSpell(Game::spellIdValue(Game::SpellId::TorchLight));
+        pSecond->spellPoints = 50;
+        pSecond->upkeepOrders = {order(Game::SpellId::TorchLight)};
+        pCaster->upkeepOrders = {order(Game::SpellId::TorchLight)};
+        pCaster->recoverySecondsRemaining = 5.0f;
+        const Game::GameplayActionController::PartyUpkeepResult result = press();
+        CHECK(result.castStarted);
+        CHECK_EQ(result.actingMemberIndex, 1);
+        REQUIRE_EQ(scene.requests.size(), 1);
+        CHECK_EQ(scene.requests.back().casterMemberIndex, 1);
+    }
+    SUBCASE("members without a list, or with nothing due, are passed over while the key is held")
+    {
+        // Only the third member keeps anything up; the selected first member and the second have no list.
+        Game::Character *pThird = party.member(2);
+        pThird->skills["FireMagic"] = {"FireMagic", 5, Game::SkillMastery::Normal};
+        pThird->learnSpell(Game::spellIdValue(Game::SpellId::TorchLight));
+        pThird->spellPoints = 50;
+        pThird->upkeepOrders = {order(Game::SpellId::TorchLight)};
+        REQUIRE_EQ(party.activeMemberIndex(), 0);
+        const Game::GameplayActionController::PartyUpkeepResult first = press();
+        CHECK(first.castStarted);
+        CHECK_EQ(first.actingMemberIndex, 2);
+        // The repeats of a held key find nothing more, and leave the selection alone.
+        pThird->recoverySecondsRemaining = 0.0f;
+        const size_t selected = party.activeMemberIndex();
+        CHECK_FALSE(press().attempted);
+        CHECK_FALSE(press().attempted);
+        CHECK_EQ(party.activeMemberIndex(), selected);
+        CHECK_EQ(scene.casts, 1);
+    }
+    SUBCASE("a due spell the caster cannot pay for is not cast")
+    {
+        pCaster->upkeepOrders = {order(Game::SpellId::TorchLight)};
+        pCaster->spellPoints = 0;
+        CHECK_FALSE(press().attempted);
+        CHECK_EQ(scene.casts, 0);
+        CHECK_FALSE(party.hasPartyBuff(Game::PartyBuffId::TorchLight));
+    }
+}
+
+namespace
+{
+// A world with a fallback hostile and a destructible face 7 the crosshair can be on; it records the party's shots.
+class DestructibleAimWorld : public OpenYAMM::Tests::PartySpellTestWorldRuntime
+{
+public:
+    std::vector<OpenYAMM::Game::GameplayPartyAttackActorFacts> fallbackActors;
+    bool faceStanding = true;
+    std::vector<OpenYAMM::Game::GameplayPartyAttackProjectileRequest> shots;
+
+    std::vector<OpenYAMM::Game::GameplayPartyAttackActorFacts> collectPartyAttackFallbackActors(
+        const OpenYAMM::Game::GameplayPartyAttackFallbackQuery &query) const override
+    {
+        (void)query;
+        return fallbackActors;
+    }
+
+    bool isPartyAttackMeleeBModelTarget(size_t faceIndex) const override
+    {
+        return faceStanding && faceIndex == 7;
+    }
+
+    bool spawnPartyAttackProjectile(const OpenYAMM::Game::GameplayPartyAttackProjectileRequest &request) override
+    {
+        shots.push_back(request);
+        return true;
+    }
+};
+
+OpenYAMM::Game::GameplayPartyAttackActorFacts fallbackHostile(size_t actorIndex, float x)
+{
+    OpenYAMM::Game::GameplayPartyAttackActorFacts actor;
+    actor.actorIndex = actorIndex;
+    actor.position = {x, 0.0f, 0.0f};
+    actor.radius = 40;
+    actor.height = 120;
+    actor.currentHp = 50;
+    actor.maxHp = 50;
+    actor.hostileToParty = true;
+    actor.visibleForFallback = true;
+    return actor;
+}
+}
+
+TEST_CASE("a crosshair destructible wins over a fallback hostile out of blow reach")
+{
+    using GameplayActionController = OpenYAMM::Game::GameplayActionController;
+    CHECK(GameplayActionController::crosshairDestructibleOverridesFallback(true, 3000.0f));
+    CHECK_FALSE(GameplayActionController::crosshairDestructibleOverridesFallback(true, 200.0f));
+    CHECK_FALSE(GameplayActionController::crosshairDestructibleOverridesFallback(false, 3000.0f));
+}
+
+TEST_CASE("a bow shot with no actor under the crosshair flies at a standing destructible there")
+{
+    using namespace OpenYAMM;
+    const std::filesystem::path sourceRoot = OPENYAMM_SOURCE_DIR;
+    Engine::AssetFileSystem assets;
+    REQUIRE(assets.initialize(sourceRoot, sourceRoot / "assets_dev", Engine::AssetScaleTier::X1));
+    Game::GameDataLoader loader;
+    REQUIRE(loader.loadForHeadlessGameplay(assets));
+    Game::Party party;
+    party.seed(Tests::createSpellRegressionPartySeed());
+    Game::Character *pArcher = party.member(0);
+    REQUIRE(pArcher != nullptr);
+    pArcher->equipment.bow = 61;
+    pArcher->skills["Bow"] = {"Bow", 5, Game::SkillMastery::Normal};
+    DestructibleAimWorld world;
+    world.bindParty(&party);
+    world.setPartyPosition(0.0f, 0.0f, 0.0f);
+    REQUIRE_EQ(party.activeMemberIndex(), 0);
+    Game::GameplayActionController::PartyAttackConfig config = {
+        .pWorldRuntime = &world,
+        .pParty = &party,
+        .pItemTable = &loader.getItemTable(),
+        .pSpellTable = &loader.getSpellTable(),
+        .pMonsterTable = &loader.getMonsterTable(),
+        .pSpecialItemEnchantTable = &loader.getSpecialItemEnchantTable(),
+        .directTargetBModelIndex = 7,
+        .directWorldTargetDistance = 1800.0f,
+        .rayRangedTarget = {1500.0f, 900.0f, 400.0f},
+        .hasRayRangedTarget = true,
+        .randomSeed = 5,
+    };
+
+    SUBCASE("the chain under the crosshair takes the arrow, not the hostile across the yard")
+    {
+        world.fallbackActors = {fallbackHostile(3, 2500.0f)};
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.attempted);
+        CHECK_FALSE(result.targetActorIndex.has_value());
+        REQUIRE_FALSE(world.shots.empty());
+        CHECK_FALSE(world.shots.front().targetActorIndex.has_value());
+        CHECK_EQ(world.shots.front().target.x, doctest::Approx(1500.0f));
+        CHECK_EQ(world.shots.front().target.y, doctest::Approx(900.0f));
+    }
+    SUBCASE("a broken chain gives the shot back to the nearest hostile")
+    {
+        world.faceStanding = false;
+        world.fallbackActors = {fallbackHostile(3, 2500.0f)};
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK_EQ(result.targetActorIndex, std::optional<size_t>(3));
+        REQUIRE_FALSE(world.shots.empty());
+        CHECK_EQ(world.shots.front().targetActorIndex, std::optional<size_t>(3));
+        CHECK_EQ(world.shots.front().target.x, doctest::Approx(2500.0f));
+    }
+    SUBCASE("a hostile within blow reach is still struck")
+    {
+        world.fallbackActors = {fallbackHostile(4, 200.0f)};
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK_EQ(result.targetActorIndex, std::optional<size_t>(4));
+        CHECK(world.shots.empty());
+    }
+    SUBCASE("a Carnage bow shoots an exploding fire arrow that carries its damage range")
+    {
+        Game::ItemEnchantRuntime::applySpecialEnchantBonus(*pArcher, Game::SpecialItemEnchantKind::Carnage);
+        world.faceStanding = false;
+        world.fallbackActors = {fallbackHostile(3, 2500.0f)};
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.attack.explosiveArrow);
+        REQUIRE_FALSE(world.shots.empty());
+        const Game::GameplayPartyAttackProjectileRequest &shot = world.shots.front();
+        CHECK_EQ(shot.damageType, Game::CombatDamageType::Fire);
+        CHECK_FALSE(shot.useActorHitChance);
+        CHECK_EQ(shot.explosionRadius, doctest::Approx(512.0f));
+        CHECK(shot.blastMinimumDamage > 0);
+        CHECK(shot.blastMinimumDamage <= shot.damage);
+        CHECK(shot.damage <= shot.blastMaximumDamage);
+    }
+    SUBCASE("a destructible within blow reach takes a blow, not an arrow")
+    {
+        config.directWorldTargetDistance = 100.0f;
+        const Game::GameplayActionController::PartyAttackExecutionResult result =
+            Game::GameplayActionController::executePartyAttack(config);
+        CHECK(result.attempted);
+        CHECK_EQ(result.attack.mode, Game::CharacterAttackMode::Melee);
+        CHECK(world.shots.empty());
     }
 }

@@ -96,6 +96,24 @@ struct ElementalDamageBonuses
     {
         return fire + air + water + body + light + dark;
     }
+
+    ElementalDamageBonuses &operator+=(const ElementalDamageBonuses &other)
+    {
+        fire += other.fire;
+        air += other.air;
+        water += other.water;
+        body += other.body;
+        light += other.light;
+        dark += other.dark;
+        return *this;
+    }
+};
+
+// The least and most elemental damage a character's weapons add to one blow or arrow.
+struct ElementalDamageRange
+{
+    ElementalDamageBonuses minimum;
+    ElementalDamageBonuses maximum;
 };
 
 struct MonsterDamageResistances
@@ -385,11 +403,21 @@ public:
         float targetDistance,
         std::mt19937 &rng,
         CharacterAttackTuning attackTuning = {});
+    // A Carnage bow's shot (the ExplosiveArrows item flag): a fire arrow that cannot miss and explodes where it strikes.
+    static void applyExplosiveArrows(const Character &character, CharacterAttackResult &attack);
     static SoundId resolveCharacterAttackSoundId(
         const Character &character,
         const ItemTable *pItemTable,
         CharacterAttackMode attackMode);
+    // Where the party aims at an actor, above its feet: 60% of its height.
     static float actorTargetHeight(uint16_t actorHeight);
+    // The same for an actor drawn as a 3D model spanning modelBottom..modelTop above its feet: 60% up the model when
+    // that is lower (a model shorter than its collision height), so a shot meets the body rather than the air above.
+    static float actorTargetHeight(uint16_t actorHeight, float modelBottom, float modelTop);
+    // Whether any part of an actor's upright box (its radius, foot to head) projects into the viewport, so a monster cut
+    // by the screen edge counts as on screen (the party's fallback target, OY-154). Row-major bx view-projection.
+    static bool actorBoxInViewport(
+        const float viewProjection[16], float x, float y, float footZ, float radius, float height);
     // Yaw offset of fan member `projectileIndex` when `projectileCount` projectiles spread evenly across
     // `arcRadians`, centred on the aim direction.
     static float projectileFanYawOffsetRadians(uint32_t projectileCount, uint32_t projectileIndex, float arcRadians);
@@ -482,6 +510,11 @@ public:
         const CharacterDollTypeEntry *pCharacterDollType,
         std::optional<EquipmentSlot> explicitSlot,
         bool preferOffHand);
+    // MM7's Wetsuit worn as armour: its wearer takes no water damage (OY-309).
+    static bool hasWetsuitEquipped(const Character &character);
+    // A character's age: the game's years so far from the starting year, less the birth year, plus magical ageing
+    // (Character::ageModifier); without a birth year, the ageing alone (OY-349).
+    static int characterAge(const Character &character);
     static bool isEquipmentAllowedWithWetsuit(
         const Character &character,
         const ItemTable *pItemTable,

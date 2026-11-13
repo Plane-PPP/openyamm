@@ -1,4 +1,5 @@
 #include "game/outdoor/OutdoorInteractionController.h"
+#include "engine/Localization.h"
 #include "game/rules/GameRules.h"
 #include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
@@ -178,14 +179,15 @@ EventRuntimeState::MapNoteSourcePoint mapNoteSourcePointForInspectHit(
 
 std::string formatFoundItemStatusText(int goldAmount, const std::string &itemName)
 {
-    const std::string resolvedItemName = itemName.empty() ? "item" : itemName;
+    const std::string resolvedItemName = itemName.empty() ? Engine::tr("item") : itemName;
 
     if (goldAmount > 0)
     {
-        return "You found " + std::to_string(goldAmount) + " gold and an item (" + resolvedItemName + ")!";
+        return Engine::tr("You found {gold} gold and an item ({item})!",
+            {{"gold", goldAmount}, {"item", resolvedItemName}});
     }
 
-    return "You found an item (" + resolvedItemName + ")!";
+    return Engine::tr("You found an item ({item})!", {{"item", resolvedItemName}});
 }
 
 uint32_t currentAnimationTicks()
@@ -660,7 +662,7 @@ std::vector<size_t> OutdoorInteractionController::resolveVisibleHostileActorIndi
         const bx::Vec3 actorPoint = {
             pActor->preciseX,
             pActor->preciseY,
-            pActor->preciseZ + GameMechanics::actorTargetHeight(pActor->height)
+            pActor->preciseZ + view.m_pOutdoorWorldRuntime->mapActorTargetHeight(*pActor)
         };
 
         if (!projectWorldPointToScreen(
@@ -727,7 +729,7 @@ std::optional<bx::Vec3> OutdoorInteractionController::resolveSpellActionActorTar
     return bx::Vec3 {
         pActor->preciseX,
         pActor->preciseY,
-        pActor->preciseZ + GameMechanics::actorTargetHeight(pActor->height)
+        pActor->preciseZ + view.m_pOutdoorWorldRuntime->mapActorTargetHeight(*pActor)
     };
 }
 
@@ -1260,7 +1262,7 @@ std::optional<std::string> OutdoorInteractionController::resolveDecorationHint(
         }
         if (pEntry != nullptr && !pEntry->hint.empty())
         {
-            return pEntry->hint;
+            return Engine::localize(pEntry->hint);
         }
         return std::nullopt;
     }
@@ -1885,7 +1887,8 @@ std::string OutdoorInteractionController::resolveActorInspectDisplayName(
         return inspectHit.name;
     }
 
-    if (pActorState->hostileToParty || pActorState->npcId > 0)
+    // world.yml streetNpcs: false (MM9): no generated NPC, so no generated name either.
+    if (pActorState->hostileToParty || pActorState->npcId > 0 || !view.m_gameSession.streetNpcs())
     {
         return inspectHit.name;
     }
@@ -2028,7 +2031,9 @@ GameplayWorldHit OutdoorInteractionController::translateInspectHitToGameplayWorl
     const std::optional<std::string> eventTargetStatusText = resolveEventTargetHoverStatusText(view, inspectHit);
     eventTargetHit.name =
         eventTargetStatusText && !eventTargetStatusText->empty() ? *eventTargetStatusText : inspectHit.name;
-    eventTargetHit.nameEventId = resolveInteractiveDecorationHitEventId(view, inspectHit).value_or(0);
+    const std::optional<uint16_t> interactiveEventId = resolveInteractiveDecorationHitEventId(view, inspectHit);
+    eventTargetHit.nameEventId = interactiveEventId.value_or(inspectEventId(view, inspectHit));
+    eventTargetHit.nameEventIsLocal = !interactiveEventId;
     eventTargetHit.hitPoint = hitPoint;
     eventTargetHit.distance = inspectHit.distance;
     eventTargetHit.openedChestIds = resolveOpenedChestIds(view, inspectHit);
@@ -4130,13 +4135,21 @@ OutdoorGameView::InspectHit OutdoorInteractionController::inspectBModelFace(
                 continue;
             }
 
-            // The item's model box, turned as it lies (GROUND_ITEMS_3D_BEHAVIOUR.md section 5).
-            const std::optional<float> pickDistance = intersectWorldItemPickBox(
-                OutdoorWorldRuntime::worldItemModel(view.data().itemTable(), *pWorldItem),
-                worldItemYawRadians(pWorldItem->worldItemId),
-                {pWorldItem->x, pWorldItem->y, pWorldItem->z},
-                {rayOrigin.x, rayOrigin.y, rayOrigin.z},
-                {rayDirection.x, rayDirection.y, rayDirection.z});
+            // The item's model box, turned as it lies (GROUND_ITEMS_3D_BEHAVIOUR.md section 5) or as its authored pose
+            // turns it.
+            const std::optional<float> pickDistance = pWorldItem->semanticPose
+                ? intersectPosedWorldItemPickBox(
+                    OutdoorWorldRuntime::worldItemModel(view.data().itemTable(), *pWorldItem),
+                    *pWorldItem->semanticPose,
+                    {pWorldItem->x, pWorldItem->y, pWorldItem->z},
+                    {rayOrigin.x, rayOrigin.y, rayOrigin.z},
+                    {rayDirection.x, rayDirection.y, rayDirection.z})
+                : intersectWorldItemPickBox(
+                    OutdoorWorldRuntime::worldItemModel(view.data().itemTable(), *pWorldItem),
+                    worldItemYawRadians(pWorldItem->worldItemId),
+                    {pWorldItem->x, pWorldItem->y, pWorldItem->z},
+                    {rayOrigin.x, rayOrigin.y, rayOrigin.z},
+                    {rayDirection.x, rayDirection.y, rayDirection.z});
             const float distance = pickDistance.value_or(0.0f);
 
             if (pickDistance
@@ -4913,13 +4926,16 @@ bool OutdoorInteractionController::tryActivateActorInspectEvent(OutdoorGameView 
             return false;
         }
 
-        const std::optional<GenericActorDialogResolution> resolution = resolveGenericActorDialog(
-            view.m_map ? view.m_map->fileName : std::string(), resolvedActorName, resolvedActorGroup,
-            *pEventRuntimeState, view.data().npcDialogTable(), &view.data().mergedMonsterPortraitTable(),
-            view.m_map ? &*view.m_map : nullptr, &view.data().mergedNewsAreaTopicTable(),
-            &view.data().mergedNewsContinentTopicTable(), &view.data().mergedNpcNameTable(),
-            &view.data().mergedNpcProfessionTable(), &view.data().mergedBolsterMapTable(),
-            &view.data().mergedBolsterMonsterTable(), resolvedMonsterId, resolvedRuntimeActorIndex);
+        // A world without MMerge street NPCs (world.yml streetNpcs: MM9): no group news, no generated NPC.
+        const std::optional<GenericActorDialogResolution> resolution = !view.m_gameSession.streetNpcs()
+            ? std::nullopt
+            : resolveGenericActorDialog(
+                view.m_map ? view.m_map->fileName : std::string(), resolvedActorName, resolvedActorGroup,
+                *pEventRuntimeState, view.data().npcDialogTable(), &view.data().mergedMonsterPortraitTable(),
+                view.m_map ? &*view.m_map : nullptr, &view.data().mergedNewsAreaTopicTable(),
+                &view.data().mergedNewsContinentTopicTable(), &view.data().mergedNpcNameTable(),
+                &view.data().mergedNpcProfessionTable(), &view.data().mergedBolsterMapTable(),
+                &view.data().mergedBolsterMonsterTable(), resolvedMonsterId, resolvedRuntimeActorIndex);
 
         if (resolution)
         {
@@ -5010,14 +5026,9 @@ bool OutdoorInteractionController::tryActivateWorldItemInspectEvent(
         return view.m_pOutdoorWorldRuntime->activateSemanticLootContainer(inspectHit.bModelIndex);
     }
 
-    if (view.m_pOutdoorWorldRuntime->isSemanticWorldItem(inspectHit.bModelIndex))
-    {
-        return view.m_pOutdoorWorldRuntime->activateSemanticWorldItem(inspectHit.bModelIndex);
-    }
-
     const ItemDefinition *pItemDefinition = view.data().itemTable().get(pWorldItem->item.objectDescriptionId);
     const std::string itemName =
-        pItemDefinition != nullptr ? ItemRuntime::foundItemName(*pItemDefinition) : "item";
+        pItemDefinition != nullptr ? ItemRuntime::foundItemName(*pItemDefinition) : Engine::tr("item");
 
     if (pWorldItem->isGold)
     {
@@ -5029,8 +5040,9 @@ bool OutdoorInteractionController::tryActivateWorldItemInspectEvent(
         }
 
         EventRuntimeState *pEventRuntimeState = view.m_pOutdoorWorldRuntime->eventRuntimeState();
-        const FoundGold foundGold = resolveFoundGold(std::max<uint32_t>(1u, worldItem.goldAmount), pEventRuntimeState);
-        view.m_pOutdoorPartyRuntime->party().addGold(static_cast<int>(foundGold.partyAmount));
+        const FoundGold foundGold = resolveFoundGold(
+            std::max<uint32_t>(1u, worldItem.goldAmount), pEventRuntimeState, &view.m_pOutdoorPartyRuntime->party());
+        view.m_pOutdoorPartyRuntime->party().addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootGround);
         view.setStatusBarEvent(foundGoldStatusText(foundGold));
 
         if (pEventRuntimeState != nullptr)
@@ -5387,7 +5399,7 @@ bool OutdoorInteractionController::canActivateActorInspectEvent(
         return !inspectHitTargetsLivingHostileActor(view, inspectHit);
     }
 
-    if (inspectHitTargetsLivingHostileActor(view, inspectHit))
+    if (inspectHitTargetsLivingHostileActor(view, inspectHit) || !view.m_gameSession.streetNpcs())
     {
         return false;
     }

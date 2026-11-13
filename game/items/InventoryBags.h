@@ -16,6 +16,17 @@ class ItemTable;
 class Party;
 struct Character;
 
+// An item of a member's bag, by the cell it begins at.
+struct BagItemRef
+{
+    size_t memberIndex = 0;
+    uint8_t bag = 0;
+    uint8_t gridX = 0;
+    uint8_t gridY = 0;
+
+    bool operator==(const BagItemRef &) const = default;
+};
+
 // Several bags per character (MAW's multibag, zzMaw-MultiBag.lua; ItemRules::bagCount): the inventory is the open
 // bag, the others wait in the character's ruleset state, each on a grid of its own. Event and quest item checks and the
 // Workbench see every bag (Party::inventoryItemCount, removeItem, removeItemFromMember; CraftingRuntime,
@@ -122,6 +133,17 @@ std::optional<size_t> placeInTaggedBag(
 // Runs the open bag's own operation on `bag`: it is opened for the call and the bag that was open is opened again.
 // False, without the call, when `bag` is beyond `bagCount`.
 bool withBagOpen(Party &party, size_t memberIndex, uint8_t bag, int bagCount, const std::function<bool()> &operation);
+// After the item covering the cell changed in place into another (a bottle mixed into its potion: OY-240), gives it
+// the new item's inventory size: where it lies when that fits without moving another item, else wherever the party has
+// room. False, the item left as it was, when nothing has room or there is no item.
+bool refitChangedItem(
+    Party &party,
+    size_t memberIndex,
+    uint8_t bag,
+    int bagCount,
+    uint8_t gridX,
+    uint8_t gridY,
+    const ItemTable &itemTable);
 // Takes the item covering the cell out of `bag` of the member; the open bag stays open.
 bool takeFromBag(
     Party &party,

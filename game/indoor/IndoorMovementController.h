@@ -171,6 +171,8 @@ public:
         float footZ,
         const IndoorBodyDimensions &body
     ) const;
+    // Whether a floor lies under the point (x, y) from maxRise above z to maxDrop below it: the point alone, no footprint.
+    bool hasFloorAt(float x, float y, float z, float maxRise, float maxDrop) const;
     const IndoorMapData *indoorMapData() const
     {
         return m_pIndoorMapData;
@@ -310,7 +312,13 @@ private:
         // Each face's place in its sectors' floor, wall and ceiling lists (sector, position): the grid's candidates
         // are taken in the order the sector lists give, so ties between equally near faces go the same way.
         std::vector<std::vector<std::pair<int16_t, uint32_t>>> faceSectorListRanks;
+        // Kept when the cache is invalidated: the grid until the door layout changes, the ranks for good.
+        bool sectorFaceGridBuilt = false;
+        uint64_t sectorFaceGridDoorSignature = 0;
+        bool faceSectorListRanksBuilt = false;
         uint64_t surfaceRevision = 0;
+        // Every face's attributes the masks and support lists were built with (the delta's, else the map's).
+        std::vector<uint32_t> faceAttributes;
     };
     struct IndoorWallCollision
     {
@@ -394,7 +402,20 @@ private:
     };
 
     void refreshRuntimeGeometryCache() const;
+    // Face bits changed and no face moved: the masks and support lists redo the changed faces alone.
+    void refreshChangedFaceAttributes(const MapDeltaData &mapDeltaData) const;
+    void rebuildMechanismSupportFaceIds(const MapDeltaData &mapDeltaData) const;
+    bool faceIsCachedInvisibleSupportRamp(size_t faceId, const MapDeltaData *pMapDeltaData) const;
+    bool faceExcludedFromActorSupport(size_t faceId) const;
+    uint32_t effectiveFaceAttributes(size_t faceId, const MapDeltaData *pMapDeltaData) const;
     const RuntimeGeometryCache &runtimeGeometryCache() const;
+    // A grounded body that stands still or heads onto a flat tread its footprint overlaps keeps standing on it.
+    IndoorMoveState holdFootprintSupport(
+        const IndoorMoveState &start,
+        const IndoorMoveState &resolved,
+        const IndoorBodyDimensions &body,
+        bool requireWalkableSupport
+    ) const;
     const IndoorMapData *m_pIndoorMapData = nullptr;
     const std::optional<MapDeltaData> *m_pMapDeltaData = nullptr;
     const std::optional<EventRuntimeState> *m_pEventRuntimeState = nullptr;

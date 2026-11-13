@@ -1,9 +1,13 @@
 #include "game/ui/GameplayJournalAuras.h"
+#include "game/ui/GameplayObsidianPainter.h"
 
+#include "engine/Localization.h"
+#include "engine/Utf8Text.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/party/SkillData.h"
+#include "game/party/WorldSpells.h"
 #include "game/rules/GameRules.h"
 #include "game/tables/SpellTable.h"
 #include "game/ui/GameplayHudCommon.h"
@@ -93,23 +97,15 @@ constexpr float MenuRowHeight = 20;
 constexpr float TextHeight = 9.5f;
 constexpr float SmallHeight = 8;
 
-constexpr std::array<const char *, 5> MasteryNames = {"", "Normal", "Expert", "Master", "Grandmaster"};
-constexpr std::array<const char *, 5> StateNames = {"Active", "Partly used", "Adds nothing", "Suspended", "Blessing"};
-constexpr std::array<const char *, 5> LegendTexts = {"full effect", "a stronger source covers part",
-    "a stronger source covers all", "holder down: off, still reserved", "temple, scroll or pedestal; reserves nothing"};
+constexpr std::array<std::string_view, 5> MasteryNames = {"", Engine::trNoop("Normal"), Engine::trNoop("Expert"),
+    Engine::trNoop("Master"), Engine::trNoop("Grandmaster")};
+constexpr std::array<std::string_view, 5> StateNames = {Engine::trNoop("Active"), Engine::trNoop("Partly used"),
+    Engine::trNoop("Adds nothing"), Engine::trNoop("Suspended"), Engine::trNoop("Blessing")};
+constexpr std::array<std::string_view, 5> LegendTexts = {Engine::trNoop("full effect"),
+    Engine::trNoop("a stronger source covers part"), Engine::trNoop("a stronger source covers all"),
+    Engine::trNoop("holder down: off, still reserved"), Engine::trNoop("temple, scroll or pedestal; reserves nothing")};
 
-struct Rect
-{
-    float x = 0;
-    float y = 0;
-    float width = 0;
-    float height = 0;
-
-    bool contains(float pointX, float pointY) const
-    {
-        return pointX >= x && pointX < x + width && pointY >= y && pointY < y + height;
-    }
-};
+using Rect = GameplayObsidianRect;
 
 Rect pageRect(const GameplayResolvedHudLayoutElement &page, float x, float y, float width, float height)
 {
@@ -181,12 +177,15 @@ std::string shortLabel(const std::string &label)
     const size_t comma = label.find(", ");
     std::string result = comma != std::string::npos ? label.substr(comma + 2) : label;
 
-    if (!result.empty() && result[0] >= 'A' && result[0] <= 'Z' && result.find(' ') == std::string::npos)
+    if (result.empty() || result.find(' ') != std::string::npos)
     {
-        result[0] = char(result[0] - 'A' + 'a');
+        return result;
     }
 
-    return result;
+    const Engine::Utf8::Character first = Engine::Utf8::decode(result, 0);
+    std::string lowered;
+    Engine::Utf8::append(lowered, Engine::Utf8::lower(first.point));
+    return lowered + result.substr(first.size);
 }
 
 // The spell's name as the rules give it (MAW's Meditation on Telepathy's id).
@@ -197,30 +196,34 @@ std::string spellName(const GameplayScreenRuntime &context, uint32_t spellId)
 
     if (pSpell == nullptr || pSpell->name.empty())
     {
-        return "Spell " + std::to_string(spellId);
+        return Engine::tr("Spell {id}", {{"id", spellId}});
     }
 
-    return pParty != nullptr && !pParty->members().empty()
-        ? gameRulesFor(pParty).spells.spellName(pParty->members().front(), *pSpell) : pSpell->name;
+    // In the interface language, as the buff panels name them (issue #31, OY-577).
+    return Engine::localize(pParty != nullptr && !pParty->members().empty()
+            ? partySpellName(pParty, pParty->members().front(), *pSpell) : pSpell->name,
+        "spell");
 }
 
 std::string memberName(const Party &party, std::optional<size_t> memberIndex)
 {
     const Character *pMember = memberIndex ? party.member(*memberIndex) : nullptr;
-    return pMember != nullptr ? pMember->name : std::string("a blessing");
+    return pMember != nullptr ? pMember->name : Engine::tr("a blessing");
 }
 
-std::string possessive(const std::string &name)
+// English writes the possessive of a name ending in s without a second s ("Lewis'"); the sentences have both forms.
+bool plainPossessive(const std::string &name)
 {
-    return name + (!name.empty() && name.back() == 's' ? "'" : "'s");
+    return name.empty() || name.back() != 's';
 }
 
 // What happened to a holder whose auras are off.
 std::string downWord(const Character &member)
 {
-    return member.conditions.test(size_t(CharacterCondition::Eradicated)) ? "eradicated"
-        : member.conditions.test(size_t(CharacterCondition::Dead)) ? "dead"
-        : member.conditions.test(size_t(CharacterCondition::Petrified)) ? "stoned" : "unconscious";
+    return member.conditions.test(size_t(CharacterCondition::Eradicated)) ? Engine::tr("eradicated")
+        : member.conditions.test(size_t(CharacterCondition::Dead)) ? Engine::tr("dead")
+        : member.conditions.test(size_t(CharacterCondition::Petrified)) ? Engine::tr("stoned")
+        : Engine::tr("unconscious");
 }
 
 // A stronger source in words: "Hour of Power (Serena)", "own potion".
@@ -228,207 +231,65 @@ std::string rivalName(const GameplayScreenRuntime &context, const Party &party, 
 {
     if (rival.potion)
     {
-        return "own " + spellName(context, rival.spellId) + " potion";
+        return Engine::tr("own {spell} potion", {{"spell", spellName(context, rival.spellId)}});
     }
 
-    return spellName(context, rival.spellId) + (rival.memberIndex ? " (" + memberName(party, rival.memberIndex) + ")"
-        : std::string(" (blessing)"));
+    return rival.memberIndex
+        ? Engine::tr("{spell} ({member})",
+            {{"spell", spellName(context, rival.spellId)}, {"member", memberName(party, rival.memberIndex)}})
+        : Engine::tr("{spell} (blessing)", {{"spell", spellName(context, rival.spellId)}});
 }
 
-std::string poolUnit(const AuraMemberPool &pool)
+// "120 SP", "45 HP".
+std::string pointsText(const std::string &points, bool health)
 {
-    return pool.health ? "HP" : "SP";
+    return health ? Engine::tr("{points} HP", {{"points", points}}) : Engine::tr("{points} SP", {{"points", points}});
+}
+
+// The effect as the interface language shows it: its label comes from the rules in English.
+std::string effectLabel(const AuraEffect &effect)
+{
+    return Engine::localizeKnown(effect.label);
+}
+
+std::string effectValueText(const AuraEffect &effect)
+{
+    return effect.kind == AuraValueKind::Text ? Engine::localizeKnown(effect.text) : effectValue(effect);
 }
 
 std::string reservedText(const AuraReportEntry &entry, bool brief)
 {
     if (!entry.holder || entry.cost.free)
     {
-        return brief ? "-" : "nothing";
+        return brief ? "-" : Engine::tr("nothing");
     }
 
-    const std::string unit = entry.cost.health ? (brief ? "HP" : "hit points") : (brief ? "SP" : "spell points");
-    return entry.cost.flat ? std::to_string(entry.cost.points) + " " + unit : number(entry.cost.percent) + " %";
+    if (!entry.cost.flat)
+    {
+        return number(entry.cost.percent) + " %";
+    }
+
+    const std::string points = std::to_string(entry.cost.points);
+
+    if (brief)
+    {
+        return pointsText(points, entry.cost.health);
+    }
+
+    return entry.cost.health ? Engine::tr("{points} hit points", {{"points", points}})
+                             : Engine::tr("{points} spell points", {{"points", points}});
 }
 
-float fontScale(const GameplayScreenRuntime &context, const std::string &font, float logicalHeight, float scale)
-{
-    const int height = std::max(1, context.hudFontHeight(font));
-    const float wanted = logicalHeight * scale / float(height);
-    return wanted >= 1.0f ? GameplayHudCommon::snappedHudFontScale(wanted) : std::max(0.5f, wanted);
-}
 
-class Painter
+// The shared Obsidian drawing with the aura page's own pieces: pool bars, state pills and the hatch.
+class Painter : public GameplayObsidianPainter
 {
 public:
-    Painter(GameplayScreenRuntime &context, const GameplayResolvedHudLayoutElement &page)
-        : m_context(context)
-        , m_page(page)
-    {
-    }
+    using GameplayObsidianPainter::GameplayObsidianPainter;
 
-    Rect rect(float x, float y, float width, float height) const
-    {
-        return pageRect(m_page, x, y, width, height);
-    }
-
-    void fill(const Rect &rect, uint32_t colour) const
-    {
-        if (const std::optional<GameplayHudTextureHandle> texture = solid(colour);
-            texture && rect.width > 0 && rect.height > 0)
-        {
-            m_context.submitHudTexturedQuad(*texture, rect.x, rect.y, rect.width, rect.height);
-        }
-    }
-
-    void frame(const Rect &rect, uint32_t colour) const
-    {
-        const float line = std::max(1.0f, std::round(m_page.scale * 0.6f));
-        fill({rect.x, rect.y, rect.width, line}, colour);
-        fill({rect.x, rect.y + rect.height - line, rect.width, line}, colour);
-        fill({rect.x, rect.y, line, rect.height}, colour);
-        fill({rect.x + rect.width - line, rect.y, line, rect.height}, colour);
-    }
-
-    float width(const std::string &font, float height, const std::string &value) const
-    {
-        return m_context.measureHudTextWidth(font, value) * fontScale(m_context, font, height, m_page.scale)
-            / m_page.scale;
-    }
-
-    // Text with its top left at page units (x, y); align 0 left, 1 centred on x, 2 ending at x. Returns its width.
-    float text(const std::string &font, float height, uint32_t colour, const std::string &value, float x, float y,
-        int align = 0) const
-    {
-        if (value.empty())
-        {
-            return 0;
-        }
-
-        const float scale = fontScale(m_context, font, height, m_page.scale);
-        const float measured = m_context.measureHudTextWidth(font, value) * scale;
-        float left = m_page.x + x * m_page.scale;
-        left -= align == 1 ? measured / 2 : align == 2 ? measured : 0;
-        m_context.renderHudTextLine(font, colour, value, std::round(left), std::round(m_page.y + y * m_page.scale),
-            scale);
-        return measured / m_page.scale;
-    }
-
-    std::string fitted(const std::string &font, float height, const std::string &value, float available) const
-    {
-        if (width(font, height, value) <= available)
-        {
-            return value;
-        }
-
-        std::string result = value;
-
-        while (result.size() > 1)
-        {
-            result.pop_back();
-
-            while (!result.empty() && result.back() == ' ')
-            {
-                result.pop_back();
-            }
-
-            if (width(font, height, result + "...") <= available)
-            {
-                return result + "...";
-            }
-        }
-
-        return result;
-    }
-
-    std::vector<std::string> wrapped(const std::string &font, float height, const std::string &value,
-        float available) const
-    {
-        const float scale = fontScale(m_context, font, height, m_page.scale);
-        return m_context.wrapHudTextToWidth(font, value, available * m_page.scale / scale);
-    }
-
-    void texture(const std::string &name, const Rect &rect, uint32_t tint = 0xffffffffu) const
-    {
-        const std::optional<GameplayHudTextureHandle> handle =
-            m_context.gameplayUiRuntime().ensureHudTextureLoaded(name);
-
-        if (!handle)
-        {
-            return;
-        }
-
-        if (tint == 0xffffffffu)
-        {
-            m_context.submitHudTexturedQuad(*handle, rect.x, rect.y, rect.width, rect.height);
-            return;
-        }
-
-        GameplayHudBatchQuad quad;
-        quad.textureHandle = handle->textureHandle;
-        quad.x = rect.x;
-        quad.y = rect.y;
-        quad.width = rect.width;
-        quad.height = rect.height;
-        quad.tintAbgr = tint;
-        m_context.submitHudQuadBatch({quad});
-    }
-
-    // A spell's icon fitted into the box, keeping its aspect: the spellbook's own lit icon for the spell (the icons
-    // are not numbered in spell order).
     void icon(uint32_t spellId, const Rect &box, bool dim) const
     {
-        const SpellbookSchoolUiDefinition *pSchool = findSpellbookSchoolUiDefinitionForSpellId(spellId);
-
-        if (pSchool == nullptr)
-        {
-            return;
-        }
-
-        const GameplayScreenRuntime::HudLayoutElement *pLayout = m_context.findHudLayoutElement(
-            spellbookSpellLayoutId(pSchool->school, spellId - pSchool->firstSpellId + 1));
-
-        if (pLayout == nullptr || (pLayout->hoverAsset.empty() && pLayout->primaryAsset.empty()))
-        {
-            return;
-        }
-
-        const std::string name = !pLayout->hoverAsset.empty() ? pLayout->hoverAsset : pLayout->primaryAsset;
-        const std::optional<GameplayHudTextureHandle> handle =
-            m_context.gameplayUiRuntime().ensureHudTextureLoaded(name);
-
-        if (!handle || handle->width <= 0 || handle->height <= 0)
-        {
-            return;
-        }
-
-        const float fit = std::min(box.width / handle->width, box.height / handle->height);
-        const float iconWidth = handle->width * fit;
-        const float iconHeight = handle->height * fit;
-        texture(name, {box.x + (box.width - iconWidth) / 2, box.y + (box.height - iconHeight) / 2, iconWidth,
-            iconHeight}, dim ? 0xff707070u : 0xffffffffu);
-    }
-
-    // A member's face in an oval with a brass rim, greyed while they are down.
-    void face(const Character &member, const Rect &box, bool down) const
-    {
-        const std::string name = m_context.resolvePortraitTextureName(member);
-        const std::optional<GameplayHudTextureHandle> handle =
-            m_context.gameplayUiRuntime().ensureHudTextureLoaded(name);
-        const float rim = std::max(1.0f, m_page.scale * 0.8f);
-        ellipse(solid(Brass), {box.x - rim, box.y - rim, box.width + 2 * rim, box.height + 2 * rim});
-
-        if (handle)
-        {
-            // The face's middle, as the portraits frame it.
-            m_context.gameplayUiRuntime().submitHudTexturedEllipse(handle->textureHandle, box.x, box.y, box.width,
-                box.height, 0.12f, 0.06f, 0.88f, 0.86f);
-        }
-
-        if (down)
-        {
-            ellipse(solid(Shade), box);
-        }
+        spellIcon(spellId, box, dim);
     }
 
     // A pool bar as the reserve study's option A: the fill, a hatched span for what the auras hold and a gold mark
@@ -483,7 +344,7 @@ public:
             {abgr(0x8fc3ff), abgr(0x4b6a80), abgr(0x0f1d2a, 0x66)},
         }};
         const std::array<uint32_t, 3> &colour = Colours[size_t(state)];
-        const std::string name = StateNames[size_t(state)];
+        const std::string name = Engine::tr(StateNames[size_t(state)]);
         const float textWidth = width(TextFont, SmallHeight, name);
         const Rect box = rect(x - textWidth / 2 - 4.5f, y, textWidth + 9, 11.5f);
         fill(box, colour[2]);
@@ -493,85 +354,10 @@ public:
 
     float pillWidth(AuraState state) const
     {
-        return width(TextFont, SmallHeight, StateNames[size_t(state)]) + 9;
-    }
-
-    // A Carved Obsidian menu button (the study's omenu_button_small or _danger plates) with its Fondamento label.
-    void button(const Rect &box, const std::string &label, bool danger, bool enabled, bool hovered, bool pressed,
-        bool arrow = false) const
-    {
-        const std::string base = std::string("hud_x2/menus/omenu_button_") + (danger && enabled ? "danger_" : "small_");
-        const std::string state = !enabled ? "disabled" : pressed ? "pressed" : hovered ? "hover" : "default";
-        texture(base + state + ".png", box);
-        const float height = box.height / m_page.scale * 0.6f;
-        const float textWidth = width(TitleFont, height, label);
-        const float labelWidth = textWidth + (arrow ? 8 : 0);
-        const float x = (box.x - m_page.x) / m_page.scale + (box.width / m_page.scale - labelWidth) / 2;
-        const float y = (box.y - m_page.y) / m_page.scale + (box.height / m_page.scale - height) / 2 - 0.5f
-            + (pressed ? 0.6f : 0);
-        const uint32_t colour = !enabled ? abgr(0x8c8670) : hovered ? abgr(0xffefd4) : abgr(0xe8d1a4);
-        text(TitleFont, height, colour, label, x, y);
-
-        if (arrow)
-        {
-            const float ax = x + textWidth + 5;
-            const float ay = y + height * 0.45f;
-            lines({{ax - 2.2f, ay, ax, ay + 2.4f}, {ax, ay + 2.4f, ax + 2.2f, ay}}, colour, 1.1f);
-        }
+        return width(TextFont, SmallHeight, Engine::tr(StateNames[size_t(state)])) + 9;
     }
 
 private:
-    struct Segment
-    {
-        float x1;
-        float y1;
-        float x2;
-        float y2;
-    };
-
-    std::optional<GameplayHudTextureHandle> solid(uint32_t colour) const
-    {
-        char name[40] = {};
-        std::snprintf(name, sizeof(name), "__journal_auras_%08x", colour);
-        return m_context.gameplayUiRuntime().ensureSolidHudTextureLoaded(name, colour);
-    }
-
-    void ellipse(const std::optional<GameplayHudTextureHandle> &texture, const Rect &box) const
-    {
-        if (texture)
-        {
-            m_context.gameplayUiRuntime().submitHudTexturedEllipse(texture->textureHandle, box.x, box.y, box.width,
-                box.height);
-        }
-    }
-
-    void lines(const std::vector<Segment> &segments, uint32_t colour, float lineWidth) const
-    {
-        const std::optional<GameplayHudTextureHandle> texture = solid(colour);
-
-        if (!texture)
-        {
-            return;
-        }
-
-        std::vector<GameplayHudBatchQuad> quads;
-
-        for (const Segment &segment : segments)
-        {
-            GameplayHudBatchQuad quad;
-            quad.textureHandle = texture->textureHandle;
-            quad.line = true;
-            quad.width = std::max(1.0f, lineWidth * m_page.scale);
-            quad.x = m_page.x + segment.x1 * m_page.scale;
-            quad.y = m_page.y + segment.y1 * m_page.scale;
-            quad.x2 = m_page.x + segment.x2 * m_page.scale;
-            quad.y2 = m_page.y + segment.y2 * m_page.scale;
-            quads.push_back(quad);
-        }
-
-        m_context.submitHudQuadBatch(quads);
-    }
-
     // The mana arcs' blue as a vertical gradient (GameplayUiSkin's Mana material).
     std::optional<GameplayHudTextureHandle> manaTexture() const
     {
@@ -677,9 +463,6 @@ private:
 
         m_context.submitHudQuadBatch(quads);
     }
-
-    GameplayScreenRuntime &m_context;
-    const GameplayResolvedHudLayoutElement &m_page;
 };
 
 std::optional<AuraReport> reportOf(const GameplayScreenRuntime &context)
@@ -874,7 +657,8 @@ void activateJournalAuraTarget(
                 && spells.castAura(*pParty, *pShown->holder, pShown->spellId) == AuraCastResult::Released)
             {
                 spells.updateAuras(*pParty, 0.0f);
-                context.setStatusBarEvent(spellName(context, pShown->spellId) + " released");
+                context.setStatusBarEvent(
+                    Engine::tr("{spell} released", {{"spell", spellName(context, pShown->spellId)}}));
             }
 
             break;
@@ -904,7 +688,7 @@ void activateJournalAuraTarget(
             // A cast as the new holder, as from the spellbook: they must be ready, and pay its recovery.
             if (!GameMechanics::canTakeGameplayAction(*pMember))
             {
-                context.setStatusBarEvent(pMember->name + " is not ready");
+                context.setStatusBarEvent(Engine::tr("{name} is not ready", {{"name", pMember->name}}));
                 journal.auraMoveMenuOpen = true;
                 break;
             }
@@ -957,17 +741,14 @@ void renderJournalAuras(
     const AuraReportEntry *pShown = shownAura(*report, journal.auraSelected);
 
     // Header: the title and the party's totals.
-    paint.text(TitleFont, 22, Label, "Auras", ContentWidth / 2, 7, 1);
-    const std::string held = std::to_string(report->auras.size()) + (report->auras.size() == 1 ? " aura" : " auras")
-        + " held";
-    std::string reserved = grouped(report->reservedSpellPoints) + " spell points";
-
-    if (report->reservedHitPoints > 0)
-    {
-        reserved += " and " + grouped(report->reservedHitPoints) + " hit points";
-    }
-
-    const std::string totals = held + Dot + reserved + " reserved" + Dot + "releasing is free";
+    paint.text(TitleFont, 22, Label, Engine::tr("Auras"), ContentWidth / 2, 7, 1);
+    const std::string held =
+        Engine::trn("{count} aura held", "{count} auras held", report->auras.size(), {{"count", report->auras.size()}});
+    const std::string reserved = report->reservedHitPoints > 0
+        ? Engine::tr("{spellPoints} spell points and {hitPoints} hit points reserved",
+            {{"spellPoints", grouped(report->reservedSpellPoints)}, {"hitPoints", grouped(report->reservedHitPoints)}})
+        : Engine::tr("{spellPoints} spell points reserved", {{"spellPoints", grouped(report->reservedSpellPoints)}});
+    const std::string totals = held + Dot + reserved + Dot + Engine::tr("releasing is free");
     paint.text(TextFont, TextHeight, Muted, totals, ContentWidth / 2, 37, 1);
 
     // The members' cards.
@@ -986,12 +767,11 @@ void renderJournalAuras(
         if (pool.conscious)
         {
             paint.text(TextFont, SmallHeight, Muted, paint.fitted(TextFont, SmallHeight,
-                displayClassName(member.className), CardWidth - 40), x + 36, CardTop + 20);
+                Engine::localizeKnown(displayClassName(member.className)), CardWidth - 40), x + 36, CardTop + 20);
         }
         else
         {
-            std::string word = downWord(member);
-            word[0] = char(word[0] - 'a' + 'A');
+            const std::string word = Engine::Utf8::capitalizedFirst(downWord(member));
             paint.text(TextFont, SmallHeight, Bad, word, x + 36, CardTop + 20);
         }
 
@@ -1000,29 +780,31 @@ void renderJournalAuras(
 
         if (pool.maximum <= 0)
         {
-            paint.text(TextFont, SmallHeight, Muted, "no spell points", x + 5.5f, lineY);
+            paint.text(TextFont, SmallHeight, Muted, Engine::tr("no spell points"), x + 5.5f, lineY);
         }
         else if (pool.reserved <= 0)
         {
-            paint.text(TextFont, SmallHeight, Muted, pool.reservesNothing ? "reserves nothing" : "holds nothing",
-                x + 5.5f, lineY);
-            paint.text(TextFont, SmallHeight, Muted, grouped(pool.maximum) + " " + poolUnit(pool),
+            paint.text(TextFont, SmallHeight, Muted,
+                pool.reservesNothing ? Engine::tr("reserves nothing") : Engine::tr("holds nothing"), x + 5.5f, lineY);
+            paint.text(TextFont, SmallHeight, Muted, pointsText(grouped(pool.maximum), pool.health),
                 x + CardWidth - 5.5f, lineY, 2);
         }
         else
         {
             const float numberWidth = paint.text(TextFont, SmallHeight, Gold, grouped(pool.reserved), x + 5.5f, lineY);
-            paint.text(TextFont, SmallHeight, Body, " " + poolUnit(pool) + " held", x + 5.5f + numberWidth, lineY);
-            paint.text(TextFont, SmallHeight, Muted, grouped(std::max(0, pool.maximum - pool.reserved)) + " free",
+            paint.text(TextFont, SmallHeight, Body, " " + (pool.health ? Engine::tr("HP held") : Engine::tr("SP held")),
+                x + 5.5f + numberWidth, lineY);
+            paint.text(TextFont, SmallHeight, Muted,
+                Engine::tr("{points} free", {{"points", grouped(std::max(0, pool.maximum - pool.reserved))}}),
                 x + CardWidth - 5.5f, lineY, 2);
         }
     }
 
     // The held auras.
-    paint.text(TextFont, SmallHeight, Muted, "Aura", 28, HeaderTop);
-    paint.text(TextFont, SmallHeight, Muted, "Holder", 118, HeaderTop);
-    paint.text(TextFont, SmallHeight, Muted, "Reserved", 203, HeaderTop, 2);
-    paint.text(TextFont, SmallHeight, Muted, "State", 232, HeaderTop, 1);
+    paint.text(TextFont, SmallHeight, Muted, Engine::tr("Aura"), 28, HeaderTop);
+    paint.text(TextFont, SmallHeight, Muted, Engine::tr("Holder"), 118, HeaderTop);
+    paint.text(TextFont, SmallHeight, Muted, Engine::tr("Reserved"), 203, HeaderTop, 2);
+    paint.text(TextFont, SmallHeight, Muted, Engine::tr("State"), 232, HeaderTop, 1);
     paint.fill(paint.rect(ListLeft, RowTop - 1.5f, ListRight - ListLeft, 0.6f), CardBorder);
     const size_t scroll = std::min(journal.auraScroll, maximumScroll(*report));
     std::optional<size_t> lastHolder;
@@ -1055,7 +837,7 @@ void renderJournalAuras(
         paint.text(TextFont, TextHeight, dim ? Dim : Ivory,
             paint.fitted(TextFont, TextHeight, spellName(context, entry.spellId), 86), 28, y + 4);
         const std::string holder = entry.holder ? memberName(*pParty, entry.holder)
-            : entry.templeBlessing ? std::string("Temple") : std::string("Place");
+            : entry.templeBlessing ? Engine::tr("Temple") : Engine::tr("Place");
         paint.text(TextFont, SmallHeight, Body, paint.fitted(TextFont, SmallHeight, holder, 50), 118, y + 5);
         paint.text(TextFont, 8.5f, Gold, reservedText(entry, true), 203, y + 4.6f, 2);
         paint.pill(entry.state, 232, y + 3.5f);
@@ -1063,8 +845,8 @@ void renderJournalAuras(
 
     if (report->auras.empty())
     {
-        paint.text(TextFont, TextHeight, Muted, "Nobody holds an aura. Cast a buff spell to hold it.", ListLeft + 4,
-            RowTop + 4);
+        paint.text(TextFont, TextHeight, Muted, Engine::tr("Nobody holds an aura. Cast a buff spell to hold it."),
+            ListLeft + 4, RowTop + 4);
     }
     else if (report->auras.size() > VisibleRows)
     {
@@ -1101,11 +883,20 @@ void renderJournalAuras(
             school.resize(school.size() - 5);
         }
 
-        const std::string strength = school + " " + MasteryNames[size_t(std::clamp(entry.mastery, 0, 4))] + ", skill "
-            + number(entry.skill, 0) + (entry.skillCapped ? " (cap)" : "") + Dot + "level "
-            + std::to_string(entry.level);
-        const std::string byLine = pHolder != nullptr ? "Held by " + holderName + Dot + strength
-            : (entry.templeBlessing ? "Temple blessing" : "Blessing of this place") + Dot + "skill 7, Master, level 40";
+        // The school's skill name without "Magic" ("Fire Magic" is the Fire school).
+        const std::string schoolName = Engine::localizeKnown(school);
+        const std::string_view mastery = MasteryNames[size_t(std::clamp(entry.mastery, 0, 4))];
+        const std::string masteryName = mastery.empty() ? std::string() : Engine::tr(mastery);
+        const std::string strength = (entry.skillCapped
+                ? Engine::tr("{school} {mastery}, skill {skill} (cap)",
+                    {{"school", schoolName}, {"mastery", masteryName}, {"skill", number(entry.skill, 0)}})
+                : Engine::tr("{school} {mastery}, skill {skill}",
+                    {{"school", schoolName}, {"mastery", masteryName}, {"skill", number(entry.skill, 0)}}))
+            + Dot + Engine::tr("level {level}", {{"level", entry.level}});
+        const std::string byLine = pHolder != nullptr
+            ? Engine::tr("Held by {holder}", {{"holder", holderName}}) + Dot + strength
+            : (entry.templeBlessing ? Engine::tr("Temple blessing") : Engine::tr("Blessing of this place")) + Dot
+                + Engine::tr("skill 7, Master, level 40");
         paint.text(TextFont, 8.5f, Muted, paint.fitted(TextFont, 8.5f, byLine, Right - 320), 320, 151);
         float y = 172;
         const auto note = [&](const std::string &value, uint32_t colour, float height = SmallHeight)
@@ -1123,34 +914,40 @@ void renderJournalAuras(
         };
 
         // What it reserves and its state.
-        paint.text(TextFont, TextHeight, Body, "Reserves", Left, y);
+        paint.text(TextFont, TextHeight, Body, Engine::tr("Reserves"), Left, y);
 
         if (pHolder == nullptr || entry.cost.free)
         {
-            paint.text(TextFont, TextHeight, Ivory, pHolder == nullptr ? "nothing" : "nothing (class)", Right, y, 2);
+            paint.text(TextFont, TextHeight, Ivory,
+                pHolder == nullptr ? Engine::tr("nothing") : Engine::tr("nothing (class)"), Right, y, 2);
         }
         else
         {
-            const std::string unit = entry.cost.health ? "hit points" : "spell points";
             const uint32_t colour = entry.cost.health ? Good : Mana;
             float x = Right;
 
             if (entry.cost.flat)
             {
-                x -= paint.text(TextFont, TextHeight, Body, " (flat)", x, y, 2);
-                paint.text(TextFont, TextHeight, colour, std::to_string(entry.cost.points) + " " + unit, x, y, 2);
+                x -= paint.text(TextFont, TextHeight, Body, " " + Engine::tr("(flat)"), x, y, 2);
+                paint.text(TextFont, TextHeight, colour, reservedText(entry, false), x, y, 2);
             }
             else
             {
+                // "12 % of Serena's spell points · 120", the percent and the points in their own colours.
+                const bool plain = plainPossessive(holderName);
+                const std::string share = entry.cost.health
+                    ? (plain ? Engine::tr("of {holder}'s hit points", {{"holder", holderName}})
+                             : Engine::tr("of {holder}' hit points", {{"holder", holderName}}))
+                    : (plain ? Engine::tr("of {holder}'s spell points", {{"holder", holderName}})
+                             : Engine::tr("of {holder}' spell points", {{"holder", holderName}}));
                 x -= paint.text(TextFont, TextHeight, Ivory, grouped(entry.cost.points), x, y, 2);
-                x -= paint.text(TextFont, TextHeight, Body, " of " + possessive(holderName) + " " + unit + Dot, x, y,
-                    2);
+                x -= paint.text(TextFont, TextHeight, Body, " " + share + Dot, x, y, 2);
                 paint.text(TextFont, TextHeight, colour, number(entry.cost.percent) + " %", x, y, 2);
             }
         }
 
         y += 14;
-        paint.text(TextFont, TextHeight, Body, "State", Left, y);
+        paint.text(TextFont, TextHeight, Body, Engine::tr("State"), Left, y);
         std::string stateNote;
         size_t effectsUsed = 0;
 
@@ -1176,19 +973,22 @@ void renderJournalAuras(
         {
             case AuraState::PartlyUsed:
                 stateNote = effectsUsed < entry.effects.size()
-                    ? std::to_string(effectsUsed) + " of its " + std::to_string(entry.effects.size()) + " parts in use"
-                    : "some members have stronger";
+                    ? Engine::tr("{used} of its {count} parts in use",
+                        {{"used", effectsUsed}, {"count", entry.effects.size()}})
+                    : Engine::tr("some members have stronger");
                 break;
             case AuraState::AddsNothing:
                 if (const std::optional<AuraRival> rival = firstRival())
                 {
-                    stateNote = rival->potion ? "the members' own potions are stronger"
-                        : "while " + spellName(context, rival->spellId) + " is held";
+                    stateNote = rival->potion
+                        ? Engine::tr("the members' own potions are stronger")
+                        : Engine::tr("while {spell} is held", {{"spell", spellName(context, rival->spellId)}});
                 }
 
                 break;
             case AuraState::Blessing:
-                stateNote = entry.templeBlessing ? "ends on the next map" : "ends on another outdoor map";
+                stateNote = entry.templeBlessing ? Engine::tr("ends on the next map")
+                                                 : Engine::tr("ends on another outdoor map");
                 break;
             case AuraState::Active:
             case AuraState::Suspended:
@@ -1202,28 +1002,40 @@ void renderJournalAuras(
 
         if (entry.cost.health && pHolder != nullptr)
         {
-            note("Legendary 32: " + possessive(holderName) + " auras hold back hit points instead of mana.", Muted);
+            note(plainPossessive(holderName)
+                    ? Engine::tr("Legendary 32: {holder}'s auras hold back hit points instead of mana.",
+                        {{"holder", holderName}})
+                    : Engine::tr("Legendary 32: {holder}' auras hold back hit points instead of mana.",
+                        {{"holder", holderName}}),
+                Muted);
         }
 
         const bool suspended = entry.state == AuraState::Suspended && pHolder != nullptr;
 
         if (suspended)
         {
-            note(holderName + " is " + downWord(*pHolder) + ": the aura is off, but its "
-                + grouped(entry.cost.points) + " " + (entry.cost.health ? "HP" : "SP")
-                + " stay reserved. It returns when " + holderName + " recovers.", Bad);
+            const std::string state = downWord(*pHolder);
+            const std::string points = grouped(entry.cost.points);
+            note(entry.cost.health
+                    ? Engine::tr("{holder} is {state}: the aura is off, but its {points} HP stay reserved. It returns "
+                                 "when {holder} recovers.",
+                        {{"holder", holderName}, {"state", state}, {"points", points}})
+                    : Engine::tr("{holder} is {state}: the aura is off, but its {points} SP stay reserved. It returns "
+                                 "when {holder} recovers.",
+                        {{"holder", holderName}, {"state", state}, {"points", points}}),
+                Bad);
         }
 
         // Its effects.
         y += 3;
-        paint.text(TitleFont, 12, Label, "Effect", Left, y);
+        paint.text(TitleFont, 12, Label, Engine::tr("Effect"), Left, y);
         y += 16;
         const float effectPitch = entry.effects.size() > 4 ? 11.2f : 13;
         const float effectHeight = entry.effects.size() > 4 ? 8.5f : TextHeight;
 
         if (suspended)
         {
-            paint.text(TextFont, TextHeight, Bad, "Off", Left, y);
+            paint.text(TextFont, TextHeight, Bad, Engine::tr("Off"), Left, y);
             y += effectPitch;
         }
         else
@@ -1236,25 +1048,28 @@ void renderJournalAuras(
 
                 if (effect.membersUsing == 0 && effect.stronger)
                 {
-                    comparison = Dot + rivalName(context, *pParty, *effect.stronger) + " "
-                        + valueText(effect.kind, effect.stronger->value) + " is stronger";
+                    comparison = Dot
+                        + Engine::tr("{source} {value} is stronger",
+                            {{"source", rivalName(context, *pParty, *effect.stronger)},
+                                {"value", valueText(effect.kind, effect.stronger->value)}});
                 }
                 else if (effect.membersUsing < effect.members)
                 {
-                    comparison = Dot + "in use for " + std::to_string(effect.membersUsing) + " of "
-                        + std::to_string(effect.members);
+                    comparison = Dot
+                        + Engine::tr("in use for {used} of {count}",
+                            {{"used", effect.membersUsing}, {"count", effect.members}});
                 }
                 else if (entry.state == AuraState::PartlyUsed)
                 {
-                    comparison = " in use";
+                    comparison = " " + Engine::tr("in use");
                     comparisonColour = Good;
                 }
 
-                const std::string value = effectValue(effect);
+                const std::string value = effectValueText(effect);
                 const float valueWidth = paint.width(TextFont, effectHeight, value)
                     + paint.width(TextFont, effectHeight, comparison);
                 paint.text(TextFont, effectHeight, Body,
-                    paint.fitted(TextFont, effectHeight, effect.label, Right - Left - valueWidth - 6), Left, y);
+                    paint.fitted(TextFont, effectHeight, effectLabel(effect), Right - Left - valueWidth - 6), Left, y);
                 const float x = Right - paint.text(TextFont, effectHeight, comparisonColour, comparison, Right, y, 2);
                 paint.text(TextFont, effectHeight, Ivory, value, x, y, 2);
                 y += effectPitch;
@@ -1263,7 +1078,7 @@ void renderJournalAuras(
 
         // What each member gets.
         y += 3;
-        paint.text(TitleFont, 12, Label, "The party", Left, y);
+        paint.text(TitleFont, 12, Label, Engine::tr("The party"), Left, y);
         y += 16;
         const float whoPitch = pParty->members().size() > 4 && entry.effects.size() > 4 ? 14 : 16;
 
@@ -1282,21 +1097,24 @@ void renderJournalAuras(
 
             if (suspended)
             {
-                x += paint.text(TextFont, 8.5f, Bad, "nothing", x, textY + 0.5f);
-                paint.text(TextFont, 7.5f, Muted, Dot + "until " + holderName + " recovers", x, textY + 1.2f);
+                x += paint.text(TextFont, 8.5f, Bad, Engine::tr("nothing"), x, textY + 0.5f);
+                paint.text(TextFont, 7.5f, Muted, Dot + Engine::tr("until {holder} recovers", {{"holder", holderName}}),
+                    x, textY + 1.2f);
             }
             else if (benefit.effects.empty())
             {
-                x += paint.text(TextFont, 8.5f, Warn, "nothing", x, textY + 0.5f);
+                x += paint.text(TextFont, 8.5f, Warn, Engine::tr("nothing"), x, textY + 0.5f);
 
                 if (benefit.coveredBy)
                 {
                     // A member with no effect lost the first one first: the rival names its strength.
                     const AuraValueKind kind = entry.effects.empty() ? AuraValueKind::Bonus : entry.effects[0].kind;
                     const std::string why = benefit.coveredBy->potion
-                        ? "own potion (" + valueText(kind, benefit.coveredBy->value) + ") is stronger"
-                        : spellName(context, benefit.coveredBy->spellId) + " gives "
-                            + valueText(kind, benefit.coveredBy->value);
+                        ? Engine::tr("own potion ({value}) is stronger",
+                            {{"value", valueText(kind, benefit.coveredBy->value)}})
+                        : Engine::tr("{spell} gives {value}",
+                            {{"spell", spellName(context, benefit.coveredBy->spellId)},
+                                {"value", valueText(kind, benefit.coveredBy->value)}});
                     paint.text(TextFont, 7.5f, Muted, paint.fitted(TextFont, 7.5f, Dot + why, Right - x), x,
                         textY + 1.2f);
                 }
@@ -1308,9 +1126,8 @@ void renderJournalAuras(
                 for (const size_t index : benefit.effects)
                 {
                     const AuraEffect &effect = entry.effects[index];
-                    const std::string part = effect.kind == AuraValueKind::Text
-                        ? shortLabel(effect.label) + " " + effect.text
-                        : shortLabel(effect.label) + " " + effectValue(effect);
+                    const std::string part = Engine::tr("{effect} {value}",
+                        {{"effect", shortLabel(effectLabel(effect))}, {"value", effectValueText(effect)}});
                     gets += (gets.empty() ? "" : ", ") + part;
                 }
 
@@ -1326,20 +1143,30 @@ void renderJournalAuras(
 
         if (pHolder != nullptr && !entry.cost.free && !suspended)
         {
-            note("Releasing it frees " + grouped(entry.cost.points) + " of " + possessive(holderName) + " "
-                + (entry.cost.health ? "hit points." : "spell points."), Muted);
+            const bool plain = plainPossessive(holderName);
+            const std::string points = grouped(entry.cost.points);
+            note(entry.cost.health
+                    ? (plain ? Engine::tr("Releasing it frees {points} of {holder}'s hit points.",
+                                   {{"points", points}, {"holder", holderName}})
+                             : Engine::tr("Releasing it frees {points} of {holder}' hit points.",
+                                   {{"points", points}, {"holder", holderName}}))
+                    : (plain ? Engine::tr("Releasing it frees {points} of {holder}'s spell points.",
+                                   {{"points", points}, {"holder", holderName}})
+                             : Engine::tr("Releasing it frees {points} of {holder}' spell points.",
+                                   {{"points", points}, {"holder", holderName}})),
+                Muted);
         }
 
         // Release and Move to.
         const Rect release = paint.rect(ReleaseLeft, ButtonTop, ReleaseWidth, ButtonHeight);
         const bool releaseHover = hovered.kind == JournalAuraTargetKind::Release;
-        paint.button(release, "Release", true, pHolder != nullptr, releaseHover, releaseHover && mouseDown);
+        paint.button(release, Engine::tr("Release"), true, pHolder != nullptr, releaseHover, releaseHover && mouseDown);
         const Rect move = paint.rect(MoveLeft, ButtonTop, MoveWidth, ButtonHeight);
         const bool moveHover = hovered.kind == JournalAuraTargetKind::MoveMenu;
-        paint.button(move, "Move to", false, canMove(entry), moveHover || journal.auraMoveMenuOpen,
+        paint.button(move, Engine::tr("Move to"), false, canMove(entry), moveHover || journal.auraMoveMenuOpen,
             moveHover && mouseDown, true);
-        const std::string buttonNote = pHolder != nullptr ? "Release: free, no recovery"
-            : entry.templeBlessing ? "Ends on the next map" : "Ends on another outdoor map";
+        const std::string buttonNote = pHolder != nullptr ? Engine::tr("Release: free, no recovery")
+            : entry.templeBlessing ? Engine::tr("Ends on the next map") : Engine::tr("Ends on another outdoor map");
         float noteY = ButtonTop + 0.5f;
 
         for (const std::string &line : paint.wrapped(TextFont, 7.5f, buttonNote, 62))
@@ -1356,7 +1183,8 @@ void renderJournalAuras(
             paint.fill(menu, MenuFill);
             paint.frame(menu, Brass);
             paint.text(TitleFont, 10.5f, Label,
-                paint.fitted(TitleFont, 10.5f, "Move " + spellName(context, entry.spellId) + " to", MenuWidth - 12),
+                paint.fitted(TitleFont, 10.5f,
+                    Engine::tr("Move {spell} to", {{"spell", spellName(context, entry.spellId)}}), MenuWidth - 12),
                 MenuLeft + 6.5f, top + 5);
             paint.fill(paint.rect(MenuLeft, top + 21, MenuWidth, 0.6f), MenuRule);
 
@@ -1381,19 +1209,18 @@ void renderJournalAuras(
 
                 if (!option.knowsSpell)
                 {
-                    what = "does not know it";
+                    what = Engine::tr("does not know it");
                     colour = abgr(0x7f8578);
                 }
                 else
                 {
-                    const std::string unit = option.cost.health ? "HP" : "SP";
-                    what = option.cost.free ? "reserves nothing"
+                    what = option.cost.free ? Engine::tr("reserves nothing")
                         : (option.cost.flat ? "" : number(option.cost.percent) + " %" + Dot)
-                            + grouped(option.cost.points) + " " + unit;
+                            + pointsText(grouped(option.cost.points), option.cost.health);
 
                     if (!option.fits)
                     {
-                        what += Dot + grouped(option.freePoints) + " free";
+                        what += Dot + Engine::tr("{points} free", {{"points", grouped(option.freePoints)}});
                         colour = Bad;
                     }
 
@@ -1412,8 +1239,8 @@ void renderJournalAuras(
             float footY = footer + 4;
 
             for (const std::string &line : paint.wrapped(TextFont, 7.5f,
-                     "Moving casts it as the new holder: they must be ready and pay its recovery, and the old "
-                     "holder's reservation is released. The strength follows the new holder's skill.",
+                     Engine::tr("Moving casts it as the new holder: they must be ready and pay its recovery, and the "
+                                "old holder's reservation is released. The strength follows the new holder's skill."),
                      MenuWidth - 13))
             {
                 paint.text(TextFont, 7.5f, Muted, line, MenuLeft + 6.5f, footY);
@@ -1425,12 +1252,21 @@ void renderJournalAuras(
     // The right rail: Release all, the Spellbook and the states' legend.
     const bool releaseAllHover = hovered.kind == JournalAuraTargetKind::ReleaseAll;
     paint.button(paint.rect(RailCenter - RailButtonWidth / 2, ReleaseAllTop, RailButtonWidth, RailButtonHeight),
-        "Release all", true, !report->auras.empty(), releaseAllHover, releaseAllHover && mouseDown);
-    paint.text(TextFont, 7.5f, Muted, "Also R in the", RailCenter, ReleaseAllTop + RailButtonHeight + 4, 1);
-    paint.text(TextFont, 7.5f, Muted, "spellbook", RailCenter, ReleaseAllTop + RailButtonHeight + 13.5f, 1);
+        Engine::tr("Release all"), true, !report->auras.empty(), releaseAllHover, releaseAllHover && mouseDown);
+    // One sentence on two lines.
+    const std::string releaseHint = Engine::tr("Also R in the\nspellbook");
+    const size_t hintBreak = releaseHint.find('\n');
+    paint.text(TextFont, 7.5f, Muted, releaseHint.substr(0, hintBreak), RailCenter,
+        ReleaseAllTop + RailButtonHeight + 4, 1);
+
+    if (hintBreak != std::string::npos)
+    {
+        paint.text(TextFont, 7.5f, Muted, releaseHint.substr(hintBreak + 1), RailCenter,
+            ReleaseAllTop + RailButtonHeight + 13.5f, 1);
+    }
     const bool spellbookHover = hovered.kind == JournalAuraTargetKind::Spellbook;
     paint.button(paint.rect(RailCenter - RailButtonWidth / 2, SpellbookTop, RailButtonWidth, RailButtonHeight),
-        "Spellbook", false, true, spellbookHover, spellbookHover && mouseDown);
+        Engine::tr("Spellbook"), false, true, spellbookHover, spellbookHover && mouseDown);
     float legendY = LegendTop;
 
     for (size_t state = 0; state < StateNames.size(); ++state)
@@ -1439,7 +1275,7 @@ void renderJournalAuras(
         paint.pill(AuraState(state), 532 + pillWidth / 2, legendY);
         legendY += 14;
 
-        for (const std::string &line : paint.wrapped(TextFont, 7.5f, LegendTexts[state], 58))
+        for (const std::string &line : paint.wrapped(TextFont, 7.5f, Engine::tr(LegendTexts[state]), 58))
         {
             paint.text(TextFont, 7.5f, Muted, line, 532, legendY);
             legendY += 9.5f;

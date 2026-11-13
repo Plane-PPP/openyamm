@@ -1798,6 +1798,17 @@ OutdoorMoveState OutdoorMovementController::initializeStateForBody(
     return initializeStateForBody(x, y, footZHint, bodyRadius, false, false);
 }
 
+OutdoorMoveState OutdoorMovementController::initializePartyArrivalState(
+    float x,
+    float y,
+    float footZHint,
+    float bodyRadius,
+    float stepUp,
+    bool keepHeight) const
+{
+    return initializeStateForBody(x, y, footZHint, bodyRadius, false, keepHeight, stepUp);
+}
+
 OutdoorMoveState OutdoorMovementController::initializeActorStateForBody(
     float x,
     float y,
@@ -1822,7 +1833,8 @@ OutdoorMoveState OutdoorMovementController::initializeStateForBody(
     float footZHint,
     float bodyRadius,
     bool actorConditionalBModelSupport,
-    bool preserveFootZ) const
+    bool preserveFootZ,
+    float arrivalStepUp) const
 {
     clampPositionToBounds(std::max(1.0f, bodyRadius), x, y);
     std::vector<size_t> candidateFaceIndices;
@@ -1833,9 +1845,8 @@ OutdoorMoveState OutdoorMovementController::initializeStateForBody(
         y + std::max(bodyRadius, FloorCheckSlack),
         candidateFaceIndices);
     const bool bModelGround = outdoorMapUsesBModelGround(*m_pOutdoorMapData);
-    const float initialMaxFloorRise = bModelGround
-        ? BModelGroundSupportRise
-        : FloorSelectionHeightTolerance;
+    const float initialMaxFloorRise = std::max(
+        bModelGround ? BModelGroundSupportRise : FloorSelectionHeightTolerance, arrivalStepUp);
     const FloorSample floor =
         queryFloorLevel(
             *m_pOutdoorMapData,
@@ -3393,6 +3404,7 @@ OutdoorMoveState OutdoorMovementController::resolveOutdoorActorMove(
     OutdoorMoveState result = {};
     result.x = actorPosition.x;
     result.y = actorPosition.y;
+    clampPositionToBounds(body.radius, result.x, result.y);
     result.footZ = actorPosition.z;
     result.verticalVelocity = actorVelocity.z;
     result.supportKind = !finalFloor.hasFloor

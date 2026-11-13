@@ -16,6 +16,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace
@@ -482,6 +483,36 @@ TEST_CASE("manifests address store files by hash and keep packs inside their pac
     std::filesystem::remove_all(server);
 }
 
+TEST_CASE("a desktop manifest's language packs, listed apart for older updaters, join the packs with their language")
+{
+    const std::filesystem::path server = makeTemporaryRoot();
+    const std::string manifest = publishRelease(server, TestSigner(), "2.0", ReleaseTwoPacks, "game");
+    const std::string sha(64, 'd');
+    const std::string record = "{\"id\": \"lang-de.engine.audio.0\", \"package\": \"engine\", \"mount\": "
+        "\"/engine/audio\", \"file\": \"lang-de.engine.audio.0-dddd.zip\", \"url\": \"packs/" + sha + ".zip\", "
+        "\"size\": 10, \"content_id\": \"c-de\", \"sha256\": \"" + sha + "\"";
+    const auto withLanguagePacks = [&](const std::string &list)
+    {
+        std::string text = manifest;
+        text.replace(text.rfind("]}"), 2, "], \"language_packs\": " + list + "}");
+        return text;
+    };
+    std::string error;
+
+    const std::optional<OpenYAMM::Engine::ReleaseManifest> parsed =
+        OpenYAMM::Engine::parseReleaseManifest(withLanguagePacks("[" + record + ", \"language\": \"de\"}]"), error);
+    REQUIRE_MESSAGE(parsed.has_value(), error);
+    REQUIRE(parsed->packs.size() == 3);
+    CHECK(parsed->packs[0].language.empty());
+    CHECK(parsed->packs[2].id == "lang-de.engine.audio.0");
+    CHECK(parsed->packs[2].language == "de");
+    CHECK(parsed->packUrls[2] == "packs/" + sha + ".zip");
+
+    CHECK_FALSE(OpenYAMM::Engine::parseReleaseManifest(withLanguagePacks("[" + record + "}]"), error));
+    CHECK_FALSE(OpenYAMM::Engine::parseReleaseManifest(withLanguagePacks("{}"), error));
+    std::filesystem::remove_all(server);
+}
+
 TEST_CASE("the launcher rolls a version back after two starts that never reached the main menu")
 {
     const std::filesystem::path root = makeTemporaryRoot();
@@ -852,4 +883,29 @@ TEST_CASE("Minotaur healthy launch retains previous app packs and rollback point
     CHECK(readFile(root / "app/minotaur-old/openyamm.exe") == "old-executable");
     CHECK(readFile(root / "assets/packs/old.zip") == "old-content");
     std::filesystem::remove_all(root);
+}
+
+TEST_CASE("an update plans a language's optional packs only for the languages kept installed")
+{
+    OpenYAMM::Engine::ReleaseManifest manifest;
+    manifest.app.size = 100;
+
+    for (const auto &[pId, pLanguage, size] :
+         {std::tuple{"engine.core", "", 10}, std::tuple{"lang-ru.engine.audio", "ru", 20},
+          std::tuple{"lang-zh-cn.engine.fonts", "zh-cn", 40}})
+    {
+        OpenYAMM::Engine::AssetPackRecord pack;
+        pack.id = pId;
+        pack.file = std::string(pId) + ".zip";
+        pack.size = uint64_t(size);
+        pack.language = pLanguage;
+        manifest.packs.push_back(pack);
+        manifest.packUrls.push_back("packs/" + pack.file);
+    }
+
+    const std::filesystem::path store = makeTemporaryRoot();
+    CHECK(OpenYAMM::Engine::planUpdate(manifest, store, false).downloadBytes == 10);
+    CHECK(OpenYAMM::Engine::planUpdate(manifest, store, false, {"ru"}).downloadBytes == 30);
+    CHECK(OpenYAMM::Engine::planUpdate(manifest, store, true, {"ru", "zh-cn"}).downloadBytes == 170);
+    std::filesystem::remove_all(store);
 }

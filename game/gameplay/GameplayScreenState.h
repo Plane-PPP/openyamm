@@ -56,6 +56,8 @@ public:
     {
         float castRepeatCooldownSeconds = 0.0f;
         bool castLatch = false;
+        // The held key has passed its first-repeat delay and repeats at the short interval.
+        bool castRepeating = false;
         bool readyMemberAvailableWhileHeld = false;
         bool attackFallbackRequested = false;
         // The extra quick spell slot whose key began the held cast (Quick Spell 1-4); none for the quick spell.
@@ -67,12 +69,21 @@ public:
     struct AttackActionState
     {
         bool inspectLatch = false;
+        // The held key has passed its first-repeat delay and repeats at the short interval.
+        bool inspectRepeating = false;
         bool readyMemberAvailableWhileHeld = false;
         bool suppressAttackUntilRelease = false;
         float inspectRepeatCooldownSeconds = 0.0f;
 
         bool blocksAttackInput(bool attackPressed);
         void clear();
+    };
+
+    // The Upkeep key's hold (GameplayActionController::updateUpkeepAction).
+    struct UpkeepActionState
+    {
+        bool latch = false;
+        float repeatCooldownSeconds = 0.0f;
     };
 
     struct WorldInteractionInputState
@@ -165,6 +176,8 @@ public:
     AttackActionState &attackActionState();
     const AttackActionState &attackActionState() const;
 
+    UpkeepActionState &upkeepActionState();
+
     WorldInteractionInputState &worldInteractionInputState();
     const WorldInteractionInputState &worldInteractionInputState() const;
 
@@ -181,6 +194,7 @@ private:
     PendingSpellTargetState m_pendingSpellTarget = {};
     QuickSpellState m_quickSpellState = {};
     AttackActionState m_attackActionState = {};
+    UpkeepActionState m_upkeepActionState = {};
     WorldInteractionInputState m_worldInteractionInputState = {};
     GameplayMouseLookState m_gameplayMouseLookState = {};
     bool m_pendingOpenNewGameScreen = false;

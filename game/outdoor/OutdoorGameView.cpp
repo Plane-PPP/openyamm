@@ -1,4 +1,5 @@
 #include "game/render/RuntimeShader.h"
+#include "engine/Localization.h"
 #include "game/outdoor/OutdoorGameView.h"
 #include "game/debug/AiArena.h"
 #include "game/outdoor/OutdoorSunlight.h"
@@ -79,25 +80,6 @@ namespace OpenYAMM::Game
 namespace
 {
 constexpr uint64_t RightMouseInspectRefreshNanoseconds = 33333333ULL;
-
-uint32_t makeCombatHudColor(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
-{
-    return (static_cast<uint32_t>(alpha) << 24)
-        | (static_cast<uint32_t>(blue) << 16)
-        | (static_cast<uint32_t>(green) << 8)
-        | static_cast<uint32_t>(red);
-}
-
-float combatDamageFontScale(int damage)
-{
-    const float damageMagnitude = std::sqrt(static_cast<float>(std::max(1, damage)));
-    return 1.55f + std::clamp(damageMagnitude / 22.0f, 0.0f, 0.75f);
-}
-
-bool isAutosavePath(const std::filesystem::path &path)
-{
-    return toLowerCopy(path.stem().string()) == "autosave";
-}
 
 double millisecondsFromNanoseconds(uint64_t nanoseconds)
 {
@@ -736,7 +718,7 @@ std::string resolveItemInspectTypeText(const InventoryItem *pItemState, const It
 {
     if (pItemState != nullptr && !pItemState->identified && ItemRuntime::requiresIdentification(itemDefinition))
     {
-        return "Not identified";
+        return Engine::tr("Not identified");
     }
 
     if (!itemDefinition.skillGroup.empty()
@@ -840,11 +822,12 @@ std::string resolveItemInspectDetailText(const InventoryItem *pItemState, const 
 
         if (damageText.empty())
         {
-            return isBroken ? "Broken" : std::string {};
+            return isBroken ? Engine::tr("Broken") : std::string {};
         }
 
-        const std::string detail = "Attack: +" + std::to_string(attackBonus) + "   Damage: " + damageText;
-        return isBroken ? "Broken   " + detail : detail;
+        const std::string detail =
+            Engine::tr("Attack: +{attack}   Damage: {damage}", {{"attack", attackBonus}, {"damage", damageText}});
+        return isBroken ? Engine::tr("Broken   {detail}", {{"detail", detail}}) : detail;
     }
 
     if (equipStat == "Missile")
@@ -854,22 +837,23 @@ std::string resolveItemInspectDetailText(const InventoryItem *pItemState, const 
 
         if (damageText.empty())
         {
-            return isBroken ? "Broken" : std::string {};
+            return isBroken ? Engine::tr("Broken") : std::string {};
         }
 
-        const std::string detail = "Shoot: +" + std::to_string(shootBonus) + "   Damage: " + damageText;
-        return isBroken ? "Broken   " + detail : detail;
+        const std::string detail =
+            Engine::tr("Shoot: +{shoot}   Damage: {damage}", {{"shoot", shootBonus}, {"damage", damageText}});
+        return isBroken ? Engine::tr("Broken   {detail}", {{"detail", detail}}) : detail;
     }
 
     if (equipStat == "WeaponW")
     {
         if (hasMod2Int && mod2Value > 0)
         {
-            const std::string detail = "Charges: " + std::to_string(mod2Value);
-            return isBroken ? "Broken   " + detail : detail;
+            const std::string detail = Engine::tr("Charges: {charges}", {{"charges", mod2Value}});
+            return isBroken ? Engine::tr("Broken   {detail}", {{"detail", detail}}) : detail;
         }
 
-        return isBroken ? "Broken" : std::string {};
+        return isBroken ? Engine::tr("Broken") : std::string {};
     }
 
     if (equipStat == "Armor"
@@ -886,14 +870,14 @@ std::string resolveItemInspectDetailText(const InventoryItem *pItemState, const 
 
         if (armorValue > 0)
         {
-            const std::string detail = "Armor: +" + std::to_string(armorValue);
-            return isBroken ? "Broken   " + detail : detail;
+            const std::string detail = Engine::tr("Armor: +{armor}", {{"armor", armorValue}});
+            return isBroken ? Engine::tr("Broken   {detail}", {{"detail", detail}}) : detail;
         }
 
-        return isBroken ? "Broken" : std::string {};
+        return isBroken ? Engine::tr("Broken") : std::string {};
     }
 
-    return isBroken ? "Broken" : std::string {};
+    return isBroken ? Engine::tr("Broken") : std::string {};
 }
 
 constexpr const char *WeaponSkillNames[] = {
@@ -2507,7 +2491,9 @@ bool OutdoorGameView::initialize(
     m_pOutdoorPartyRuntime = &sceneRuntime.partyRuntime();
     m_pOutdoorWorldRuntime = &sceneRuntime.worldRuntime();
     m_pOutdoorWorldRuntime->bindInteractionView(this);
-    m_pOutdoorWorldRuntime->bindGlobalEventProgram(&sceneRuntime.globalEventProgram());
+    m_pOutdoorWorldRuntime->bindEventPrograms(
+        &sceneRuntime.localEventProgram(),
+        &sceneRuntime.globalEventProgram());
     m_pOutdoorWorldRuntime->setWorldFxSystem(&m_worldFxSystem);
     m_gameSettings = settings;
     refreshViewDistanceCache();
@@ -2726,6 +2712,42 @@ void OutdoorGameView::render(int width, int height, const GameplayInputFrame &in
         return;
     }
 
+    // A playing cinematic draws the frame from its camera (devdocs/mm9_rework/MM9_CUTSCENES.md): its eye, angles and
+    // field of view stand in for the party's for this render and are put back at its end; the party keeps its own.
+    const CinematicRuntime &cinematic = m_gameSession.cinematicRuntime();
+    m_viewShakeYawRadians = cinematic.shake().yawRadians();
+    m_viewShakePitchRadians = cinematic.shake().pitchRadians();
+    struct CinematicViewRestore
+    {
+        OutdoorGameView &view;
+        std::optional<std::array<float, 5>> saved;
+
+        ~CinematicViewRestore()
+        {
+            if (saved)
+            {
+                view.m_cameraTargetX = (*saved)[0];
+                view.m_cameraTargetY = (*saved)[1];
+                view.m_cameraTargetZ = (*saved)[2];
+                view.m_cameraYawRadians = (*saved)[3];
+                view.m_cameraPitchRadians = (*saved)[4];
+                view.m_viewVerticalFovDegrees = CameraVerticalFovDegrees;
+            }
+        }
+    } cinematicViewRestore{*this, std::nullopt};
+
+    if (const std::optional<CinematicCameraView> &cinematicView = cinematic.cameraView())
+    {
+        cinematicViewRestore.saved = std::array<float, 5>{
+            m_cameraTargetX, m_cameraTargetY, m_cameraTargetZ, m_cameraYawRadians, m_cameraPitchRadians};
+        m_cameraTargetX = cinematicView->eye.x;
+        m_cameraTargetY = cinematicView->eye.y;
+        m_cameraTargetZ = cinematicView->eye.z;
+        m_cameraYawRadians = cinematicView->yawRadians;
+        m_cameraPitchRadians = cinematicView->pitchRadians;
+        m_viewVerticalFovDegrees = cinematicView->verticalFovDegrees.value_or(CameraVerticalFovDegrees);
+    }
+
     GameplayScreenState &gameplayScreenState = m_gameSession.gameplayScreenState();
     GameplayMouseLookState &gameplayMouseLookState = gameplayScreenState.gameplayMouseLookState();
 
@@ -2743,8 +2765,6 @@ void OutdoorGameView::render(int width, int height, const GameplayInputFrame &in
     }
 
     GameplayScreenRuntime &overlayContext = m_gameSession.gameplayScreenRuntime();
-    m_talkCamera.update(overlayContext, m_cameraTargetX, m_cameraTargetY, m_cameraTargetZ, CameraVerticalFovDegrees,
-        deltaSeconds, m_cameraYawRadians, m_cameraPitchRadians);
 
     if (!preparingResources && m_pendingSavePreviewCapture.active
         && m_pendingSavePreviewCapture.screenshotRequested
@@ -2998,7 +3018,7 @@ void OutdoorGameView::render(int width, int height, const GameplayInputFrame &in
         bx::Handedness::Right);
     bx::mtxProj(
         wireframeProjectionMatrix,
-        CameraVerticalFovDegrees,
+        m_viewVerticalFovDegrees,
         wireframeAspectRatio,
         OutdoorCameraNearClip,
         farClipDistance,
@@ -3076,7 +3096,11 @@ void OutdoorGameView::render(int width, int height, const GameplayInputFrame &in
 
     float gameplayViewProjectionMatrix[16] = {};
     bx::mtxMul(gameplayViewProjectionMatrix, wireframeViewMatrix, wireframeProjectionMatrix);
-    renderCombatFeedbackOverlay(width, height, gameplayViewProjectionMatrix);
+    // Floating combat text is HUD: none over a cinematic.
+    if (!m_gameSession.cinematicRuntime().takesOverView())
+    {
+        renderCombatFeedbackOverlay(width, height, gameplayViewProjectionMatrix);
+    }
     captureFrameTimingStage(audioStageNanoseconds);
 
     if (frameTimingEnabled)
@@ -3174,6 +3198,13 @@ WorldFxSystem &OutdoorGameView::worldFxSystem()
     return m_worldFxSystem;
 }
 
+std::optional<DecorationPortraitModel> OutdoorGameView::decorationPortraitModel(uint32_t spriteOverrideKey) const
+{
+    return m_outdoorDecorationBillboardSet
+        ? m_decorationModels.portraitModel(m_outdoorDecorationBillboardSet->billboards, spriteOverrideKey)
+        : std::nullopt;
+}
+
 const EffectRenderer::Diagnostics &OutdoorGameView::effectRenderDiagnostics() const
 {
     return m_effectRenderer.diagnostics();
@@ -3226,7 +3257,7 @@ void OutdoorGameView::shutdown()
         if (m_pOutdoorWorldRuntime != nullptr)
         {
             m_pOutdoorWorldRuntime->bindInteractionView(nullptr);
-            m_pOutdoorWorldRuntime->bindGlobalEventProgram(nullptr);
+            m_pOutdoorWorldRuntime->bindEventPrograms(nullptr, nullptr);
             m_pOutdoorWorldRuntime->setWorldFxSystem(nullptr);
         }
         m_pOutdoorWorldRuntime = nullptr;
@@ -3927,10 +3958,10 @@ float OutdoorGameView::effectiveCameraYawRadians() const
 {
     if (m_pOutdoorWorldRuntime == nullptr)
     {
-        return m_cameraYawRadians;
+        return m_cameraYawRadians + m_viewShakeYawRadians;
     }
 
-    return m_cameraYawRadians + m_pOutdoorWorldRuntime->armageddonCameraShakeYawRadians()
+    return m_cameraYawRadians + m_viewShakeYawRadians + m_pOutdoorWorldRuntime->armageddonCameraShakeYawRadians()
         + m_pOutdoorWorldRuntime->actorHitFeedback().cameraKickYawRadians();
 }
 
@@ -3938,10 +3969,11 @@ float OutdoorGameView::effectiveCameraPitchRadians() const
 {
     if (m_pOutdoorWorldRuntime == nullptr)
     {
-        return m_cameraPitchRadians;
+        return m_cameraPitchRadians + m_viewShakePitchRadians;
     }
 
-    return m_cameraPitchRadians + m_pOutdoorWorldRuntime->armageddonCameraShakePitchRadians()
+    return m_cameraPitchRadians + m_viewShakePitchRadians
+        + m_pOutdoorWorldRuntime->armageddonCameraShakePitchRadians()
         + m_pOutdoorWorldRuntime->actorHitFeedback().cameraKickPitchRadians();
 }
 
@@ -4148,12 +4180,13 @@ bool OutdoorGameView::trySaveToSelectedGameSlot()
 
 bool OutdoorGameView::requestQuickSave()
 {
-    return beginSaveWithPreview(std::filesystem::path("saves") / "quicksave.oysav", "", false);
+    return beginSaveWithPreview(quickSavePath(m_gameSession.playthroughStatistics().playthroughId()), "", false);
 }
 
 bool OutdoorGameView::requestTravelAutosave()
 {
-    return beginSaveWithPreview(m_autosavePath, "", false);
+    return beginSaveWithPreview(
+        m_autosavePath.value_or(autosavePath(m_gameSession.playthroughStatistics().playthroughId())), "", false);
 }
 
 bool OutdoorGameView::savePreviewCapturePending() const
@@ -4467,15 +4500,35 @@ std::array<std::array<float, 4>, 2> OutdoorGameView::bakedLightingColors(
     return colors;
 }
 
+std::array<float, 3> OutdoorGameView::mistLight() const
+{
+    constexpr float NoonAmbientBrightness = 0.69f;
+    const float light = m_pOutdoorWorldRuntime != nullptr
+        ? std::clamp(m_pOutdoorWorldRuntime->atmosphereState().ambientBrightness / NoonAmbientBrightness, 0.0f, 1.0f)
+        : 1.0f;
+    return {light, light, light};
+}
+
 SkySurroundings OutdoorGameView::skySurroundings() const
 {
-    if (m_pOutdoorMapData == nullptr || m_pOutdoorMapData->noTerrain)
+    SkySurroundings surroundings = {};
+    if (m_pOutdoorMapData == nullptr)
     {
-        return {};
+        return surroundings;
+    }
+
+    if (m_gameSettings.mist && m_pOutdoorMapData->mist.enabled())
+    {
+        surroundings.mist = packMistUniform(m_pOutdoorMapData->mist, m_skyCameraPosition, m_elapsedTime, mistLight(),
+            float(m_gameSettings.mistStrength) / 100.0f);
+    }
+
+    if (m_pOutdoorMapData->noTerrain)
+    {
+        return surroundings;
     }
 
     constexpr float HalfSize = 0.5f * OutdoorMapData::TerrainWidth * OutdoorMapData::TerrainTileSize;
-    SkySurroundings surroundings = {};
     surroundings.mapEdge = {HalfSize, 0.0f, 0.0f};
     surroundings.seaSideWeights = m_distantSea.sideWeights;
     surroundings.camera = {m_skyCameraPosition[2] - m_distantSea.seaLevel, m_skyCameraPosition[0],
@@ -4504,7 +4557,7 @@ void OutdoorGameView::setSettingsSnapshot(const GameSettings &settings)
 
     if (!m_gameSettings.combatText)
     {
-        m_combatFloatingTexts.clear();
+        m_combatFloatingText.clear();
     }
 
 
@@ -4560,22 +4613,6 @@ void OutdoorGameView::updateCombatFeedback(float deltaSeconds)
 
     const float elapsedSeconds = std::max(0.0f, deltaSeconds);
 
-    for (CombatFloatingText &floatingText : m_combatFloatingTexts)
-    {
-        floatingText.remainingSeconds = std::max(0.0f, floatingText.remainingSeconds - elapsedSeconds);
-    }
-
-
-    m_combatFloatingTexts.erase(
-        std::remove_if(
-            m_combatFloatingTexts.begin(),
-            m_combatFloatingTexts.end(),
-            [](const CombatFloatingText &floatingText)
-            {
-                return floatingText.remainingSeconds <= 0.0f;
-            }),
-        m_combatFloatingTexts.end());
-
     if (m_pOutdoorWorldRuntime == nullptr)
     {
         return;
@@ -4583,48 +4620,8 @@ void OutdoorGameView::updateCombatFeedback(float deltaSeconds)
 
     const std::vector<GameplayCombatFeedbackEvent> events = m_pOutdoorWorldRuntime->drainCombatFeedbackEvents();
     m_gameSession.gameplayScreenRuntime().updateEnemyHealthBars(elapsedSeconds, events);
-
-    for (const GameplayCombatFeedbackEvent &event : events)
-    {
-        if (event.actorIndex < m_pOutdoorWorldRuntime->mapActorCount())
-        {
-            if (event.damage > 0 && m_gameSettings.combatText)
-            {
-                m_combatFloatingTexts.push_back(
-                    CombatFloatingText{
-                        .actorIndex = event.actorIndex,
-                        .amount = event.damage,
-                        .text = std::to_string(event.damage),
-                        .x = event.x,
-                        .y = event.y,
-                        .z = GameplayUiSkin::combatDamageTextOriginZ(event.z, event.height),
-                        .remainingSeconds = 0.6f,
-                        .durationSeconds = 0.6f,
-                        .colorAbgr = event.damage >= 100
-                            ? makeCombatHudColor(255, 225, 106, 255)
-                            : makeCombatHudColor(238, 235, 216, 255),
-                        .fontScale = combatDamageFontScale(event.damage),
-                    });
-            }
-            else if (event.shieldDamage > 0 && m_gameSettings.combatText)
-            {
-                // A hit a raised energy shield took whole: its number in shield blue, apart from body damage.
-                m_combatFloatingTexts.push_back(
-                    CombatFloatingText{
-                        .actorIndex = event.actorIndex,
-                        .amount = event.shieldDamage,
-                        .text = std::to_string(event.shieldDamage),
-                        .x = event.x,
-                        .y = event.y,
-                        .z = GameplayUiSkin::combatDamageTextOriginZ(event.z, event.height),
-                        .remainingSeconds = 0.6f,
-                        .durationSeconds = 0.6f,
-                        .colorAbgr = makeCombatHudColor(150, 220, 255, 255),
-                        .fontScale = combatDamageFontScale(event.shieldDamage),
-                    });
-            }
-        }
-    }
+    m_combatFloatingText.update(
+        elapsedSeconds, events, m_pOutdoorWorldRuntime->mapActorCount(), m_gameSettings.combatText);
 }
 
 void OutdoorGameView::renderCombatFeedbackOverlay(
@@ -4640,49 +4637,20 @@ void OutdoorGameView::renderCombatFeedbackOverlay(
     GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
     screenRuntime.prepareHudView(width, height);
 
-    constexpr const char *FontName = GameplayUiSkin::CombatFontName;
-    constexpr float CombatFontScale = GameplayUiSkin::CombatDamageFontScale;
-    constexpr float DamageRisePixels = 29.0f;
-
-    if (m_gameSettings.combatText)
-    {
-        for (const CombatFloatingText &floatingText : m_combatFloatingTexts)
+    m_combatFloatingText.render(screenRuntime, width, height,
+        [width, height, pViewProjectionMatrix](const bx::Vec3 &point, float &screenX, float &screenY)
         {
-            if (floatingText.remainingSeconds <= 0.0f || floatingText.durationSeconds <= 0.0f)
-            {
-                continue;
-            }
-
-            const float progress =
-                1.0f - std::clamp(floatingText.remainingSeconds / floatingText.durationSeconds, 0.0f, 1.0f);
             ProjectedPoint projected = {};
 
-            if (!projectWorldPointToScreen(
-                    bx::Vec3{floatingText.x, floatingText.y, floatingText.z + progress * DamageRisePixels},
-                    width,
-                    height,
-                    pViewProjectionMatrix,
-                    projected))
+            if (!projectWorldPointToScreen(point, width, height, pViewProjectionMatrix, projected))
             {
-                continue;
+                return false;
             }
 
-            const float fadeStartSeconds = 0.225f;
-            const float alpha = std::clamp(floatingText.remainingSeconds / fadeStartSeconds, 0.0f, 1.0f);
-            const uint8_t alphaByte = static_cast<uint8_t>(std::round(255.0f * alpha));
-            const uint32_t textColor = (floatingText.colorAbgr & 0x00ffffffu)
-                | (static_cast<uint32_t>(alphaByte) << 24);
-            const float fontScale = CombatFontScale * std::max(0.5f, floatingText.fontScale);
-            const float textWidth = screenRuntime.measureHudTextWidth(FontName, floatingText.text) * fontScale;
-            screenRuntime.renderHudTextLine(
-                FontName,
-                textColor,
-                floatingText.text,
-                projected.x - textWidth * 0.5f,
-                projected.y,
-                fontScale);
-        }
-    }
+            screenX = projected.x;
+            screenY = projected.y;
+            return true;
+        });
 
     const ActorAiTrace *pAiTrace = m_pOutdoorWorldRuntime->actorAiTrace();
 

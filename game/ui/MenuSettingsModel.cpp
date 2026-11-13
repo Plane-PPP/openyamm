@@ -1,4 +1,5 @@
 #include "game/ui/MenuSettingsModel.h"
+#include "engine/Localization.h"
 #include "game/render/CombatActorHealthBarPolicy.h"
 #include <algorithm>
 #include <array>
@@ -57,6 +58,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return settings.questMarkers ? "true" : "false";
     }
+    if (id == "map_style")
+    {
+        return settings.paintedMaps ? "painted" : "lines";
+    }
     if (id == "party_frame")
     {
         return settings.partyFrame ? "true" : "false";
@@ -75,7 +80,7 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     }
     if (id == "combat_log")
     {
-        return settings.combatLog ? "true" : "false";
+        return combatLogModeValue(settings.combatLog);
     }
     if (id == "turn_based_monster_speed")
     {
@@ -84,6 +89,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     if (id == "turn_based_party_speed")
     {
         return turnBasedSpeedValue(settings.turnBasedPartySpeed);
+    }
+    if (id == "language")
+    {
+        return settings.language;
     }
     if (id == "enemy_health_bars")
     {
@@ -213,6 +222,14 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return std::to_string(settings.bloomStrength);
     }
+    if (id == "mist")
+    {
+        return settings.mist ? "true" : "false";
+    }
+    if (id == "mist_strength")
+    {
+        return std::to_string(settings.mistStrength);
+    }
     if (id == "cinematic_grading")
     {
         return settings.cinematicGrading ? "true" : "false";
@@ -260,6 +277,26 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     if (id == "melee_camera_kick")
     {
         return settings.meleeCameraKick ? "true" : "false";
+    }
+    if (id == "fast_attack_repeat")
+    {
+        return settings.fastAttackRepeat ? "true" : "false";
+    }
+    if (id == "formations_everywhere")
+    {
+        return settings.formationsEverywhere ? "true" : "false";
+    }
+    if (id == "shop_list_view")
+    {
+        return settings.shopListView ? "true" : "false";
+    }
+    if (id == "quicksave_slots")
+    {
+        return std::to_string(settings.quickSaveSlots);
+    }
+    if (id == "mm9_loot_in_older_worlds")
+    {
+        return settings.mm9LootInOlderWorlds ? "true" : "false";
     }
     if (id == "sound_volume")
     {
@@ -378,6 +415,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
         settings.questMarkers = value == "true";
         return true;
     }
+    if (id == "map_style")
+    {
+        if (value != "painted" && value != "lines")
+        {
+            return false;
+        }
+        settings.paintedMaps = value == "painted";
+        return true;
+    }
     if (id == "party_frame")
     {
         if (value != "true" && value != "false")
@@ -407,11 +453,12 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
     }
     if (id == "combat_log")
     {
-        if (value != "true" && value != "false")
+        const std::optional<CombatLogMode> mode = parseCombatLogModeValue(value);
+        if (!mode)
         {
             return false;
         }
-        settings.combatLog = value == "true";
+        settings.combatLog = *mode;
         return true;
     }
     if (id == "turn_based_monster_speed")
@@ -421,6 +468,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
     if (id == "turn_based_party_speed")
     {
         return parseTurnBasedSpeedValue(value, settings.turnBasedPartySpeed);
+    }
+    if (id == "language")
+    {
+        if (!Engine::validLanguageId(value))
+        {
+            return false;
+        }
+        settings.language = value;
+        return true;
     }
     if (id == "enemy_health_bars")
     {
@@ -655,6 +711,26 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
         settings.bloom = value == "true";
         return true;
     }
+    if (id == "mist")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.mist = value == "true";
+        return true;
+    }
+    if (id == "mist_strength")
+    {
+        int number = 0;
+        const auto result = std::from_chars(value.data(), value.data() + value.size(), number);
+        if (result.ec != std::errc{} || result.ptr != value.data() + value.size() || number < 0 || number > 200)
+        {
+            return false;
+        }
+        settings.mistStrength = number;
+        return true;
+    }
     if (id == "bloom_strength")
     {
         int number = 0;
@@ -776,6 +852,53 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
             return false;
         }
         settings.meleeCameraKick = value == "true";
+        return true;
+    }
+    if (id == "fast_attack_repeat")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.fastAttackRepeat = value == "true";
+        return true;
+    }
+    if (id == "formations_everywhere")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.formationsEverywhere = value == "true";
+        return true;
+    }
+    if (id == "shop_list_view")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.shopListView = value == "true";
+        return true;
+    }
+    if (id == "quicksave_slots")
+    {
+        int number = 0;
+        const auto result = std::from_chars(value.data(), value.data() + value.size(), number);
+        if (result.ec != std::errc{} || result.ptr != value.data() + value.size() || number < 1 || number > 20)
+        {
+            return false;
+        }
+        settings.quickSaveSlots = number;
+        return true;
+    }
+    if (id == "mm9_loot_in_older_worlds")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.mm9LootInOlderWorlds = value == "true";
         return true;
     }
     if (id == "sound_volume")

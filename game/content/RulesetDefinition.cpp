@@ -333,6 +333,7 @@ bool parseTables(const YAML::Node &tablesNode, std::vector<RulesetTableContribut
         }
 
         RulesetTableContribution table = {};
+        table.world = scalarString(tableNode, "world");
         table.table = scalarString(tableNode, "table");
         table.path = scalarString(tableNode, "path");
         const std::string mode = scalarString(tableNode, "mode");
@@ -357,7 +358,13 @@ bool parseTables(const YAML::Node &tablesNode, std::vector<RulesetTableContribut
             return false;
         }
 
-        if (!tablePaths.insert(table.table + '\n' + table.path).second)
+        if (!table.world.empty() && !isValidRulesetId(table.world))
+        {
+            errorMessage = "table '" + table.table + "' names an invalid world id '" + table.world + "'";
+            return false;
+        }
+
+        if (!tablePaths.insert(table.world + '\n' + table.table + '\n' + table.path).second)
         {
             errorMessage = "table '" + table.table + "' lists " + table.path + " twice";
             return false;
@@ -385,11 +392,83 @@ bool parseTables(const YAML::Node &tablesNode, std::vector<RulesetTableContribut
 
     return true;
 }
+
+bool parseStartCards(const YAML::Node &newGameNode, std::vector<RulesetStartCard> &cards, std::string &errorMessage)
+{
+    if (!newGameNode)
+    {
+        return true;
+    }
+
+    if (!newGameNode.IsMap())
+    {
+        errorMessage = "newGame must be a map";
+        return false;
+    }
+
+    const YAML::Node startsNode = newGameNode["starts"];
+
+    if (!startsNode)
+    {
+        return true;
+    }
+
+    if (!startsNode.IsSequence() || startsNode.size() == 0 || startsNode.size() > MaxRulesetStartCards)
+    {
+        errorMessage = "newGame.starts must be a list of 1 to " + std::to_string(MaxRulesetStartCards) + " cards";
+        return false;
+    }
+
+    std::unordered_set<std::string> keys;
+
+    for (const YAML::Node &startNode : startsNode)
+    {
+        if (!startNode.IsMap())
+        {
+            errorMessage = "newGame.starts entries must be maps";
+            return false;
+        }
+
+        RulesetStartCard card = {};
+        card.continentKey = scalarString(startNode, "continent");
+        card.title = scalarString(startNode, "title");
+        card.subtitle = scalarString(startNode, "subtitle");
+        card.startText = scalarString(startNode, "start");
+        card.illustration = scalarString(startNode, "illustration");
+
+        if (card.continentKey.empty() || card.title.empty())
+        {
+            errorMessage = "newGame.starts entries need a continent and a title";
+            return false;
+        }
+
+        if (!keys.insert(card.continentKey).second)
+        {
+            errorMessage = "newGame.starts names the continent '" + card.continentKey + "' twice";
+            return false;
+        }
+
+        cards.push_back(std::move(card));
+    }
+
+    return true;
+}
 }
 
 bool RulesetDefinition::isStandard() const
 {
     return id == StandardRulesetId;
+}
+
+bool RulesetDefinition::supportsWorld(const std::string &worldId) const
+{
+    return worlds.empty() || std::find(worlds.begin(), worlds.end(), worldId) != worlds.end();
+}
+
+bool RulesetDefinition::hasRulesChoices() const
+{
+    return !choices.difficulties.empty() || !choices.progressions.empty() || !choices.challengeModes.empty()
+        || choices.randomizer || choices.preferences;
 }
 
 RulesetOptions RulesetDefinition::defaultOptions() const
@@ -430,20 +509,16 @@ bool RulesetDefinition::offers(const RulesetOptions &options) const
 }
 
 std::vector<const RulesetTableContribution *> RulesetDefinition::findTables(
-    const std::string &engineTableVirtualPath) const
+    const std::string &tableVirtualPath) const
 {
     std::vector<const RulesetTableContribution *> found;
 
-    if (!engineTableVirtualPath.starts_with(EngineDataTableRoot))
-    {
-        return found;
-    }
-
-    const std::string tableName = engineTableVirtualPath.substr(std::string(EngineDataTableRoot).size());
-
     for (const RulesetTableContribution &table : tables)
     {
-        if (table.table == tableName)
+        const std::string tablePath = table.world.empty() ? EngineDataTableRoot + table.table
+                                                          : "worlds/" + table.world + "/" + table.table;
+
+        if (tablePath == tableVirtualPath)
         {
             found.push_back(&table);
         }
@@ -455,7 +530,7 @@ std::vector<const RulesetTableContribution *> RulesetDefinition::findTables(
 RulesetDefinition standardRulesetDefinition()
 {
     RulesetDefinition definition = {};
-    definition.description = "The merged Might and Magic VI-VIII rules.";
+    definition.description = Engine::trNoop("The merged Might and Magic VI-VIII rules.");
     definition.panel.summary = definition.description;
     return definition;
 }
@@ -555,9 +630,26 @@ std::optional<RulesetDefinition> parseRulesetDefinition(
             }
         }
 
+        const YAML::Node worldsNode = root["worlds"];
+
+        if (worldsNode)
+        {
+            if (!worldsNode.IsSequence())
+            {
+                errorMessage = "ruleset worlds must be a list of world ids";
+                return std::nullopt;
+            }
+
+            for (const YAML::Node &worldNode : worldsNode)
+            {
+                definition.worlds.push_back(worldNode.as<std::string>());
+            }
+        }
+
         if (!parseChoices(root["options"], definition.choices, errorMessage)
             || !parsePanel(root["rulesPanel"], definition.panel, errorMessage)
-            || !parseTables(root["tables"], definition.tables, errorMessage))
+            || !parseTables(root["tables"], definition.tables, errorMessage)
+            || !parseStartCards(root["newGame"], definition.startCards, errorMessage))
         {
             errorMessage = "ruleset '" + definition.id + "': " + errorMessage;
             return std::nullopt;
@@ -610,6 +702,7 @@ bool loadAvailableRulesets(
     rulesets.clear();
     errorMessage.clear();
     rulesets.push_back(standardRulesetDefinition());
+    std::string failures;
 
     // enumerate() returns sorted names, so the packages come in id order.
     for (const std::string &packageName : assetFileSystem.enumerate(RulesetsRoot))
@@ -624,13 +717,15 @@ bool loadAvailableRulesets(
 
         if (!definition)
         {
-            errorMessage = rulesetPackageRoot(packageName) + ": " + errorMessage;
-            return false;
+            // A broken package is left out; the others, and Standard, stay available.
+            failures += (failures.empty() ? "" : "; ") + rulesetPackageRoot(packageName) + ": " + errorMessage;
+            continue;
         }
 
         rulesets.push_back(std::move(*definition));
     }
 
-    return true;
+    errorMessage = failures;
+    return failures.empty();
 }
 }

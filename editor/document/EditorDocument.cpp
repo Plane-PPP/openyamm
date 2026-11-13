@@ -5,6 +5,7 @@
 #include "editor/import/ObjModelImport.h"
 #include "game/StringUtils.h"
 #include "game/maps/MechanismAudioYml.h"
+#include "game/maps/MistYml.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -4687,6 +4688,7 @@ std::string EditorDocument::serializeOutdoorScene(
     emitter << YAML::EndMap;
     emitter << YAML::Key << "ceiling" << YAML::Value << sceneData.environment.ceiling;
     emitter << YAML::EndMap;
+    Game::emitSceneMist(emitter, sceneData.mist);
 
     emitter << YAML::Key << "terrain" << YAML::Value << YAML::BeginMap;
     emitter << YAML::Key << "attribute_overrides" << YAML::Value << YAML::BeginSeq;
@@ -5101,6 +5103,8 @@ std::string EditorDocument::serializeIndoorScene(
         emitter << YAML::EndMap;
     }
 
+    Game::emitSceneMist(emitter, sceneData.mist);
+
     if (sceneData.openSky.enabled)
     {
         emitter << YAML::Key << "sky" << YAML::Value << YAML::BeginMap;
@@ -5429,6 +5433,21 @@ std::string EditorDocument::serializeIndoorScene(
                         << rotation.axis[0] << rotation.axis[1] << rotation.axis[2] << YAML::EndSeq;
                 emitter << YAML::Key << "open_degrees" << YAML::Value << rotation.openDegrees;
                 emitter << YAML::Key << "open_away" << YAML::Value << rotation.openAway;
+                emitter << YAML::EndMap;
+            }
+
+            if (mover.spin)
+            {
+                const Game::IndoorMoverSpin &spin = *mover.spin;
+                emitter << YAML::Key << "spin" << YAML::Value << YAML::BeginMap;
+                emitter << YAML::Key << "pivot" << YAML::Value << YAML::Flow << YAML::BeginSeq
+                        << spin.pivot[0] << spin.pivot[1] << spin.pivot[2] << YAML::EndSeq;
+                emitter << YAML::Key << "axis" << YAML::Value << YAML::Flow << YAML::BeginSeq
+                        << spin.axis[0] << spin.axis[1] << spin.axis[2] << YAML::EndSeq;
+                emitter << YAML::Key << "degrees_per_second" << YAML::Value << spin.degreesPerSecond;
+                emitter << YAML::Key << "spin_up_seconds" << YAML::Value << spin.spinUpSeconds;
+                emitter << YAML::Key << "spin_down_seconds" << YAML::Value << spin.spinDownSeconds;
+                emitter << YAML::Key << "start_on" << YAML::Value << spin.startOn;
                 emitter << YAML::EndMap;
             }
 

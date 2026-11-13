@@ -1,4 +1,5 @@
 #include "game/rules/maw/MawExperienceRules.h"
+#include "engine/Localization.h"
 
 #include "game/items/ItemGenerator.h"
 #include "game/party/Party.h"
@@ -56,7 +57,7 @@ MawExperienceRules::MawExperienceRules(MawRules &rules)
 
 uint64_t MawExperienceRules::experienceForNextLevel(uint32_t level) const
 {
-    // MAW clamps the requirement below 2^31, which makes training free from level 863 (README §6); we do not.
+    // MAW clamps the requirement below 2^31, which makes training free from level 1041 (README §6); we do not.
     return uint64_t(mawRound(mawExperienceForLevel(double(level) + 1)));
 }
 
@@ -66,7 +67,11 @@ int MawExperienceRules::questGoldBonus(int gold, uint32_t continentId) const
     return gold > 0 ? int(std::floor(gold * partyLevel / 100 + 250 * partyLevel)) : 0;
 }
 
-int64_t MawExperienceRules::eventExperience(Party &party, int64_t value, uint32_t continentId) const
+int64_t MawExperienceRules::eventExperience(
+    Party &party,
+    int64_t value,
+    uint32_t continentId,
+    size_t recipientCount) const
 {
     if (value <= 0)
     {
@@ -78,7 +83,7 @@ int64_t MawExperienceRules::eventExperience(Party &party, int64_t value, uint32_
         : m_rules.state().levelOutside(continentId);
     const double total = double(value) * (1 + partyLevel / 100) + 500 * partyLevel;
     const double partyCount = double(std::max<size_t>(1, party.members().size()));
-    m_rules.state().addBankedExperience(total / partyCount, continentId);
+    m_rules.state().addBankedExperience(total / partyCount * double(recipientCount), continentId);
     return int64_t(std::min(std::floor(total * 5 / partyCount), double(std::numeric_limits<int32_t>::max())));
 }
 
@@ -223,7 +228,7 @@ std::string MawExperienceRules::rewardMapProgress(Party &party, const MapKillPro
 
     const std::array<double, 3> band = m_rules.mapLevels().band(mapFileName);
     double mapLevel = (band[0] + band[1] + band[2]) / 3;
-    double bolster = options.progression == RulesetProgression::Horizontal ? mapLevel * 2 : 0;
+    double bolster = 0;
 
     if (madness)
     {
@@ -236,12 +241,33 @@ std::string MawExperienceRules::rewardMapProgress(Party &party, const MapKillPro
         bolster = run->second.power * 10.0;
     }
 
+    // A plain map pays by the level of its monsters: its own B rows' middle level, else the average level of the
+    // monsters it counts (mapClearLevel, zzMaw-Monsters.lua:2586-2603, MAW 8967ae88).
+    std::optional<double> clearLevel;
+
+    if (!madness && !openRun)
+    {
+        clearLevel = m_rules.mapMonsterLevel();
+
+        if (!clearLevel && progress.levelledMonsters > 0)
+        {
+            clearLevel = progress.monsterLevelSum / progress.levelledMonsters;
+        }
+    }
+
     double slain = progress.slainMonsters;
     slain *= doom ? 0.5 : options.difficulty == RulesetDifficulty::Nightmare ? 0.67 : 1;
     slain *= insanity ? 0.8 : 1;
     mapLevel = std::clamp(mapLevel, 1.0, 100.0);
     double experience = std::ceil(std::pow(slain, 0.7) * (mapLevel * 20 + std::pow(mapLevel, 1.8)) / 3
                                   * (bolster + mapLevel) / mapLevel / 1000) * 1000;
+
+    if (clearLevel)
+    {
+        experience = std::ceil(std::pow(slain, 0.7) * (*clearLevel * 20 + std::pow(*clearLevel, 1.8)) / 3 / 1000)
+            * 1000;
+    }
+
     double gold = std::ceil(std::pow(experience, 0.9) / 1000) * 1000;
 
     if (madness)
@@ -261,18 +287,28 @@ std::string MawExperienceRules::rewardMapProgress(Party &party, const MapKillPro
     }
 
     state.addBankedExperience(experience, progress.continentId);
-    party.addGold(int(gold));
+    party.addGold(int(gold), GoldReason::Event);
     const size_t memberCount = std::max<size_t>(1, party.members().size());
     const double memberExperience = mawRound(experience * 5 / double(memberCount) / 1000) * 1000;
 
     for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
     {
-        party.addExperienceToMember(memberIndex, int64_t(memberExperience));
+        party.addExperienceToMember(memberIndex, int64_t(memberExperience), ExperienceReason::Event);
     }
 
-    const std::string rewardText = "Map Completed! You gain " + std::to_string(int64_t(memberExperience)) + " Exp"
-        + (options.challengeMode == RulesetChallengeMode::Austerity ? " and " : ", ") + std::to_string(int64_t(gold))
-        + " Gold";
+    const bool austerity = options.challengeMode == RulesetChallengeMode::Austerity;
+    const auto reward = [&](bool materials)
+    {
+        constexpr std::array<std::string_view, 4> Texts = {
+            Engine::trNoop("Map Completed! You gain {experience} Exp, {gold} Gold"),
+            Engine::trNoop("Map Completed! You gain {experience} Exp, {gold} Gold and Crafting Materials"),
+            Engine::trNoop("Map Completed! You gain {experience} Exp and {gold} Gold"),
+            Engine::trNoop("Map Completed! You gain {experience} Exp and {gold} Gold and Crafting Materials"),
+        };
+        const std::string_view text = Texts[(austerity ? 2 : 0) + (materials ? 1 : 0)];
+        return Engine::tr(text, {{"experience", int64_t(memberExperience)}, {"gold", int64_t(gold)}});
+    };
+    const std::string rewardText = reward(false);
 
     if (party.itemTable() == nullptr)
     {
@@ -289,7 +325,7 @@ std::string MawExperienceRules::rewardMapProgress(Party &party, const MapKillPro
         {
             party.tryGrantInventoryItem(
                 ItemGenerator::makeInventoryItem(itemId, *party.itemTable(), ItemGenerationMode::Generic));
-            return rewardText + " and Crafting Materials";
+            return reward(true);
         }
 
         return rewardText;
@@ -300,10 +336,12 @@ std::string MawExperienceRules::rewardMapProgress(Party &party, const MapKillPro
         return rewardText;
     }
 
-    // A Crafting Cube and two gems of tier min(ceil((map level + bolster) / 25 + 0.5), 16) (MON:2568-2797).
+    // A Crafting Cube and two gems of tier min(ceil(level / 25 + 0.5), 16), the level the map paid by: its clear
+    // level, else map level + bolster (MON:2793-2797).
     const MawCraftingData &crafting = m_rules.craftingData();
     std::vector<uint32_t> rewards = crafting.mapCompletionItems();
-    const int gemTier = std::min(int(std::ceil((mapLevel + bolster) / 25 + 0.5)), crafting.gemDropMaxTier());
+    const double gemLevel = clearLevel ? *clearLevel : mapLevel + bolster;
+    const int gemTier = std::min(int(std::ceil(gemLevel / 25 + 0.5)), crafting.gemDropMaxTier());
 
     for (int gem = 0; gem < crafting.mapCompletionGems(); ++gem)
     {
@@ -319,7 +357,7 @@ std::string MawExperienceRules::rewardMapProgress(Party &party, const MapKillPro
         }
     }
 
-    return rewardText + " and Crafting Materials";
+    return reward(true);
 }
 
 std::string MawExperienceRules::completeDimensionRun(Party &party, MawDimensionRun &run) const
@@ -339,7 +377,7 @@ std::string MawExperienceRules::completeDimensionRun(Party &party, MawDimensionR
         quest.clearedMapName = pMap->name;
     }
 
-    std::string text = "Dungeon Completed!";
+    std::string text = Engine::tr("Dungeon Completed!");
 
     if (!quest.done || party.itemTable() == nullptr || party.itemTable()->get(data.mapItemId()) == nullptr)
     {
@@ -362,7 +400,7 @@ std::string MawExperienceRules::completeDimensionRun(Party &party, MawDimensionR
     if (map.mapId != 0 && party.tryGrantInventoryItem(item))
     {
         ++state.mapsDropped[mapFileName];
-        text += " You find a new Dimension Map.";
+        text += " " + Engine::tr("You find a new Dimension Map.");
     }
 
     return text;
@@ -411,7 +449,7 @@ std::optional<int> MawExperienceRules::deathPendingSeconds(double gameMinutes) c
 std::optional<std::string> MawExperienceRules::loadWarning() const
 {
     return m_rules.options().challengeMode == RulesetChallengeMode::BeyondMadness && m_rules.madnessLedger().pending()
-        ? std::optional<std::string>("Loading now will count as death, are you sure to proceed?")
+        ? std::optional<std::string>(Engine::tr("Loading now will count as death, are you sure to proceed?"))
         : std::nullopt;
 }
 

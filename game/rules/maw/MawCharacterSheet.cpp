@@ -75,9 +75,8 @@ int armsmasterMastery(const MawRules &rules, const Character &character)
 // half its own or that, whichever is lower; at most 600 (900 in Beyond Madness; MCC:707-741).
 double dragonLevel(const MawRules &rules, const Character &character)
 {
-    // MAW's getPartyLevel(4): the three continents' banks, the fourth's left out (MCC:730-741, CLS-10).
-    constexpr uint32_t FourthContinent = 4;
-    const double party = std::max(1.0, rules.state().levelOutside(FourthContinent)) + 1;
+    // MAW's getPartyLevel(4): every continent's bank (MCC:730-741, CLS-10; MMMerge's fourth bank held nothing).
+    const double party = std::max(1.0, rules.state().totalLevel()) + 1;
     double level = character.level;
 
     if (level / party > 1.2)
@@ -171,7 +170,7 @@ CharacterCombatRows mawCombatRows(
             return;
         }
 
-        const std::string skill = canonicalSkillName(pItem->skillGroup);
+        const std::string skill = mawWeaponSkill(character, *pItem);
 
         if ((bow && skill == "Bow") || (!bow && isMeleeWeaponSkill(skill)))
         {
@@ -193,15 +192,19 @@ CharacterCombatRows mawCombatRows(
             });
     }
 
+    // Two axes in the hands lose 10 % of their damage per two-handed one; a halberd counts as a two-handed axe,
+    // whichever skill wields it (IT:2858-2875).
     int twoHandedAxes = 0;
     int heldAxes = 0;
 
     for (const HeldWeapon &weapon : weapons)
     {
-        if (!weapon.bow && weapon.skill == "Axe")
+        const bool halberd = mawIsHalberd(weapon.pDefinition->itemId);
+
+        if (!weapon.bow && (canonicalSkillName(weapon.pDefinition->skillGroup) == "Axe" || halberd))
         {
             ++heldAxes;
-            twoHandedAxes += weapon.pDefinition->equipStat == "Weapon2" ? 1 : 0;
+            twoHandedAxes += weapon.pDefinition->equipStat == "Weapon2" || halberd ? 1 : 0;
         }
     }
 
@@ -388,24 +391,14 @@ CharacterCombatRows mawCombatRows(
         resistance *= 3;
     }
 
-    // Staff, Sword and Spear guard by the weapon's flat damage, counting ten more points of skill.
+    // Staff, Sword and Spear guard by the weapon's guard, counting ten more points of skill.
     for (const HeldWeapon &weapon : weapons)
     {
-        const MasteryRow *pArmorRow = weapon.skill == "Staff" ? &StaffArmor
-            : weapon.skill == "Sword"                         ? &SwordArmor
-            : weapon.skill == "Spear"                         ? &SpearArmor
-                                                              : nullptr;
-        const std::optional<int> guard =
-            itemRules.weaponGuardBase(*weapon.pDefinition, weapon.pState->rulesetFields, wearerLevel);
-
-        if (pArmorRow == nullptr || !guard)
+        if (const std::optional<MawWeaponGuard> guard =
+                mawWeaponGuard(rules, character, *weapon.pDefinition, weapon.pState->rulesetFields))
         {
-            continue;
+            armorClass += guard->armorClass;
         }
-
-        const Skill weaponSkill = skillOf(character, weapon.skill);
-        armorClass += mawRound(row(*pArmorRow, weaponSkill.mastery) * *guard / 100 * (weaponSkill.level + 10));
-
     }
 
     // Every staff in the party resists for everyone, its holder included (mawStaffPartyResistance).
@@ -447,16 +440,37 @@ int mawStaffPartyResistance(const MawRules &rules, const Character &character, c
         return 0;
     }
 
-    const std::optional<int> guard = rules.itemRules().weaponGuardBase(
-        *pMainHand, character.equipmentRuntime.mainHand.rulesetFields, int(character.level));
+    const std::optional<MawWeaponGuard> guard =
+        mawWeaponGuard(rules, character, *pMainHand, character.equipmentRuntime.mainHand.rulesetFields);
+    return guard ? guard->resistance : 0;
+}
+
+std::optional<MawWeaponGuard> mawWeaponGuard(
+    const MawRules &rules,
+    const Character &character,
+    const ItemDefinition &weapon,
+    const ItemRulesetFields &fields)
+{
+    const std::string skill = mawWeaponSkill(character, weapon);
+    const MasteryRow *pArmorRow = skill == "Staff" ? &StaffArmor
+        : skill == "Sword"                         ? &SwordArmor
+        : skill == "Spear"                         ? &SpearArmor
+                                                   : nullptr;
+    const std::optional<int> guard =
+        pArmorRow != nullptr ? rules.itemRules().weaponGuardBase(weapon, fields, int(character.level)) : std::nullopt;
 
     if (!guard)
     {
-        return 0;
+        return std::nullopt;
     }
 
-    const Skill staff = skillOf(character, "Staff");
-    return int(mawRound(row(StaffArmor, staff.mastery) * *guard / 100 * (staff.level + 10)));
+    const Skill held = skillOf(character, skill);
+    MawWeaponGuard result;
+    result.guard = *guard;
+    result.armorClass = int(mawRound(row(*pArmorRow, held.mastery) * *guard / 100 * (held.level + 10)));
+    // Staff's resistance row is its Armor Class row (zzMAW-Skills.lua skillResistance).
+    result.resistance = skill == "Staff" ? result.armorClass : 0;
+    return result;
 }
 
 double mawAssassinationBonus(const MawRules &rules, const Character &character, const ItemTable &itemTable)
@@ -487,7 +501,7 @@ double mawAssassinationBonus(const MawRules &rules, const Character &character, 
         return 0;
     }
 
-    const std::string skill = canonicalSkillName(pWeapon->skillGroup);
+    const std::string skill = mawWeaponSkill(character, *pWeapon);
     const double multiplier = 1 + skillOf(character, skill).level * 2.0 / 100;
     Skill arms = {skillOf(character, "Armsmaster").level, armsmasterMastery(rules, character)};
 

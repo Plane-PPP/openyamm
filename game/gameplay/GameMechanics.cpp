@@ -1,4 +1,5 @@
 #include "game/gameplay/GameMechanics.h"
+#include "engine/Localization.h"
 
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/items/ItemEnchantRuntime.h"
@@ -12,6 +13,8 @@
 #include "game/tables/MapStats.h"
 #include "game/tables/ClassMultiplierTable.h"
 #include "game/tables/SpellTable.h"
+
+#include <bx/math.h>
 
 #include <algorithm>
 #include <array>
@@ -93,7 +96,7 @@ bool canTrainToNextLevel(const Character &character, const ExperienceRules &expe
 
 std::string experienceInspectSubject(const Character &character)
 {
-    return character.name.empty() ? "This character" : character.name;
+    return character.name.empty() ? Engine::tr("This character") : character.name;
 }
 
 struct DamageDice
@@ -1680,12 +1683,34 @@ int resolveCharacterSheetBasePrimaryStatValue(
         + resolveCharacterPrimaryStatEquippedItemBonusValue(equippedItemBonuses, rawStatId);
 }
 
+// The original's ageing: from 50, 100 and 150 years a primary stat's own value is scaled, Might and Endurance to
+// 75, 40 and 10 %, Intellect and Personality to 150, 100 and 10 %, Speed and Accuracy to 100, 40 and 10 %; Luck keeps
+// its value (OY-349).
+int ageingPercent(const Character &character, uint32_t rawStatId)
+{
+    const int age = GameMechanics::characterAge(character);
+    const int bracket = age >= 150 ? 3 : age >= 100 ? 2 : age >= 50 ? 1 : 0;
+
+    if (bracket == 0)
+    {
+        return 100;
+    }
+
+    static constexpr std::array<std::array<int, 3>, 7> Percents = {{
+        {75, 40, 10}, {150, 100, 10}, {150, 100, 10}, {75, 40, 10}, {100, 40, 10}, {100, 40, 10}, {100, 100, 100}}};
+    const uint32_t statIndex = rawStatId >= 0x27 ? rawStatId - 0x27 : rawStatId - 0x20;
+    return statIndex < Percents.size() ? Percents[statIndex][size_t(bracket - 1)] : 100;
+}
+
 int resolveCharacterSheetActualPrimaryStatValue(
     const Character &character,
     uint32_t rawStatId,
     const CharacterStatBonuses &equippedItemBonuses)
 {
+    const int baseValue = resolveCharacterPrimaryStatBaseValue(character, rawStatId);
+    const int agedBaseValue = baseValue * ageingPercent(character, rawStatId) / 100;
     return resolveCharacterSheetBasePrimaryStatValue(character, rawStatId, equippedItemBonuses)
+        - baseValue + agedBaseValue
         + resolveCharacterPrimaryStatMagicalBonusValue(character, rawStatId)
         - resolveCharacterPrimaryStatEquippedItemBonusValue(equippedItemBonuses, rawStatId);
 }
@@ -1694,74 +1719,74 @@ std::string conditionNameText(CharacterCondition condition)
 {
     if (condition == CharacterCondition::Eradicated)
     {
-        return "Eradicated";
+        return std::string(Engine::trNoop("Eradicated"));
     }
 
     if (condition == CharacterCondition::Petrified)
     {
-        return "Petrified";
+        return std::string(Engine::trNoop("Petrified"));
     }
 
     if (condition == CharacterCondition::Dead)
     {
-        return "Dead";
+        return std::string(Engine::trNoop("Dead"));
     }
 
     if (condition == CharacterCondition::Unconscious)
     {
-        return "Unconscious";
+        return std::string(Engine::trNoop("Unconscious"));
     }
 
     if (condition == CharacterCondition::Paralyzed)
     {
-        return "Paralyzed";
+        return std::string(Engine::trNoop("Paralyzed"));
     }
 
     if (condition == CharacterCondition::Asleep)
     {
-        return "Asleep";
+        return std::string(Engine::trNoop("Asleep"));
     }
 
     if (condition == CharacterCondition::Insane)
     {
-        return "Insane";
+        return std::string(Engine::trNoop("Insane"));
     }
 
     if (condition == CharacterCondition::Fear)
     {
-        return "Afraid";
+        return std::string(Engine::trNoop("Afraid"));
     }
 
     if (condition == CharacterCondition::DiseaseSevere
         || condition == CharacterCondition::DiseaseMedium
         || condition == CharacterCondition::DiseaseWeak)
     {
-        return "Diseased";
+        return std::string(Engine::trNoop("Diseased"));
     }
 
     if (condition == CharacterCondition::PoisonSevere
         || condition == CharacterCondition::PoisonMedium
         || condition == CharacterCondition::PoisonWeak)
     {
-        return "Poisoned";
+        return std::string(Engine::trNoop("Poisoned"));
     }
 
     if (condition == CharacterCondition::Weak)
     {
-        return "Weak";
+        return std::string(Engine::trNoop("Weak"));
     }
 
     if (condition == CharacterCondition::Cursed)
     {
-        return "Cursed";
+        return std::string(Engine::trNoop("Cursed"));
     }
 
     if (condition == CharacterCondition::Drunk)
     {
-        return "Drunk";
+        return std::string(Engine::trNoop("Drunk"));
     }
 
-    return "Good";
+    return std::string(Engine::trNoop("Good"));
 }
 
 std::string resolveConditionText(const Character &character)
@@ -2336,27 +2361,21 @@ std::string GameMechanics::buildExperienceInspectSupplement(
 
     if (static_cast<uint64_t>(character.experience) < nextLevelExperience)
     {
-        return subject
-            + " needs "
-            + std::to_string(nextLevelExperience - static_cast<uint64_t>(character.experience))
-            + " more experience to train to level "
-            + std::to_string(character.level + 1)
-            + ".";
+        return Engine::tr("{name} needs {experience} more experience to train to level {level}.",
+            {{"name", subject},
+                {"experience", nextLevelExperience - static_cast<uint64_t>(character.experience)},
+                {"level", character.level + 1}});
     }
 
     // Eligible: also what the level after that needs (Discord request, 2026-11-02).
     const uint32_t trainableLevel = maximumTrainableLevelFromExperience(character, experienceRules);
     const uint64_t beyondExperience = experienceRules.experienceForNextLevel(trainableLevel);
-    return subject
-        + " is eligible to train up to level "
-        + std::to_string(trainableLevel)
-        + ". "
-        + subject
-        + " needs "
-        + std::to_string(beyondExperience - static_cast<uint64_t>(character.experience))
-        + " more experience for level "
-        + std::to_string(trainableLevel + 1)
-        + ".";
+    return Engine::tr("{name} is eligible to train up to level {level}. "
+                      "{name} needs {experience} more experience for level {next}.",
+        {{"name", subject},
+            {"level", trainableLevel},
+            {"experience", beyondExperience - static_cast<uint64_t>(character.experience)},
+            {"next", trainableLevel + 1}});
 }
 
 int GameMechanics::primaryStatBonus(int value)
@@ -2533,7 +2552,7 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
 
     summary.health.baseMaximum = character.maxHealth + character.permanentBonuses.maxHealth;
     summary.health.maximum = calculateEffectiveCharacterMaxHealth(character);
-    summary.health.current = std::clamp(character.health, 0, std::max(0, summary.health.maximum));
+    summary.health.current = std::min(character.health, std::max(0, summary.health.maximum));
 
     summary.spellPoints.baseMaximum = character.maxSpellPoints + character.permanentBonuses.maxSpellPoints;
     summary.spellPoints.maximum = calculateEffectiveCharacterMaxSpellPoints(character);
@@ -2552,8 +2571,9 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
     const int armorActual = std::max(0, armorBase + character.magicalBonuses.armorClass);
     summary.armorClass = makeSheetValue(std::max(0, armorBase), armorActual);
 
-    const int displayedActualLevel = character.levelModifier != 0
-        ? static_cast<int>(levelWithModifier(character.level, character.levelModifier))
+    const int levelBonus = character.levelModifier + character.equippedLevelBonus;
+    const int displayedActualLevel = levelBonus != 0
+        ? static_cast<int>(levelWithModifier(character.level, levelBonus))
         : static_cast<int>(maximumTrainableLevelFromExperience(character, experienceRules));
     summary.level = makeSheetValue(static_cast<int>(character.level), displayedActualLevel);
 
@@ -2641,17 +2661,18 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
 
     if (character.birthYear > 0 && character.birthYear <= static_cast<uint32_t>(CharacterAgeReferenceYear))
     {
-        summary.ageText = std::to_string(CharacterAgeReferenceYear - character.birthYear);
+        summary.ageText = std::to_string(characterAge(character));
     }
     else
     {
-        summary.ageText = "N/A";
+        summary.ageText = Engine::tr("N/A");
     }
 
     summary.experienceText = std::to_string(character.experience);
     summary.canTrainToNextLevel = canTrainToNextLevel(character, experienceRules);
     summary.conditionText = resolveConditionText(character);
-    summary.quickSpellText = character.quickSpellName.empty() ? "None" : character.quickSpellName;
+    summary.quickSpellText = character.quickSpellName.empty() ? Engine::tr("None")
+                                                              : Engine::localize(character.quickSpellName, "spell");
 
     const int meleeAttack = (rulesetRows
             ? rulesetRows->meleeAttack
@@ -2666,26 +2687,31 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
         rulesetRows ? std::nullopt : dragonBasicAttackDamageRange(character);
 
     const int meleeMightBonus = parameterBonus(actualMight);
+    // The weapons' elemental enchantments roll on each hit; the sheet shows their range with the physical one.
+    const ElementalDamageRange meleeElementalDamage = ItemEnchantRuntime::characterAttackElementalDamageRange(
+        character, CharacterAttackMode::Melee, pItemTable, pSpecialItemEnchantTable);
     const int meleeMinDamage = std::max(
         1,
         meleeMightBonus
             + resolveMeleeMinDamageItemBonus(equippedItems)
             + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, false)
-            + character.weaponEnchantmentDamageBonus
+            + character.meleeWeaponDamageBonus
             + character.permanentBonuses.meleeDamage
-            + character.magicalBonuses.meleeDamage);
+            + character.magicalBonuses.meleeDamage)
+        + meleeElementalDamage.minimum.total();
     const int meleeMaxDamage = std::max(
         1,
         meleeMightBonus
             + resolveMeleeMaxDamageItemBonus(equippedItems)
             + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, true)
-            + character.weaponEnchantmentDamageBonus
+            + character.meleeWeaponDamageBonus
             + character.permanentBonuses.meleeDamage
-            + character.magicalBonuses.meleeDamage);
+            + character.magicalBonuses.meleeDamage)
+        + meleeElementalDamage.maximum.total();
 
     if (equippedItems.pMainHand != nullptr && isWandWeapon(*equippedItems.pMainHand))
     {
-        summary.combat.meleeDamageText = "Wand";
+        summary.combat.meleeDamageText = Engine::tr("Wand");
     }
     else if (equippedItems.pMainHand != nullptr && isBlasterItem(*equippedItems.pMainHand))
     {
@@ -2747,28 +2773,34 @@ CharacterSheetSummary GameMechanics::buildCharacterSheetSummary(
         const int rangedFlatDamageBonus =
             bowIsBlaster
                 ? 0
-                : character.weaponEnchantmentDamageBonus
+                : character.rangedWeaponDamageBonus
                     + character.permanentBonuses.rangedDamage
                     + character.magicalBonuses.rangedDamage;
+        const ElementalDamageRange rangedElementalDamage = bowIsBlaster
+            ? ElementalDamageRange{}
+            : ItemEnchantRuntime::characterAttackElementalDamageRange(
+                  character, CharacterAttackMode::Bow, pItemTable, pSpecialItemEnchantTable);
         const int rangedMinDamage = std::max(
             0,
             equippedMinDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
                 + rangedSkillDamageBonus
-                + rangedFlatDamageBonus);
+                + rangedFlatDamageBonus)
+            + rangedElementalDamage.minimum.total();
         const int rangedMaxDamage = std::max(
             0,
             equippedMaxDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
                 + rangedSkillDamageBonus
-                + rangedFlatDamageBonus);
+                + rangedFlatDamageBonus)
+            + rangedElementalDamage.maximum.total();
         summary.combat.rangedDamageText = formatDamageRange(rangedMinDamage, rangedMaxDamage);
     }
     else if (equippedItems.pMainHand != nullptr && isWandWeapon(*equippedItems.pMainHand))
     {
-        summary.combat.rangedDamageText = "Wand";
+        summary.combat.rangedDamageText = Engine::tr("Wand");
     }
     else
     {
-        summary.combat.rangedDamageText = "N/A";
+        summary.combat.rangedDamageText = Engine::tr("N/A");
     }
 
     return summary;
@@ -2941,7 +2973,7 @@ CharacterAttackProfile GameMechanics::buildBaseCharacterAttackProfile(
         meleeMightBonus
             + resolveMeleeMinDamageItemBonus(equippedItems)
             + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, false)
-            + character.weaponEnchantmentDamageBonus
+            + character.meleeWeaponDamageBonus
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
     profile.meleeMaxDamage = std::max(
@@ -2949,7 +2981,7 @@ CharacterAttackProfile GameMechanics::buildBaseCharacterAttackProfile(
         meleeMightBonus
             + resolveMeleeMaxDamageItemBonus(equippedItems)
             + resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, true)
-            + character.weaponEnchantmentDamageBonus
+            + character.meleeWeaponDamageBonus
             + character.permanentBonuses.meleeDamage
             + character.magicalBonuses.meleeDamage);
 
@@ -2957,7 +2989,7 @@ CharacterAttackProfile GameMechanics::buildBaseCharacterAttackProfile(
     profile.axe.armsmasterBonus = resolveArmsmasterDamageBonus(character);
     profile.axe.weaponSkillBonus = resolveMeleeDamageSkillBonus(character, equippedItems, attackTuning, false)
         - profile.axe.armsmasterBonus;
-    profile.axe.enchantmentBonus = character.weaponEnchantmentDamageBonus;
+    profile.axe.enchantmentBonus = character.meleeWeaponDamageBonus;
     profile.axe.flatBonus = character.permanentBonuses.meleeDamage + character.magicalBonuses.meleeDamage;
     profile.axe.weaponMin = resolveMeleeMinDamageItemBonus(equippedItems);
     profile.axe.weaponMax = resolveMeleeMaxDamageItemBonus(equippedItems);
@@ -3083,7 +3115,7 @@ CharacterAttackProfile GameMechanics::buildBaseCharacterAttackProfile(
                 + (equippedItems.pBow != nullptr
                     ? equippedMinDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
                     : 0)
-                + character.weaponEnchantmentDamageBonus
+                + character.rangedWeaponDamageBonus
                 + character.permanentBonuses.rangedDamage
                 + character.magicalBonuses.rangedDamage);
         profile.rangedMaxDamage = std::max(
@@ -3092,7 +3124,7 @@ CharacterAttackProfile GameMechanics::buildBaseCharacterAttackProfile(
                 + (equippedItems.pBow != nullptr
                     ? equippedMaxDamage(equippedItems, BowItemIndex, *equippedItems.pBow)
                     : 0)
-                + character.weaponEnchantmentDamageBonus
+                + character.rangedWeaponDamageBonus
                 + character.permanentBonuses.rangedDamage
                 + character.magicalBonuses.rangedDamage);
     }
@@ -3309,11 +3341,7 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
         applyMeleeWeaponEffects(character, equippedItems, result, rng);
     }
 
-    if (result.mode == CharacterAttackMode::Bow && character.equippedItemEffectFlags.contains("ExplosiveArrows"))
-    {
-        result.explosiveArrow = true;
-        result.damageType = CombatDamageType::Fire;
-    }
+    applyExplosiveArrows(character, result);
 
     if (!result.resolvesOnImpact)
     {
@@ -3321,6 +3349,15 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
     }
 
     return result;
+}
+
+void GameMechanics::applyExplosiveArrows(const Character &character, CharacterAttackResult &attack)
+{
+    if (attack.mode == CharacterAttackMode::Bow && character.equippedItemEffectFlags.contains("ExplosiveArrows"))
+    {
+        attack.explosiveArrow = true;
+        attack.damageType = CombatDamageType::Fire;
+    }
 }
 
 SoundId GameMechanics::resolveCharacterAttackSoundId(
@@ -3394,6 +3431,50 @@ float GameMechanics::actorTargetHeight(uint16_t actorHeight)
 {
     // A fixed minimum can put the aim point above a short creature's collision volume.
     return actorHeight * 0.6f;
+}
+
+float GameMechanics::actorTargetHeight(uint16_t actorHeight, float modelBottom, float modelTop)
+{
+    const float target = actorTargetHeight(actorHeight);
+    const float bottom = std::max(modelBottom, 0.0f);
+    if (!(modelTop > bottom))
+    {
+        return target;
+    }
+    return std::min(target, bottom + (modelTop - bottom) * 0.6f);
+}
+
+bool GameMechanics::actorBoxInViewport(
+    const float viewProjection[16], float x, float y, float footZ, float radius, float height)
+{
+    // The screen rectangle of the box's corners in front of the camera, against the viewport.
+    float minX = std::numeric_limits<float>::max();
+    float maxX = std::numeric_limits<float>::lowest();
+    float minY = std::numeric_limits<float>::max();
+    float maxY = std::numeric_limits<float>::lowest();
+    bool anyInFront = false;
+
+    for (int corner = 0; corner < 8; ++corner)
+    {
+        const bx::Vec3 point = {
+            x + ((corner & 1) != 0 ? radius : -radius),
+            y + ((corner & 2) != 0 ? radius : -radius),
+            footZ + ((corner & 4) != 0 ? height : 0.0f)};
+        const bx::Vec3 projected = bx::mulH(point, viewProjection);
+
+        if (projected.z < 0.0f || projected.z > 1.0f)
+        {
+            continue;
+        }
+
+        anyInFront = true;
+        minX = std::min(minX, projected.x);
+        maxX = std::max(maxX, projected.x);
+        minY = std::min(minY, projected.y);
+        maxY = std::max(maxY, projected.y);
+    }
+
+    return anyInFront && minX <= 1.0f && maxX >= -1.0f && minY <= 1.0f && maxY >= -1.0f;
 }
 
 float GameMechanics::projectileFanYawOffsetRadians(
@@ -4134,7 +4215,7 @@ bool GameMechanics::canCharacterEquipItem(
 
     if (!isWetsuitItem(itemDefinition)
         && requiresLearnedSkillToEquip(itemDefinition)
-        && !character.hasSkill(itemDefinition.skillGroup))
+        && !character.hasSkill(boundGameRules().items.weaponSkill(character, itemDefinition)))
     {
         return false;
     }
@@ -4157,9 +4238,10 @@ std::optional<std::string> GameMechanics::equipRefusalReason(
 
     if (!isWetsuitItem(itemDefinition)
         && requiresLearnedSkillToEquip(itemDefinition)
-        && !character.hasSkill(itemDefinition.skillGroup))
+        && !character.hasSkill(boundGameRules().items.weaponSkill(character, itemDefinition)))
     {
-        return "Requires the " + displaySkillName(itemDefinition.skillGroup) + " skill";
+        return Engine::tr("Requires the {skill} skill",
+            {{"skill", Engine::localize(displaySkillName(itemDefinition.skillGroup), "skill")}});
     }
 
     const int actualMight = static_cast<int>(character.might)
@@ -4174,16 +4256,32 @@ std::optional<std::string> GameMechanics::equipRefusalReason(
     {
         if (lacksMight)
         {
-            return "Requires " + std::to_string(itemDefinition.requiredMight) + " Might";
+            return Engine::tr("Requires {value} Might", {{"value", int64_t(itemDefinition.requiredMight)}});
         }
 
         if (lacksAccuracy)
         {
-            return "Requires " + std::to_string(itemDefinition.requiredAccuracy) + " Accuracy";
+            return Engine::tr("Requires {value} Accuracy", {{"value", int64_t(itemDefinition.requiredAccuracy)}});
         }
     }
 
     return ItemRuntime::wearRequirementText(itemDefinition);
+}
+
+int GameMechanics::characterAge(const Character &character)
+{
+    if (character.birthYear == 0)
+    {
+        return std::max(0, character.ageModifier);
+    }
+
+    return std::max(0, CharacterAgeReferenceYear + int(character.playedYears) - int(character.birthYear)
+        + character.ageModifier);
+}
+
+bool GameMechanics::hasWetsuitEquipped(const Character &character)
+{
+    return equippedItemId(character.equipment, EquipmentSlot::Armor) == Mm7WetsuitItemId;
 }
 
 bool GameMechanics::isEquipmentAllowedWithWetsuit(

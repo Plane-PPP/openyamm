@@ -41,4 +41,10 @@ GameplaySpellActionController::AttackCastResult GameplaySpellActionController::t
 {
     throw std::logic_error("Unexpected spell casting in melee action test");
 }
+GameplaySpellService::MemberSpellCastResolution GameplaySpellService::castSpellFromMember(
+    GameplayScreenRuntime &, size_t, uint32_t, const std::string &, bool, const TargetQueries *)
+{
+    throw std::logic_error("Unexpected upkeep spell casting in melee action test");
+}
+
 }

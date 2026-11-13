@@ -1,8 +1,14 @@
 #include "game/ui/screens/NewGameScreen.h"
 
+#include "engine/ImageAssetLoader.h"
+#include "engine/Localization.h"
+#include "engine/Utf8Text.h"
+
 #include "game/audio/GameAudioSystem.h"
+#include "game/content/ContentManifest.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/party/CustomPortraits.h"
 #include "game/party/SkillData.h"
 #include "game/party/SpeechIds.h"
 #include "game/rules/GameRules.h"
@@ -39,6 +45,7 @@ constexpr const char *DefaultCreationClassName = "Knight";
 constexpr uint32_t DebugGodLichCharacterDataId = 27;
 constexpr int DebugGodLichStatValue = 100;
 constexpr uint32_t CharacterCreationVoicePreviewSpeakerKey = 0x43525650u;
+constexpr int32_t UndeadRaceId = 6;
 constexpr int StartingBonusPool = 15;
 constexpr int NeutralBaseStatValue = 11;
 constexpr int MinimumStatOffset = 2;
@@ -48,9 +55,9 @@ constexpr float NameBackspaceInitialRepeatDelaySeconds = 0.35f;
 constexpr float NameBackspaceRepeatIntervalSeconds = 0.065f;
 constexpr size_t MaximumOptionalSkillSelections = 2;
 constexpr size_t MaximumNameLength = 15;
-constexpr const char *CreationCompletionErrorText =
-    "Create Party cannot be completed unless you have assigned all characters 2 extra skills and have spent all of "
-    "your bonus points.";
+constexpr std::string_view CreationCompletionErrorText =
+    Engine::trNoop("Create Party cannot be completed unless you have assigned all characters 2 extra skills and have "
+                   "spent all of your bonus points.");
 
 struct RaceStatRule
 {
@@ -453,15 +460,15 @@ std::string characterCreationSkillDisplayName(const std::string &skillName)
 
     if (canonicalName == "LeatherArmor")
     {
-        return "Leather";
+        return Engine::tr("Leather");
     }
 
     if (canonicalName == "ChainArmor")
     {
-        return "Chain";
+        return Engine::tr("Chain");
     }
 
-    return displaySkillName(skillName);
+    return Engine::localize(displaySkillName(skillName));
 }
 
 }
@@ -736,7 +743,7 @@ void NewGameScreen::addPartySlot()
         const bool used = std::any_of(m_partyStates.begin(), m_partyStates.end(),
             [this, index](const CreationState &state)
             {
-                return candidateForState(state).characterDataId == m_candidates[index].characterDataId;
+                return state.selectedCandidateIndex == index;
             });
 
         if (!used)
@@ -869,6 +876,8 @@ void NewGameScreen::rebuildCandidates()
         }
     }
 
+    appendCustomPortraitCandidates();
+
     const auto isDragon = [](const CreationCandidate &candidate)
     {
         return candidate.raceName == "Dragon";
@@ -976,6 +985,7 @@ void NewGameScreen::refreshSkillChoices(bool applyCandidateDefaults)
     m_state.defaultSkills.clear();
     m_state.optionalSkills.clear();
     m_state.selectedOptionalSkills.clear();
+    m_state.skillPickCount = MaximumOptionalSkillSelections;
 
     if (m_pGameData != nullptr)
     {
@@ -993,6 +1003,13 @@ void NewGameScreen::refreshSkillChoices(bool applyCandidateDefaults)
                 || (pRacialAbility != nullptr && std::string_view(pSkillName) == pRacialAbility))
             {
                 m_state.defaultSkills.push_back(pSkillName);
+            }
+            else if (availability == StartingSkillAvailability::None
+                && m_pGameData->classSkillTable().getStartingSkillAvailability(selectedClassName(), pSkillName)
+                    == StartingSkillAvailability::HasByDefault)
+            {
+                // A free skill of the class that the race may not learn is replaced by a pick.
+                ++m_state.skillPickCount;
             }
             else if (availability == StartingSkillAvailability::CanLearn)
             {
@@ -1031,6 +1048,195 @@ void NewGameScreen::refreshSkillChoices(bool applyCandidateDefaults)
             }
         }
     }
+}
+
+void NewGameScreen::setCustomPortraits(std::filesystem::path portraitsFolder,
+                                       std::function<void()> portraitsChangedAction)
+{
+    m_customPortraitsFolder = std::move(portraitsFolder);
+    m_customPortraitsChangedAction = std::move(portraitsChangedAction);
+}
+
+std::string NewGameScreen::candidatePortraitTextureName(const CreationCandidate &candidate) const
+{
+    if (!candidate.portraitPrefix.empty())
+    {
+        return candidate.portraitPrefix + "01";
+    }
+
+    const CharacterDollEntry *pEntry =
+        m_pGameData != nullptr ? m_pGameData->characterDollTable().getCharacter(candidate.characterDataId) : nullptr;
+    return pEntry != nullptr ? portraitTextureNameForEntry(*pEntry) : std::string();
+}
+
+std::string NewGameScreen::portraitTextureNameForState(const CreationState &state) const
+{
+    return candidatePortraitTextureName(candidateForState(state));
+}
+
+void NewGameScreen::appendCustomPortraitCandidates()
+{
+    if (m_customPortraitsFolder.empty())
+    {
+        return;
+    }
+
+    const size_t standardCount = m_candidates.size();
+
+    for (const CustomPortrait &portrait : loadCustomPortraits(m_customPortraitsFolder))
+    {
+        // Offered where its base character is: the same race, classes and continent rules.
+        for (size_t index = 0; index < standardCount; ++index)
+        {
+            if (m_candidates[index].characterDataId == portrait.baseCharacterId)
+            {
+                CreationCandidate candidate = m_candidates[index];
+                candidate.portraitPrefix = customPortraitTexturePrefix(portrait.id);
+                m_candidates.push_back(std::move(candidate));
+                break;
+            }
+        }
+    }
+}
+
+void NewGameScreen::requestPortraitImport()
+{
+    m_portraitFolderPick = std::make_shared<PortraitFolderPick>();
+    SDL_ShowOpenFolderDialog(
+        [](void *pUserData, const char *const *pFileList, int)
+        {
+            std::unique_ptr<std::shared_ptr<PortraitFolderPick>> pPick(
+                static_cast<std::shared_ptr<PortraitFolderPick> *>(pUserData));
+            std::lock_guard lock((*pPick)->mutex);
+
+            if (pFileList != nullptr && pFileList[0] != nullptr)
+            {
+                (*pPick)->folder = std::filesystem::path(pFileList[0]);
+            }
+
+            (*pPick)->finished = true;
+        },
+        new std::shared_ptr<PortraitFolderPick>(m_portraitFolderPick), nullptr, nullptr, false);
+}
+
+void NewGameScreen::finishPortraitImport()
+{
+    if (m_portraitFolderPick == nullptr || m_pGameData == nullptr)
+    {
+        return;
+    }
+
+    std::optional<std::filesystem::path> folder;
+    {
+        std::lock_guard lock(m_portraitFolderPick->mutex);
+
+        if (!m_portraitFolderPick->finished)
+        {
+            return;
+        }
+
+        folder = m_portraitFolderPick->folder;
+    }
+    m_portraitFolderPick.reset();
+
+    if (!folder)
+    {
+        return;
+    }
+
+    // The doll images of a package must match the base row's in size; ask the mounted assets for those sizes.
+    const DollAssetSizeLookup dollAssetSize = [this](const std::string &assetName)
+        -> std::optional<std::pair<int, int>>
+    {
+        Engine::DirectoryAssetPathCache directories;
+        Engine::AssetPathLookupCache paths;
+        const std::optional<std::string> path =
+            Engine::findImageAssetPath(assetFileSystem(), "Data/icons", assetName, directories, paths);
+        const std::optional<Engine::ImageDimensions> size =
+            path ? Engine::loadImageDimensions(assetFileSystem(), *path) : std::nullopt;
+
+        if (!size)
+        {
+            return std::nullopt;
+        }
+
+        const Engine::AssetScaleTier tier = Engine::assetScaleTierFromResolvedPath(*path);
+        return std::pair<int, int>(Engine::scalePhysicalPixelsToLogical(size->width, tier),
+                                   Engine::scalePhysicalPixelsToLogical(size->height, tier));
+    };
+    const CustomPortraitImportResult result =
+        importCustomPortrait(*folder, m_customPortraitsFolder, m_pGameData->characterDollTable(), dollAssetSize);
+
+    if (!result.success)
+    {
+        confirm(Engine::tr("Add Portrait"), Engine::tr("The portrait was not imported: {reason}",
+                                                       {{"reason", result.error}}), {Engine::tr("OK")}, [](int) {});
+        return;
+    }
+
+    if (m_customPortraitsChangedAction)
+    {
+        m_customPortraitsChangedAction();
+    }
+
+    // The party keeps its portraits: states point at candidates by index, and the new list may add one in between.
+    saveActivePartyState();
+    std::vector<std::pair<uint32_t, std::string>> chosen;
+    std::vector<bool> godLich;
+
+    for (const CreationState &state : m_partyStates)
+    {
+        const CreationCandidate &candidate = candidateForState(state);
+        chosen.emplace_back(candidate.characterDataId, candidate.portraitPrefix);
+        godLich.push_back(isGodLichState(state));
+    }
+
+    rebuildCandidates();
+    const std::string prefix = customPortraitTexturePrefix(result.portrait.id);
+    std::optional<size_t> importedIndex;
+
+    for (size_t slot = 0; slot < m_partyStates.size(); ++slot)
+    {
+        if (godLich[slot])
+        {
+            m_partyStates[slot].selectedCandidateIndex = m_candidates.size();
+            continue;
+        }
+
+        for (size_t index = 0; index < m_candidates.size(); ++index)
+        {
+            if (m_candidates[index].characterDataId == chosen[slot].first
+                && m_candidates[index].portraitPrefix == chosen[slot].second)
+            {
+                m_partyStates[slot].selectedCandidateIndex = index;
+                break;
+            }
+        }
+    }
+
+    for (size_t index = 0; index < m_candidates.size(); ++index)
+    {
+        if (m_candidates[index].portraitPrefix == prefix)
+        {
+            importedIndex = index;
+        }
+    }
+
+    m_state = m_partyStates[m_activePartySlot];
+    std::string body = result.replaced
+        ? Engine::tr("{name} was updated.", {{"name", result.portrait.name}})
+        : Engine::tr("{name} was added to the portraits.", {{"name", result.portrait.name}});
+
+    if (importedIndex)
+    {
+        chooseCandidateForActiveSlot(*importedIndex);
+    }
+    else
+    {
+        body += " " + Engine::tr("Its base character is not offered on this continent, so it is not shown here.");
+    }
+
+    confirm(Engine::tr("Add Portrait"), body, {Engine::tr("OK")}, [](int) {});
 }
 
 bool NewGameScreen::textInputActive() const
@@ -1170,9 +1376,10 @@ void NewGameScreen::ensurePcNamesLoaded()
             {
                 const std::string name = trimCopy(cells[columnIndex]);
 
+                // In the interface language where the language has the name (issue #31): the party keeps it.
                 if (!name.empty() && name != "*end")
                 {
-                    m_pcNameColumns[columnIndex].push_back(name);
+                    m_pcNameColumns[columnIndex].push_back(Engine::localizeKnown(name));
                 }
             }
         }
@@ -1328,101 +1535,18 @@ std::vector<std::string> NewGameScreen::wrapTextToWidth(
     float maxWidth,
     float scale)
 {
-    std::vector<std::string> lines;
-
     if (text.empty())
     {
-        return lines;
+        return {};
     }
 
-    size_t paragraphStart = 0;
-
-    while (paragraphStart <= text.size())
-    {
-        const size_t paragraphEnd = text.find('\n', paragraphStart);
-        const std::string paragraph = paragraphEnd == std::string::npos
-            ? text.substr(paragraphStart)
-            : text.substr(paragraphStart, paragraphEnd - paragraphStart);
-
-        if (paragraph.empty())
+    // The shared wrap breaks between the characters of scripts written without spaces too, and never inside a
+    // character or a colour code.
+    std::vector<std::string> lines = Engine::Utf8::wrap(text, maxWidth,
+        [this, &fontName, scale](const std::string &line)
         {
-            lines.push_back({});
-        }
-        else
-        {
-            std::string currentLine;
-            size_t wordStart = 0;
-
-            while (wordStart < paragraph.size())
-            {
-                while (wordStart < paragraph.size() && paragraph[wordStart] == ' ')
-                {
-                    ++wordStart;
-                }
-
-                if (wordStart >= paragraph.size())
-                {
-                    break;
-                }
-
-                size_t wordEnd = paragraph.find(' ', wordStart);
-
-                if (wordEnd == std::string::npos)
-                {
-                    wordEnd = paragraph.size();
-                }
-
-                std::string word = paragraph.substr(wordStart, wordEnd - wordStart);
-
-                while (!word.empty() && measureTextWidth(fontName, word, scale) > maxWidth)
-                {
-                    size_t splitLength = 1;
-
-                    while (splitLength < word.size()
-                        && measureTextWidth(fontName, word.substr(0, splitLength + 1), scale) <= maxWidth)
-                    {
-                        ++splitLength;
-                    }
-
-                    lines.push_back(word.substr(0, splitLength));
-                    word.erase(0, splitLength);
-                }
-
-                if (word.empty())
-                {
-                    wordStart = wordEnd + 1;
-                    continue;
-                }
-
-                const std::string candidate = currentLine.empty() ? word : currentLine + " " + word;
-
-                if (!currentLine.empty() && measureTextWidth(fontName, candidate, scale) > maxWidth)
-                {
-                    lines.push_back(currentLine);
-                    currentLine = word;
-                }
-                else
-                {
-                    currentLine = candidate;
-                }
-
-                wordStart = wordEnd + 1;
-            }
-
-            if (!currentLine.empty())
-            {
-                lines.push_back(currentLine);
-            }
-        }
-
-        if (paragraphEnd == std::string::npos)
-        {
-            break;
-        }
-
-        paragraphStart = paragraphEnd + 1;
-    }
-
+            return measureTextWidth(fontName, line, scale);
+        });
     GameplayHudCommon::carryTextColorsAcrossLines(lines);
     return lines;
 }
@@ -1489,9 +1613,10 @@ bool NewGameScreen::tryToggleOptionalSkill(const std::string &skillName)
         return true;
     }
 
-    if (m_state.selectedOptionalSkills.size() >= MaximumOptionalSkillSelections)
+    if (m_state.selectedOptionalSkills.size() >= m_state.skillPickCount)
     {
-        m_state.statusMessage = "Only two additional skills can be selected.";
+        m_state.statusMessage =
+            Engine::tr("Only {count} additional skills can be selected.", {{"count", m_state.skillPickCount}});
         return false;
     }
 
@@ -1510,13 +1635,36 @@ std::vector<int> NewGameScreen::availableVoiceIdsForSelectedCandidate() const
         return voiceIds;
     }
 
+    // A world's own voices (MM9's personalities, character_voices.txt World row) go with its own portraits: such a
+    // face is offered every one of them of its sex (the undead ones for a lich), and only those.
+    const MergedCharacterVoiceTable &voiceTable = m_pGameData->characterVoiceTable();
+    const bool female = pSelectedEntry->defaultSex != 0;
+    const char *pSexRow = pSelectedEntry->raceId == UndeadRaceId ? (female ? "Undead Woman" : "Undead Man")
+                                                                   : (female ? "Woman" : "Man");
+
+    for (uint32_t voiceSetId : voiceTable.voiceSetsOfWorld(pSelectedEntry->worldId))
+    {
+        if (voiceTable.voiceSetProperty(voiceSetId, pSexRow) == "x")
+        {
+            voiceIds.push_back(static_cast<int>(voiceSetId));
+        }
+    }
+
+    if (!voiceIds.empty())
+    {
+        return voiceIds;
+    }
+
     std::unordered_set<int> seenVoiceIds;
+    std::vector<int> otherRaceVoiceIds;
 
     for (size_t candidateIndex = 0; candidateIndex < candidateCount(); ++candidateIndex)
     {
         const CreationCandidate &candidate = candidateAt(candidateIndex);
         const CharacterDollEntry *pEntry = m_pGameData->characterDollTable().getCharacter(candidate.characterDataId);
 
+        // A voice is offered when an offered portrait of the same sex speaks with it, those of the portrait's race
+        // first (OY-560: any race's voice, as before 2.0; a world's own voices only to that world's faces, above).
         if (pEntry == nullptr || pEntry->defaultSex != pSelectedEntry->defaultSex)
         {
             continue;
@@ -1524,13 +1672,20 @@ std::vector<int> NewGameScreen::availableVoiceIdsForSelectedCandidate() const
 
         const int voiceId = static_cast<int>(pEntry->defaultVoiceId);
 
+        if (!voiceTable.voiceSetProperty(pEntry->defaultVoiceId, "World").empty())
+        {
+            continue;
+        }
+
         if (seenVoiceIds.insert(voiceId).second)
         {
-            voiceIds.push_back(voiceId);
+            (pEntry->raceId == pSelectedEntry->raceId ? voiceIds : otherRaceVoiceIds).push_back(voiceId);
         }
     }
 
     std::sort(voiceIds.begin(), voiceIds.end());
+    std::sort(otherRaceVoiceIds.begin(), otherRaceVoiceIds.end());
+    voiceIds.insert(voiceIds.end(), otherRaceVoiceIds.begin(), otherRaceVoiceIds.end());
     return voiceIds;
 }
 
@@ -1548,7 +1703,7 @@ Character NewGameScreen::buildVoicePreviewCharacter() const
 
     if (pEntry != nullptr)
     {
-        character.portraitTextureName = portraitTextureNameForEntry(*pEntry);
+        character.portraitTextureName = candidatePortraitTextureName(candidate);
         character.portraitPictureId = pEntry->id > 0 ? (pEntry->id - 1) : 0;
         character.sexId = pEntry->defaultSex;
         character.raceId = pEntry->raceId >= 0 ? static_cast<uint32_t>(pEntry->raceId) : 0;
@@ -1559,7 +1714,7 @@ Character NewGameScreen::buildVoicePreviewCharacter() const
 
 void NewGameScreen::showCreationCompletionError()
 {
-    m_state.statusMessage = CreationCompletionErrorText;
+    m_state.statusMessage = Engine::tr(CreationCompletionErrorText);
 }
 
 const GameRules &NewGameScreen::creationRules()
@@ -1609,7 +1764,7 @@ std::vector<std::pair<std::string, uint32_t>> NewGameScreen::creationSkillMatrix
         }
 
         std::string &names = skillsByCap[size_t(best)];
-        names += (names.empty() ? "" : ", ") + displaySkillName(skill) + (best > start ? "*" : "");
+        names += (names.empty() ? "" : ", ") + Engine::localize(displaySkillName(skill)) + (best > start ? "*" : "");
         promoted = promoted || best > start;
     }
 
@@ -1618,13 +1773,16 @@ std::vector<std::pair<std::string, uint32_t>> NewGameScreen::creationSkillMatrix
     {
         if (!skillsByCap[size_t(mastery)].empty())
         {
-            lines.emplace_back(masteryDisplayName(mastery) + ": " + skillsByCap[size_t(mastery)], 0xffffffffu);
+            lines.emplace_back(Engine::tr("{mastery}: {skills}",
+                                   {{"mastery", Engine::tr(masteryDisplayName(mastery))},
+                                    {"skills", skillsByCap[size_t(mastery)]}}),
+                               0xffffffffu);
         }
     }
 
     if (promoted)
     {
-        lines.emplace_back("* after a promotion", GameplayUiSkin::Low);
+        lines.emplace_back(Engine::tr("* after a promotion"), GameplayUiSkin::Low);
     }
 
     return lines;
@@ -1774,7 +1932,7 @@ Character NewGameScreen::buildCharacterFromState(const CreationState &state) con
 
     if (pEntry != nullptr)
     {
-        character.portraitTextureName = portraitTextureNameForEntry(*pEntry);
+        character.portraitTextureName = candidatePortraitTextureName(candidate);
         character.portraitPictureId = pEntry->id > 0 ? (pEntry->id - 1) : 0;
         character.sexId = pEntry->defaultSex;
         character.raceId = pEntry->raceId >= 0 ? static_cast<uint32_t>(pEntry->raceId) : 0;
@@ -1839,7 +1997,7 @@ void NewGameScreen::confirmCreation()
         if (trimCopy(m_partyStates[slotIndex].name).empty())
         {
             switchActivePartySlot(slotIndex);
-            m_state.statusMessage = "Character name cannot be empty.";
+            m_state.statusMessage = Engine::tr("Character name cannot be empty.");
             return;
         }
     }
@@ -1857,8 +2015,7 @@ void NewGameScreen::confirmCreation()
                 return;
             }
 
-            const size_t requiredSkillCount =
-                std::min(MaximumOptionalSkillSelections, state.optionalSkills.size());
+            const size_t requiredSkillCount = std::min(state.skillPickCount, state.optionalSkills.size());
 
             if (state.selectedOptionalSkills.size() < requiredSkillCount)
             {
@@ -1967,6 +2124,13 @@ void NewGameScreen::selectContinent(const std::string &continentKey)
         .key = pContinent->key,
         .name = pContinent->name,
     };
+    for (const RulesetStartCard &card : chosenRulesetDefinition().startCards)
+    {
+        if (card.continentKey == pContinent->key)
+        {
+            m_selectedContinent.startText = card.startText;
+        }
+    }
     GAMEPLAY_DEBUG_TRACE(
         "new_game_continent_selected continent_id=" + std::to_string(m_selectedContinent.id)
         + " continent_key=\"" + m_selectedContinent.key + "\""
@@ -1991,34 +2155,32 @@ constexpr uint32_t RulesDetailEdge = 0xff6396acu;
 constexpr uint32_t RulesDivider = 0x2b648680u;
 constexpr uint32_t SwitchFill = 0x8c14160bu;
 constexpr uint32_t SwitchOutline = 0xff5f818cu;
-const std::string ContinentHint = "Choose a continent to create your party.";
+constexpr std::string_view ContinentHint = Engine::trNoop("Choose a continent to create your party.");
 
-std::string upperCopy(std::string text)
+// Headings in capitals, after the lookup: every letter, not only ASCII ones.
+std::string upperCopy(const std::string &text)
 {
-    for (char &character : text)
-    {
-        character = char(std::toupper(static_cast<unsigned char>(character)));
-    }
-    return text;
+    return Engine::Utf8::upper(text);
 }
 
 // "Hell difficulty · Free progression", or the short "Hell · Free · Doom · Randomizer" when more is chosen.
 std::string rulesetOptionsSummary(const RulesetOptions &options)
 {
-    const std::string difficulty(rulesetDifficultyName(options.difficulty));
-    const std::string progression(rulesetProgressionName(options.progression));
+    const std::string difficulty = Engine::tr(rulesetDifficultyName(options.difficulty));
+    const std::string progression = Engine::tr(rulesetProgressionName(options.progression));
     if (options.challengeMode == RulesetChallengeMode::None && !options.randomizer)
     {
-        return difficulty + " difficulty · " + progression + " progression";
+        return Engine::tr("{difficulty} difficulty · {progression} progression",
+                          {{"difficulty", difficulty}, {"progression", progression}});
     }
     std::string summary = difficulty + " · " + progression;
     if (options.challengeMode != RulesetChallengeMode::None)
     {
-        summary += " · " + std::string(rulesetChallengeModeName(options.challengeMode));
+        summary += " · " + Engine::tr(rulesetChallengeModeName(options.challengeMode));
     }
     if (options.randomizer)
     {
-        summary += " · Randomizer";
+        summary += " · " + Engine::tr("Randomizer");
     }
     return summary;
 }
@@ -2030,7 +2192,6 @@ void NewGameScreen::loadRulesets()
     if (!loadAvailableRulesets(assetFileSystem(), m_rulesets, error))
     {
         std::cerr << "New game: " << error << '\n';
-        m_rulesets = {standardRulesetDefinition()};
     }
     const bool installed = std::any_of(m_rulesets.begin(), m_rulesets.end(),
                                        [this](const RulesetDefinition &ruleset) { return ruleset.id == m_ruleset.id; });
@@ -2090,15 +2251,16 @@ void NewGameScreen::drawRulesetSwitch()
 {
     if (m_rulesets.size() < 2)
     {
-        label("ContinentSelectionFooterNote", ContinentHint);
+        label("ContinentSelectionFooterNote", Engine::tr(ContinentHint));
         return;
     }
-    label("ContinentSelectionRulesetLabel", "RULESET");
+    label("ContinentSelectionRulesetLabel", upperCopy(Engine::tr("Ruleset")));
     std::vector<std::string> names;
     size_t selected = 0;
     for (size_t index = 0; index < m_rulesets.size(); ++index)
     {
-        names.push_back(m_rulesets[index].name);
+        // ruleset.yml texts are English; the shared catalogue translates them.
+        names.push_back(Engine::localize(m_rulesets[index].name));
         selected = m_rulesets[index].id == m_ruleset.id ? index : selected;
     }
     const std::optional<size_t> clicked =
@@ -2111,11 +2273,13 @@ void NewGameScreen::drawRulesetSwitch()
         m_ruleset = {next.id, stored != m_rulesetOptions.end() ? stored->second : next.defaultOptions()};
     }
     const RulesetDefinition &ruleset = chosenRulesetDefinition();
-    const std::string summary = ruleset.panel.summary.empty() ? ruleset.description : ruleset.panel.summary;
-    if (ruleset.isStandard())
+    const std::string summary =
+        Engine::localize(ruleset.panel.summary.empty() ? ruleset.description : ruleset.panel.summary);
+    // Standard has no options of its own.
+    if (!ruleset.hasRulesChoices())
     {
         label("ContinentSelectionRulesetSummary", summary);
-        label("ContinentSelectionFooterNote", ContinentHint);
+        label("ContinentSelectionFooterNote", ruleset.isStandard() ? Engine::tr(ContinentHint) : summary);
         return;
     }
     label("ContinentSelectionRulesetOptions", rulesetOptionsSummary(m_ruleset.options));
@@ -2158,6 +2322,7 @@ float NewGameScreen::drawRulesSetting(const std::string &id, const std::string &
     const float unit = designScale();
     const float padding = 8 * RulesPixel;
     const float top = y + padding;
+    // The name, the description and a select's value come translated; a toggle's value is the English "On" or "Off".
     label("RulesetRulesSettingName", name, enabled ? 0 : RulesDisabledText, top - m_rulesScroll);
     if (select)
     {
@@ -2165,10 +2330,10 @@ float NewGameScreen::drawRulesSetting(const std::string &id, const std::string &
     }
     else
     {
-        // A toggle; value is "On" or "Off".
         const Rect rect = rulesRect("RulesetRulesSettingToggle", top);
         activated = button(id, rect, "", value == "On" ? "toggle_on" : "toggle_off", enabled);
-        textInRect({rect.x + rect.width * 0.42f, rect.y, rect.width * 0.46f, rect.height}, value, "menu_lucida", 10,
+        textInRect({rect.x + rect.width * 0.42f, rect.y, rect.width * 0.46f, rect.height},
+                   value == "On" ? Engine::tr("On") : Engine::tr("Off"), "menu_lucida", 10,
                    enabled ? 0xffc6dfeau : RulesDisabledText, true);
     }
     float bottom = top + m_designLayouts.findElement("RulesetRulesSettingName")->height + 4 * RulesPixel;
@@ -2190,15 +2355,17 @@ void NewGameScreen::drawRulesPanel()
     loadDesign("gameplay/ruleset_rules");
     beginDesign("RulesetRules");
     drawDesign();
-    label("RulesetRulesTitle", panel.title.empty() ? ruleset.name + " Rules" : panel.title);
-    label("RulesetRulesStep", panel.subtitle);
+    label("RulesetRulesTitle", panel.title.empty()
+                                   ? Engine::tr("{ruleset} Rules", {{"ruleset", Engine::localize(ruleset.name)}})
+                                   : Engine::localize(panel.title));
+    label("RulesetRulesStep", Engine::localize(panel.subtitle));
 
     // A quiet link to the ruleset's player's guide, when it has one.
     if (!ruleset.guideUrl.empty())
     {
         const Rect guideRect = designRect("RulesetRulesGuideLink");
         const bool hovered = !modalOpen() && pointerInside(guideRect);
-        label("RulesetRulesGuideLink", "Player's guide", hovered ? 0xffc8e6f2u : 0xff91c3d9u);
+        label("RulesetRulesGuideLink", Engine::tr("Player's guide"), hovered ? 0xffc8e6f2u : 0xff91c3d9u);
 
         if (hovered && leftMouseJustPressed())
         {
@@ -2206,15 +2373,18 @@ void NewGameScreen::drawRulesPanel()
         }
     }
 
-    const std::string challengeName(rulesetChallengeModeName(draft.challengeMode));
+    const std::string challengeName = Engine::tr(rulesetChallengeModeName(draft.challengeMode));
     // Doom, Road to Insanity and Beyond Madness set the difficulty; Austerity keeps the chosen one.
     const bool challengeDifficulty = rulesetChallengeModeDifficulty(draft.challengeMode).has_value();
     label("RulesetRulesNote",
-          challengeDifficulty ? challengeName + " sets the difficulty for the whole adventure; preferences can change."
+          choices.difficulties.empty() ? Engine::tr("Chosen once for the whole adventure.")
+          : challengeDifficulty
+              ? Engine::tr("{challenge} sets the difficulty for the whole adventure; preferences can change.",
+                           {{"challenge", challengeName}})
           : draft.difficultyLocked()
-              ? std::string(rulesetDifficultyName(draft.difficulty))
-                    + " cannot be lowered later; progression and preferences can change."
-              : "Difficulty, progression and preferences can change during play.");
+              ? Engine::tr("{difficulty} cannot be lowered later; progression and preferences can change.",
+                           {{"difficulty", Engine::tr(rulesetDifficultyName(draft.difficulty))}})
+              : Engine::tr("Difficulty, progression and preferences can change during play."));
     if (action("RulesetRulesBackButton") || (m_escapePressed && !modalOpen()))
     {
         m_escapePressed = false;
@@ -2238,56 +2408,69 @@ void NewGameScreen::drawRulesPanel()
     scrollViewport(viewport, m_rulesContentHeight, m_rulesScroll);
     setDesignClip(viewport);
 
-    // Left column: the difficulty table, the chosen level's rules and the credits.
-    label("RulesetRulesDifficultyLabel", "DIFFICULTY", 0, -m_rulesScroll);
-    label("RulesetRulesDifficultyNote", challengeDifficulty ? "Fixed by " + challengeName : "", 0, -m_rulesScroll);
-    label("RulesetRulesColumnLevel", "LEVEL", 0, -m_rulesScroll);
-    std::vector<Rect> columns;
-    for (size_t column = 0; column < panel.difficultyColumns.size(); ++column)
+    // Left column: the difficulty table, the chosen level's rules and the credits. A ruleset without difficulties
+    // (Standard) shows its summary there instead.
+    const bool difficulties = !choices.difficulties.empty();
+    if (difficulties)
     {
-        const std::string id = "RulesetRulesColumn" + std::to_string(column);
-        if (m_designLayouts.findElement(id) == nullptr)
+        label("RulesetRulesDifficultyLabel", upperCopy(Engine::tr("Difficulty")), 0, -m_rulesScroll);
+        label("RulesetRulesDifficultyNote",
+              challengeDifficulty ? Engine::tr("Fixed by {challenge}", {{"challenge", challengeName}}) : "", 0,
+              -m_rulesScroll);
+        label("RulesetRulesColumnLevel", upperCopy(Engine::tr("Level")), 0, -m_rulesScroll);
+        std::vector<Rect> columns;
+        for (size_t column = 0; column < panel.difficultyColumns.size(); ++column)
         {
-            break;
+            const std::string id = "RulesetRulesColumn" + std::to_string(column);
+            if (m_designLayouts.findElement(id) == nullptr)
+            {
+                break;
+            }
+            label(id, upperCopy(Engine::localize(panel.difficultyColumns[column])), 0, -m_rulesScroll);
+            columns.push_back(designRect(id));
         }
-        label(id, upperCopy(panel.difficultyColumns[column]), 0, -m_rulesScroll);
-        columns.push_back(designRect(id));
-    }
-    const UiLayoutManager::LayoutElement *pValue = m_designLayouts.findElement("RulesetRulesRowValue");
-    const float valueSize = fontHeight(pValue->fontName) * pValue->textScale;
-    for (size_t index = 0; index < choices.difficulties.size(); ++index)
-    {
-        const RulesetDifficulty difficulty = choices.difficulties[index];
-        const float y = float(index) * RulesRowPitch;
-        const bool selected = draft.difficulty == difficulty;
-        const Rect row = rulesRect("RulesetRulesRow", y);
-        if (button("difficulty-" + std::string(rulesetDifficultyId(difficulty)), row, "", "save_row",
-                   !challengeDifficulty, selected))
+        const UiLayoutManager::LayoutElement *pValue = m_designLayouts.findElement("RulesetRulesRowValue");
+        const float valueSize = fontHeight(pValue->fontName) * pValue->textScale;
+        for (size_t index = 0; index < choices.difficulties.size(); ++index)
         {
-            draft.difficulty = difficulty;
+            const RulesetDifficulty difficulty = choices.difficulties[index];
+            const float y = float(index) * RulesRowPitch;
+            const bool selected = draft.difficulty == difficulty;
+            const Rect row = rulesRect("RulesetRulesRow", y);
+            if (button("difficulty-" + std::string(rulesetDifficultyId(difficulty)), row, "", "save_row",
+                       !challengeDifficulty, selected))
+            {
+                draft.difficulty = difficulty;
+            }
+            const uint32_t color = selected ? RulesSelectedText : 0;
+            label("RulesetRulesRowName", Engine::tr(rulesetDifficultyName(difficulty)), color, y - m_rulesScroll);
+            const auto text = panel.difficulties.find(difficulty);
+            for (size_t column = 0; text != panel.difficulties.end() && column < columns.size()
+                                    && column < text->second.values.size();
+                 ++column)
+            {
+                textInRect({columns[column].x, row.y, columns[column].width, row.height},
+                           Engine::localize(text->second.values[column]),
+                           pValue->fontName, valueSize, color ? color : pValue->textColorAbgr, true);
+            }
+            RulesetOptions probe;
+            probe.difficulty = difficulty;
+            label("RulesetRulesRowMark",
+                  difficulty == choices.defaultDifficulty ? Engine::tr("default")
+                  : probe.difficultyLocked()             ? Engine::tr("locks")
+                                                         : "",
+                  selected ? RulesSelectedText : 0, y - m_rulesScroll);
         }
-        const uint32_t color = selected ? RulesSelectedText : 0;
-        label("RulesetRulesRowName", std::string(rulesetDifficultyName(difficulty)), color, y - m_rulesScroll);
-        const auto text = panel.difficulties.find(difficulty);
-        for (size_t column = 0; text != panel.difficulties.end() && column < columns.size()
-                                && column < text->second.values.size();
-             ++column)
-        {
-            textInRect({columns[column].x, row.y, columns[column].width, row.height}, text->second.values[column],
-                       pValue->fontName, valueSize, color ? color : pValue->textColorAbgr, true);
-        }
-        RulesetOptions probe;
-        probe.difficulty = difficulty;
-        label("RulesetRulesRowMark",
-              difficulty == choices.defaultDifficulty ? "default" : probe.difficultyLocked() ? "locks" : "",
-              selected ? RulesSelectedText : 0, y - m_rulesScroll);
     }
     const UiLayoutManager::LayoutElement *pRow = m_designLayouts.findElement("RulesetRulesRow");
     const size_t rowCount = std::max<size_t>(1, choices.difficulties.size());
-    const float detailY = pRow->gapY + float(rowCount - 1) * RulesRowPitch + pRow->height + 6 * RulesPixel;
+    const float detailY =
+        difficulties ? pRow->gapY + float(rowCount - 1) * RulesRowPitch + pRow->height + 6 * RulesPixel : 8 * RulesPixel;
     const auto detail = panel.difficulties.find(draft.difficulty);
-    const std::string description = detail != panel.difficulties.end() ? detail->second.description : "";
-    const std::string warning = detail != panel.difficulties.end() ? detail->second.warning : "";
+    const std::string description = difficulties
+        ? Engine::localize(detail != panel.difficulties.end() ? detail->second.description : "")
+        : Engine::localize(panel.summary.empty() ? ruleset.description : panel.summary);
+    const std::string warning = Engine::localize(detail != panel.difficulties.end() ? detail->second.warning : "");
     const UiLayoutManager::LayoutElement *pDetailText = m_designLayouts.findElement("RulesetRulesDetailText");
     const float detailSize = fontHeight(pDetailText->fontName) * pDetailText->textScale;
     const float detailWidth = pDetailText->width * unit;
@@ -2303,14 +2486,19 @@ void NewGameScreen::drawRulesPanel()
     box.height = detailHeight * unit;
     drawSolidRect(box, RulesDetailFill);
     drawSolidRect({box.x, box.y, 2 * RulesPixel * unit, box.height}, RulesDetailEdge);
-    label("RulesetRulesDetailTitle", std::string(rulesetDifficultyName(draft.difficulty)), 0,
+    label("RulesetRulesDetailTitle",
+          difficulties ? Engine::tr(rulesetDifficultyName(draft.difficulty)) : Engine::localize(ruleset.name), 0,
           detailY - m_rulesScroll);
     const float descriptionHeight = drawRulesText("RulesetRulesDetailText", description, detailY);
     drawRulesText("RulesetRulesDetailText", warning, detailY + descriptionHeight + 4 * RulesPixel, RulesWarningText);
     std::string credits;
     for (const std::string &credit : ruleset.credits)
     {
-        credits += (credits.empty() ? "Credits: " : "; ") + credit;
+        credits += (credits.empty() ? "" : "; ") + credit;
+    }
+    if (!credits.empty())
+    {
+        credits = Engine::tr("Credits: {credits}", {{"credits", credits}});
     }
     const float creditsY = detailY + detailHeight + 12 * RulesPixel;
     const float leftBottom = creditsY + drawRulesText("RulesetRulesCredits", credits, creditsY);
@@ -2326,12 +2514,13 @@ void NewGameScreen::drawRulesPanel()
     const std::optional<RulesetProgression> forcedProgression = rulesetChallengeModeProgression(draft.challengeMode);
     if (!choices.progressions.empty())
     {
-        y = section("Progression", forcedProgression ? "Set by " + challengeName : "", y);
+        y = section(Engine::tr("Progression"),
+                    forcedProgression ? Engine::tr("Set by {challenge}", {{"challenge", challengeName}}) : "", y);
         std::vector<std::string> names;
         size_t selected = 0;
         for (size_t index = 0; index < choices.progressions.size(); ++index)
         {
-            names.emplace_back(rulesetProgressionName(choices.progressions[index]));
+            names.emplace_back(Engine::tr(rulesetProgressionName(choices.progressions[index])));
             selected = choices.progressions[index] == draft.progression ? index : selected;
         }
         const std::optional<size_t> clicked = drawSegmentedSwitch(
@@ -2342,27 +2531,30 @@ void NewGameScreen::drawRulesPanel()
         }
         y += m_designLayouts.findElement("RulesetRulesProgressionSwitch")->height + 8 * RulesPixel;
         const auto text = panel.progressions.find(draft.progression);
-        y += drawRulesText("RulesetRulesProgressionText", text != panel.progressions.end() ? text->second : "", y);
+        y += drawRulesText("RulesetRulesProgressionText",
+                           Engine::localize(text != panel.progressions.end() ? text->second : ""), y);
         y += RulesSectionGap;
     }
     bool activated = false;
     if (!choices.challengeModes.empty())
     {
         const bool modes = choices.challengeModes.size() > 1;
-        y = section("Challenge", modes || choices.randomizer ? "Chosen once · fixed for the adventure"
-                                                             : "Coming in a later update",
+        y = section(Engine::tr("Challenge"),
+                    modes || choices.randomizer ? Engine::tr("Chosen once · fixed for the adventure")
+                                                : Engine::tr("Coming in a later update"),
                     y);
         const auto text = panel.challengeModes.find(draft.challengeMode);
-        y = drawRulesSetting("challenge", "Challenge mode", text != panel.challengeModes.end() ? text->second : "",
-                             true, challengeName, modes, false, y, activated);
+        y = drawRulesSetting("challenge", Engine::tr("Challenge mode"),
+                             Engine::localize(text != panel.challengeModes.end() ? text->second : ""), true,
+                             challengeName, modes, false, y, activated);
         if (activated)
         {
             std::vector<std::string> names;
             for (const RulesetChallengeMode mode : choices.challengeModes)
             {
-                names.emplace_back(rulesetChallengeModeName(mode));
+                names.emplace_back(Engine::tr(rulesetChallengeModeName(mode)));
             }
-            confirm("Challenge Mode", "Fixed for the whole adventure.", names,
+            confirm(Engine::tr("Challenge Mode"), Engine::tr("Fixed for the whole adventure."), names,
                     [this, modes = choices.challengeModes, defaults = ruleset.defaultOptions()](int index)
                     {
                         if (index < 0)
@@ -2391,7 +2583,7 @@ void NewGameScreen::drawRulesPanel()
         // A ruleset without a randomizer (MAW's is not ported) shows no row for it.
         if (choices.randomizer)
         {
-            y = drawRulesSetting("randomizer", "Randomizer", panel.randomizer, false,
+            y = drawRulesSetting("randomizer", Engine::tr("Randomizer"), Engine::localize(panel.randomizer), false,
                                  draft.randomizer ? "On" : "Off", true, true, y, activated);
             if (activated)
             {
@@ -2403,30 +2595,31 @@ void NewGameScreen::drawRulesPanel()
     if (choices.preferences)
     {
         RulesetPreferences &preferences = draft.preferences;
-        y = section("Preferences", "Change any time", y);
-        y = drawRulesSetting("homing", "Homing projectiles", "Your missiles follow their target.", false,
+        y = section(Engine::tr("Preferences"), Engine::tr("Change any time"), y);
+        y = drawRulesSetting("homing", Engine::tr("Homing projectiles"),
+                             Engine::tr("Your missiles follow their target."), false,
                              preferences.homingProjectiles ? "On" : "Off", true, false, y, activated);
         preferences.homingProjectiles = preferences.homingProjectiles != activated;
-        y = drawRulesSetting("friendly-fire", "Friendly fire",
-                             "Your attacks and spells can hurt peaceful townsfolk and guards.", false,
+        y = drawRulesSetting("friendly-fire", Engine::tr("Friendly fire"),
+                             Engine::tr("Your attacks and spells can hurt peaceful townsfolk and guards."), false,
                              preferences.friendlyFire ? "On" : "Off", true, false, y, activated);
         preferences.friendlyFire = preferences.friendlyFire != activated;
-        y = drawRulesSetting("trainer-hints", "Trainer hints",
-                             "Skill popups name the nearest teacher of the next mastery.", false,
+        y = drawRulesSetting("trainer-hints", Engine::tr("Trainer hints"),
+                             Engine::tr("Skill popups name the nearest teacher of the next mastery."), false,
                              preferences.trainerHints ? "On" : "Off", true, false, y, activated);
         preferences.trainerHints = preferences.trainerHints != activated;
-        y = drawRulesSetting("bow", "Bow",
-                             "Off: bows, crossbows and dragon breath do not shoot. A melee-only challenge.", false,
+        y = drawRulesSetting("bow", Engine::tr("Bow"),
+                             Engine::tr("Off: bows, crossbows and dragon breath do not shoot. A melee-only challenge."),
+                             false,
                              preferences.bowDisabled ? "Off" : "On", true, false, y, activated);
         preferences.bowDisabled = preferences.bowDisabled != activated;
         // Disintegration happens only in Road to Insanity and Beyond Madness; it closes the list, as in the pause menu.
         const bool disintegration = draft.challengeMode == RulesetChallengeMode::RoadToInsanity
             || draft.challengeMode == RulesetChallengeMode::BeyondMadness;
-        y = drawRulesSetting("loot-filter", "Loot filter",
-                             "Drops you would rather not carry turn into gold. The pause menu's Settings show what "
-                             "each preset filters.",
-                             true,
-                             std::string(rulesetLootFilterPresetName(preferences.lootFilter.preset)), true,
+        y = drawRulesSetting("loot-filter", Engine::tr("Loot filter"),
+                             Engine::tr("Drops you would rather not carry turn into gold. The pause menu's Settings "
+                                        "show what each preset filters."),
+                             true, Engine::tr(rulesetLootFilterPresetName(preferences.lootFilter.preset)), true,
                              !disintegration, y, activated);
         if (activated)
         {
@@ -2434,9 +2627,10 @@ void NewGameScreen::drawRulesPanel()
             std::vector<std::string> names;
             for (size_t index = 0; index < size_t(RulesetLootFilterPreset::Custom); ++index)
             {
-                names.emplace_back(rulesetLootFilterPresetName(RulesetLootFilterPreset(index)));
+                names.emplace_back(Engine::tr(rulesetLootFilterPresetName(RulesetLootFilterPreset(index))));
             }
-            confirm("Loot Filter", "Drops you would rather not carry turn into gold (40 % of their value).", names,
+            confirm(Engine::tr("Loot Filter"),
+                    Engine::tr("Drops you would rather not carry turn into gold (40 % of their value)."), names,
                     [this](int index)
                     {
                         if (index >= 0)
@@ -2449,8 +2643,10 @@ void NewGameScreen::drawRulesPanel()
         }
         if (disintegration)
         {
-            y = drawRulesSetting("disintegrate", "Disintegration",
-                                 "A companion slain far past death leaves the party for the Adventurer's Inn.", false,
+            y = drawRulesSetting("disintegrate", Engine::tr("Disintegration"),
+                                 Engine::tr("A companion slain far past death leaves the party for the Adventurer's "
+                                            "Inn."),
+                                 false,
                                  preferences.disintegration ? "On" : "Off", true, true, y, activated);
             preferences.disintegration = preferences.disintegration != activated;
         }
@@ -2458,6 +2654,36 @@ void NewGameScreen::drawRulesPanel()
     m_rulesContentHeight = std::max(leftBottom, y) + 16 * RulesPixel;
     setDesignClip(std::nullopt);
     drawConfirmation();
+}
+
+bool NewGameScreen::continentOffered(const std::string &continentKey) const
+{
+    if (m_pGameData == nullptr)
+    {
+        return false;
+    }
+
+    const MergedCharacterSelectionContinent *pContinent =
+        findNewGameContinent(m_pGameData->mergedCharacterSelectionTable(), continentKey);
+    const MergedContinentSettingEntry *pSetting =
+        pContinent != nullptr ? m_pGameData->mergedContinentSettingTable().findById(pContinent->id) : nullptr;
+
+    if (pSetting == nullptr || trimCopy(pSetting->deathMap1).empty())
+    {
+        return false;
+    }
+
+    std::string startMap = trimCopy(pSetting->deathMap1);
+    std::transform(startMap.begin(), startMap.end(), startMap.begin(),
+                   [](unsigned char character) { return char(std::tolower(character)); });
+    // A continent of a world this installation lacks (Chedian without MM9), or one the chosen ruleset does not play in
+    // (MAW's `worlds`), stays on screen, greyed out.
+    const MapStatsEntry *pMap = m_pGameData->mapStats().findByFileName(startMap);
+    const auto rulesetIt = std::find_if(m_rulesets.begin(), m_rulesets.end(),
+                                        [this](const RulesetDefinition &ruleset) { return ruleset.id == m_ruleset.id; });
+    return pMap != nullptr && isWorldPackageMounted(assetFileSystem(), pMap->worldId)
+        && assetFileSystem().exists("worlds/" + pMap->worldId + "/maps/" + startMap)
+        && (rulesetIt == m_rulesets.end() || rulesetIt->supportsWorld(pMap->worldId));
 }
 
 void NewGameScreen::drawContinentSelection(float deltaSeconds)
@@ -2470,26 +2696,40 @@ void NewGameScreen::drawContinentSelection(float deltaSeconds)
     }
     loadDesign("gameplay/continent_selection");
     beginDesign("ContinentSelection");
-    drawDesign();
+    const std::vector<RulesetStartCard> &startCards = chosenRulesetDefinition().startCards;
+    const std::vector<std::string> hiddenCards = startCards.empty() ? std::vector<std::string>{}
+        : std::vector<std::string>{"ContinentSelectionEnroth", "ContinentSelectionAntagarich",
+              "ContinentSelectionJadame", "ContinentSelectionChedian"};
+    drawDesign(hiddenCards);
     drawRulesetSwitch();
     std::string chosenContinent;
-    for (const std::string key : {"enroth", "antagarich", "jadame"})
+    if (!startCards.empty())
     {
-        std::string name = key;
-        name[0] = char(std::toupper(name[0]));
-        const std::string prefix = "ContinentSelection" + name;
-        const bool available = findNewGameContinent(m_pGameData->mergedCharacterSelectionTable(), key) != nullptr;
-        const Rect rect = designRect(prefix + "Button");
-        if (button(prefix, rect, "", "world_card", available, available && pointerInside(rect)))
+        chosenContinent = drawStartCards(startCards);
+    }
+    else
+    {
+        for (const std::string key : {"enroth", "antagarich", "jadame", "chedian"})
         {
-            chosenContinent = key;
+            std::string name = key;
+            name[0] = char(std::toupper(name[0]));
+            const std::string prefix = "ContinentSelection" + name;
+            const bool available = continentOffered(key);
+            const Rect rect = designRect(prefix + "Button");
+            if (button(prefix, rect, "", "world_card", available, available && pointerInside(rect)))
+            {
+                chosenContinent = key;
+            }
+            // Cards draw their pictures and lettering above their blank selectable skin.
+            // A card that cannot be chosen is dimmed: faded picture, grey lettering.
+            const UiLayoutManager::LayoutElement *pImage = m_designLayouts.findElement(prefix + "Illustration");
+            drawTextureColor(pImage->primaryAsset, designRect(prefix + "Illustration"),
+                             available ? 0xffffffffu : 0x70a0a0a0u);
+            const uint32_t textColor = available ? 0 : RulesDisabledText;
+            label(prefix + "Name", Engine::localize(name), textColor);
+            label(prefix + "Game", m_designLayouts.findElement(prefix + "Game")->labelText, textColor);
+            label(prefix + "Start", m_designLayouts.findElement(prefix + "Start")->labelText, textColor);
         }
-        // Cards draw their pictures and lettering above their blank selectable skin.
-        const UiLayoutManager::LayoutElement *pImage = m_designLayouts.findElement(prefix + "Illustration");
-        drawTexture(pImage->primaryAsset, designRect(prefix + "Illustration"));
-        label(prefix + "Name", name);
-        label(prefix + "Game", m_designLayouts.findElement(prefix + "Game")->labelText);
-        label(prefix + "Start", m_designLayouts.findElement(prefix + "Start")->labelText);
     }
     if (action("ContinentSelectionCancelButton") || m_escapePressed)
     {
@@ -2503,6 +2743,63 @@ void NewGameScreen::drawContinentSelection(float deltaSeconds)
     }
 }
 
+std::string NewGameScreen::drawStartCards(const std::vector<RulesetStartCard> &cards)
+{
+    // Custom cards share the continent cards' look and are centred across the four-card row.
+    const std::string slot = "ContinentSelectionAntagarich";
+    const Rect left = designRect("ContinentSelectionEnrothButton");
+    const Rect right = designRect("ContinentSelectionChedianButton");
+    const Rect middle = designRect(slot + "Button");
+    const float gap = middle.x - (left.x + left.width);
+    const float count = float(cards.size());
+    const float rowWidth = count * middle.width + (count - 1) * gap;
+    const float rowLeft = (left.x + right.x + right.width - rowWidth) / 2;
+    std::string chosen;
+    for (size_t index = 0; index < cards.size(); ++index)
+    {
+        const RulesetStartCard &card = cards[index];
+        const bool available = continentOffered(card.continentKey);
+        const float shift = rowLeft + float(index) * (middle.width + gap) - middle.x;
+        const auto shifted = [this, shift](const std::string &id)
+        {
+            Rect rect = designRect(id);
+            rect.x += shift;
+            return rect;
+        };
+        // Every line spans the title's width: a ruleset's own lines are longer than a continent's.
+        const Rect titleRect = shifted(slot + "Name");
+        const auto text = [this, &shifted, &titleRect, available](const std::string &id, const std::string &value)
+        {
+            const UiLayoutManager::LayoutElement *pElement = m_designLayouts.findElement(id);
+            if (value.empty() || pElement == nullptr || pElement->fontName.empty())
+            {
+                return;
+            }
+            Rect rect = shifted(id);
+            rect.x = titleRect.x;
+            rect.width = titleRect.width;
+            textInRect(rect, value, pElement->fontName, fontHeight(pElement->fontName) * pElement->textScale,
+                       available ? pElement->textColorAbgr : RulesDisabledText,
+                       pElement->textAlignX == UiLayoutManager::TextAlignX::Center);
+        };
+        const std::string id = "start_card_" + card.continentKey;
+        const Rect cardRect = shifted(slot + "Button");
+        if (button(id, cardRect, "", "world_card", available, available && pointerInside(cardRect)))
+        {
+            chosen = card.continentKey;
+        }
+        if (!card.illustration.empty() && textureSize(card.illustration))
+        {
+            drawTextureColor(card.illustration, shifted(slot + "Illustration"),
+                available ? 0xffffffffu : 0x70a0a0a0u);
+        }
+        text(slot + "Game", card.subtitle);
+        text(slot + "Name", card.title);
+        text(slot + "Start", card.startText);
+    }
+    return chosen;
+}
+
 bool NewGameScreen::stateComplete(const CreationState &state) const
 {
     return isGodLichState(state)
@@ -2514,7 +2811,7 @@ bool NewGameScreen::stateComplete(const CreationState &state) const
 
 size_t NewGameScreen::requiredSkillCount(const CreationState &state) const
 {
-    return std::min(MaximumOptionalSkillSelections, state.optionalSkills.size());
+    return std::min(state.skillPickCount, state.optionalSkills.size());
 }
 
 std::array<RaceStatLine, CreationStatCount> NewGameScreen::raceStatLinesForState(const CreationState &state) const

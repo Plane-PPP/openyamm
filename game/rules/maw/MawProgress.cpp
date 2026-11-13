@@ -1,4 +1,5 @@
 #include "game/rules/maw/MawMonsterRules.h"
+#include "engine/Localization.h"
 
 #include "game/events/EventRuntime.h"
 #include "game/events/EvtEnums.h"
@@ -60,10 +61,11 @@ std::optional<RulesetProgressSummary> MawMonsterRules::progressSummary(const Rul
     const std::string currentMap = query.currentMap ? lowercaseName(query.currentMap->mapFileName) : std::string();
     const int today = gameDay(query.gameMinutes);
 
-    // Enroth, Antagarich and Jadame, as the worlds came out (map table continents 3, 2 and 1).
-    const std::array<std::pair<uint32_t, const char *>, 3> continents = {{{3, "Enroth"}, {2, "Antagarich"},
-        {1, "Jadame"}}};
-    const std::array<const char *, 3> worlds = {"MM6", "MM7", "MM8"};
+    // Enroth, Antagarich, Jadame and Chedian, as the worlds came out (map table continents 3, 2, 1 and 5). Chedian's
+    // card shows only while it has maps: with MM9 installed and its maps given MAW levels.
+    const std::array<std::pair<uint32_t, std::string_view>, 4> continents = {{{3, Engine::trNoop("Enroth")},
+        {2, Engine::trNoop("Antagarich")}, {1, Engine::trNoop("Jadame")}, {5, Engine::trNoop("Chedian")}}};
+    const std::array<const char *, 4> worlds = {"MM6", "MM7", "MM8", "MM9"};
 
     for (size_t continentIndex = 0; continentIndex < continents.size(); ++continentIndex)
     {
@@ -71,13 +73,14 @@ std::optional<RulesetProgressSummary> MawMonsterRules::progressSummary(const Rul
         RulesetProgressContinent continent;
         continent.name = continentName;
         continent.world = worlds[continentIndex];
-        continent.levelsBanked = state.continentLevels[MawGameState::continentIndex(continentId)];
+        continent.levelsBanked = state.levelOn(continentId);
 
         for (const MapStatsEntry &map : pMapTable->getEntries())
         {
             const std::string file = lowercaseName(map.fileName);
 
-            if (map.mergedContinentId != continentId || !m_rules.mapLevels().lists(file))
+            // The table's unused rows are named "pending" (zdtl02.blv has a MAW level but nothing leads there: OY-159).
+            if (map.mergedContinentId != continentId || !m_rules.mapLevels().lists(file) || map.name == "pending")
             {
                 continue;
             }
@@ -167,22 +170,29 @@ std::optional<RulesetProgressSummary> MawMonsterRules::progressSummary(const Rul
             }
         }
 
-        summary.continents.push_back(std::move(continent));
+        if (continentId != 5 || !continent.maps.empty())
+        {
+            summary.continents.push_back(std::move(continent));
+        }
     }
 
     const MawDimensionQuest &quest = state.dimensionQuest;
-    summary.dimensionQuest = quest.done ? "done"
-        : quest.tierLevel == 0 ? "not started"
-        : "level " + std::to_string(quest.tierLevel) + (quest.cleared ? ", cleared" : quest.mapGiven ? ", map given" : "");
+    summary.dimensionQuest = quest.done ? Engine::tr("done")
+        : quest.tierLevel == 0 ? Engine::tr("not started")
+        : Engine::tr(quest.cleared ? "level {level}, cleared"
+                : quest.mapGiven   ? "level {level}, map given"
+                                   : "level {level}",
+            {{"level", int64_t(quest.tierLevel)}});
     summary.dimensionRunsCleared = state.dimensionRunsCleared;
-    summary.currentRun = "none";
+    summary.currentRun = Engine::tr("none");
 
     for (const auto &[file, run] : state.dimensionRuns)
     {
         if (!run.completed)
         {
             const MapStatsEntry *pMap = pMapTable->findByFileName(file);
-            summary.currentRun = (pMap != nullptr ? pMap->name : file) + ", power " + std::to_string(run.power);
+            summary.currentRun = Engine::tr("{map}, power {power}",
+                {{"map", pMap != nullptr ? Engine::localize(pMap->name) : file}, {"power", int64_t(run.power)}});
             break;
         }
     }

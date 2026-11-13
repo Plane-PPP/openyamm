@@ -100,7 +100,7 @@ struct CharacterRulesetState
     // The masteries a lone character's utility skills had before their solo ones replaced them (soloMiscMasteries),
     // given back when the party grows.
     std::unordered_map<std::string, SkillMastery> soloStoredMasteries;
-    // MAW's Cover and Mana Shield, switched off by the player.
+    // MAW's Cover and Mana Shield, switched off by the player (MawSkillRules::skillSwitch).
     bool coverDisabled = false;
     bool manaShieldDisabled = false;
     // An Elementalist's random rotation of the quick and attack spells, switched off by the player (R on the skills
@@ -119,9 +119,9 @@ struct CharacterRulesetState
     // x 5 + bag), and the other bags' items by bag, each laid out on its own grid.
     uint8_t currentBag = 0;
     std::map<uint8_t, std::vector<InventoryItem>> storedBags;
-    // The bags tagged as crafting and alchemy bags, a bit per bag.
-    uint8_t craftingBags = 0;
-    uint8_t alchemyBags = 0;
+    // The bags tagged as crafting and alchemy bags, a bit per bag (a solo character's 25 too: OY-344).
+    uint32_t craftingBags = 0;
+    uint32_t alchemyBags = 0;
     // The game minute from which a Seraphim's Divine Protection works again (vars.divineProtectionCooldown).
     float divineProtectionReadyGameMinutes = 0;
     // The same for legendary 15 (vars.legendaryProtectionCooldown).
@@ -146,12 +146,6 @@ struct CharacterRulesetState
     bool classToggleOn(uint32_t spellId) const
     {
         return std::find(classToggles.begin(), classToggles.end(), spellId) != classToggles.end();
-    }
-
-    // Whether the player switched the skill off (MAW's Cover and Mana Shield).
-    bool skillSwitchedOff(const std::string &canonicalSkill) const
-    {
-        return (canonicalSkill == "Cover" && coverDisabled) || (canonicalSkill == "ManaShield" && manaShieldDisabled);
     }
 
     bool empty() const

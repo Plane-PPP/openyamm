@@ -2,6 +2,7 @@
 
 #include "game/events/EventDialogContent.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/mm9/Mm9Formation.h"
 #include "game/party/Party.h"
 #include "game/party/QuickItemSlot.h"
 #include "game/ui/GameplayUiController.h"
@@ -38,6 +39,14 @@ enum class GameplayHudScreenState
 };
 
 inline bool activeEventDialogPreservesGameplayHud(const EventDialogContent &activeEventDialog)
+{
+    return activeEventDialog.isActive
+        && activeEventDialog.presentation == EventDialogPresentation::Mm9Rude;
+}
+
+// An MM9 talk keeps the gameplay HUD but hides the party frame (basebar, portraits, hireling rail): its conversation
+// bar stands where the basebar was and lists a trainer's lessons per member (user, 2026-11-06).
+inline bool activeEventDialogHidesPartyFrame(const EventDialogContent &activeEventDialog)
 {
     return activeEventDialog.isActive
         && activeEventDialog.presentation == EventDialogPresentation::Mm9Rude;
@@ -184,6 +193,9 @@ struct GameplayHudTextureHandle
 struct GameplayHudFontHandle
 {
     std::string fontName;
+    // An independent outline face rasterized at this display height (drawn at scale 1, so it stays sharp); 0 for the
+    // face's own size.
+    int pixelHeight = 0;
     int fontHeight = 0;
     bgfx::TextureHandle mainTextureHandle = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowTextureHandle = BGFX_INVALID_HANDLE;
@@ -284,7 +296,9 @@ enum class GameplayDialoguePointerTargetType
 {
     None,
     Action,
-    CloseButton
+    CloseButton,
+    // Cancel of the popup that offers to reset a cleared dungeon (transitionResetPopupOpen).
+    ResetPopupCancel
 };
 
 struct GameplayDialoguePointerTarget
@@ -317,10 +331,13 @@ enum class GameplaySpellbookPointerTargetType
     SchoolButton,
     SpellButton,
     CloseButton,
+    // The selected spell becomes the active member's Quick Cast; again, or with no spell selected, clears it.
     QuickCastButton,
+    // The selected spell becomes the active member's only attack order (GameplayBattleOrders::assignAttackSpell);
+    // again, or with no spell selected, clears the orders.
     AttackCastButton,
-    // One of MMMerge's four extra quick spell slots (ExtraQuickSpells.lua); `slot` says which.
-    QuickSpellSlotButton
+    // Opens the Battle Orders window (game/ui/GameplayBattleOrders.h).
+    BattleOrdersButton
 };
 
 struct GameplaySpellbookPointerTarget
@@ -328,7 +345,6 @@ struct GameplaySpellbookPointerTarget
     GameplaySpellbookPointerTargetType type = GameplaySpellbookPointerTargetType::None;
     GameplayUiController::SpellbookSchool school = GameplayUiController::SpellbookSchool::Fire;
     uint32_t spellId = 0;
-    size_t slot = 0;
 
     bool operator==(const GameplaySpellbookPointerTarget &other) const = default;
 };
@@ -355,11 +371,31 @@ struct GameplayTownPortalDestination
     uint32_t hitHeight = 0;
 };
 
+// One continent's Town Portal map: a `town_portal_switch.txt` group with the destinations this installation offers.
+struct GameplayTownPortalContinent
+{
+    std::string groupName;
+    // English; localized where it is drawn.
+    std::string label;
+    std::string backgroundTextureName;
+    std::vector<GameplayTownPortalDestination> destinations;
+};
+
+// The Town Portal screen's continent buttons, `TownPortalContinentButton1` to `...4` in town_portal.yml, one per
+// continent in GameplayUiRuntime's order; a continent with no unlocked town shows its map with nothing to choose.
+constexpr size_t TownPortalContinentButtonCount = 4;
+
+inline std::string townPortalContinentButtonId(size_t slot)
+{
+    return "TownPortalContinentButton" + std::to_string(slot + 1);
+}
+
 enum class GameplayUtilitySpellPointerTargetType
 {
     None,
     Close,
     TownPortalDestination,
+    TownPortalContinent,
     LloydSetTab,
     LloydRecallTab,
     LloydSlot,
@@ -402,6 +438,9 @@ enum class GameplayCharacterPointerTargetType
     AdventurersInnPortrait,
     StatRow,
     SkillRow,
+    // A switchable skill's on/off gem (skillName) and the Magic heading's rotation switch (MAW).
+    SkillSwitch,
+    SkillRotationSwitch,
     InventoryItem,
     InventoryCell,
     EquipmentSlot,
@@ -487,17 +526,19 @@ enum class GameplayJournalPointerTargetType
     MainQuestsView,
     MainStoryView,
     MainNotesView,
-    // MAW's Progress tab and, on it, a continent card, a map filter and a map row (their index in noteId), and the
-    // ruleset's player's guide link.
+    // MAW's Progress tab and, on it, a continent card, a map filter and a map row (their index in noteId), the
+    // ruleset's player's guide link and the "All continents" chip.
     MainProgressView,
     ProgressContinent,
     ProgressFilter,
     ProgressMap,
     ProgressGuide,
+    ProgressAllContinents,
     // The aura panel's targets (GameplayJournalAuras.h), packed into noteId.
     AuraPanel,
     // The Trainers notes' finder targets (GameplayJournalTrainers.h), packed into noteId.
     TrainerFinder,
+    JournalContinent,
     PrevPageButton,
     NextPageButton,
     NotesPotionButton,
@@ -547,8 +588,8 @@ enum class GameplayHudPointerTargetType
     RestButton,
     BooksButton,
     InventoryButton,
-    DimensionDoorButton,
     QuickReferenceButton,
+    StatisticsButton,
     QuickCastButton,
     AttackButton,
     TriggerButton,
@@ -559,6 +600,8 @@ enum class GameplayHudPointerTargetType
     MinimapZoomInButton,
     MinimapZoomOutButton,
     FollowerPanelToggleButton,
+    // The MM9 world's formation button under the minimap (GameplayFormationBuilder).
+    FormationButton,
     // The combat log's button, one of its lines (index: the entry id) and the rest of its panel.
     CombatLogToggleButton,
     CombatLogEntry,
@@ -610,7 +653,10 @@ enum class GameplayControlsPointerTargetType
 enum class GameplayQuickReferencePointerTargetType
 {
     None,
-    ExitButton
+    ExitButton,
+    // The Statistics page's tabs (GameplayStatisticsScreen).
+    StatisticsOverviewTab,
+    StatisticsPartyTab
 };
 
 struct GameplayQuickReferencePointerTarget
@@ -797,6 +843,9 @@ struct GameplayOverlayInteractionState
     size_t quickItemPopupScroll = 0;
     std::optional<size_t> quickItemPopupHovered;
     std::optional<size_t> quickItemPopupKeyEntry;
+    // The MM9 formation builder (GameplayFormationBuilder): open over the paused game while it edits.
+    Mm9FormationBuilderState formationBuilder;
+    bool formationToggleLatch = false;
     bool menuToggleLatch = false;
     bool menuClickLatch = false;
     GameplayMenuPointerTarget menuPressedTarget = {};
@@ -853,6 +902,9 @@ struct GameplayOverlayInteractionState
     GameplayDialoguePointerTarget dialoguePressedTarget = {};
     bool houseShopClickLatch = false;
     size_t houseShopPressedSlotIndex = static_cast<size_t>(-1);
+    // A Ledger shop's scrollbar thumb follows the pointer; the grab keeps it under the pointer.
+    bool houseShopLedgerScrollDrag = false;
+    float houseShopLedgerScrollGrab = 0.0f;
     bool chestClickLatch = false;
     bool chestItemClickLatch = false;
     GameplayChestPointerTarget chestPressedTarget = {};

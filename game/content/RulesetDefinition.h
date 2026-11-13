@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/AssetFileSystem.h"
+#include "engine/Localization.h"
 #include "game/content/ContentManifest.h"
 #include "game/content/RulesetOptions.h"
 
@@ -59,6 +60,11 @@ struct RulesetPanelText
 // - Replace: the patch file replaces the whole table.
 struct RulesetTableContribution
 {
+    // An engine table below engine/data_tables/ (`table: items.txt`), or with `world` set, a table that world's
+    // package adds, by its path in world.yml (`world: mm9`, `table: data_tables/monster_data.txt`). A world's
+    // contribution applies only while that world's tables are read, so it does nothing when the world is not
+    // installed.
+    std::string world;
     std::string table;
     TableContributionMode mode = TableContributionMode::Override;
     std::string path;
@@ -68,12 +74,30 @@ struct RulesetTableContribution
     size_t headerRow = 0;
 };
 
+// One card of the new-game start choice (`newGame.starts` in ruleset.yml). A ruleset with start cards shows them on
+// the continent screen instead of the three continents; choosing one opens party creation for the
+// `new_game_continents` entry of its key in character_selection.yml (the engine's, or the ruleset's replacement).
+struct RulesetStartCard
+{
+    std::string continentKey;
+    std::string title;
+    // The small line above the title, where a continent card names its game.
+    std::string subtitle;
+    // The line below the title ("Begin in ..."), also shown on the party creation screen.
+    std::string startText;
+    // A picture name resolved like a menu texture (a Data/icons name or a hud_x2/ path); empty for none.
+    std::string illustration;
+};
+
+// At most this many start cards fit the continent screen.
+inline constexpr size_t MaxRulesetStartCards = 3;
+
 // A ruleset package, engine/rulesets/<id>/ruleset.yml (devdocs/maw/HANDOFF.md §3.2). The Standard ruleset has no
 // package.
 struct RulesetDefinition
 {
     std::string id = StandardRulesetId;
-    std::string name = "Standard MMMerge";
+    std::string name = std::string(Engine::trNoop("Standard MMMerge"));
     std::string description;
     std::vector<std::string> credits;
     // A web page explaining the ruleset to players (`guide_url`), linked from its Rules panel and its journal; empty
@@ -87,14 +111,22 @@ struct RulesetDefinition
     std::vector<RulesetTableContribution> tables;
     // Skills the ruleset shows under another name (`skillNames`: canonical skill name -> display name).
     std::map<std::string, std::string> skillNames;
+    // The worlds the ruleset plays in (`worlds`: world ids), empty for every world. A world it leaves out is greyed
+    // out at a new game, has no dimension door, and is never entered or loaded under it.
+    std::vector<std::string> worlds;
 
     bool isStandard() const;
+    bool supportsWorld(const std::string &worldId) const;
+    // Custom new-game cards replace the continent cards.
+    std::vector<RulesetStartCard> startCards;
+    bool hasRulesChoices() const;
     RulesetOptions defaultOptions() const;
     // Whether these options are among the choices and agree with the chosen challenge mode (preferences are always
     // allowed).
     bool offers(const RulesetOptions &options) const;
-    // The contributions to an engine table, in the order they apply (a generated patch, then hand-written ones).
-    std::vector<const RulesetTableContribution *> findTables(const std::string &engineTableVirtualPath) const;
+    // The contributions to an engine table (engine/data_tables/...) or a world's table (worlds/<id>/...), in the
+    // order they apply (a generated patch, then hand-written ones).
+    std::vector<const RulesetTableContribution *> findTables(const std::string &tableVirtualPath) const;
 };
 
 RulesetDefinition standardRulesetDefinition();
@@ -112,7 +144,8 @@ std::optional<RulesetDefinition> loadRulesetDefinition(
     const Engine::AssetFileSystem &assetFileSystem,
     const std::string &rulesetId,
     std::string &errorMessage);
-// Standard first, then every mounted ruleset package by id.
+// Standard first, then every valid mounted ruleset package by id. False, with the reasons in errorMessage, when a
+// package was left out because it is invalid; `rulesets` still holds the valid ones.
 bool loadAvailableRulesets(
     const Engine::AssetFileSystem &assetFileSystem,
     std::vector<RulesetDefinition> &rulesets,

@@ -21,7 +21,8 @@ from mathutils import Matrix, Vector
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bake_geometry import face_basis, fnv, pack_lightmap_charts, rgbm, rle_bgra
+from bake_geometry import (TERRAIN_CELL_TRIANGLES, face_basis, fnv, pack_lightmap_charts, point_in_polygon, rgbm,
+                           rle_bgra, terrain_triangles_on_floors)
 from bake_assets import bake_texture_paths, dependency_file, source_roots, texture_logical_scale
 
 sys.path.insert(0, str(ROOT / 'util'))
@@ -266,6 +267,10 @@ def main():
     records = []
     charts = []
     groups = {}
+    # A face that exactly repeats another (the same texture on the same corners, as Harmondale's two coincident bell
+    # towers, OY-231) is charted once: both copies would shade each other black. The copy shares the chart.
+    charted_faces = {}
+    duplicate_faces = []
     for bi, model in enumerate(native['bmodels']):
         for fi, face in enumerate(model['faces']):
             points = [Vector(tuple(model['vertices'][i][k] for k in 'xyz'))
@@ -274,6 +279,12 @@ def main():
             records.append(record)
             if len(points) < 3 or face['attributes'] & 0x2000 or not face['texture_name']:
                 continue
+            corners = tuple(tuple(round(p[k]) for k in range(3)) for p in points)
+            face_key = (face['texture_name'].lower(), tuple(sorted(corners)))
+            if face_key in charted_faces:
+                duplicate_faces.append((record, corners, charted_faces[face_key]))
+                continue
+            charted_faces[face_key] = (record, corners)
             basis = face_basis(points)
             if basis is None:
                 continue
@@ -285,7 +296,9 @@ def main():
             # UV bounds lie on texel centers, leaving size-1 raster intervals. Tiny
             # oblique faces need interior samples: a 2x2 chart can miss every sample
             # and bake completely black even when the face is exposed to the sky.
-            w, h = [max(4, math.ceil(v/profile['units_per_texel']) + 1) for v in span]
+            # A profile may give named models a finer texel spacing (detail geometry with small reliefs).
+            spacing = profile.get('model_units_per_texel', {}).get(model['name'], profile['units_per_texel'])
+            w, h = [max(4, math.ceil(v/spacing) + 1) for v in span]
             mat, (tw, th) = material(face['texture_name'])
             tex_uv = [((u+face['texture_delta_u'])/tw, 1-(v+face['texture_delta_v'])/th)
                       for u,v in zip(face['texture_us'],face['texture_vs'])]
@@ -302,6 +315,12 @@ def main():
         chart['record'].update(page=2+pi*2, uvs=light_uv)
         groups.setdefault(pi, []).append(
             (chart['points'], chart['material_uvs'], light_uv, chart['material']))
+    for record, corners, (charted, charted_corners) in duplicate_faces:
+        # The charted face's lightmap coordinates at each of the copy's corners, whatever order it lists them in.
+        uv_at = dict(zip(charted_corners, charted['uvs']))
+        record.update(page=charted['page'], uvs=[uv_at[corner] for corner in corners])
+    if duplicate_faces:
+        print('DUPLICATE FACES SHARING A CHART', len(duplicate_faces), flush=True)
 
     # Each page is a mesh with split face vertices, retaining native triangle fans.
     def make_mesh(name, entries, dimensions):
@@ -342,6 +361,13 @@ def main():
     entries = []
     heights = native['height_map']
     terrain_size = profile['terrain_size']
+    # Flat terrain triangles lying in the plane of a charted building floor go into their own object that bakes
+    # into the terrain page but is invisible to other surfaces' rays: coinciding with the floor, they would shade
+    # it black (Ravenshore's crystal plaza). Found again from the geometry on every bake.
+    floors = [(chart['points'][0].z, [(p.x, p.y) for p in chart['points']]) for chart in charts
+              if all(p.z == chart['points'][0].z for p in chart['points'])]
+    on_floors = set(terrain_triangles_on_floors(heights, floors))
+    floor_entries = []
     for gy in range(127):
         for gx in range(127):
             corners = [(gx,gy),(gx,gy+1),(gx+1,gy),(gx+1,gy+1)]
@@ -352,10 +378,20 @@ def main():
             texcoords = [(0,1),(0,0),(1,1),(1,0)]
             light = [((x/127*(terrain_size-1)+.5)/terrain_size,
                       (y/127*(terrain_size-1)+.5)/terrain_size) for x,y in corners]
-            for indices in [(0,3,2),(0,1,3)]:
-                entries.append(([points[i] for i in indices], [texcoords[i] for i in indices],
-                                [light[i] for i in indices], mat))
+            for triangle, indices in enumerate(TERRAIN_CELL_TRIANGLES):
+                (floor_entries if (gx, gy, triangle) in on_floors else entries).append(
+                    ([points[i] for i in indices], [texcoords[i] for i in indices], [light[i] for i in indices], mat))
     objects = [make_mesh('terrain', entries, (terrain_size, terrain_size))]
+    # Objects baked together with an atlas object, into its page.
+    companions = {'terrain': []}
+    if floor_entries:
+        floor_terrain, _ = make_mesh('terrain_on_floors', floor_entries, (terrain_size, terrain_size))
+        floor_terrain.visible_shadow = False
+        floor_terrain.visible_diffuse = False
+        floor_terrain.visible_glossy = False
+        floor_terrain.visible_transmission = False
+        companions['terrain'].append(floor_terrain)
+    print('TERRAIN TRIANGLES ON FLOORS', len(floor_entries), flush=True)
     objects.extend(make_mesh('buildings_'+str(pi), groups[pi], building_dimensions[pi])
                    for pi in range(len(building_dimensions)))
     decoration_objects = []
@@ -492,10 +528,13 @@ def main():
     probe_object[0].visible_glossy = False
     objects.append(probe_object)
     probe_values = {}
+    # Sun plus sky light of each building page, for the check of the floors on flat terrain below.
+    building_light = {}
     stats = {'profile': profile, 'blender': bpy.app.version_string, 'device': scene.cycles.device,
              'sun_direction': list(toward_sun), 'bakes': [], 'dependencies': deps,
              'probe_count': len(probe_positions), 'atlas_pages': 2*(len(objects)-1),
              'atlas_bytes': sum(width*height*8 for obj,(width,height) in objects[:-1])}
+    stats['terrain_triangles_on_floors'] = sorted(on_floors)
     if decoration_report is not None:
         stats['decoration_shadows'] = decoration_report
     for obj, (width, height) in objects:
@@ -504,13 +543,15 @@ def main():
         if args.sun_direct_only and obj.name == 'probes':
             continue
         target = bpy.data.images.new(obj.name, width=width, height=height, float_buffer=True)
-        for mat in obj.data.materials:
+        baked = [obj] + companions.get(obj.name, [])
+        for mat in {mat for member in baked for mat in member.data.materials}:
             node = mat.node_tree.nodes.get('BakeTarget') or mat.node_tree.nodes.new('ShaderNodeTexImage')
             node.name = 'BakeTarget'
             node.image = target
             mat.node_tree.nodes.active = node
         bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True)
+        for member in baked:
+            member.select_set(True)
         bpy.context.view_layer.objects.active = obj
         scene.render.bake.use_pass_color = False
         scene.render.bake.use_pass_direct = True
@@ -532,6 +573,15 @@ def main():
             bpy.ops.object.bake(type='DIFFUSE')
             pixels = np.array(target.pixels[:], dtype=np.float32).reshape(height,width,4)
             np.save(out / (obj.name+'_'+term+'.npy'), pixels)
+            if obj.name.startswith('buildings_') and term in ('sun', 'sky'):
+                building_light[obj.name] = building_light.get(obj.name, 0) + pixels[:, :, :3].sum(axis=2)
+            if profile.get('clamp_rgbm'):
+                # Opt-in for review bakes: clamp outliers instead of failing; the raw .npy above keeps them for
+                # tracing, and the count goes into the stats.
+                over = int((pixels[:, :, :3] > 4).any(axis=2).sum())
+                if over:
+                    stats.setdefault('clamped', []).append({'object': obj.name, 'term': term, 'texels': over})
+                    pixels[:, :, :3] = np.minimum(pixels[:, :, :3], 4)
             payload = rgbm(pixels)
             if obj.name == 'probes':
                 probe_values[term] = np.array([pixels[y,x,:3] for y,x in probe_texels])
@@ -543,6 +593,42 @@ def main():
                                    'max':float(pixels[:,:,:3].max())})
             print('BAKED', stats['bakes'][-1], flush=True)
         bpy.data.images.remove(target)
+    # Floors over a flat terrain triangle must not bake black there. A few dark texels can be real (a floor under
+    # a roof); most of a floor black is the coinciding-terrain fault coming back.
+    if building_light:
+        triangle_boxes = []
+        for gx, gy, triangle in on_floors:
+            corners = [(gx, gy), (gx, gy + 1), (gx + 1, gy), (gx + 1, gy + 1)]
+            xs = [(corners[i][0] - 64) * 512 for i in TERRAIN_CELL_TRIANGLES[triangle]]
+            ys = [(64 - corners[i][1]) * 512 for i in TERRAIN_CELL_TRIANGLES[triangle]]
+            z = heights[corners[TERRAIN_CELL_TRIANGLES[triangle][0]][1] * 128
+                        + corners[TERRAIN_CELL_TRIANGLES[triangle][0]][0]] * 32
+            triangle_boxes.append((z, min(xs), min(ys), max(xs), max(ys)))
+        checked = []
+        for chart in charts:
+            points = chart['points']
+            if any(p.z != points[0].z for p in points) or not any(
+                    z == points[0].z and min(p.x for p in points) < x1 and max(p.x for p in points) > x0
+                    and min(p.y for p in points) < y1 and max(p.y for p in points) > y0
+                    for z, x0, y0, x1, y1 in triangle_boxes):
+                continue
+            record = chart['record']
+            light = building_light.get('buildings_' + str((record['page'] - 2) // 2))
+            if light is None:
+                continue
+            height, width = light.shape
+            texels = [(u * width, v * height) for u, v in record['uvs']]
+            dark = total = 0
+            for row in range(int(min(v for _, v in texels)), int(math.ceil(max(v for _, v in texels)))):
+                for column in range(int(min(u for u, _ in texels)), int(math.ceil(max(u for u, _ in texels)))):
+                    if point_in_polygon(texels, column + .5, row + .5):
+                        total += 1
+                        dark += bool(light[row, column] < 1e-3)
+            checked.append({'model': record['model'], 'face': record['face'],
+                            'black_fraction': round(dark / total, 3) if total else 0})
+        black = [entry for entry in checked if entry['black_fraction'] > 0.05]
+        stats['floors_on_terrain'] = {'checked': len(checked), 'over_5_percent_black': black}
+        print('FLOORS ON FLAT TERRAIN', len(checked), 'checked,', len(black), 'over 5% black', black, flush=True)
     if retained is not None:
         page_count = struct.unpack_from('<I', retained, 32)[0]
         page_offset = struct.unpack_from('<I', retained, 48)[0]

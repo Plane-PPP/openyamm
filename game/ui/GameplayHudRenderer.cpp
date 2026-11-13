@@ -1,7 +1,10 @@
 #include "game/ui/GameplayHudRenderer.h"
+#include "engine/Localization.h"
+#include "engine/Utf8Text.h"
 
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
+#include "game/ui/GameplayMm9TalkBar.h"
 #include "game/ui/GameplayUiSkin.h"
 
 #include <algorithm>
@@ -394,8 +397,9 @@ void renderPassTurnButton(GameplayScreenRuntime &context, int width, int height)
     labelLayout.textScale = 0.3333333f;
     const std::vector<std::string> labelLines =
         context.turnBasedCombatRuntime().stage() == TurnBasedCombatStage::Movement
-            ? std::vector<std::string>{"End", "Move"}
-            : std::vector<std::string>{"Pass"};
+            ? std::vector<std::string>{
+                  Engine::trc("turn-based button", "End"), Engine::trc("turn-based button", "Move")}
+            : std::vector<std::string>{Engine::trc("turn-based button", "Pass")};
     renderCenteredContextActionLabelLines(context, labelLayout, *buttonRect, labelLines);
 }
 
@@ -415,9 +419,10 @@ void GameplayHudRenderer::renderGameplayHud(GameplayScreenRuntime &context, int 
     std::string status;
     if (context.houseBankState().inputActive())
     {
-        status = std::string(context.houseBankState().inputMode
-            == GameplayUiController::HouseBankInputMode::Deposit ? "Deposit: " : "Withdraw: ")
-            + context.houseBankState().inputText + "_";
+        const std::string &amount = context.houseBankState().inputText;
+        status = context.houseBankState().inputMode == GameplayUiController::HouseBankInputMode::Deposit
+            ? Engine::tr("Deposit: {amount}_", {{"amount", amount}})
+            : Engine::tr("Withdraw: {amount}_", {{"amount", amount}});
     }
     else if (context.statusBarEventRemainingSeconds() > 0 && !context.statusBarEventText().empty())
     {
@@ -472,7 +477,11 @@ void GameplayHudRenderer::renderGameplayHud(GameplayScreenRuntime &context, int 
                 if (font)
                 {
                     const float bottom = rect->y + rect->height;
-                    const float scale = rect->scale * pLayout->textScale;
+                    // Measured at the scale the label draws at: a pixel face's scale rounds up near a whole number
+                    // (snappedHudFontScale), and a plate measured smaller cut the last letter ("Ur", OY-488).
+                    const float layoutScale = rect->scale * pLayout->textScale;
+                    const float scale =
+                        layoutScale >= 1.0f ? GameplayHudCommon::snappedHudFontScale(layoutScale) : layoutScale;
                     const float maxWidth = 330.666667f * rect->scale;
                     std::vector<std::string> lines = context.wrapHudTextToWidth(*font, status,
                         (maxWidth - 16 * rect->scale) / scale);
@@ -501,12 +510,21 @@ void GameplayHudRenderer::renderGameplayHud(GameplayScreenRuntime &context, int 
                     {
                         rect->y = dock->y - rect->height - 8 * rect->scale;
                     }
+                    // In an MM9 talk the conversation bar stands where the basebar was: the plate goes above it.
+                    const std::optional<float> talkTop = activeEventDialogHidesPartyFrame(context.activeEventDialog())
+                        ? GameplayMm9TalkBar::panelTop(context, width, height)
+                        : std::nullopt;
+                    if (talkTop)
+                    {
+                        rect->y = std::min(rect->y, *talkTop - rect->height - 6 * rect->scale);
+                    }
                     GameplayUiSkin::renderTexture(context, "obsidian_hud_status_plate", *rect);
                     for (size_t i = 0; i < lines.size(); ++i)
                     {
-                        context.renderLayoutLabel(*pLayout, {rect->x + 8 * rect->scale,
+                        // Centred on the plate in the widest box it may have, so the label never trims a wrapped line.
+                        context.renderLayoutLabel(*pLayout, {rect->x + (rect->width - maxWidth) * 0.5f,
                             rect->y + 6 * rect->scale + i * lineHeight,
-                            rect->width - 16 * rect->scale, lineHeight, rect->scale}, lines[i]);
+                            maxWidth, lineHeight, rect->scale}, lines[i]);
                     }
                 }
             }

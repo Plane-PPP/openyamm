@@ -6,9 +6,11 @@
 #include "game/party/CharacterState.h"
 #include "game/events/EventDialogContent.h"
 #include "game/items/CraftingRuntime.h"
+#include "game/items/InventoryBags.h"
 #include "game/party/Party.h"
 #include "game/party/PartySpellSystem.h"
 #include "game/party/SkillData.h"
+#include "game/ui/HouseShopLedgerCategory.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -228,6 +230,9 @@ public:
         std::string spellPointsText;
         std::string conditionText;
         std::string quickSpellText;
+        // An MM9 hireling's rows (level, HP, AC, condition, attacks, spells, resistances) in place of the member's
+        // hit points, spell points, condition and quick spell.
+        std::vector<std::string> statLines;
         std::vector<ActiveSpellLine> activeSpells;
         float sourceX = 0.0f;
         float sourceY = 0.0f;
@@ -305,11 +310,59 @@ public:
         float scrollOffset = 0.0f;
     };
 
+    // The Battle Orders window over the spellbook (game/ui/GameplayBattleOrders.h).
+    struct BattleOrdersWindowState
+    {
+        bool open = false;
+        // Opened by the Battle Orders key: closing the window closes the book too.
+        bool closesBook = false;
+        size_t memberIndex = 0;
+        // The list shown: the member's upkeep spells (Character::upkeepOrders), else the attack orders.
+        bool upkeep = false;
+        std::optional<size_t> selectedOrder;
+        // The list's first shown row, and whether its scrollbar is being dragged.
+        size_t listScroll = 0;
+        bool draggingScroll = false;
+        // The Upkeep key's box waits for the key to bind: keys are its, not hotkeys.
+        bool capturingUpkeepKey = false;
+        // Why the last key was refused, shown beside the box until the next click.
+        std::string upkeepKeyRefusal;
+        // The quick key a palette click fills: 0 Quick Cast, 1-4 Quick Spell 1-4.
+        std::optional<size_t> armedQuickSlot;
+        // The slider being dragged (GameplayBattleOrders' Slider) and, for the distance, which end.
+        int draggedSlider = -1;
+        bool draggingMaximum = false;
+        bool copyMenuOpen = false;
+        // The palette's first shown row of icons.
+        size_t paletteRow = 0;
+        // The palette's search: typed text filters the spells by name; while it has focus, keys are text.
+        std::string paletteSearch;
+        bool paletteSearchActive = false;
+        // Escape acts once per press: it clears the search, then closes the window.
+        bool escapeLatch = false;
+    };
+
+    // The short menu a right click on a spell in the spellbook opens: Quick Cast, the quick spells, the orders.
+    struct SpellbookSpellMenuState
+    {
+        bool open = false;
+        uint32_t spellId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        // The spell under the right button when it went down, and when: a quick click opens the menu, a held one only
+        // inspects the spell.
+        uint32_t rightPressSpellId = 0;
+        uint64_t rightPressTicks = 0;
+        bool rightHeld = false;
+    };
+
     struct SpellbookState
     {
         bool active = false;
         SpellbookSchool school = SpellbookSchool::Fire;
         uint32_t selectedSpellId = 0;
+        BattleOrdersWindowState battleOrders;
+        SpellbookSpellMenuState spellMenu;
     };
 
     struct RestScreenState
@@ -390,6 +443,9 @@ public:
         size_t questPage = 0;
         size_t storyPage = 0;
         size_t notesPage = 0;
+        // 0 opens on the current continent (Shared for recipes); 4 is Shared.
+        uint32_t questContinent = 0;
+        uint32_t notesContinent = 0;
         // Case-insensitive filter over the notes of the selected category; typing goes to it while active.
         std::string notesSearch;
         bool notesSearchActive = false;
@@ -421,9 +477,11 @@ public:
         float cachedMapCenterX = 0.0f;
         float cachedMapCenterY = 0.0f;
         // The Progress tab: the summary built as the tab opened (rebuilt on the next opening), the continent and the
-        // map filter shown, the map selected and the one under the pointer (file names), and the map list's scroll.
+        // map filter shown, whether the list holds every continent's maps instead (kept between openings), the map
+        // selected and the one under the pointer (file names), and the map list's scroll.
         std::shared_ptr<const RulesetProgressSummary> progress;
         size_t progressContinent = 0;
+        bool progressAllContinents = false;
         uint8_t progressFilter = 0;
         std::string progressSelectedMap;
         std::string progressHoveredMap;
@@ -444,9 +502,19 @@ public:
         float trainerMapCenterY = 0.0f;
     };
 
+    enum class QuickReferencePage : uint8_t
+    {
+        Party,
+        // The playthrough statistics (game/ui/GameplayStatisticsScreen.h).
+        Statistics,
+    };
+
     struct QuickReferenceScreenState
     {
         bool active = false;
+        QuickReferencePage page = QuickReferencePage::Party;
+        // The Statistics page shows the Party tab instead of the Overview.
+        bool statisticsPartyTab = false;
     };
 
     enum class AlchemyIngredientFilter : uint8_t
@@ -573,6 +641,9 @@ public:
     static bool characterScreenSearchActive(const CharacterScreenState &screen);
     // Typing goes to the journal: its notes search, or a personal map note being written.
     static bool journalSearchActive(const JournalScreenState &screen);
+    // The Battle Orders window's palette search has focus, or the window waits for the Upkeep key: keys are the
+    // window's, not hotkeys.
+    static bool spellbookSearchActive(const SpellbookState &spellbook);
 
     struct InventoryNestedOverlayState
     {
@@ -581,6 +652,11 @@ public:
         uint32_t houseId = 0;
         // A shop's party inventory shows one bag at full size rather than the bag overview (several bags, desktop).
         bool bagZoomed = false;
+        // Sell trash (ShopSell, HouseServiceRuntime::findSellTrash): while picking, the picked items of the whole
+        // party are highlighted, a click on an item adds or removes it instead of selling it, and the button sells
+        // the pick.
+        bool sellTrashPicking = false;
+        std::vector<BagItemRef> sellTrashItems;
     };
 
     struct HouseShopOverlayState
@@ -590,14 +666,19 @@ public:
         HouseShopMode mode = HouseShopMode::None;
         // Which of a guild's spellbook shelves is open (HouseServiceRuntime::spellbookShelfSchools).
         uint32_t spellbookShelf = 0;
+        // A Ledger shop's list (HouseShopLedger): its top row, merchant tab and the order its column headings chose.
+        size_t ledgerFirstRow = 0;
+        HouseShopLedgerCategory ledgerFilter = HouseShopLedgerCategory::All;
+        HouseShopLedgerSort ledgerSort = {};
     };
 
-    // A stable's or boat's Schedule popup over the house dialogue; the selected departure is a weekday (0 Monday)
-    // and one of its routes.
+    // A stable's or boat's Schedule popup over the house dialogue, or over an MM9 dock's talk (mm9DockId, its RUDE
+    // id); the selected departure is a weekday (0 Monday) and one of its routes.
     struct TransportScheduleState
     {
         bool active = false;
         uint32_t houseId = 0;
+        uint32_t mm9DockId = 0;
         std::optional<int> selectedDay;
         uint32_t selectedRouteIndex = 0;
         // The press a release completes, and whether each input was held last frame (all held when the popup opens,
@@ -644,6 +725,8 @@ public:
         bool bypassRequiredMastery = false;
         bool bypassGameplayCasterValidation = false;
         bool lloydRecallMode = false;
+        // The Town Portal map shown (a `town_portal_switch.txt` group); empty: the current map's continent.
+        std::string townPortalContinent;
         bool lloydSetPreviewCapturePending = false;
         bool lloydSetPreviewScreenshotRequested = false;
         uint32_t lloydSetPreviewStartedTicks = 0;
@@ -812,6 +895,7 @@ public:
     TransportScheduleState &transportSchedule();
     const TransportScheduleState &transportSchedule() const;
     void openTransportSchedule(uint32_t houseId);
+    void openMm9TransportSchedule(uint32_t dockId);
     void closeTransportSchedule();
     void beginHouseShopVisit(uint32_t houseId);
     void markHouseShopTransactionPerformed(uint32_t houseId);

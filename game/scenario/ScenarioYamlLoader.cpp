@@ -18,7 +18,7 @@ const KeyList CommonStepKeys = {"note", "reason", "source_note", "game_minutes"}
 const KeyList PoseKeys = {"map", "x", "y", "z", "yaw", "yaw_degrees", "pitch", "pitch_degrees"};
 
 const KeyList MechanismKeys = {
-    "id", "state", "new_state", "moving",
+    "id", "state", "new_state", "moving", "spinning", "spin_rate_min",
     // recorded:
     "kind", "action", "raw_action", "previous_state", "was_moving", "door_slot", "move_length", "open_speed",
     "close_speed"};
@@ -42,7 +42,9 @@ const KeyList AssertKeys = {
     "chest_opened", "actor_dialog_started", "pressure_plate_triggered", "dialogue_canceled", "dialog",
     "input_prompt", "new_game_party_member", "new_game_party_skill", "qbit_set", "qbit_clear", "ruleset",
     "mechanism", "gold", "food", "game_hour", "charges", "dimension_door", "combat_log", "journal_map_note",
-    "quick_item_ring", "quick_item_popup", "water", "ai_trace", "autonote", "teacher_ledger",
+    "quick_item_ring", "quick_item_popup", "water", "ai_trace", "autonote", "teacher_ledger", "sprite_hidden",
+    "sprite_shown",
+    "chest_view", "party_position", "turn_based", "member_points", "light", "scripted_fog", "recovering_members",
     // recorded:
     "scene_kind", "new_game_starting", "new_game_started", "state_dump_party", "state_dump_party_member",
     "state_dump_party_skill", "follower_hired", "follower_left", "gold_received", "starting_items"};
@@ -60,16 +62,23 @@ const std::vector<NestedKeys> AssertBlockKeys = {
     {"homing_ends", {"source_monster_id", "hit", "min_count", "max_count", "report"}},
     {"party_health", {"full"}},
     {"item_set_bonus", {"member_index", "set_id", "active"}},
-    {"actor_count", {"name", "monster_id", "boss", "shrunk", "hurt", "hostile", "min", "max"}},
-    {"buff", {"spell_id", "present", "member_index"}},
+    {"actor_count", {"name", "monster_id", "boss", "shrunk", "hurt", "hostile", "near", "min", "max"}},
+    {"buff", {"spell_id", "present", "member_index", "remaining_min", "remaining_max"}},
+    {"turn_based", {"active", "stage", "front_member", "actor_index", "actor_queued", "actor_effect", "effect_min",
+        "effect_max", "report"}},
+    {"member_points", {"member_index", "spell_points_min", "spell_points_max", "health_min", "health_max"}},
     {"condition", {"name", "present", "member_index"}},
     {"charges", {"started", "hits", "misses", "frenzies", "min_started", "min_hits", "min_misses", "min_frenzies"}},
     {"journal_map_note", {"map", "id", "text", "present"}},
     {"autonote", {"id", "present"}},
     {"teacher_ledger", {"continent", "bought"}},
     {"quick_item_ring", {"open", "member_index"}},
+    {"chest_view", {"open", "chest_id"}},
+    {"party_position", {"x", "y", "radius", "z_min", "z_max"}},
     {"quick_item_popup", {"kind", "member_index"}},
     {"dimension_door", {"pending", "without_quest"}},
+    {"light", {"key", "on"}},
+    {"scripted_fog", {"active", "near", "far"}},
     {"water", {"state", "eye_under", "breath_min", "breath_max", "drowning_ticks_min", "drowning_ticks_max",
         "foot_z_min", "foot_z_max"}},
     {"actor_visible", {"actor_index", "map", "name", "monster_id", "current_hp", "max_hp", "dead", "hidden",
@@ -133,7 +142,7 @@ const std::vector<StepKeys> &stepKeyTable()
         {ScenarioStepKind::AnswerInput, {"text", "expect", "expect_before", "input_prompt"}},
         {ScenarioStepKind::InteractTarget, concatKeys({InteractionReplayKeys, {"source_id"}})},
         {ScenarioStepKind::InteractActor, {"actor_index", "map", "pose", "expect", "name", "hit", "npc_id",
-            "group", "friendly", "scene_kind",
+            "group", "friendly", "scene_kind", "activated",
             // recorded:
             "method", "kind", "distance", "has_hit", "can_activate"}},
         {ScenarioStepKind::MovementSegment, {"input", "duration_ms", "seconds", "delta_game_minutes", "start",
@@ -145,7 +154,7 @@ const std::vector<StepKeys> &stepKeyTable()
             // recorded:
             "action_id", "label", "destination_map", "destination_name", "destination_map_id", "required_qbit",
             "pos", "method"}},
-        {ScenarioStepKind::AdvanceRuntime, {"seconds", "milliseconds"}},
+        {ScenarioStepKind::AdvanceRuntime, {"seconds", "milliseconds", "present_dialogs", "follow_map_move"}},
         {ScenarioStepKind::AdvanceGameTime, {"minutes", "hours", "days", "after_game_minutes",
             "before_game_minutes"}},
         {ScenarioStepKind::WaitUntil, {"timeout_runtime_seconds", "seconds", "assert"}},
@@ -159,17 +168,26 @@ const std::vector<StepKeys> &stepKeyTable()
             "damage_ratio", "applied_ratio", "recovery_ratio", "min_hit_rate", "max_hit_rate", "min_average",
             "max_average", "report", "attack_spell", "min_weapon_attacks", "max_weapon_attacks"}},
         {ScenarioStepKind::SetRuleset, {"options"}},
-        {ScenarioStepKind::RulesetBanks, {"mm8", "mm7", "mm6", "other", "completed_maps", "dimension_quest_done"}},
+        {ScenarioStepKind::RulesetBanks, {"mm8", "mm7", "mm6", "mm9", "completed_maps", "dimension_quest_done"}},
         {ScenarioStepKind::ConsoleCommand, {"line", "expect_contains"}},
+        {ScenarioStepKind::WalkTo, concatKeys({PoseKeys, {"to", "via", "radius", "timeout_seconds", "clear_hostiles",
+            "expect_map", "plan", "node_limit", "close_dialogs", "expect", "z_tolerance"}})},
+        {ScenarioStepKind::ClearHostiles, {"radius", "min"}},
+        {ScenarioStepKind::PlayLua, {"source", "max_seconds"}},
+        {ScenarioStepKind::PartyDefeat, {"wait_seconds", "knock_out", "expect_map", "expect_game_over"}},
+        {ScenarioStepKind::Reload, {"name", "expect_blocked"}},
+        {ScenarioStepKind::PickUp, {"item_id", "reach"}},
+        {ScenarioStepKind::Climb, {"ladder", "down", "timeout_seconds"}},
         {ScenarioStepKind::QuickLoad, {"save", "expect", "expect_status"}},
         {ScenarioStepKind::GrantItem, {"item_id", "count", "member_index", "power", "state", "enchant",
             "second_enchant", "special", "rarity", "drop_level", "item_power", "charges", "identified", "equip",
             "roll_level", "boss", "seed", "dimension_map", "legendary"}},
         {ScenarioStepKind::UseItem, {"item_id", "member_index", "expect"}},
+        {ScenarioStepKind::TurnBasedTurns, {"count", "max_seconds"}},
         {ScenarioStepKind::RightClickPortrait, {"item_id", "carrier_index", "member_index", "inventory", "release",
             "expect"}},
         {ScenarioStepKind::CastSpell, {"member_index", "spell_id", "skill", "mastery", "actor_index", "target_member",
-            "scroll", "expect"}},
+            "target_point", "scroll", "expect", "expect_status"}},
         {ScenarioStepKind::PartyCharge, {"actor_index", "status", "advance_seconds", "min_moved"}},
         {ScenarioStepKind::Craft, {"member_index", "target_item_id", "worn_slot", "material_item_id", "all",
             "choice", "expect"}},
@@ -179,16 +197,18 @@ const std::vector<StepKeys> &stepKeyTable()
         {ScenarioStepKind::FireActorProjectile, {"actor_index", "ability", "damage"}},
         {ScenarioStepKind::BlinkActor, {"actor_index"}},
         {ScenarioStepKind::ExecuteEvent, {"id"}},
+        {ScenarioStepKind::LuaEvent, {"source"}},
         {ScenarioStepKind::ChargeActor, {"actor_index"}},
         {ScenarioStepKind::FrenzyActor, {"actor_index"}},
         {ScenarioStepKind::AiArena, {"path", "log"}},
         {ScenarioStepKind::AiTraceDump, {"actor_index", "arena_monster", "decisions_only", "last"}},
         {ScenarioStepKind::SetupShortcut,
             {"kind", "id", "value", "item_id", "source_id", "name", "member_index", "slot", "strongest", "condition",
-                "health"}},
+                "health", "spell_points"}},
         {ScenarioStepKind::SaveCheckpoint, {"name"}},
         {ScenarioStepKind::LoadCheckpoint, {"name"}},
-        {ScenarioStepKind::SaveGame, {"name", "required_package_schema", "expect_failure", "block_with_directory"}},
+        {ScenarioStepKind::SaveGame, {"name", "path", "required_package_schema", "rebuilt_maps", "expect_failure",
+            "block_with_directory"}},
         {ScenarioStepKind::LoadGame, {"name", "path", "expect_failure"}},
         {ScenarioStepKind::Note, {"text"}},
         {ScenarioStepKind::Todo, {}, true},
@@ -516,6 +536,48 @@ bool ScenarioYamlLoader::parseStepKind(const std::string &value, ScenarioStepKin
         return true;
     }
 
+    if (value == "walk_to")
+    {
+        kind = ScenarioStepKind::WalkTo;
+        return true;
+    }
+
+    if (value == "climb")
+    {
+        kind = ScenarioStepKind::Climb;
+        return true;
+    }
+
+    if (value == "pick_up")
+    {
+        kind = ScenarioStepKind::PickUp;
+        return true;
+    }
+
+    if (value == "reload")
+    {
+        kind = ScenarioStepKind::Reload;
+        return true;
+    }
+
+    if (value == "party_defeat")
+    {
+        kind = ScenarioStepKind::PartyDefeat;
+        return true;
+    }
+
+    if (value == "play_lua")
+    {
+        kind = ScenarioStepKind::PlayLua;
+        return true;
+    }
+
+    if (value == "clear_hostiles")
+    {
+        kind = ScenarioStepKind::ClearHostiles;
+        return true;
+    }
+
     if (value == "console")
     {
         kind = ScenarioStepKind::ConsoleCommand;
@@ -531,6 +593,12 @@ bool ScenarioYamlLoader::parseStepKind(const std::string &value, ScenarioStepKin
     if (value == "use_item")
     {
         kind = ScenarioStepKind::UseItem;
+        return true;
+    }
+
+    if (value == "turn_based_turns")
+    {
+        kind = ScenarioStepKind::TurnBasedTurns;
         return true;
     }
 
@@ -585,6 +653,12 @@ bool ScenarioYamlLoader::parseStepKind(const std::string &value, ScenarioStepKin
     if (value == "execute_event")
     {
         kind = ScenarioStepKind::ExecuteEvent;
+        return true;
+    }
+
+    if (value == "lua_event")
+    {
+        kind = ScenarioStepKind::LuaEvent;
         return true;
     }
 

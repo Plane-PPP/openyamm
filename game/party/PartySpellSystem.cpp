@@ -1,4 +1,6 @@
 #include "game/party/PartySpellSystem.h"
+#include "engine/Localization.h"
+#include "game/party/PlaythroughStatistics.h"
 
 #include "game/gameplay/CorpseLootRuntime.h"
 #include "game/gameplay/GameMechanics.h"
@@ -10,6 +12,7 @@
 #include "game/party/LloydsBeaconRuntime.h"
 #include "game/party/SpellSchool.h"
 #include "game/party/SpellIds.h"
+#include "game/party/WorldSpells.h"
 #include "game/rules/GameRules.h"
 #include "game/tables/MonsterTable.h"
 #include "game/tables/SpellTable.h"
@@ -38,12 +41,12 @@ constexpr int16_t SummonWispGrandmasterMonsterId = 99;
 // A wisp the rules add past the limit stays until it dies.
 constexpr float PermanentWispSeconds = 1.0e9f;
 
-constexpr const char *SpellFailedText = "Spell failed";
-constexpr const char *NoValidTargetText = "No valid target exists!";
-constexpr const char *HostileCreaturesNearbyText = "There are hostile creatures nearby!";
-constexpr const char *SummonLimitText = "This character can't summon any more monsters!";
-constexpr const char *WandAlreadyChargedText = "Wand already charged!";
-constexpr const char *ItemQualityTooLowText = "Item is not of high enough quality";
+constexpr std::string_view SpellFailedText = Engine::trNoop("Spell failed");
+constexpr std::string_view NoValidTargetText = Engine::trNoop("No valid target exists!");
+constexpr std::string_view HostileCreaturesNearbyText = Engine::trNoop("There are hostile creatures nearby!");
+constexpr std::string_view SummonLimitText = Engine::trNoop("This character can't summon any more monsters!");
+constexpr std::string_view WandAlreadyChargedText = Engine::trNoop("Wand already charged!");
+constexpr std::string_view ItemQualityTooLowText = Engine::trNoop("Item is not of high enough quality");
 
 float secondsFromHours(float hours);
 float secondsFromMinutes(float minutes);
@@ -268,35 +271,50 @@ std::string spellWorldUnavailableText(SpellId spellId, bool indoorMap)
         switch (spellId)
         {
             case SpellId::MeteorShower:
-                return "Can't cast Meteor Shower indoors!";
+                return Engine::tr("Can't cast Meteor Shower indoors!");
             case SpellId::Starburst:
-                return "Can't cast Starburst indoors!";
+                return Engine::tr("Can't cast Starburst indoors!");
             case SpellId::Fly:
-                return "Can not cast Fly indoors!";
+                return Engine::tr("Can not cast Fly indoors!");
             case SpellId::Armageddon:
-                return "Can't cast Armageddon indoors!";
+                return Engine::tr("Can't cast Armageddon indoors!");
             default:
-                return SpellFailedText;
+                return Engine::tr(SpellFailedText);
         }
     }
 
     switch (spellId)
     {
         case SpellId::Inferno:
-            return "Can't cast Inferno outdoors!";
+            return Engine::tr("Can't cast Inferno outdoors!");
         case SpellId::PrismaticLight:
-            return "Can't cast Prismatic Light outdoors!";
+            return Engine::tr("Can't cast Prismatic Light outdoors!");
         default:
-            return SpellFailedText;
+            return Engine::tr(SpellFailedText);
     }
 }
 
-std::optional<std::string> spellWorldAvailabilityFailure(SpellId spellId, bool indoorMap)
+// Whether the map's spells follow the indoor rules: every map but one open to the sky (an outdoor map, or a BLV its
+// world declares open: IGameplayWorldRuntime::isOpenAirMap).
+bool spellsIndoors(const IGameplayWorldRuntime &worldRuntime)
 {
-    if ((indoorMap && isSpellOutdoorOnly(spellId))
-        || (!indoorMap && isSpellIndoorOnly(spellId)))
+    return !worldRuntime.isOpenAirMap();
+}
+
+// The outdoor spells work on a map open to the sky, the indoor ones elsewhere. Fly also needs an outdoor map's
+// flight, which a BLV open to the sky has not; MM9's Fleet Foot in Fly's slot works anywhere.
+std::optional<std::string> spellWorldAvailabilityFailure(
+    const Party &party,
+    SpellId spellId,
+    const IGameplayWorldRuntime &worldRuntime)
+{
+    const bool indoors = spellsIndoors(worldRuntime);
+    const bool noFlight = spellId == SpellId::Fly && worldRuntime.isIndoorMap();
+
+    if (((indoors || noFlight) && isSpellOutdoorOnly(spellId) && !castsFleetFoot(party, spellIdValue(spellId)))
+        || (!indoors && isSpellIndoorOnly(spellId)))
     {
-        return spellWorldUnavailableText(spellId, indoorMap);
+        return spellWorldUnavailableText(spellId, indoors || noFlight);
     }
 
     return std::nullopt;
@@ -492,7 +510,8 @@ float secondsFromMinutes(float minutes)
     return minutes * 60.0f;
 }
 
-std::optional<BackendSpellRule> resolveBackendSpellRule(uint32_t spellId, SkillMastery mastery)
+// With a party, the spell as its world casts it (MM9's Fleet Foot in Fly's slot); without, as the engine's.
+std::optional<BackendSpellRule> resolveBackendSpellRule(const Party *pParty, uint32_t spellId, SkillMastery mastery)
 {
 
     switch (spellIdFromValue(spellId))
@@ -567,7 +586,7 @@ std::optional<BackendSpellRule> resolveBackendSpellRule(uint32_t spellId, SkillM
             return makeBackendSpellRule(
                 PartySpellCastTargetKind::None,
                 PartySpellCastEffectKind::PartyBuff,
-                PartyBuffId::Fly);
+                pParty != nullptr && castsFleetFoot(*pParty, spellId) ? PartyBuffId::FleetFoot : PartyBuffId::Fly);
         case SpellId::Starburst:
             return makeBackendSpellRule(PartySpellCastTargetKind::GroundPoint, PartySpellCastEffectKind::Projectile);
         case SpellId::Awaken:
@@ -845,7 +864,7 @@ std::optional<BackendSpellRule> resolveBackendSpellRule(uint32_t spellId, SkillM
             return makeBackendSpellRule(
                 PartySpellCastTargetKind::None,
                 PartySpellCastEffectKind::PartyBuff,
-                PartyBuffId::Fly);
+                pParty != nullptr && castsFleetFoot(*pParty, spellId) ? PartyBuffId::FleetFoot : PartyBuffId::Fly);
         case SpellId::WingBuffet:
             return makeBackendSpellRule(PartySpellCastTargetKind::None, PartySpellCastEffectKind::AreaEffect);
         default:
@@ -902,7 +921,7 @@ bx::Vec3 resolveActorTargetPoint(const GameplayRuntimeActorState &actor)
     return {
         actor.preciseX,
         actor.preciseY,
-        actor.preciseZ + GameMechanics::actorTargetHeight(actor.height)
+        actor.preciseZ + actor.targetHeight
     };
 }
 
@@ -1096,7 +1115,8 @@ void applyCompositePartyBuff(
                     casterMemberIndex);
             }
 
-            for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+            // The hirelings too (Party::combatantCount).
+            for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
             {
                 party.applyCharacterBuff(
                     memberIndex,
@@ -1308,7 +1328,9 @@ PartySpellCastResult PartySpellSystem::castSpell(
     PartySpellCastResult result = {};
     result.spellId = request.spellId;
 
-    Character *pCaster = party.member(request.casterMemberIndex);
+    // A combatant: an MM9 hireling casts its row's spells here too, at the row's skill and mastery and without mana
+    // (spendMana false, GameplayActionController's hireling attack).
+    Character *pCaster = party.combatant(request.casterMemberIndex);
 
     if (pCaster == nullptr)
     {
@@ -1317,7 +1339,18 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::InvalidCaster,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            SpellFailedText);
+            Engine::tr(SpellFailedText));
+    }
+
+    // Underwater (MM7's Shoals) nobody casts from memory; scrolls and wands, which spend no mana, still work (OY-350).
+    if (request.spendMana && worldRuntime.isUnderwaterMap())
+    {
+        return makeFailure(
+            request.spellId,
+            PartySpellCastStatus::Failed,
+            PartySpellCastTargetKind::None,
+            PartySpellCastEffectKind::Unsupported,
+            Engine::tr(UnderwaterText));
     }
 
     if (spellIdFromValue(request.spellId) == SpellId::DivineIntervention
@@ -1328,7 +1361,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::Unsupported,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::PartyRestore,
-            "Divine Intervention is blocked by equipped gear");
+            Engine::tr("Divine Intervention is blocked by equipped gear"));
     }
 
     const SpellEntry *pSpellEntry = spellTable.findById(static_cast<int>(request.spellId));
@@ -1340,7 +1373,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::InvalidSpell,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            SpellFailedText);
+            Engine::tr(SpellFailedText));
     }
 
     // A null field (the world's Hum at 0 here): no spell is cast without a Null Damper II.
@@ -1351,7 +1384,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::Unsupported,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            "Your magic scatters in the null field");
+            Engine::tr("Your magic scatters in the null field"));
     }
 
     // The monster the request names, for rules that read it (MAW's class spells): its level and the crowd around it.
@@ -1430,10 +1463,10 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::NotSkilledEnough,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            "Not skilled enough");
+            Engine::tr("Not skilled enough"));
     }
 
-    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(request.spellId, skillMastery);
+    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(&party, request.spellId, skillMastery);
 
     if (!rule)
     {
@@ -1442,7 +1475,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::Unsupported,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            SpellFailedText);
+            Engine::tr(SpellFailedText));
     }
 
     result.targetKind = rule->targetKind;
@@ -1457,7 +1490,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::NotSkilledEnough,
             rule->targetKind,
             rule->effectKind,
-            "Not skilled enough");
+            Engine::tr("Not skilled enough"));
     }
 
     CharacterSpellCast spellCast = {};
@@ -1551,15 +1584,19 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::NotEnoughSpellPoints,
                     rule->targetKind,
                     rule->effectKind,
-                    "Not enough mana to hold " + spellRules.spellName(*pCaster, *pSpellEntry));
+                    Engine::tr("Not enough mana to hold {spell}",
+                        {{"spell", Engine::localize(spellRules.spellName(*pCaster, *pSpellEntry), "spell")}}));
             }
 
             spellRules.updateAuras(party, 0.0f);
             result.manaCost = 0;
             result.status = PartySpellCastStatus::Succeeded;
             result.statusText = *aura == AuraCastResult::Held
-                ? spellRules.spellName(*pCaster, *pSpellEntry) + " held by " + pCaster->name
-                : spellRules.spellName(*pCaster, *pSpellEntry) + " released";
+                ? Engine::tr("{spell} held by {name}",
+                    {{"spell", Engine::localize(spellRules.spellName(*pCaster, *pSpellEntry), "spell")},
+                      {"name", pCaster->name}})
+                : Engine::tr("{spell} released",
+                      {{"spell", Engine::localize(spellRules.spellName(*pCaster, *pSpellEntry), "spell")}});
 
             // Letting an aura go takes no time (SP:2851-2858 sets no recovery).
             if (*aura == AuraCastResult::Released)
@@ -1597,37 +1634,17 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::NotEnoughSpellPoints,
             rule->targetKind,
             rule->effectKind,
-            "Not enough spell points");
-    }
-
-    if (request.spendMana
-        && request.applyRecovery
-        && request.skillLevelOverride == 0
-        && !request.bypassRequiredMastery
-        && spellIdFromValue(request.spellId) != SpellId::None
-        && pCaster->conditions.test(static_cast<size_t>(CharacterCondition::Cursed)))
-    {
-        static thread_local std::mt19937 rng(std::random_device{}());
-
-        if (std::uniform_int_distribution<int>(0, 99)(rng) < 50)
-        {
-            party.spendSpellPoints(request.casterMemberIndex, static_cast<int>(result.manaCost));
-            return makeFailureWithRecovery(
-                PartySpellCastStatus::Failed,
-                rule->targetKind,
-                rule->effectKind,
-                SpellFailedText);
-        }
+            Engine::tr("Not enough spell points"));
     }
 
     bx::Vec3 targetPoint = {0.0f, 0.0f, 0.0f};
     const SpellId spellId = spellIdFromValue(request.spellId);
     // Sunray indoors where the rules allow it (MAW), at any hour; outdoors it keeps its daylight check.
     const bool sunrayIndoors =
-        spellId == SpellId::Sunray && worldRuntime.isIndoorMap() && party.rules().spells.sunrayWorksIndoors();
+        spellId == SpellId::Sunray && spellsIndoors(worldRuntime) && party.rules().spells.sunrayWorksIndoors();
     const std::optional<std::string> worldAvailabilityFailure = sunrayIndoors
         ? std::nullopt
-        : spellWorldAvailabilityFailure(spellId, worldRuntime.isIndoorMap());
+        : spellWorldAvailabilityFailure(party, spellId, worldRuntime);
 
     if (worldAvailabilityFailure.has_value())
     {
@@ -1655,7 +1672,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::NeedActorTarget,
                     rule->targetKind,
                     rule->effectKind,
-                    NoValidTargetText);
+                    Engine::tr(NoValidTargetText));
             }
         }
         else
@@ -1670,7 +1687,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    Engine::tr(SpellFailedText));
             }
 
             targetPoint = resolveActorTargetPoint(actor);
@@ -1678,20 +1695,21 @@ PartySpellCastResult PartySpellSystem::castSpell(
     }
     else if (rule->targetKind == PartySpellCastTargetKind::Character)
     {
-        if (!request.targetCharacterIndex || party.member(*request.targetCharacterIndex) == nullptr)
+        // A character target is a combatant: a spell on an MM9 hireling (a heal wakes it, a buff is its own).
+        if (!request.targetCharacterIndex || party.combatant(*request.targetCharacterIndex) == nullptr)
         {
             return makeFailure(
                 request.spellId,
                 PartySpellCastStatus::NeedCharacterTarget,
                 rule->targetKind,
                 rule->effectKind,
-                "Need character target");
+                Engine::tr("Need character target"));
         }
     }
     else if (rule->targetKind == PartySpellCastTargetKind::CharacterOrWorldTarget)
     {
         const bool hasCharacterTarget =
-            request.targetCharacterIndex && party.member(*request.targetCharacterIndex) != nullptr;
+            request.targetCharacterIndex && party.combatant(*request.targetCharacterIndex) != nullptr;
         const bool hasWorldTarget =
             request.targetWorldHit.has_value() && isStoneToFleshWorldTarget(*request.targetWorldHit);
 
@@ -1702,7 +1720,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedCharacterOrWorldTarget,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                Engine::tr(NoValidTargetText));
         }
     }
     else if (rule->targetKind == PartySpellCastTargetKind::ActorOrCharacter)
@@ -1711,7 +1729,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
         const bool hasActorTarget =
             request.targetActorIndex && worldRuntime.actorRuntimeState(*request.targetActorIndex, actor);
         const bool hasCharacterTarget =
-            request.targetCharacterIndex && party.member(*request.targetCharacterIndex) != nullptr;
+            request.targetCharacterIndex && party.combatant(*request.targetCharacterIndex) != nullptr;
 
         if (!hasActorTarget && !hasCharacterTarget)
         {
@@ -1720,7 +1738,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedActorOrCharacterTarget,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                Engine::tr(NoValidTargetText));
         }
 
         if (hasActorTarget)
@@ -1737,7 +1755,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedGroundPoint,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                Engine::tr(NoValidTargetText));
         }
 
         targetPoint = resolveFallingSpellTargetPoint(
@@ -1753,7 +1771,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedInventoryItemTarget,
                 rule->targetKind,
                 rule->effectKind,
-                "Select item target");
+                Engine::tr("Select item target"));
         }
     }
     else if (rule->targetKind == PartySpellCastTargetKind::TelekinesisTarget)
@@ -1765,7 +1783,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedTelekinesisTarget,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                Engine::tr(NoValidTargetText));
         }
 
         if (!worldRuntime.canActivateTelekinesisTarget(*request.telekinesisTarget))
@@ -1774,11 +1792,22 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::Failed,
                 rule->targetKind,
                 rule->effectKind,
-                SpellFailedText);
+                Engine::tr(SpellFailedText));
         }
     }
     else if (rule->targetKind == PartySpellCastTargetKind::UtilityUi)
     {
+        // A map that forbids them (world.yml noTeleportMaps, the scene's allow_lloyds_beacon): no window opens.
+        if ((spellId == SpellId::TownPortal && !worldRuntime.allowsTownPortal())
+            || (spellId == SpellId::LloydsBeacon && !worldRuntime.allowsLloydsBeacon()))
+        {
+            return makeFailureWithRecovery(
+                PartySpellCastStatus::Failed,
+                rule->targetKind,
+                rule->effectKind,
+                Engine::tr(SpellFailedText));
+        }
+
         if ((spellId == SpellId::TownPortal || spellId == SpellId::LloydsBeacon)
             && party.rules().monsters.teleportBlockedNearEnemies()
             && partyHasYellowAlert(worldRuntime))
@@ -1800,7 +1829,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    Engine::tr(SpellFailedText));
             }
 
             if (request.utilityAction == PartySpellUtilityActionKind::None)
@@ -1811,7 +1840,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::NeedUtilityUi,
                     rule->targetKind,
                     rule->effectKind,
-                    "Need spell UI");
+                    Engine::tr("Need spell UI"));
             }
         }
         else if (spellId == SpellId::LloydsBeacon && request.utilityAction == PartySpellUtilityActionKind::None)
@@ -1821,7 +1850,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedUtilityUi,
                 rule->targetKind,
                 rule->effectKind,
-                "Need spell UI");
+                Engine::tr("Need spell UI"));
         }
         else if (request.utilityAction == PartySpellUtilityActionKind::None)
         {
@@ -1830,7 +1859,29 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedUtilityUi,
                 rule->targetKind,
                 rule->effectKind,
-                "Need spell UI");
+                Engine::tr("Need spell UI"));
+        }
+    }
+
+    // A cursed caster's roll, once the request has its target: a cast still asking for one rolls only when it is
+    // repeated with the target (OY-141).
+    if (request.spendMana
+        && request.applyRecovery
+        && request.skillLevelOverride == 0
+        && !request.bypassRequiredMastery
+        && spellIdFromValue(request.spellId) != SpellId::None
+        && pCaster->conditions.test(static_cast<size_t>(CharacterCondition::Cursed)))
+    {
+        static thread_local std::mt19937 rng(std::random_device{}());
+
+        if (std::uniform_int_distribution<int>(0, 99)(rng) < 50)
+        {
+            party.spendSpellPoints(request.casterMemberIndex, static_cast<int>(result.manaCost));
+            return makeFailureWithRecovery(
+                PartySpellCastStatus::Failed,
+                rule->targetKind,
+                rule->effectKind,
+                Engine::tr(SpellFailedText));
         }
     }
 
@@ -1853,13 +1904,18 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::Failed,
                 rule->targetKind,
                 rule->effectKind,
-                HostileCreaturesNearbyText);
+                Engine::tr(HostileCreaturesNearbyText));
         }
 
-        const float durationSeconds =
-            spellRules.partyBuffSeconds(party, request.spellId, skillLevel, skillMastery, request.fromScroll)
-                .value_or(resolvePartyBuffDurationSeconds(request.spellId, skillLevel, skillMastery));
-        const int power = resolvePartyBuffPower(request.spellId, skillLevel, skillMastery);
+        // MM9's Fleet Foot keeps MM9's numbers whatever the ruleset does with Fly.
+        const bool fleetFoot = rule->partyBuffId == PartyBuffId::FleetFoot;
+        const float durationSeconds = fleetFoot
+            ? fleetFootDurationSeconds(skillLevel, skillMastery)
+            : spellRules.partyBuffSeconds(party, request.spellId, skillLevel, skillMastery, request.fromScroll)
+                  .value_or(resolvePartyBuffDurationSeconds(request.spellId, skillLevel, skillMastery));
+        const int power = fleetFoot
+            ? fleetFootSpeedPercent(skillMastery)
+            : resolvePartyBuffPower(request.spellId, skillLevel, skillMastery);
 
         if (spellId == SpellId::DayOfProtection
             || spellId == SpellId::HourOfPower
@@ -1891,6 +1947,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
     }
     else if (rule->effectKind == PartySpellCastEffectKind::CharacterBuff)
     {
+        // The party-wide forms reach the MM9 hirelings too (Party::combatantCount: the members alone elsewhere).
         const float durationSeconds = resolveCharacterBuffDurationSeconds(request.spellId, skillLevel, skillMastery);
         const int power = resolveCharacterBuffPower(request.spellId, skillLevel, skillMastery);
         auto applyBuffToMember =
@@ -1917,7 +1974,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             }
             else
             {
-                for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+                for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
                 {
                     applyBuffToMember(memberIndex, CharacterBuffId::Bless);
                 }
@@ -1948,7 +2005,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
         {
             if (skillMastery == SkillMastery::Master || skillMastery == SkillMastery::Grandmaster)
             {
-                for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+                for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
                 {
                     applyBuffToMember(memberIndex, CharacterBuffId::Preservation);
                 }
@@ -1976,7 +2033,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
         {
             if (skillMastery == SkillMastery::Grandmaster)
             {
-                for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+                for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
                 {
                     applyBuffToMember(memberIndex, CharacterBuffId::Hammerhands);
                 }
@@ -1997,7 +2054,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
         {
             if (skillMastery == SkillMastery::Master || skillMastery == SkillMastery::Grandmaster)
             {
-                for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+                for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
                 {
                     applyBuffToMember(memberIndex, CharacterBuffId::PainReflection);
                 }
@@ -2036,11 +2093,11 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::NeedCharacterTarget,
                     rule->targetKind,
                     rule->effectKind,
-                    "Need character target");
+                    Engine::tr("Need character target"));
             }
 
             // Below Grandmaster, Raise Dead leaves the eradicated under rules that keep the engine's limit (MAW).
-            const Character *pRestored = party.member(*request.targetCharacterIndex);
+            const Character *pRestored = party.combatant(*request.targetCharacterIndex);
 
             if (spellId == SpellId::RaiseDead && skillMastery < SkillMastery::Grandmaster && pRestored != nullptr
                 && pRestored->conditions.test(size_t(CharacterCondition::Eradicated))
@@ -2050,7 +2107,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    Engine::tr(SpellFailedText));
             }
 
             castSucceeded = true;
@@ -2059,7 +2116,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             {
                 // The ruleset's heal, with the spell's own cure (Remove Curse, Greater Heal) or revival; on a living
                 // target Resurrection only heals (MAW, SP:300-312).
-                const Character *pTarget = party.member(*request.targetCharacterIndex);
+                const Character *pTarget = party.combatant(*request.targetCharacterIndex);
                 const bool targetDead = pTarget != nullptr
                     && (pTarget->conditions.test(size_t(CharacterCondition::Dead))
                         || pTarget->conditions.test(size_t(CharacterCondition::Eradicated)));
@@ -2104,10 +2161,12 @@ PartySpellCastResult PartySpellSystem::castSpell(
     else if (rule->effectKind == PartySpellCastEffectKind::PartyRestore)
     {
         castSucceeded = true;
+        // Awaken, Power Cure and Divine Intervention reach the MM9 hirelings too (Party::combatantCount); Shared Life
+        // pools the members' HP only.
 
         if (spellId == SpellId::Awaken)
         {
-            for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+            for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
             {
                 const Character *pMember = party.member(memberIndex);
 
@@ -2147,16 +2206,16 @@ PartySpellCastResult PartySpellSystem::castSpell(
         {
             const int healAmount = rulesetHeal.value_or(10 + static_cast<int>(5 * skillLevel));
 
-            for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+            for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
             {
                 healTracked(memberIndex, healAmount);
             }
         }
         else if (spellId == SpellId::DivineIntervention)
         {
-            for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+            for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
             {
-                Character *pMember = party.member(memberIndex);
+                Character *pMember = party.combatant(memberIndex);
 
                 if (pMember == nullptr)
                 {
@@ -2200,7 +2259,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    Engine::tr(SpellFailedText));
             }
 
             InventoryItem *pMutableInventoryItem =
@@ -2219,7 +2278,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 const SpecialItemEnchantKind enchantKind =
@@ -2240,7 +2299,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 const float durationSeconds =
@@ -2274,7 +2333,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 const uint16_t currentCharges =
@@ -2297,7 +2356,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        WandAlreadyChargedText);
+                        Engine::tr(WandAlreadyChargedText));
                 }
 
                 if (pMutableInventoryItem != nullptr)
@@ -2322,7 +2381,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 static thread_local std::mt19937 rng(std::random_device{}());
@@ -2349,7 +2408,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        ItemQualityTooLowText);
+                        Engine::tr(ItemQualityTooLowText));
                 }
 
                 std::uniform_int_distribution<int> distribution(1, 100);
@@ -2362,7 +2421,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 const bool preferStandardEnchant =
@@ -2382,7 +2441,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            Engine::tr(SpellFailedText));
                     }
 
                     pMutableInventoryItem->standardEnchantId = *standardEnchantId;
@@ -2409,7 +2468,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            Engine::tr(SpellFailedText));
                     }
 
                     pMutableInventoryItem->specialEnchantId = *specialEnchantId;
@@ -2432,7 +2491,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::NeedUtilityUi,
                         rule->targetKind,
                         rule->effectKind,
-                        "Need spell UI");
+                        Engine::tr("Need spell UI"));
                 }
 
                 EventRuntimeState *pEventRuntimeState = worldRuntime.eventRuntimeState();
@@ -2443,7 +2502,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 EventRuntimeState::PendingMapMove move = {};
@@ -2468,7 +2527,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 Character *pTargetMember = party.member(request.casterMemberIndex);
@@ -2479,7 +2538,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        Engine::tr(SpellFailedText));
                 }
 
                 if (request.utilityAction == PartySpellUtilityActionKind::LloydsBeaconSet)
@@ -2525,7 +2584,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            Engine::tr(SpellFailedText));
                     }
 
                     EventRuntimeState *pEventRuntimeState = worldRuntime.eventRuntimeState();
@@ -2536,7 +2595,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            Engine::tr(SpellFailedText));
                     }
 
                     EventRuntimeState::PendingMapMove move = {};
@@ -2631,7 +2690,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::Failed,
                 rule->targetKind,
                 rule->effectKind,
-                SpellFailedText);
+                Engine::tr(SpellFailedText));
         }
 
         if (request.targetActorIndex && spellId == SpellId::Telepathy)
@@ -2645,7 +2704,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    Engine::tr(SpellFailedText));
             }
 
             result.statusText = telepathyLootStatusText(*loot, party.itemTable());
@@ -2833,7 +2892,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SummonLimitText);
+                        Engine::tr(SummonLimitText));
                 }
 
                 castSucceeded = worldRuntime.summonFriendlyMonsterById(
@@ -2854,7 +2913,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    Engine::tr(SpellFailedText));
             }
 
             if (spellId == SpellId::Armageddon)
@@ -2871,7 +2930,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        failureText.empty() ? SpellFailedText : failureText);
+                        failureText.empty() ? Engine::tr(SpellFailedText) : failureText);
                 }
 
                 castSucceeded = true;
@@ -2942,10 +3001,21 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     continue;
                 }
 
+                // No farther than the party's shots reach (Souldrinker's sight reaches 10240 otherwise).
+                const float deltaX = actor.preciseX - sourceX;
+                const float deltaY = actor.preciseY - sourceY;
+                const float deltaZ = actor.preciseZ - footZ;
+
+                if (std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ) - float(actor.radius)
+                    > worldRuntime.partyHitReach())
+                {
+                    continue;
+                }
+
                 if (areaSpellAffectsVisibleCreatures(spellId))
                 {
                     const float actorTargetZ =
-                        actor.preciseZ + GameMechanics::actorTargetHeight(actor.height);
+                        actor.preciseZ + actor.targetHeight;
 
                     if (!isActorPointInsideSpellView(request, actor.preciseX, actor.preciseY, actorTargetZ))
                     {
@@ -3061,13 +3131,13 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::Failed,
             rule->targetKind,
             rule->effectKind,
-            SpellFailedText);
+            Engine::tr(SpellFailedText));
     }
 
     if (request.spendMana)
     {
         party.spendSpellPoints(request.casterMemberIndex, static_cast<int>(result.manaCost));
-        spellRules.afterCast(party, request.casterMemberIndex, request.spellId, spellTable, worldRuntime.isIndoorMap(),
+        spellRules.afterCast(party, request.casterMemberIndex, request.spellId, spellTable, spellsIndoors(worldRuntime),
             !request.quickCast);
     }
 
@@ -3080,6 +3150,27 @@ PartySpellCastResult PartySpellSystem::castSpell(
     if (request.applyRecovery && result.recoverySeconds > 0.0f)
     {
         party.applyRecoveryToMember(request.casterMemberIndex, result.recoverySeconds);
+    }
+
+    // The playthrough statistics count the members' casts (MM9 hirelings' casts are their own).
+    if (PlaythroughStatistics *pStatistics = party.statistics();
+        pStatistics != nullptr && !party.isHirelingCombatant(request.casterMemberIndex))
+    {
+        const StatMemberRef caster = party.statsMember(request.casterMemberIndex);
+        pStatistics->recordSpellCast(caster, partySpellName(&party, *pCaster, *pSpellEntry),
+            request.spendMana ? result.manaCost : 0, request.fromScroll);
+        pStatistics->recordHealing(caster, uint64_t(std::max(0, healedTotal)));
+
+        if (spellId == SpellId::TownPortal)
+        {
+            pStatistics->recordTownPortal(request.utilityStatusText.empty()
+                    ? request.utilityMapMoveMapName
+                    : request.utilityStatusText);
+        }
+        else if (spellId == SpellId::LloydsBeacon)
+        {
+            pStatistics->recordLloydsBeacon(request.utilityAction == PartySpellUtilityActionKind::LloydsBeaconRecall);
+        }
     }
 
     result.status = PartySpellCastStatus::Succeeded;
@@ -3101,7 +3192,7 @@ std::optional<uint32_t> PartySpellSystem::manaCost(
         return std::nullopt;
     }
 
-    if (!resolveBackendSpellRule(spellId, skillMastery))
+    if (!resolveBackendSpellRule(&party, spellId, skillMastery))
     {
         return std::nullopt;
     }
@@ -3340,10 +3431,11 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
     uint32_t spellId,
     const SpellTable *pSpellTable)
 {
-    // Measured against the HP a member can reach: what its auras hold back (MAW's legendary 32) never fills.
+    // Every combatant, MM9's hirelings too (OY-583). Measured against the HP a member can reach: what its auras hold
+    // back (MAW's legendary 32) never fills.
     const auto share = [&party](size_t memberIndex)
     {
-        return double(party.members()[memberIndex].health) / party.reachableMaximumHealth(memberIndex);
+        return double(party.combatant(memberIndex)->health) / party.reachableMaximumHealth(memberIndex);
     };
     const auto has = [](const Character &member, std::initializer_list<CharacterCondition> conditions)
     {
@@ -3363,9 +3455,9 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
     {
         std::optional<size_t> target;
 
-        for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+        for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
         {
-            const Character &member = party.members()[memberIndex];
+            const Character &member = *party.combatant(memberIndex);
 
             if (has(member, conditions) && !(skipBeyondHealing && has(member, beyondHealing))
                 && (!target || share(memberIndex) < share(*target)))
@@ -3403,9 +3495,9 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
         std::optional<size_t> bestGain;
         int bestGainAmount = 0;
 
-        for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+        for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
         {
-            const Character &member = party.members()[memberIndex];
+            const Character &member = *party.combatant(memberIndex);
             const int missing = party.reachableMaximumHealth(memberIndex) - member.health;
 
             if (missing <= 0 || has(member, beyondHealing))
@@ -3459,16 +3551,16 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
     // Any other spell on a member (buffs): the wounded member with the fewest hit points.
     std::optional<size_t> target;
 
-    for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+    for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
     {
-        const Character &member = party.members()[memberIndex];
+        const Character &member = *party.combatant(memberIndex);
 
         if (member.health >= party.reachableMaximumHealth(memberIndex) || has(member, beyondHealing))
         {
             continue;
         }
 
-        if (!target || member.health < party.members()[*target].health)
+        if (!target || member.health < party.combatant(*target)->health)
         {
             target = memberIndex;
         }
@@ -3477,9 +3569,229 @@ std::optional<size_t> PartySpellSystem::quickCastCharacterTarget(
     return target;
 }
 
+namespace
+{
+// The buff on members a spell gives (castSpell's CharacterBuff spells).
+std::optional<CharacterBuffId> characterBuffOfSpell(SpellId spell)
+{
+    switch (spell)
+    {
+        case SpellId::Bless:
+            return CharacterBuffId::Bless;
+        case SpellId::Preservation:
+            return CharacterBuffId::Preservation;
+        case SpellId::Regeneration:
+            return CharacterBuffId::Regeneration;
+        case SpellId::Hammerhands:
+            return CharacterBuffId::Hammerhands;
+        case SpellId::PainReflection:
+            return CharacterBuffId::PainReflection;
+        case SpellId::Glamour:
+            return CharacterBuffId::Glamour;
+        case SpellId::Mistform:
+            return CharacterBuffId::Mistform;
+        default:
+            return std::nullopt;
+    }
+}
+
+// The party buffs an upkeep cast of the spell keeps up: its own, or those a spell of several always gives
+// (applyCompositePartyBuff; not Hour of Power's Haste, which a weak member stops).
+std::vector<PartyBuffId> upkeepPartyBuffs(const Party &party, uint32_t spellId)
+{
+    using enum PartyBuffId;
+
+    switch (spellIdFromValue(spellId))
+    {
+        case SpellId::DayOfProtection:
+            return {BodyResistance, MindResistance, FireResistance, WaterResistance, AirResistance, EarthResistance,
+                FeatherFall, WizardEye};
+        case SpellId::HourOfPower:
+            return {Heroism, Shield, Stoneskin};
+        case SpellId::TravelersBoon:
+            return {TorchLight, WizardEye, FeatherFall};
+        case SpellId::Levitate:
+            return {Levitate, WaterWalk, FeatherFall};
+        default:
+            break;
+    }
+
+    const std::optional<PartyBuffId> buff = PartySpellSystem::partyBuffOfSpell(party, spellId);
+    return buff ? std::vector<PartyBuffId>{*buff} : std::vector<PartyBuffId>{};
+}
+
+// How long the buff of a cast by this member lasts, in game seconds (castSpell's skill and durations); nothing for a
+// spell without one or a caster without the skill.
+std::optional<float> castBuffSeconds(const Party &party, const Character &caster, uint32_t spellId)
+{
+    uint32_t skillLevel = 0;
+    SkillMastery mastery = SkillMastery::None;
+
+    if (!resolveSpellSkill(caster, spellId, PartySpellCastRequest{}, skillLevel, mastery))
+    {
+        if (party.rules().spells.classSpellMastery(caster, spellId) != SkillMastery::None
+            || !caster.knowsSpell(spellId))
+        {
+            return std::nullopt;
+        }
+
+        skillLevel = 0;
+        mastery = SkillMastery::Normal;
+    }
+
+    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(&party, spellId, mastery);
+
+    if (rule && rule->effectKind == PartySpellCastEffectKind::CharacterBuff)
+    {
+        return resolveCharacterBuffDurationSeconds(spellId, skillLevel, mastery);
+    }
+
+    if (!rule || rule->effectKind != PartySpellCastEffectKind::PartyBuff)
+    {
+        return std::nullopt;
+    }
+
+    return rule->partyBuffId == PartyBuffId::FleetFoot
+        ? fleetFootDurationSeconds(skillLevel, mastery)
+        : party.rules().spells.partyBuffSeconds(party, spellId, skillLevel, mastery, false)
+              .value_or(resolvePartyBuffDurationSeconds(spellId, skillLevel, mastery));
+}
+
+bool beyondHealing(const Character &member)
+{
+    return member.conditions.test(size_t(CharacterCondition::Dead))
+        || member.conditions.test(size_t(CharacterCondition::Eradicated))
+        || member.conditions.test(size_t(CharacterCondition::Petrified));
+}
+}
+
+bool PartySpellSystem::isUpkeepSpell(uint32_t spellId)
+{
+    const SpellId spell = spellIdFromValue(spellId);
+
+    if (spell == SpellId::Invisibility)
+    {
+        return false;
+    }
+
+    if (hasQuickCastCharacterTarget(spellId) || spell == SpellId::PowerCure || spell == SpellId::Awaken
+        || characterBuffOfSpell(spell))
+    {
+        return true;
+    }
+
+    const std::optional<PartySpellDescriptor> descriptor = describeSpell(spellId);
+    return descriptor && descriptor->effectKind == PartySpellCastEffectKind::PartyBuff;
+}
+
+bool PartySpellSystem::isUpkeepBuffSpell(uint32_t spellId)
+{
+    const SpellId spell = spellIdFromValue(spellId);
+    return isUpkeepSpell(spellId) && !hasQuickCastCharacterTarget(spellId) && spell != SpellId::PowerCure
+        && spell != SpellId::Awaken;
+}
+
+std::optional<PartySpellSystem::UpkeepNeed> PartySpellSystem::upkeepNeed(
+    const Party &party,
+    size_t casterIndex,
+    uint32_t spellId,
+    const SpellTable *pSpellTable,
+    std::optional<uint16_t> renewBelowMinutes)
+{
+    const Character *pCaster = party.member(casterIndex);
+
+    if (pCaster == nullptr || !isUpkeepSpell(spellId)
+        || party.rules().spells.castsAsAura(party, casterIndex, spellId))
+    {
+        return std::nullopt;
+    }
+
+    const SpellId spell = spellIdFromValue(spellId);
+
+    if (hasQuickCastCharacterTarget(spellId))
+    {
+        const std::optional<size_t> target = quickCastCharacterTarget(party, casterIndex, spellId, pSpellTable);
+        return target ? std::optional<UpkeepNeed>(UpkeepNeed{target}) : std::nullopt;
+    }
+
+    if (spell == SpellId::PowerCure || spell == SpellId::Awaken)
+    {
+        for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
+        {
+            const Character &member = *party.combatant(memberIndex);
+            const bool needs = spell == SpellId::Awaken
+                ? member.conditions.test(size_t(CharacterCondition::Asleep))
+                : !beyondHealing(member) && member.health < party.reachableMaximumHealth(memberIndex);
+
+            if (needs)
+            {
+                return UpkeepNeed{};
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    const std::optional<float> castSeconds = castBuffSeconds(party, *pCaster, spellId);
+
+    // A cast that gives no time would be due again at once.
+    if (!castSeconds || *castSeconds <= 0.0f)
+    {
+        return std::nullopt;
+    }
+
+    if (const std::optional<CharacterBuffId> buff = characterBuffOfSpell(spell))
+    {
+        std::optional<size_t> target;
+        float leastSeconds = 0.0f;
+
+        for (size_t memberIndex = 0; memberIndex < party.combatantCount(); ++memberIndex)
+        {
+            // Mistform is the caster's own.
+            if (beyondHealing(*party.combatant(memberIndex))
+                || (spell == SpellId::Mistform && memberIndex != casterIndex))
+            {
+                continue;
+            }
+
+            const CharacterBuffState *pState = party.characterBuff(memberIndex, *buff);
+            const float remainingSeconds = pState != nullptr ? pState->remainingSeconds : 0.0f;
+
+            if (upkeepBuffDue(remainingSeconds, *castSeconds, renewBelowMinutes)
+                && (!target || remainingSeconds < leastSeconds))
+            {
+                target = memberIndex;
+                leastSeconds = remainingSeconds;
+            }
+        }
+
+        return target ? std::optional<UpkeepNeed>(UpkeepNeed{target}) : std::nullopt;
+    }
+
+    for (const PartyBuffId buff : upkeepPartyBuffs(party, spellId))
+    {
+        const PartyBuffState *pState = party.partyBuff(buff);
+
+        if (upkeepBuffDue(pState != nullptr ? pState->remainingSeconds : 0.0f, *castSeconds, renewBelowMinutes))
+        {
+            return UpkeepNeed{};
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<PartyBuffId> PartySpellSystem::partyBuffOfSpell(const Party &party, uint32_t spellId)
+{
+    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(&party, spellId, SkillMastery::Grandmaster);
+    return rule && rule->effectKind == PartySpellCastEffectKind::PartyBuff
+        ? std::optional<PartyBuffId>(rule->partyBuffId)
+        : std::nullopt;
+}
+
 std::optional<PartySpellDescriptor> PartySpellSystem::describeSpell(uint32_t spellId)
 {
-    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(spellId, SkillMastery::Grandmaster);
+    const std::optional<BackendSpellRule> rule = resolveBackendSpellRule(nullptr, spellId, SkillMastery::Grandmaster);
 
     if (!rule)
     {
@@ -3490,6 +3802,27 @@ std::optional<PartySpellDescriptor> PartySpellSystem::describeSpell(uint32_t spe
     descriptor.spellId = spellId;
     descriptor.targetKind = rule->targetKind;
     descriptor.effectKind = rule->effectKind;
+
+    if (rule->effectKind == PartySpellCastEffectKind::PartyBuff)
+    {
+        descriptor.partyBuff = rule->partyBuffId;
+    }
+
     return descriptor;
+}
+
+bool PartySpellSystem::worldAllowsSpell(const Party &party, const IGameplayWorldRuntime &worldRuntime, uint32_t spellId)
+{
+    const SpellId spell = spellIdFromValue(spellId);
+    const bool sunrayIndoors =
+        spell == SpellId::Sunray && spellsIndoors(worldRuntime) && party.rules().spells.sunrayWorksIndoors();
+
+    if (!sunrayIndoors && spellWorldAvailabilityFailure(party, spell, worldRuntime))
+    {
+        return false;
+    }
+
+    return spell != SpellId::Sunray || sunrayIndoors
+        || (worldRuntime.currentHour() >= 5 && worldRuntime.currentHour() < 21);
 }
 }

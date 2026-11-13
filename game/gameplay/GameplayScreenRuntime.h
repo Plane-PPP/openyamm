@@ -32,6 +32,7 @@
 namespace OpenYAMM::Game
 {
 class GameSession;
+class PlaythroughStatistics;
 class GameAudioSystem;
 class GameplayFxService;
 class TurnBasedCombatRuntime;
@@ -44,6 +45,8 @@ class MergedComplexItemPictureTable;
 class MonsterProjectileTable;
 class MapStats;
 class MonsterTable;
+class Mm9HirelingTable;
+class Mm9TransportRouteTable;
 class MergedPotionSettingTable;
 class PotionMixingTable;
 class PotionNoteTable;
@@ -130,11 +133,14 @@ public:
     const MergedComplexItemPictureTable *mergedComplexItemPictureTable() const;
     const SpellTable *spellTable() const;
     const HouseTable *houseTable() const;
+    const Mm9TransportRouteTable *mm9TransportRouteTable() const;
     const MapStats &mapStats() const;
     const ChestTable *chestTable() const;
     const NpcDialogTable *npcDialogTable() const;
     const MonsterTable *monsterTable() const;
     const MonsterProjectileTable *monsterProjectileTable() const;
+    // The MM9 world's hirelings (empty elsewhere).
+    const Mm9HirelingTable *mm9HirelingTable() const;
 
     GameplayUiController::CharacterScreenState &characterScreen() const;
     GameplayUiController::HeldInventoryItemState &heldInventoryItem() const;
@@ -237,6 +243,10 @@ public:
     void handleDialogueCloseRequest();
     void closeRestOverlay();
     void completeRestAction(bool closeRestScreenAfterCompletion);
+    // A script's rest alarm (evt.SetRestAlarm) within the next `minutes` of game time: the minutes up to it.
+    std::optional<float> minutesToRestAlarm(float minutes) const;
+    // Ends the rest or wait at the alarm: no healing, the rest screen closes.
+    void interruptRestAction();
     void openMenuOverlay();
     void closeMenuOverlay();
     void openControlsOverlay();
@@ -253,13 +263,18 @@ public:
     void requestOpenLoadGameScreen();
     void openJournalOverlay();
     void closeJournalOverlay();
-    void openQuickReferenceOverlay();
+    void openQuickReferenceOverlay(
+        GameplayUiController::QuickReferencePage page = GameplayUiController::QuickReferencePage::Party);
     void closeQuickReferenceOverlay();
+    // The playthrough statistics the Statistics page shows (GameSession owns them).
+    const PlaythroughStatistics &playthroughStatistics() const;
     void closeHouseShopOverlay();
     void closeTransportSchedule();
     void markHouseShopTransactionPerformed(uint32_t houseId);
     void openFollowerNpcDialogue(size_t followerSlotIndex);
     void openFollowerNpcDialogueByIndex(size_t followerIndex);
+    // The MM9 hireling's own RUDE dialogue at its root (its -15 service and dismissal behind the hire key).
+    void openHirelingDialogue(uint32_t rudeId);
     void presentActiveEventDialog();
     void ensurePendingEventDialogPresented(bool allowNpcFallbackContent = true);
     bool hasPendingEventDialog() const;
@@ -315,6 +330,7 @@ public:
     void updatePartyPortraitAnimations(float deltaSeconds);
     uint32_t animationTicks() const;
     void triggerPortraitEventFxWithoutSpeech(size_t memberIndex, PortraitFxEventKind eventKind);
+    void playPortraitExpression(size_t memberIndex, PortraitId portraitId, std::optional<uint32_t> durationTicks);
     void triggerPortraitFaceAnimation(size_t memberIndex, FaceAnimationId animationId);
     void triggerPortraitFaceAnimationForAllLivingMembers(FaceAnimationId animationId);
     bool canPlaySpeechReaction(size_t memberIndex, SpeechId speechId, uint32_t nowTicks);
@@ -350,6 +366,9 @@ public:
     CombatActorHealthBarRuntime &enemyHealthBars() const;
     void updateEnemyHealthBars(float seconds, std::span<const GameplayCombatFeedbackEvent> events) const;
     const GameSettings &settingsSnapshot() const;
+    // Whether the combat log's button and panel show and the log records: the combat_log setting On, or Auto in a
+    // ruleset other than Standard in a world that shows it (world.yml combatLog; MM9 does not).
+    bool combatLogShown() const;
     GameplayUiRuntime &gameplayUiRuntime() const;
     SharedUiBootstrapResult initializeSharedUiRuntime(const SharedUiBootstrapConfig &config);
     void bindAssetFileSystem(const Engine::AssetFileSystem *pAssetFileSystem);
@@ -396,7 +415,15 @@ public:
         float fallbackWidth,
         float fallbackHeight) const;
     std::optional<ResolvedHudLayoutElement> resolvePartyPortraitRect(int width, int height, size_t memberIndex) const;
+    // How far a tab under the minimap moves from its layout place (OutdoorFollowerToggle, Mm9FormationButton,
+    // CombatLogToggle): the shown ones line up from the right edge without gaps; none for any other element.
+    std::optional<float> minimapTabShift(const std::string &layoutId, int screenWidth, int screenHeight) const;
     std::optional<size_t> resolvePartyPortraitIndexAtPoint(int width, int height, float x, float y) const;
+    // The MM9 hireling rail's slot (Mm9Hireling1-3 in gameplay.yml) of the hireling at its index in
+    // Party::hirelings(); none past the hirelings or on the screens over the HUD (inventory, dialogues...).
+    std::optional<ResolvedHudLayoutElement> resolveHirelingSlotRect(int width, int height, size_t hirelingIndex) const;
+    // The combatant (Party::combatant) whose face is under the point: a party portrait, else a hireling's slot.
+    std::optional<size_t> resolveCombatantPortraitIndexAtPoint(int width, int height, float x, float y) const;
     float characterSkillRowHeight() const;
     float characterSkillsContentHeight(int width, int height) const;
     std::optional<ResolvedHudLayoutElement> resolveChestGridArea(int width, int height) const;
@@ -425,6 +452,8 @@ public:
         bool applyButtonState = true,
         const ResolvedHudLayoutElement *pClip = nullptr) const;
     std::optional<HudFontHandle> findHudFont(const std::string &fontName) const;
+    // An independent outline face rasterized at pixelHeight (GameplayUiRuntime::findHudFont).
+    std::optional<HudFontHandle> findHudFont(const std::string &fontName, int pixelHeight) const;
     float measureHudTextWidth(const HudFontHandle &font, const std::string &text) const;
     std::vector<std::string> wrapHudTextToWidth(
         const HudFontHandle &font,
@@ -457,6 +486,7 @@ public:
         int screenHeight,
         const std::string &textureName);
     std::string resolvePortraitTextureName(const Character &character) const;
+    std::string availablePortraitTextureName(const Character &character) const;
     void renderPortraitFx(
         size_t memberIndex,
         float portraitX,
@@ -471,16 +501,11 @@ public:
     void collectGameplayMinimapMarkers(std::vector<GameplayMinimapMarkerState> &markers) const;
     bool ensureTownPortalDestinationsLoaded();
     bool ensureDimensionDoorDestinationsLoaded();
-    // The next Dimension Door overlay offers its destinations before the Cross Continents quest does (an event's
-    // evt.OpenDimensionDoor(true)); the spell and the HUD button open it with the quest's gate.
-    void setDimensionDoorWithoutQuest(bool withoutQuest);
-    bool shouldTownPortalCastOpenDimensionDoor() const;
-    bool openDimensionDoorOverlay(
-        size_t casterMemberIndex,
-        uint32_t spellId,
-        const std::string &statusText = "Choose Dimension Door destination");
     const std::string &townPortalBackgroundTextureName() const;
     const std::vector<GameplayTownPortalDestination> &townPortalDestinations() const;
+    const std::vector<GameplayTownPortalContinent> &townPortalContinents() const;
+    size_t townPortalContinentIndex() const;
+    void selectTownPortalContinent(size_t continentIndex);
     std::string resolveMapLocationName(const std::string &mapFileName) const;
     float measureHudTextWidth(const std::string &fontName, const std::string &text) const;
     int hudFontHeight(const std::string &fontName) const;
@@ -538,6 +563,8 @@ public:
 
 private:
     void rememberGameplayMinimapZoom();
+    // The screens that show the party's portraits on the fullscreen frame (ObsidianOverlayPc) and no hireling rail.
+    bool portraitsOnLimitedOverlayHud() const;
 
     CombatLog m_combatLog;
     GameplayCombatLogPanel m_combatLogPanel;
@@ -553,13 +580,11 @@ private:
     GameplayUiRuntime &uiRuntime() const;
     GameplayDialogUiFlowState dialogUiFlowState();
     void updatePortraitAnimation(Character &member, size_t memberIndex, uint32_t deltaTicks);
-    void playPortraitExpression(size_t memberIndex, PortraitId portraitId, std::optional<uint32_t> durationTicks);
     GameplayDialogController::Context buildDialogContext(EventRuntimeState &eventRuntimeState);
     void returnToHouseBankMainDialogShared();
     void leaveHouseEntryAudio(bool playDoorSound);
 
     mutable CombatActorHealthBarRuntime m_enemyHealthBars;
-    bool m_dimensionDoorWithoutQuest = false;
     GameSession &m_session;
     GameAudioSystem *m_pAudioSystem = nullptr;
     uint32_t m_activeHouseAudioHostId = 0;

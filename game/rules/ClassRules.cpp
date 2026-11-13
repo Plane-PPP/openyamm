@@ -1,4 +1,5 @@
 #include "game/rules/ClassRules.h"
+#include "engine/Localization.h"
 
 #include "game/party/Party.h"
 #include "game/party/SkillData.h"
@@ -56,7 +57,7 @@ PortraitCounter ClassRules::portraitCounter(const Character &) const
 
 std::string ClassRules::displayName(const Party &, const Character &member) const
 {
-    return displayClassName(!member.className.empty() ? member.className : member.role);
+    return Engine::localize(displayClassName(!member.className.empty() ? member.className : member.role), "class");
 }
 
 void ClassRules::update(Party &, const IGameplayWorldRuntime &, float) const
@@ -83,12 +84,12 @@ std::vector<std::string> ClassRules::raceNotes(const Character &character) const
 {
     if (character.raceId == UndeadRace)
     {
-        return {"Immune to Mind and Body magic."};
+        return {Engine::tr("Immune to Mind and Body magic.")};
     }
 
     if (character.raceId == VampireRace)
     {
-        return {"Immune to Mind magic."};
+        return {Engine::tr("Immune to Mind magic.")};
     }
 
     return {};
@@ -110,6 +111,11 @@ std::optional<std::string> ClassRules::partyCharge(Party &, IGameplayWorldRuntim
 }
 
 std::optional<FollowerHireRefusal> ClassRules::followerHireRefusal(uint32_t) const
+{
+    return std::nullopt;
+}
+
+std::optional<FollowerHireRefusal> ClassRules::paidHirelingRefusal() const
 {
     return std::nullopt;
 }

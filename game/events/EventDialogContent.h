@@ -55,11 +55,31 @@ enum class EventDialogActionKind
     GuildMembershipJoin,
     GeneratedMercenaryJoinOffer,
     Mm9RudeTopic,
+    // An MM9 trainer's topic (id its RUDE row): its skills, or with one skill that skill's member rows.
     Mm9RudeSkillTrainerOffer,
+    // One skill of a trainer that teaches several (id the row, secondaryId the skill): its member rows.
+    Mm9RudeSkillTrainerSkill,
+    // One member's lesson (id the row, secondaryId the skill, memberIndex the member).
     Mm9RudeSkillTrainerLearn,
     Mm9RudeSkillTrainerBack,
+    // An MM9 dock's boat: argument its route's canonical id; secondaryId 0 for today's, else the weekday it waits for
+    // plus one (a departure chosen in the Schedule popup).
     Mm9RudeTransportRoute,
     Mm9RudeTransportBack,
+    // An MM9 dock's Schedule: the week's boats in the transport Schedule popup.
+    Mm9RudeTransportSchedule,
+    // An MM9 promoter's standing topic (Mm9PromotionService): promote the members eligible now.
+    Mm9RudePromotionService,
+    // An MM9 lost-item keeper's standing topic (Mm9RudeDialogueTable::isLostItemKeeper): give back a lost item.
+    Mm9RudeLostItemService,
+    // An MM9 racial trainer's standing topic (Mm9RacialTrainer): a racial-ability lesson row per party member.
+    Mm9RudeRacialTrainerOffer,
+    // One member's racial-ability lesson (memberIndex the member).
+    Mm9RudeRacialTrainerLearn,
+    // A ruleset's row on an MM9 person (Mm9RulesetRow): id the global event it runs.
+    Mm9RudeRulesetEvent,
+    // A ruleset's bounty office on an MM9 person (Mm9RulesetRow): argument the map file the hunt is on.
+    Mm9RudeBountyOffice,
     // An event's choice box (AskChoiceWithAnswerSteps): id is the answer's index.
     EventChoice,
 };
@@ -96,6 +116,8 @@ enum class EventDialogChoiceMark
     New,
     Visited,
     Exit,
+    // A row that says why it cannot be taken (an MM9 trainer's member who cannot learn): shown muted.
+    Locked,
 };
 
 struct EventDialogAction
@@ -103,6 +125,8 @@ struct EventDialogAction
     EventDialogActionKind kind = EventDialogActionKind::None;
     uint32_t id = 0;
     uint32_t secondaryId = 0;
+    // The party member a per-member row acts on (an MM9 trainer's lesson).
+    size_t memberIndex = 0;
     uint32_t participantPictureId = 0;
     EventDialogParticipantVisual participantVisual = EventDialogParticipantVisual::Portrait;
     std::string label;
@@ -136,7 +160,14 @@ struct EventDialogContent
     // The party's sentence the reply in `lines` answers (MM9 talk): quoted above it on the conversation bar.
     std::string echo;
     std::vector<EventDialogAction> actions;
+    // The rules' offer to reset the cleared dungeon on the way in (MAW): a transition shows it in a popup over the
+    // scene with its MapTransitionReset action and Cancel, before the ordinary OK and Close.
+    std::string resetPrompt;
 };
+
+bool transitionResetPopupOpen(const EventDialogContent &dialog);
+// Cancel of the reset popup: the dialog goes on as an ordinary transition without the reset.
+void dismissTransitionResetPopup(EventDialogContent &dialog);
 
 std::vector<uint32_t> collectSelectableResidentNpcIds(
     const HouseEntry &houseEntry,
