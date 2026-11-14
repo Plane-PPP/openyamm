@@ -229,7 +229,9 @@ jobs:
 
       - name: Test Medusa and the portrait and doll importer
         run: |
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase medusa-importer-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*ProjectMedusaTests.cpp,*CustomPortraitTests.cpp,*AssetFileSystemTests.cpp'
+          # Two upstream cases need a case-sensitive file system (files differing only in case side by side); upstream
+          # runs its unit tests on Linux and macOS only, and NTFS cannot hold them.
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase medusa-importer-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*ProjectMedusaTests.cpp,*CustomPortraitTests.cpp,*AssetFileSystemTests.cpp' --test-case-exclude='AssetFileSystem reads aliased package files case-insensitively,AssetFileSystem rejects ambiguous case fallback while preserving exact names'
 
       - name: Test official updater and upstream world regressions
         run: |

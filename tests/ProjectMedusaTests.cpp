@@ -268,8 +268,9 @@ TEST_CASE("Project Medusa: the installed package starts in Mount Nighon with its
         }
     }
     REQUIRE(pNighonPortal != nullptr);
-    const std::vector<std::string> *pMountNighon = rowWithKey(readTable("assets_dev/engine/data_tables/map_stats.txt"),
-                                                              (*pNighonPortal)[1]);
+    // The table outlives the row pointer into it (a temporary here left it dangling: Windows overwrote the rows).
+    const Rows maps = readTable("assets_dev/engine/data_tables/map_stats.txt");
+    const std::vector<std::string> *pMountNighon = rowWithKey(maps, (*pNighonPortal)[1]);
     REQUIRE(pMountNighon != nullptr);
     CHECK_EQ(pMountNighon->at(1), "Mount Nighon");
     CHECK_EQ(pMountNighon->at(2), "out10.odm");
