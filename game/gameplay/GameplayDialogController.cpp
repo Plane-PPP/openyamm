@@ -3517,6 +3517,17 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         const EventRuntimeState::PendingInputPrompt prompt = *context.eventRuntimeState.pendingInputPrompt;
         context.eventRuntimeState.pendingInputPrompt.reset();
+
+        // The ruleset's own choice box: its code takes the answer on the next frame.
+        if (prompt.eventId == EventRuntimeState::RulesetChoiceEventId)
+        {
+            context.eventRuntimeState.rulesetChoiceAnswer = static_cast<uint8_t>(action.id + 1);
+            context.eventRuntimeState.messages.clear();
+            context.eventRuntimeState.pendingDialogueContext.reset();
+            result.shouldCloseActiveDialog = true;
+            return result;
+        }
+
         const uint8_t step = action.id < prompt.answerContinueSteps.size() && prompt.answerContinueSteps[action.id] != 0
             ? prompt.answerContinueSteps[action.id] : prompt.continueStep;
         context.eventRuntimeState.messages.clear();

@@ -1,38 +1,117 @@
-# The dungeons of a run (game/content/DungeonRun.h). A run shuffles them by the save's random seed and sends every exit
-# to the next dungeon of that order; no dungeon repeats within a run.
+# The dungeons of a run (game/content/DungeonRun.h) and the rules of the run (game/rules/roguelike/RoguelikeRules.h).
 #
 # entrance: where the party arrives. The original BLV maps have no party start, so these are the destinations of the
 # outdoor events that lead into each dungeon (evt.MoveToMap in worlds/mm6/events/maps/out*.lua): x, y, z and the yaw
-# in the same units (2048 to a turn).
-#
-# first: the dungeon every run starts in; the others follow in a shuffled order. Until a run has rules of its own for
-# difficulty it starts in Goblinwatch, the one dungeon made for a new party. Remove the line to start anywhere.
+# in the same units (2048 to a turn). The map's guardian appears there too.
 #
 # The pool: MM6 dungeons of one map each, whose exit is a single unconditional event and whose events need no key or
 # quest from outside. Monster levels are the A/B/C ranks of the map's three encounter slots (map_stats.txt).
-first: 6d01.blv
+#
+# tier: the dungeon's difficulty by the levels of its monsters in the original game; rules.route picks by it.
+# groupScale: TEST VALUE. The map's encounter group sizes times this. The five large maps (about 150-220 monsters in
+# the original) are halved so that a dungeon takes minutes, not the whole run; 1 leaves a map as the original has it.
+#
+# rules: every number below is a TEST VALUE for the first playthroughs, not a decided balance.
+rules:
+  # The tier of each stop; the run's length. A stop takes a random dungeon of its tier, none twice.
+  route: [1, 2, 3, 3]
+  # The guardian comes when the slain monsters hold more than this share of the map's monster hit points; it is the
+  # map's strongest kind with its hit points times guardianHealthScale. Its death opens the way out.
+  clear: {share: 0.5, guardianHealthScale: 4}
+  # Level-ups per stop, spread evenly over the clearing up to the guardian (the stop's last comes with it): ten in a
+  # run. Each raises every hero by levelsEach levels and owes each hero one card of three.
+  levels: {perStop: [3, 3, 2, 2], levelsEach: 4}
+  # What the party starts with. Rest costs food as usual; food is rare.
+  start: {food: 2, gold: 500}
+  # The heroes are promoted after the guardian of this stop.
+  promotionAfterStop: 2
+  # Spell books a school's card gives: when it teaches the school, and when it raises it.
+  books: {newSchool: 3, raisedSchool: 2}
+  # Skills the cards teach and raise, one step a card: none, Normal 1, Expert 4, Master 7, Grandmaster 10, up to the
+  # hero's class cap.
+  skills: [Sword, Axe, Spear, Bow, Mace, Dagger, Staff, LeatherArmor, ChainArmor, PlateArmor, Shield, Armsmaster,
+           Bodybuilding, Meditation, DisarmTraps, IdentifyItem, RepairItem,
+           FireMagic, AirMagic, WaterMagic, EarthMagic, SpiritMagic, MindMagic, BodyMagic]
+  # Schools whose card also gives books: the school's first spell id and its weakest attack spell (spells.txt), which
+  # comes first when the hero's mastery can learn it.
+  schools:
+    - {skill: FireMagic, firstSpell: 1, combatSpell: 2}     # Fire Bolt
+    - {skill: AirMagic, firstSpell: 12, combatSpell: 15}    # Sparks
+    - {skill: WaterMagic, firstSpell: 23, combatSpell: 24}  # Poison Spray
+    - {skill: EarthMagic, firstSpell: 34, combatSpell: 37}  # Deadly Swarm
+    - {skill: SpiritMagic, firstSpell: 45, combatSpell: 52} # Spirit Lash (Master)
+    - {skill: MindMagic, firstSpell: 56, combatSpell: 59}   # Mind Blast
+    - {skill: BodyMagic, firstSpell: 67, combatSpell: 70}   # Harm
+  # The camp between two dungeons: the party's hit and spell points are restored, and these shops stand open before
+  # the next dungeon. They are houses of MM6 (house_data.txt), so the stock, the prices and the trade are the engine's
+  # own: New Sorpigal's after the first dungeon, Free Haven's later. No camp follows the last dungeon.
+  shops:
+    - {afterStop: 1, name: "Weapons", house: 22}                 # The Knife Shoppe
+    - {afterStop: 1, name: "Armor", house: 62}                   # The Common Defense
+    - {afterStop: 1, name: "Potions and magic", house: 97}       # The Seeing Eye
+    - {afterStop: 1, name: "Spell books: elements", house: 1214} # Initiate Guild of the Elements
+    - {afterStop: 1, name: "Spell books: self", house: 189}      # Initiate Guild of the Self
+    - {afterStop: 2, name: "Weapons", house: 28}                 # The Sharpening Stone
+    - {afterStop: 2, name: "Armor", house: 67}                   # The Foundry
+    - {afterStop: 2, name: "Potions and magic", house: 105}      # The Sorcerer's Shoppe
+    - {afterStop: 2, name: "Spell books: fire", house: 133}      # Adept Guild of Fire
+    - {afterStop: 2, name: "Spell books: self", house: 190}      # Adept Guild of the Self
+    - {afterStop: 3, name: "Weapons", house: 29}                 # Feathers and String
+    - {afterStop: 3, name: "Armor", house: 72}                   # The Footman's Friend
+    - {afterStop: 3, name: "Potions and magic", house: 107}      # Alchemy and Incantations
+    - {afterStop: 3, name: "Spell books: air", house: 139}       # Adept Guild of Air
+    - {afterStop: 3, name: "Spell books: body", house: 169}      # Adept Guild of Body
+  # Perks: permanent numbers a card adds, one level a card.
+  perks:
+    - {id: might, name: "Might +15", stat: might, amount: 15, maxLevel: 3}
+    - {id: endurance, name: "Endurance +15", stat: endurance, amount: 15, maxLevel: 3}
+    - {id: accuracy, name: "Accuracy +15", stat: accuracy, amount: 15, maxLevel: 3}
+    - {id: speed, name: "Speed +15", stat: speed, amount: 15, maxLevel: 3}
+    - {id: intellect, name: "Intellect +15", stat: intellect, amount: 15, maxLevel: 3}
+    - {id: personality, name: "Personality +15", stat: personality, amount: 15, maxLevel: 3}
+    - {id: health, name: "Hit points +30", stat: health, amount: 30, maxLevel: 3}
+    - {id: mana, name: "Spell points +25", stat: mana, amount: 25, maxLevel: 3}
+    - {id: armor, name: "Armor class +8", stat: armor, amount: 8, maxLevel: 3}
+    - {id: resistances, name: "Elemental and mental resistances +10", stat: resistances, amount: 10, maxLevel: 3}
+    - {id: melee_damage, name: "Melee damage +4", stat: melee_damage, amount: 4, maxLevel: 3}
+    - {id: ranged_damage, name: "Bow damage +4", stat: ranged_damage, amount: 4, maxLevel: 3, requiresSkill: Bow}
+    # The arrows burst like those of a bow of Carnage: the engine's own explosive arrow, no second spell.
+    - {id: explosive_arrows, name: "Explosive arrows", stat: explosive_arrows, maxLevel: 1, requiresSkill: Bow}
 dungeons:
   # Goblinwatch: rats 2-6, goblins 4-10, blood suckers 2-8. oute3.lua, exit event 51.
   - map: 6d01.blv
+    tier: 1
+    groupScale: 0.5
     entrance: {x: 601, y: 6871, z: 177, yaw: 1400}
   # Abandoned Temple: bats 3-9, cobras 5-14, spiders 5-12. oute3.lua, exit event 50.
   - map: 6d02.blv
+    tier: 2
+    groupScale: 0.5
     entrance: {x: 16406, y: -19669, z: 865, yaw: 500}
   # Temple of Tsantsa: cannibals 6-10, cobras 5-14. outd2.lua, exit event 50.
   - map: 6t3.blv
+    tier: 2
+    groupScale: 0.5
     entrance: {x: 2817, y: -4748, z: -639, yaw: 512}
   # Temple of the Fist: monks 8-27, rats 2-6. outd2.lua, exit event 50.
   - map: 6t2.blv
+    tier: 2
     entrance: {x: 0, y: -2231, z: 513, yaw: 512}
   # Silver Helm Outpost: swordsmen 10-24, monks 8-27, guards 11-33. oute2.lua, exit event 20.
   - map: 6d07.blv
+    tier: 3
     entrance: {x: 4427, y: 3061, z: 769, yaw: 1024}
   # Icewind Keep: ogres 15-28, guards 11-33. outc1.lua, exit event 50.
   - map: 6d15.blv
+    tier: 3
+    groupScale: 0.5
     entrance: {x: -495, y: -219, z: 1, yaw: 512}
   # The Monolith: druids 10-28, earth elementals 25-40, water elementals 14-36. outd1.lua, exit event 50.
   - map: 6d13.blv
+    tier: 3
     entrance: {x: -128, y: -3968, z: 1, yaw: 512}
   # Silver Helm Stronghold: swordsmen 10-24, fighters 14-35, sorcerers 25-50. outd1.lua, exit event 21.
   - map: 6d12.blv
+    tier: 3
+    groupScale: 0.5
     entrance: {x: -127, y: 4190, z: 1, yaw: 1536}

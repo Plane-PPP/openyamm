@@ -221,8 +221,9 @@ TEST_CASE("the installed run's dungeons are MM6 maps entered where their outdoor
     CHECK(run.dungeons.size() >= 5);
     CHECK(run.dungeons.size() <= 8);
     // A run starts in Goblinwatch, the dungeon made for a new party.
-    REQUIRE(run.firstDungeon.has_value());
-    CHECK_EQ(run.dungeons[*run.firstDungeon].mapFileName, "6d01.blv");
+    // The run's rules route starts in the one dungeon of the first tier, Goblinwatch.
+    REQUIRE(run.rules.has_value());
+    CHECK_EQ(OpenYAMM::Game::dungeonRunStop(run, 4, 0)->mapFileName, "6d01.blv");
 
     // Every evt.MoveToMap(x, y, z, yaw, ..., "map") of MM6's outdoor maps.
     const std::filesystem::path mapsRoot = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/worlds/mm6";

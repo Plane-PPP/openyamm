@@ -3353,7 +3353,9 @@ CharacterAttackResult GameMechanics::resolveCharacterAttackAgainstArmorClass(
 
 void GameMechanics::applyExplosiveArrows(const Character &character, CharacterAttackResult &attack)
 {
-    if (attack.mode == CharacterAttackMode::Bow && character.equippedItemEffectFlags.contains("ExplosiveArrows"))
+    if (attack.mode == CharacterAttackMode::Bow
+        && (character.equippedItemEffectFlags.contains("ExplosiveArrows")
+            || character.playerBits.contains(RunExplosiveArrowsPlayerBit)))
     {
         attack.explosiveArrow = true;
         attack.damageType = CombatDamageType::Fire;

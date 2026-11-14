@@ -231,6 +231,10 @@ struct EventRuntimeState
         float outerRadius = 0.0f;
     };
 
+    // The event id of a choice box the ruleset's own code opened (a dungeon run's cards): a click runs no event, the
+    // answer's number (1-based) is left in rulesetChoiceAnswer for that code.
+    static constexpr uint16_t RulesetChoiceEventId = 0xFFF0;
+
     struct PendingInputPrompt
     {
         enum class Kind : uint8_t
@@ -794,6 +798,7 @@ struct EventRuntimeState
     // AddValue(Experience) gives the value as it is, past the rules' event experience (MAW's unscaled rewards).
     bool unscaledExperience = false;
     std::optional<PendingInputPrompt> pendingInputPrompt;
+    std::optional<uint8_t> rulesetChoiceAnswer;
     std::optional<PendingArcomageGame> pendingArcomageGame;
     std::vector<PendingSound> pendingSounds;
     std::vector<uint32_t> lastAffectedMechanismIds;

@@ -1,71 +1,148 @@
 id: rulesets.roguelike_run
-title: Roguelike - a run starts in a dungeon and every exit leads into the next dungeon, none twice
+title: Roguelike - a run of four dungeons with a sealed exit, level-ups, cards, a guardian and a camp
 world: mm6
 mode: faithful
 tags: [rulesets, roguelike]
 steps:
   # Any game brings the runtime up (the Hive, a map no run visits). `run new` then starts the run through the code a
-  # new game from party creation uses (GameApplication::startNewSessionFromCharacterCreation), with seed 4 so the
-  # order is the same on every run: 6d01 (always first) 6d12 6d07 6d15 6t3 6d02 6t2 6d13.
+  # new game from party creation uses (GameApplication::startNewSessionFromCharacterCreation), with four heroes of
+  # level 1 and seed 4, so the route is the same on every run. The route takes one dungeon per tier of run.yml's
+  # `route` (1, 2, 3, 3): Goblinwatch is the one dungeon of tier 1.
   - new_game_flow: {start_map: hive.blv}
   - console: {line: "run new 4", expect_contains: "Run started in 6d01.blv, seed 4."}
   - assert:
       map: 6d01.blv
       ruleset: {id: roguelike}
-  - console: {line: "run", expect_contains: "dungeon 1 of 8, map 6d01.blv (on course), seed 4, order: 6d01.blv"}
+  # A moment of play closes the map's first fill, as the first frame of a game does: monsters that come later (the
+  # guardian) no longer join the roster the clearing counts.
+  - advance_runtime: {seconds: 0.1}
+  - console: {line: "run", expect_contains: "dungeon 1 of 4, map 6d01.blv (on course), seed 4, order: 6d01.blv"}
   - console: {line: "loc", expect_contains: "position=(601.000, 6871.000,"}
-  - console:
-      line: "run"
-      expect_contains: "order: 6d01.blv 6d12.blv 6d07.blv 6d15.blv 6t3.blv 6d02.blv 6t2.blv 6d13.blv"
-  # The party stands at the entrance run.yml gives (`loc`). Each dungeon is left by its own exit event, which asks to
-  # leave for the outdoor map; the run sends the party into the next dungeon instead. Goblinwatch's exit door is
-  # event 51.
-  - execute_event: {id: 51}
-  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
-  - assert: {map: 6d12.blv}
-  - console: {line: "run", expect_contains: "dungeon 2 of 8, map 6d12.blv (on course)"}
-  - console: {line: "loc", expect_contains: "position=(-127.000, 4190.000,"}
-  # Silver Helm Stronghold: event 21.
-  - execute_event: {id: 21}
-  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
-  - assert: {map: 6d07.blv}
-  - console: {line: "run", expect_contains: "dungeon 3 of 8, map 6d07.blv (on course)"}
-  - console: {line: "loc", expect_contains: "position=(4427.000, 3061.000,"}
-  # Silver Helm Outpost: event 20.
-  - execute_event: {id: 20}
-  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
-  - assert: {map: 6d15.blv}
-  - console: {line: "run", expect_contains: "dungeon 4 of 8, map 6d15.blv (on course)"}
-  - console: {line: "loc", expect_contains: "position=(-495.000, -219.000,"}
-  # Icewind Keep, Temple of Tsantsa, Abandoned Temple and Temple of the Fist: event 50.
-  - execute_event: {id: 50}
-  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
-  - assert: {map: 6t3.blv}
-  - console: {line: "run", expect_contains: "dungeon 5 of 8, map 6t3.blv (on course)"}
-  - console: {line: "loc", expect_contains: "position=(2817.000, -4748.000,"}
-  - execute_event: {id: 50}
-  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
-  - assert: {map: 6d02.blv}
-  - console: {line: "run", expect_contains: "dungeon 6 of 8, map 6d02.blv (on course)"}
-  - console: {line: "loc", expect_contains: "position=(16406.000, -19669.000,"}
-  - execute_event: {id: 50}
-  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
-  - assert: {map: 6t2.blv}
-  - console: {line: "run", expect_contains: "dungeon 7 of 8, map 6t2.blv (on course)"}
-  - console: {line: "loc", expect_contains: "position=(0.000, -2231.000,"}
-  - execute_event: {id: 50}
-  - select_topic: {kind: map_transition_confirm, source_id: 0, action_id: 0, selection_index: 0, label: OK}
-  - assert: {map: 6d13.blv}
-  - console: {line: "run", expect_contains: "dungeon 8 of 8, map 6d13.blv (on course)"}
-  - console: {line: "loc", expect_contains: "position=(-128.000, -3968.000,"}
-  # The run is kept by the save: the count and the order come back with it.
-  - save_game: roguelike_last_dungeon
-  - new_game_flow: {start_map: hive.blv}
-  - load_game: roguelike_last_dungeon
+  - console: {line: "run", expect_contains: "level-ups 0 of 10, guardian not called"}
+  - console: {line: "run", expect_contains: "Roderick L1 Knight cards owed 0 Alexis L1 Archer cards owed 0"}
+  # The way out is sealed until the guardian is slain: `run leave` walks out as the exit door does.
+  - console: {line: "run leave", expect_contains: "The way out is sealed."}
+  - assert: {map: 6d01.blv}
+  # Slaying the dungeon passes the share of hit points that calls the guardian and gives the stop's three level-ups:
+  # every hero rises by 4 levels each time and is owed three cards. The guardian stands at the entrance, and the run
+  # first offers the way there.
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian alive"}
+  - console: {line: "run", expect_contains: "toward the guardian 100%"}
+  - console: {line: "run", expect_contains: "Roderick L13 Knight cards owed 3 Alexis L13 Archer cards owed 3"}
+  - console: {line: "run", expect_contains: "asks: [1] Go to the entrance [2] Stay here"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Stay here"}
+  # The cards, hero by hero: twelve choices. The exit stays sealed while the guardian lives.
+  - console: {line: "run", expect_contains: "asks: [1] "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run", expect_contains: "Roderick L13 Knight cards owed 0 Alexis L13 Archer cards owed 3"}
+  - console: {line: "run pick 2", expect_contains: "Picked: "}
+  - console: {line: "run pick 2", expect_contains: "Picked: "}
+  - console: {line: "run pick 2", expect_contains: "Picked: "}
+  - console: {line: "run pick 3", expect_contains: "Picked: "}
+  - console: {line: "run pick 3", expect_contains: "Picked: "}
+  - console: {line: "run pick 3", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 2", expect_contains: "Picked: "}
+  - console: {line: "run pick 3", expect_contains: "Picked: "}
+  - console: {line: "run", expect_contains: "Serena L13 Cleric cards owed 0 Zoltan L13 Sorcerer cards owed 0"}
+  # The sorcerer's last card taught Earth Magic and gave real books: Deadly Swarm (MM6's book 1945), the school's
+  # weakest attack spell, is among them.
   - assert:
-      map: 6d13.blv
+      inventory_any_member: [{item_id: 1945, count: 1}]
+  - console: {line: "run leave", expect_contains: "The way out is sealed."}
+  # The save keeps the run in the middle of a dungeon: the level-ups and the living guardian come back with it.
+  - save_game: roguelike_guardian
+  - new_game_flow: {start_map: hive.blv}
+  - load_game: roguelike_guardian
+  - assert:
+      map: 6d01.blv
       ruleset: {id: roguelike}
-  - console: {line: "run", expect_contains: "dungeon 8 of 8, map 6d13.blv (on course), seed 4"}
-  # A run starts in Goblinwatch whatever the seed (`first` in run.yml): seed 1 alone would begin in 6d07.
-  - console: {line: "run new 1", expect_contains: "Run started in 6d01.blv, seed 1."}
-  - console: {line: "run", expect_contains: "(on course), seed 1, order: 6d01.blv 6d07.blv 6d13.blv"}
+  - console: {line: "run", expect_contains: "dungeon 1 of 4, map 6d01.blv (on course), seed 4"}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian alive"}
+  - console: {line: "run", expect_contains: "Roderick L13 Knight cards owed 0"}
+  # The guardian's death opens the way out. Between two dungeons stands the camp: its shops, then the way on.
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian slain"}
+  - console: {line: "run leave", expect_contains: "The camp."}
+  - assert: {map: 6d01.blv}
+  - console: {line: "run", expect_contains: "asks: [1] Weapons [2] Armor [3] Potions and magic"}
+  # A shop of the camp is a house of the game with its own trade; closing it returns to the camp's menu.
+  - console: {line: "run pick 1", expect_contains: "Picked: Weapons"}
+  - assert:
+      dialog: {active: true, house_dialog: true, source_id: 22, action_label_present: "Buy Standard"}
+  - console: {line: "run close", expect_contains: "The camp."}
+  - console: {line: "run pick 4", expect_contains: "Picked: Spell books: elements"}
+  - assert:
+      dialog: {active: true, house_dialog: true, source_id: 1214}
+  - console: {line: "run close", expect_contains: "The camp."}
+  - console: {line: "run", expect_contains: "asks: [1] Weapons [2] Armor [3] Potions and magic"}
+  # The way on: the second stop is a dungeon of tier 2, with the map's own guardian and the party restored.
+  - console: {line: "run pick 6", expect_contains: "Picked: Go on to the next dungeon; map 6t3.blv"}
+  - assert: {map: 6t3.blv}
+  - advance_runtime: {seconds: 0.1}
+  - console: {line: "run", expect_contains: "dungeon 2 of 4, map 6t3.blv (on course)"}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian not called"}
+  - console: {line: "run leave", expect_contains: "The way out is sealed."}
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - console: {line: "run", expect_contains: "level-ups 6 of 10, guardian alive"}
+  # The way to the entrance, where the guardian stands.
+  - console: {line: "run pick 1", expect_contains: "Picked: Go to the entrance; map 6t3.blv"}
+  - console: {line: "loc", expect_contains: "position=(2817.000, -4748.000,"}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run", expect_contains: "Roderick L25 Knight cards owed 0"}
+  # The second guardian's death promotes the party (promotionAfterStop: 2).
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - console: {line: "run", expect_contains: "Roderick L25 Cavalier cards owed 0 Alexis L25 WarriorMage"}
+  - console: {line: "run leave", expect_contains: "The camp."}
+  - console: {line: "run pick 6", expect_contains: "Picked: Go on to the next dungeon; map 6d12.blv"}
+  - advance_runtime: {seconds: 0.1}
+  - console: {line: "run", expect_contains: "dungeon 3 of 4, map 6d12.blv (on course)"}
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - console: {line: "run", expect_contains: "level-ups 8 of 10, guardian alive"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Stay here"}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run leave", expect_contains: "The camp."}
+  - console: {line: "run pick 6", expect_contains: "Picked: Go on to the next dungeon; map 6d07.blv"}
+  - advance_runtime: {seconds: 0.1}
+  - console: {line: "run", expect_contains: "dungeon 4 of 4, map 6d07.blv (on course)"}
+  # The last dungeon: the tenth level-up comes with its guardian, and no clearing gives an eleventh.
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - console: {line: "run", expect_contains: "level-ups 10 of 10, guardian alive"}
+  - console: {line: "run", expect_contains: "Roderick L41 Cavalier cards owed 2"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Stay here"}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run leave", expect_contains: "The way out is sealed."}
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run", expect_contains: "level-ups 10 of 10, guardian slain"}
+  # No camp follows the last dungeon: leaving it wins the run.
+  - console: {line: "run leave", expect_contains: "Victory! Run complete! Dungeons cleared: 4. Level-ups: 10."}

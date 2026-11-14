@@ -278,6 +278,8 @@ struct ScenarioGameApplicationAccess
         application.m_debugConsole.executeLine(line);
         // `run new` begins its game at the start of the next frame; a scenario has no frames, so begin it here.
         application.processPendingDungeonRunStart();
+        // A run's rules act once a frame (the guardian, the card choices); a scenario's console line is its frame.
+        application.updateDungeonRunRules();
         const std::vector<DebugConsole::Message> &messages = application.m_debugConsole.messages();
         const size_t added = std::min(application.m_debugConsole.totalMessageCount() - before, messages.size());
         bool success = true;

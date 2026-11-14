@@ -46,6 +46,15 @@ struct MapKillProgress
     // The summed level of the counted monsters, hidden ones included, and how many they are.
     double monsterLevelSum = 0;
     int levelledMonsters = 0;
+    // The summed full hit points of the counted monsters of the map's first fill (no later spawns, no NPCs) and of
+    // the slain among them: a clearing weighed by hit points instead of heads (dungeon runs).
+    double countedHealth = 0;
+    double slainHealth = 0;
+    // The counted monster kind of the first fill with the most hit points (its stats id; 0: none).
+    int16_t strongestMonsterId = 0;
+    int strongestMonsterHealth = 0;
+    // Slain actors that joined after the first fill (summons, script spawns).
+    std::vector<size_t> slainLateActors;
 };
 
 // How experience is earned and what training needs (devdocs/maw/HANDOFF.md §3.5). This class is the Standard

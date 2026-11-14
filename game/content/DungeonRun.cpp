@@ -1,6 +1,7 @@
 #include "game/content/DungeonRun.h"
 
 #include "game/content/RulesetDefinition.h"
+#include "game/party/SkillData.h"
 #include "game/rules/RandomStreams.h"
 
 #include <yaml-cpp/yaml.h>
@@ -42,6 +43,137 @@ bool readEntranceCoordinate(const YAML::Node &entranceNode, const char *pKey, in
     value = node.as<int32_t>();
     return true;
 }
+
+bool parseRunRules(const YAML::Node &rulesNode, DungeonRunDefinition &definition, std::string &errorMessage)
+{
+    DungeonRunRules rules = {};
+
+    if (const YAML::Node node = rulesNode["route"])
+    {
+        rules.route = node.as<std::vector<int>>();
+    }
+
+    if (rules.route.empty() || rules.route.size() > definition.dungeons.size())
+    {
+        errorMessage = "run.yml rules need a route no longer than the list of dungeons";
+        return false;
+    }
+
+    if (const YAML::Node node = rulesNode["clear"])
+    {
+        rules.clearShare = std::clamp(node["share"].as<double>(rules.clearShare), 0.01, 1.0);
+        rules.guardianHealthScale = std::max(0.1f, node["guardianHealthScale"].as<float>(rules.guardianHealthScale));
+    }
+
+    if (const YAML::Node node = rulesNode["levels"])
+    {
+        rules.levelUps = node["perStop"].as<std::vector<int>>(std::vector<int>());
+        rules.levelsPerLevelUp = std::max(1, node["levelsEach"].as<int>(rules.levelsPerLevelUp));
+    }
+
+    rules.levelUps.resize(rules.route.size(), 0);
+
+    if (const YAML::Node node = rulesNode["start"])
+    {
+        rules.startFood = std::max(0, node["food"].as<int>(0));
+        rules.startGold = std::max(0, node["gold"].as<int>(0));
+    }
+
+    rules.promotionAfterStop = rulesNode["promotionAfterStop"].as<int>(0);
+
+    if (const YAML::Node node = rulesNode["books"])
+    {
+        rules.booksNewSchool = std::max(0, node["newSchool"].as<int>(rules.booksNewSchool));
+        rules.booksRaisedSchool = std::max(0, node["raisedSchool"].as<int>(rules.booksRaisedSchool));
+    }
+
+    if (const YAML::Node node = rulesNode["skills"])
+    {
+        for (const std::string &skill : node.as<std::vector<std::string>>())
+        {
+            rules.skills.push_back(canonicalSkillName(skill));
+        }
+    }
+
+    for (const YAML::Node &node : rulesNode["schools"])
+    {
+        DungeonRunSchool school = {};
+        school.skill = canonicalSkillName(node["skill"].as<std::string>());
+        school.firstSpell = node["firstSpell"].as<uint32_t>();
+        school.combatSpell = node["combatSpell"].as<uint32_t>(0);
+
+        if (school.skill.empty() || school.firstSpell == 0)
+        {
+            errorMessage = "every run.yml school needs a skill and its firstSpell";
+            return false;
+        }
+
+        rules.schools.push_back(std::move(school));
+    }
+
+    for (const YAML::Node &node : rulesNode["shops"])
+    {
+        DungeonRunShop shop = {};
+        shop.afterStop = node["afterStop"].as<int>(0);
+        shop.name = node["name"].as<std::string>("");
+        shop.houseId = node["house"].as<uint32_t>(0);
+
+        if (shop.afterStop <= 0 || shop.name.empty() || shop.houseId == 0)
+        {
+            errorMessage = "every run.yml shop needs afterStop, a name and a house";
+            return false;
+        }
+
+        rules.shops.push_back(std::move(shop));
+    }
+
+    std::unordered_set<std::string> seenPerks;
+
+    for (const YAML::Node &node : rulesNode["perks"])
+    {
+        DungeonRunPerk perk = {};
+        perk.id = node["id"].as<std::string>();
+        perk.name = node["name"].as<std::string>(perk.id);
+        perk.stat = node["stat"].as<std::string>();
+        perk.amount = node["amount"].as<int>(0);
+        perk.maxLevel = std::max(1, node["maxLevel"].as<int>(1));
+        perk.requiresSkill = canonicalSkillName(node["requiresSkill"].as<std::string>(""));
+
+        if (perk.id.empty() || perk.stat.empty() || !seenPerks.insert(perk.id).second)
+        {
+            errorMessage = "run.yml perk '" + perk.id + "' needs an id of its own and a stat";
+            return false;
+        }
+
+        rules.perks.push_back(std::move(perk));
+    }
+
+    definition.rules = std::move(rules);
+    return true;
+}
+}
+
+int DungeonRunRules::totalLevelUps() const
+{
+    return std::accumulate(levelUps.begin(), levelUps.end(), 0);
+}
+
+int DungeonRunRules::levelUpsBefore(size_t stop) const
+{
+    return std::accumulate(levelUps.begin(), levelUps.begin() + std::min(stop, levelUps.size()), 0);
+}
+
+const DungeonRunSchool *DungeonRunRules::school(const std::string &skill) const
+{
+    for (const DungeonRunSchool &candidate : schools)
+    {
+        if (candidate.skill == skill)
+        {
+            return &candidate;
+        }
+    }
+
+    return nullptr;
 }
 
 std::string dungeonRunDefinitionPath(const std::string &rulesetId)
@@ -108,6 +240,16 @@ std::optional<DungeonRunDefinition> parseDungeonRunDefinition(const std::string 
                 stop.yawUnits = entranceNode["yaw"].as<int32_t>();
             }
 
+            if (dungeonNode["tier"])
+            {
+                stop.tier = dungeonNode["tier"].as<int>();
+            }
+
+            if (dungeonNode["groupScale"])
+            {
+                stop.groupScale = std::clamp(dungeonNode["groupScale"].as<float>(), 0.1f, 4.0f);
+            }
+
             definition.dungeons.push_back(std::move(stop));
         }
 
@@ -128,6 +270,19 @@ std::optional<DungeonRunDefinition> parseDungeonRunDefinition(const std::string 
             if (!definition.firstDungeon.has_value())
             {
                 errorMessage = "run.yml first must name one of its dungeons";
+                return std::nullopt;
+            }
+        }
+
+        if (const YAML::Node rulesNode = root["rules"])
+        {
+            if (!rulesNode.IsMap() || !parseRunRules(rulesNode, definition, errorMessage))
+            {
+                if (errorMessage.empty())
+                {
+                    errorMessage = "run.yml rules must be a map";
+                }
+
                 return std::nullopt;
             }
         }
@@ -198,6 +353,32 @@ std::vector<size_t> dungeonRunOrder(const DungeonRunDefinition &run, uint64_t ro
 {
     std::vector<size_t> order = dungeonRunOrder(run.dungeons.size(), rootSeed);
 
+    if (run.rules.has_value())
+    {
+        std::vector<size_t> route;
+
+        for (int tier : run.rules->route)
+        {
+            auto pick = std::find_if(
+                order.begin(),
+                order.end(),
+                [&run, tier](size_t index)
+                {
+                    return run.dungeons[index].tier == tier;
+                });
+
+            if (pick == order.end())
+            {
+                pick = order.begin();
+            }
+
+            route.push_back(*pick);
+            order.erase(pick);
+        }
+
+        return route;
+    }
+
     if (run.firstDungeon.has_value() && *run.firstDungeon < order.size())
     {
         // Taking one index out leaves the others in a uniformly random order.
@@ -210,12 +391,14 @@ std::vector<size_t> dungeonRunOrder(const DungeonRunDefinition &run, uint64_t ro
 
 const DungeonRunStop *dungeonRunStop(const DungeonRunDefinition &run, uint64_t rootSeed, size_t entered)
 {
-    if (entered >= run.dungeons.size())
+    const std::vector<size_t> order = dungeonRunOrder(run, rootSeed);
+
+    if (entered >= order.size())
     {
         return nullptr;
     }
 
-    return &run.dungeons[dungeonRunOrder(run, rootSeed)[entered]];
+    return &run.dungeons[order[entered]];
 }
 
 std::string dungeonRunEndText(bool defeated, size_t completedDungeons)

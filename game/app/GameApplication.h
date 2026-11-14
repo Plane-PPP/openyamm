@@ -224,6 +224,32 @@ private:
     bool processPendingDungeonRunStart();
     // The debug console's `run`: the run's progress, or a new run.
     void registerDungeonRunConsoleCommand();
+    // A run with rules (game/rules/roguelike/RoguelikeRules.h), every frame of play: places the guardian the clearing
+    // called, opens the choice boxes the run owes (the way to the door, each hero's cards), hands out owed spell
+    // books and mirrors the run's numbers into the save's variables.
+    void updateDungeonRunRules();
+    void storeDungeonRunState();
+    void placeDungeonRunGuardian();
+    void deliverDungeonRunBooks();
+    // A choice box of the run: the title, the text and one button per answer. False when a dialog is in the way.
+    bool openDungeonRunChoice(
+        const std::string &title, const std::string &text, const std::vector<std::string> &answers);
+    // The answer (1-based) to the open choice box.
+    void answerDungeonRunChoice(int answer);
+    // The run's stop the party is in, or nullptr.
+    const DungeonRunStop *currentDungeonRunStop();
+    // Whether the run's rules keep the party on the map (the guardian is not slain), with the status line saying so.
+    bool dungeonRunExitSealed(bool announce = false);
+    // Between two dungeons of a run with rules: hit and spell points restored, the map's numbers reset.
+    void restDungeonRunPartyBetweenStops();
+    void restoreDungeonRunParty();
+    // The camp between two dungeons: holds the move out of the map and opens the camp's menu instead (the stop's
+    // shops, then the way on). False when the stop has no camp or the party is leaving it.
+    bool holdMapMoveForDungeonRunCamp(const EventRuntimeState::PendingMapMove &pendingMapMove);
+    std::vector<DungeonRunShop> currentDungeonRunShops();
+    bool openDungeonRunCamp();
+    // The promotion after the guardian of the rules' stop: every hero takes the next class of their line.
+    void promoteDungeonRunParty();
     void shutdownRenderer();
     Party &ensureSessionPartyState();
     void bindPartyDependencies(Party &party);
@@ -489,6 +515,25 @@ private:
     std::optional<PendingDungeonRunStart> m_pendingDungeonRunStart;
     // A line the next main menu shows once (how a dungeon run ended).
     std::string m_mainMenuStatus;
+    // The run's open choice box: what it asks, the hero and the cards it offers.
+    enum class DungeonRunChoice
+    {
+        None,
+        Door,
+        Card,
+        Camp,
+    };
+    DungeonRunChoice m_dungeonRunChoice = DungeonRunChoice::None;
+    size_t m_dungeonRunChoiceMember = 0;
+    std::vector<RunCard> m_dungeonRunChoiceCards;
+    // When a choice box closed without an answer may open again (SDL ticks).
+    uint64_t m_dungeonRunChoiceRetryTicks = 0;
+    // The camp is open (its menu returns when a shop closes), the move it holds, and the party is leaving it.
+    bool m_dungeonRunCampOpen = false;
+    std::optional<EventRuntimeState::PendingMapMove> m_dungeonRunCampMove;
+    bool m_dungeonRunCampLeaving = false;
+    // The run's numbers as last written to the save's variables.
+    std::optional<RoguelikeRunState> m_storedDungeonRunState;
     // A map move held for a few frames while the leaving map's autosave captures its preview.
     std::optional<EventRuntimeState::PendingMapMove> m_mapMoveAwaitingAutosave;
     std::vector<EffectHandle> m_debugEffectHandles;

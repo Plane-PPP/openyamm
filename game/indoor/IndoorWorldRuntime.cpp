@@ -19556,9 +19556,11 @@ bool IndoorWorldRuntime::mapKillProgress(MapKillProgress &progress) const
             continue;
         }
 
+        const bool slain = actor.hp <= 0 || actor.rulesetFacts.risen;
+
         // A risen monster counts as slain, alive or not, so a revival does not undo the clear (MAW's NameId > 300,
         // zzMaw-Monsters.lua:2600).
-        if (actor.hp <= 0 || actor.rulesetFacts.risen)
+        if (slain)
         {
             ++progress.slainMonsters;
             ++progress.countedMonsters;
@@ -19572,6 +19574,28 @@ bool IndoorWorldRuntime::mapKillProgress(MapKillProgress &progress) const
         else
         {
             continue;
+        }
+
+        // The clearing by hit points weighs each monster of the first fill by its full health, once.
+        if (actor.spawnedAfterFill)
+        {
+            if (slain)
+            {
+                progress.slainLateActors.push_back(actorIndex);
+            }
+        }
+        else if (actor.npcId == 0)
+        {
+            const int fullHealth =
+                std::max(1, actor.rulesetFacts.maxHp > 0 ? actor.rulesetFacts.maxHp : pStats->hitPoints);
+            progress.countedHealth += fullHealth;
+            progress.slainHealth += slain ? fullHealth : 0;
+
+            if (pStats->hitPoints > progress.strongestMonsterHealth)
+            {
+                progress.strongestMonsterHealth = pStats->hitPoints;
+                progress.strongestMonsterId = resolveIndoorActorStatsId(actor);
+            }
         }
 
         progress.monsterLevelSum += actor.rulesetFacts.level > 0 ? actor.rulesetFacts.level : pStats->level;

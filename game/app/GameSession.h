@@ -22,6 +22,7 @@
 #include "game/party/PlaythroughStatistics.h"
 #include "game/mm9/Mm9QuestMarkers.h"
 #include "game/rules/maw/MawRules.h"
+#include "game/rules/roguelike/RoguelikeRules.h"
 #include "game/scene/SceneKind.h"
 #include "game/data/GameDataRepository.h"
 #include "game/ui/GameplayOverlayTypes.h"
@@ -114,6 +115,11 @@ public:
     // The MAW rules of a MAW game, else null.
     MawRules *mawRules();
     const MawRules *mawRules() const;
+    // The rules of a dungeon run (a ruleset package whose run.yml has a rules block); null for any other game. The
+    // loader reads a ruleset's run and is set once by the application, which owns the asset file system.
+    RoguelikeRules *roguelikeRules();
+    const RoguelikeRules *roguelikeRules() const;
+    void setDungeonRunLoader(std::function<std::optional<DungeonRunDefinition>(const std::string &)> loader);
     // Root of the game's named random streams (game/rules/RandomStreams.h), chosen at new game and saved.
     uint64_t randomRootSeed() const;
     void setRandomRootSeed(uint64_t rootSeed);
@@ -441,6 +447,8 @@ private:
     float m_gameMinutes = 9.0f * 60.0f;
     RulesetSelection m_ruleset;
     std::unique_ptr<MawRules> m_pMawRules;
+    std::unique_ptr<RoguelikeRules> m_pRoguelikeRules;
+    std::function<std::optional<DungeonRunDefinition>(const std::string &)> m_dungeonRunLoader;
     uint64_t m_randomRootSeed = 0;
     float m_cameraYawRadians = 0.0f;
     float m_cameraPitchRadians = 0.0f;
