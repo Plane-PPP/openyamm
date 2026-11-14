@@ -32,6 +32,10 @@ rules:
   skills: [Sword, Axe, Spear, Bow, Mace, Dagger, Staff, LeatherArmor, ChainArmor, PlateArmor, Shield, Armsmaster,
            Bodybuilding, Meditation, DisarmTraps, IdentifyItem, RepairItem,
            FireMagic, AirMagic, WaterMagic, EarthMagic, SpiritMagic, MindMagic, BodyMagic]
+  # Heroes without class caps: their cards offer every skill above up to Grandmaster, whatever their class. 79 is
+  # the Medusa heroine (content/character_data.append.txt). Her class in the new game screen still sets her hit and
+  # spell points and her starting skills.
+  unrestrictedCharacters: [79]
   # Schools whose card also gives books: the school's first spell id and its weakest attack spell (spells.txt), which
   # comes first when the hero's mastery can learn it.
   schools:

@@ -228,6 +228,8 @@ private:
     // called, opens the choice boxes the run owes (the way to the door, each hero's cards), hands out owed spell
     // books and mirrors the run's numbers into the save's variables.
     void updateDungeonRunRules();
+    // Another game begins (a new run, a loaded save): no choice box, camp or held move of the game before.
+    void resetDungeonRunChoices();
     void storeDungeonRunState();
     void placeDungeonRunGuardian();
     void deliverDungeonRunBooks();

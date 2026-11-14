@@ -104,9 +104,9 @@ std::optional<GameApplication::MapStartDestination> GameApplication::beginDungeo
     if (RoguelikeRules *pRules = m_gameSession.roguelikeRules())
     {
         pRules->state() = RoguelikeRunState{.entered = 1};
-        m_storedDungeonRunState.reset();
-        m_dungeonRunChoice = DungeonRunChoice::None;
     }
+
+    resetDungeonRunChoices();
     GAMEPLAY_DEBUG_TRACE("dungeon_run_started map=\"" + pStop->mapFileName + "\"");
     return MapStartDestination{
         .mapFileName = pStop->mapFileName,
@@ -478,6 +478,17 @@ void GameApplication::registerDungeonRunConsoleCommand()
         {
             return args.empty() || toLowerCopy(args.front()) == "status";
         }});
+}
+
+void GameApplication::resetDungeonRunChoices()
+{
+    m_dungeonRunChoice = DungeonRunChoice::None;
+    m_dungeonRunChoiceCards.clear();
+    m_dungeonRunChoiceRetryTicks = 0;
+    m_dungeonRunCampOpen = false;
+    m_dungeonRunCampMove.reset();
+    m_dungeonRunCampLeaving = false;
+    m_storedDungeonRunState.reset();
 }
 
 const DungeonRunStop *GameApplication::currentDungeonRunStop()

@@ -12780,6 +12780,7 @@ bool GameApplication::quickLoadFromPath(const std::filesystem::path &path, bool 
 
     m_gameSession.restoreFromSaveData(*saveData);
     m_gameSession.setCurrentSavePath(path);
+    resetDungeonRunChoices();
     // The seed restoreFromSaveData kept (or gave a save older than the seeds) links older saves of the party.
     m_gameSession.playthroughStatistics().attachLoadedSave(
         saveData->playthroughId,

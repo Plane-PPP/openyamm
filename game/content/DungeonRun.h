@@ -88,6 +88,8 @@ struct DungeonRunRules
     std::vector<DungeonRunPerk> perks;
     std::vector<DungeonRunSchool> schools;
     std::vector<DungeonRunShop> shops;
+    // Heroes (character_data.txt ids) whose cards know no class caps: any skill of the pool up to Grandmaster.
+    std::vector<uint32_t> unrestrictedCharacters;
 
     int totalLevelUps() const;
     // Level-ups the stops before this one (0-based) gave in full.

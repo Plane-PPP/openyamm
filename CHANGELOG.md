@@ -1,3 +1,17 @@
+# Roguelike rules v0 on the 2.3 base — Linux checks passed (2026-11-14)
+
+Branch feature/roguelike-v0 from the skeleton d3670e16. A run.yml `rules` block turns the skeleton into a run of four
+dungeons by tier: the clearing is counted by the hit points of the slain monsters of the map's first fill; past the
+share (50%) the map's strongest kind comes to the entrance as a guardian (health x4) and its death opens the exit;
+ten level-ups a run (+4 levels for every hero, one card of three each: a skill step, a numeric perk, explosive
+arrows); a school card owes real spell books; a camp between dungeons restores hit and spell points and opens MM6
+shops; a promotion follows the second guardian; leaving the fourth dungeon wins. The Medusa heroine (portrait 79)
+joins the package with cards free of class caps; her artwork stays in Project Medusa and is installed by
+packaging/medusa/install_content.py. Every number is a test value in run.yml. No save format change: the run lives in
+the save's named variables and the heroes' event variables. 15 run unit cases, the 117-step headless scenario, the
+selected 284 unit and 26 native regression cases passed. Not verified: play on screen, Windows, pace, the arrows'
+burst, a purchase, the party's defeat. Details: docs/research/roguelike-rules-v0.md. Local commits only; no push or CI.
+
 # Roguelike skeleton on the verified2.3 base — Linux checks passed (2026-11-13)
 
 Separate integration branch from530d75a3; original roguelike branch unchanged. Existing8-dungeon rules/pool retained;

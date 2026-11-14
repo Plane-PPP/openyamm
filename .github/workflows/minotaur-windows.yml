@@ -6,6 +6,7 @@ on:
       - feature/minotaur-rebalance
       # The roguelike prototype branch builds the same update over the Minotaur base, then checks its run (below).
       - integration/minotaur-v2.3-roguelike-20261113
+      - feature/roguelike-v0
     paths:
       - ".github/workflows/minotaur-windows.yml"
       - "CMakeLists.txt"
@@ -284,7 +285,7 @@ jobs:
       # tests, then its scenario played headless by the packaged game on the packaged content.
       - name: Test the roguelike run
         if: hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''
-        run: build-windows/tests/openyamm_unit_tests.exe --test-case='*dungeon run*,*run.yml*,*installed run*'
+        run: build-windows/tests/openyamm_unit_tests.exe --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp'
 
       - name: Play the roguelike run on the packaged game
         if: hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''

@@ -31,9 +31,16 @@ steps:
   - console: {line: "run", expect_contains: "toward the guardian 100%"}
   - console: {line: "run", expect_contains: "Roderick L13 Knight cards owed 3 Alexis L13 Archer cards owed 3"}
   - console: {line: "run", expect_contains: "asks: [1] Go to the entrance [2] Stay here"}
-  - console: {line: "run pick 2", expect_contains: "Picked: Stay here"}
+  # The choice is the game's own dialog with a button per answer; a click on the second declines the way.
+  - assert:
+      dialog: {active: true, action_label_present: "Go to the entrance"}
+  - select_topic: {kind: event_choice, source_id: 0, action_id: 1, selection_index: 1, label: "Stay here"}
+  # The run takes the answer on its next frame; a scenario's console line stands for that frame.
+  - console: {line: "run", expect_contains: "guardian alive"}
   # The cards, hero by hero: twelve choices. The exit stays sealed while the guardian lives.
   - console: {line: "run", expect_contains: "asks: [1] "}
+  - assert:
+      dialog: {active: true, text_contains: "Roderick, level 13 Knight: choose one."}
   - console: {line: "run pick 1", expect_contains: "Picked: "}
   - console: {line: "run pick 1", expect_contains: "Picked: "}
   - console: {line: "run pick 1", expect_contains: "Picked: "}

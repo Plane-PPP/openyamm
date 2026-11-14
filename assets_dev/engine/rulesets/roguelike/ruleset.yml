@@ -1,13 +1,25 @@
-# Roguelike: a dungeon run. The party starts in a random dungeon; every exit leads into the next random dungeon and
-# the party's defeat ends the run. The dungeons and their entrances are listed in run.yml (game/content/DungeonRun.h).
-# Rules: this package changes none. The engine creates MAW's rules only for the id "maw" (game/app/GameSession.cpp),
-# so a run plays on the Standard rules of the build it ships in.
+# Roguelike: a dungeon run. The party starts in a dungeon; every exit leads into the next one and the party's defeat
+# ends the run. The dungeons, their entrances and the rules of the run are in run.yml (game/content/DungeonRun.h).
+# Rules: game/rules/roguelike on top of the Standard rules of the build (the engine creates them for a ruleset
+# package whose run.yml has a `rules` block, game/app/GameSession.cpp).
 id: roguelike
 name: Roguelike
 description: >-
-  A dungeon run: start in a random dungeon, every exit leads to the next one, defeat ends the run.
+  A dungeon run of four dungeons: clear each to call its guardian, level up by cards, camp between them.
 contentSchemaVersion: 1
+idRanges:
+  portraits: {begin: 79, end: 89}
 rulesPanel:
   title: Roguelike
   subtitle: Dungeon Run
-  summary: "Skeleton: random dungeons in a row, no town. Defeat ends the run."
+  summary: "Four dungeons in a row, no town. Clearing gives level-ups and cards; defeat ends the run."
+tables:
+  # The Medusa heroine, portrait 79, a hero the party may take. Her faces (med01-01 ... med01-56) are Project
+  # Medusa's artwork and are not kept in this repository: packaging/medusa/install_content.py copies them into this
+  # package's icons_x2/ when it installs the Medusa content.
+  - table: character_data.txt
+    mode: override
+    path: content/character_data.patch.txt
+    append: content/character_data.append.txt
+    keyColumn: 0
+    headerRow: 0

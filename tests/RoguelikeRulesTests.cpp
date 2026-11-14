@@ -84,6 +84,8 @@ TEST_CASE("the installed run's rules: a route of four by tier, ten level-ups and
     REQUIRE(rules.school("FireMagic") != nullptr);
     CHECK_EQ(rules.school("FireMagic")->combatSpell, 2u);
     CHECK(rules.school("Sword") == nullptr);
+    // The Medusa heroine (character_data.txt row 79 of the package) has no class caps.
+    CHECK_EQ(rules.unrestrictedCharacters, std::vector<uint32_t>{79});
 
     std::set<std::string> lastStops;
 
@@ -202,6 +204,16 @@ TEST_CASE("a run's skill card raises one step with its level, and stops at the c
     }
 
     // A knight's bow stops at Expert: nothing left to offer.
+    CHECK(OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, 1, 0).empty());
+    // A hero the rules free of class caps goes on to Grandmaster, in any class.
+    knight.characterDataId = 79;
+    rules.unrestrictedCharacters = {79};
+    const std::vector<RunCard> freeCards = OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, 1, 0);
+    REQUIRE_EQ(freeCards.size(), 1u);
+    CHECK(freeCards[0].mastery == SkillMastery::Master);
+    rules.skills = {"FireMagic"};
+    CHECK_EQ(OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, 1, 0).size(), 1u);
+    knight.characterDataId = 1;
     CHECK(OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, 1, 0).empty());
     CHECK_EQ(knight.eventVariables[OpenYAMM::Game::RunCardsTakenVariable], 2);
     CHECK_EQ(OpenYAMM::Game::runSkillLevelForMastery(SkillMastery::Master), 7u);

@@ -187,12 +187,17 @@ std::vector<RunCard> dealRunCards(
     std::vector<RunCard> fresh;
     std::vector<RunCard> perks;
 
+    const bool unrestricted = std::find(
+        rules.unrestrictedCharacters.begin(), rules.unrestrictedCharacters.end(), character.characterDataId)
+        != rules.unrestrictedCharacters.end();
+
     for (const std::string &skill : rules.skills)
     {
         const SkillMastery current = characterMastery(character, skill);
-        const SkillMastery cap = pClassSkillTable != nullptr
+        const SkillMastery classCap = pClassSkillTable != nullptr
             ? pClassSkillTable->getEffectiveCap(character.className, character.raceId, skill)
             : SkillMastery::None;
+        const SkillMastery cap = unrestricted ? SkillMastery::Grandmaster : classCap;
 
         if (current >= cap || current >= SkillMastery::Grandmaster)
         {

@@ -127,6 +127,11 @@ bool parseRunRules(const YAML::Node &rulesNode, DungeonRunDefinition &definition
         rules.shops.push_back(std::move(shop));
     }
 
+    if (const YAML::Node node = rulesNode["unrestrictedCharacters"])
+    {
+        rules.unrestrictedCharacters = node.as<std::vector<uint32_t>>();
+    }
+
     std::unordered_set<std::string> seenPerks;
 
     for (const YAML::Node &node : rulesNode["perks"])
