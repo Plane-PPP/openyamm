@@ -240,11 +240,14 @@ jobs:
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase upstream-indoor-tests -- build-windows/tests/openyamm_runtime_tests.exe --source-file='*IndoorActorFlyingRuntimeTests.cpp,*IndoorActorDetectionRuntimeTests.cpp,*IndoorActorFactionRuntimeTests.cpp'
 
       - name: Prepare indexed content (not included in unchanged update payloads)
+        # MM6-MM8 only: 2.3's packs.yml lists MM9 too, which this package neither checks out nor ships; the game reads
+        # MM9's tables only when its world package is mounted (GameDataLoader, isWorldPackageMounted).
         run: >-
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content --
           /ucrt64/bin/python.exe tools/package_runtime_assets.py
           --assets-root assets_dev --output build-windows/minotaur-content
           --profile desktop --cooker build-windows/game/openyamm_sprite_atlas_cook.exe
+          --world mm6 --world mm7 --world mm8
           --release "${MINOTAUR_RELEASE_VERSION}" --build "${GITHUB_SHA}"
 
       - name: Package and verify the small program archive
