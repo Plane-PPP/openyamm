@@ -44,9 +44,14 @@
 2. `tools/minotaur_ci_tests.sh build/tests <группы>` через `safe-heavy-run`: те же фильтры, что в CI. Группы `mm9` и
    `mm9-ai` и три случая `ScriptedMapRegressionTests` требуют полные данные карт, которых нет в разреженной рабочей
    копии; их результат здесь не показателен.
-3. Для изменений C++ — тесты под AddressSanitizer (`build-asan`, конфигурация как у `build` плюс
-   `-fsanitize=address -fno-omit-frame-pointer`, запуск с `ASAN_OPTIONS=detect_leaks=0`): обращение к освобождённой
-   памяти, которое на Linux проходит молча, а на Windows ломает тест, видно сразу.
+3. Для изменений C++ — тесты под AddressSanitizer: обращение к освобождённой памяти, которое на Linux проходит молча,
+   а на Windows ломает тест, видно сразу. Каталог `build-asan`, конфигурация как у `build` плюс
+   `-DCMAKE_BUILD_TYPE=RelWithDebInfo`, `-fsanitize=address -fno-omit-frame-pointer` в флагах C/C++ и компоновщика и
+   `-DCMAKE_CXX_STANDARD_LIBRARIES=/lib/x86_64-linux-gnu/libxcb.so.1` (без оптимизации `-O3` статическая `libX11`
+   sysroot втягивает `libxcb`). Запуск: `LD_LIBRARY_PATH` дополнить `build/sysroot/usr/lib/x86_64-linux-gnu`
+   (`libOpenGL.so.0`), `ASAN_OPTIONS=detect_leaks=0`. Первая сборка модульных тестов — около 20 минут, дальше
+   инкрементально. Проверено 2026-11-14: группы `medusa-importer`, `roguelike`, `updater` чисты, а возвращённая на
+   время ошибка теста Медузы даёт `heap-use-after-free` со строкой освобождения и строкой обращения.
 4. Новые сценарии — запуск движком: ключи проверяются до выполнения, даже без данных карты.
 
 Полную упаковку локально не повторить: MM9 весит 3,4 ГБ, а GitHub отдаёт этой машине 20–70 КБ/с на соединение.
