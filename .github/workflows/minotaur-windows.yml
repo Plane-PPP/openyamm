@@ -1,5 +1,18 @@
 name: Minotaur Windows build
 
+# The jobs follow upstream's .github/workflows/packages.yml: the content is packed once on Linux while the Windows
+# program builds, and a last job joins the two into the packages and plays them. A preflight job checks the workflow,
+# the packaging tools and the update base in a minute or two, before the long jobs start.
+#
+#   preflight  (Linux, ~2 min)    workflow vs packs.yml and upstream, Python tool tests, update base and version
+#   update_tests (Windows, ~3 min) the real PowerShell 5.1 installer and the tools on Windows' Python
+#   content    (Linux)            the full desktop content (MM6-MM9, languages, Medusa), verified, uploaded
+#   windows    (Windows, MSYS2)   program and tests, compiled through ccache; thin stage uploaded, then the tests
+#   package    (Windows)          stage + content: update ZIP or new base, full installation, release scenarios
+#
+# Reruns: reuse_build_run / reuse_content_run take the stage or the content of an earlier run of this workflow, so
+# a packaging fix is checked without compiling or packing again.
+
 on:
   push:
     branches:
@@ -24,11 +37,11 @@ on:
   workflow_dispatch:
     inputs:
       tests_only:
-        description: "Run Windows installer tests without rebuilding the game"
+        description: "Run the preflight and Windows installer tests without building"
         type: boolean
         default: false
       package_mode:
-        description: "Incremental ZIP for an existing mod install, full install, or both"
+        description: "Incremental ZIP for an existing mod install, full install (a new base), or both"
         type: choice
         options: [update, full, both]
         default: update
@@ -40,18 +53,97 @@ on:
         description: "Commit SHA of the previous confirmed Windows package (optional)"
         required: false
         type: string
+      reuse_build_run:
+        description: "Run ID whose Windows stage to package instead of compiling (packaging fixes)"
+        required: false
+        type: string
+      reuse_content_run:
+        description: "Run ID whose packed content to use instead of packing again (program fixes)"
+        required: false
+        type: string
 
 permissions:
   contents: read
+  # download-artifact of an earlier run (reuse_build_run, reuse_content_run).
+  actions: read
 
 concurrency:
   group: minotaur-windows-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  MINOTAUR_UPSTREAM_VERSION: "2.3"
+  MINOTAUR_UPSTREAM_SHA: f4a6b8032759a218505532b2600ac56b6d80c7af
+  MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
+
 jobs:
+  preflight:
+    name: Preflight (workflow, tools, update base)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.base.outputs.version }}
+      base_path: ${{ steps.base.outputs.base_path }}
+      base_sha: ${{ steps.base.outputs.base_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/
+            /tools/
+            /packaging/
+            /tests/scenarios/
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install PyYAML
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
+      - name: Check the workflow against the release it builds
+        run: python tools/check_minotaur_workflow.py
+      - name: Test the update, verification and assembly tools
+        run: |
+          set -e
+          cd tools
+          python test_minotaur_updates.py
+          python test_verify_minotaur_windows_package.py
+          python test_assemble_minotaur_package.py
+          bash -n minotaur_ci_tests.sh
+      - name: Select update base and unique app version
+        id: base
+        env:
+          REQUESTED_BASE: ${{ inputs.baseline_version }}
+          PREVIOUS_BUILD_SHA: ${{ inputs.previous_build_sha }}
+        run: |
+          version="minotaur-2.3-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$MINOTAUR_PACKAGE_MODE" = full ]; then
+            # A full installation starts a new base (the full 2.3 desktop release): no patch to an older one.
+            if [ -n "$REQUESTED_BASE$PREVIOUS_BUILD_SHA" ]; then
+              echo "::error::package_mode=full builds a new base; baseline_version and previous_build_sha are for update/both"
+              exit 1
+            fi
+            exit 0
+          fi
+          base_version="$REQUESTED_BASE"
+          if [ -z "$base_version" ]; then
+            base_version=$(python -c "import json; print(json.load(open('packaging/minotaur/latest-baseline.json'))['version'])")
+          fi
+          [[ "$base_version" =~ ^minotaur-[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || exit 1
+          base_path="packaging/minotaur/bases/$base_version.json"
+          read -r checked_version base_sha <<< "$(python tools/minotaur_updates.py check-base "$base_path")"
+          test "$checked_version" = "$base_version"
+          if [ -n "$PREVIOUS_BUILD_SHA" ] && [ "$PREVIOUS_BUILD_SHA" != "$base_sha" ]; then
+            echo "::error::previous_build_sha must match the selected baseline"; exit 1
+          fi
+          printf 'base_path=%s\nbase_sha=%s\n' "$base_path" "$base_sha" >> "$GITHUB_OUTPUT"
+
   update_tests:
     name: Offline updater tests (Windows PowerShell 5.1)
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -67,23 +159,125 @@ jobs:
         run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
       - name: Test generation, safety and the actual Windows installer
         run: python tools/test_minotaur_updates.py
-      - name: Test full and thin package validation
-        run: python tools/test_verify_minotaur_windows_package.py
+      - name: Test full and thin package validation and assembly on Windows
+        run: |
+          python tools/test_verify_minotaur_windows_package.py
+          python tools/test_assemble_minotaur_package.py
       - name: Test Windows resource monitoring
         run: |
           python tools/test_measure_windows_build.py
           python tools/measure_windows_build.py --phase smoke -- python -c "print('Native Windows monitoring smoke test')"
 
+  content:
+    name: Desktop content (Linux)
+    needs: preflight
+    if: ${{ inputs.tests_only != true && inputs.reuse_content_run == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      # As upstream's content job: the checkout and the packs need the room.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /usr/local/.ghcup /opt/ghc /usr/local/share/boost \
+            /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Check out sources and the desktop assets
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /CMakeLists.txt
+            /LICENSE
+            /COPYRIGHT
+            /cmake/
+            /engine/
+            /game/
+            /packaging/
+            /tools/
+            /assets_dev/_legacy/sprites_original/
+            /assets_dev/engine/
+            /assets_dev/worlds/mm6/
+            /assets_dev/worlds/mm7/
+            /assets_dev/worlds/mm8/
+            /assets_dev/worlds/mm9/
+            /assets_dev/languages/
+            !/assets_dev/languages/templates/
+
+      - name: Select the pinned Medusa content
+        run: |
+          commit=$(python3 -c "import json; print(json.load(open('packaging/medusa/content.json'))['commit'])")
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Medusa content must be pinned"; exit 1; }
+          echo "MEDUSA_CONTENT_SHA=$commit" >> "$GITHUB_ENV"
+
+      - name: Check out the pinned Medusa package
+        uses: actions/checkout@v7
+        with:
+          repository: Plane-PPP/project-medusa
+          ref: ${{ env.MEDUSA_CONTENT_SHA }}
+          path: medusa-content
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /content/engine/rulesets/medusa/
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build libgl1-mesa-dev libx11-dev libxext-dev python3-yaml
+
+      - name: Install the pinned Medusa ruleset
+        run: |
+          test "$(git -C medusa-content rev-parse HEAD)" = "$MEDUSA_CONTENT_SHA"
+          python3 packaging/medusa/install_content.py --source medusa-content --assets assets_dev
+
+      - name: Build the sprite atlas cooker
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=OFF -DOPENYAMM_BUILD_TESTS=OFF -DOPENYAMM_BUILD_EDITOR=OFF \
+            -DOPENYAMM_BUILD_TOOLS=OFF -DSDL_ALSA=OFF -DSDL_JACK=OFF -DSDL_KMSDRM=OFF -DSDL_PIPEWIRE=OFF \
+            -DSDL_PULSEAUDIO=OFF -DSDL_SNDIO=OFF -DSDL_UNIX_CONSOLE_BUILD=ON -DSDL_WAYLAND=OFF -DSDL_X11=OFF
+          cmake --build build --target openyamm_sprite_atlas_cook --parallel 4
+
+      # The whole desktop release: the worlds tools/packaging/packs.yml ships (MM6-MM9) and every language's packs.
+      - name: Pack and verify the content
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          python3 tools/package_runtime_assets.py --assets-root assets_dev --output content \
+            --profile desktop --cooker build/game/openyamm_sprite_atlas_cook \
+            --release "$VERSION" --build "$GITHUB_SHA" --report
+          python3 tools/verify_minotaur_windows_package.py --content-only content
+          df -h /
+
+      - name: Upload the content
+        uses: actions/upload-artifact@v7
+        with:
+          name: minotaur-content-desktop
+          path: content/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
   windows:
-    needs: update_tests
-    if: ${{ inputs.tests_only != true }}
-    name: Windows x64 release
-    env:
-      MINOTAUR_UPSTREAM_VERSION: "2.3"
-      MINOTAUR_UPSTREAM_SHA: f4a6b8032759a218505532b2600ac56b6d80c7af
-      MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
+    name: Windows x64 program and tests
+    needs: [preflight, update_tests]
+    if: ${{ inputs.tests_only != true && inputs.reuse_build_run == '' }}
     runs-on: windows-latest
     timeout-minutes: 240
+    outputs:
+      stage: ${{ steps.stage.outputs.uploaded }}
+    env:
+      MINOTAUR_RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+      MINOTAUR_BASE_SHA: ${{ needs.preflight.outputs.base_sha }}
+      # The compiler cache (restored below, saved even when a later step fails): an unchanged file compiles once.
+      CCACHE_DIR: ${{ github.workspace }}\.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 4G
+      CCACHE_COMPRESS: "true"
+      CCACHE_NOHASHDIR: "true"
     defaults:
       run:
         shell: msys2 {0}
@@ -93,6 +287,7 @@ jobs:
         shell: pwsh
         run: git config --global core.autocrlf input
 
+      # The tests read the data of every shipped world (MM9's included) and the Medusa package.
       - name: Check out feature sources
         uses: actions/checkout@v7
         with:
@@ -155,64 +350,48 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-python-yaml
-
-      - name: Check packaging Python
-        run: /ucrt64/bin/python.exe -c "import sys, yaml; print(sys.executable); print(yaml.__version__)"
+            mingw-w64-ucrt-x86_64-ccache
 
       - name: Install the pinned Medusa ruleset into the combined build
         run: |
           test "$(git -C medusa-content rev-parse HEAD)" = "$MEDUSA_CONTENT_SHA"
           /ucrt64/bin/python.exe packaging/medusa/install_content.py --source medusa-content --assets assets_dev
 
-      - name: Select update base and unique app version
-        env:
-          REQUESTED_BASE: ${{ inputs.baseline_version }}
-          PREVIOUS_BUILD_SHA: ${{ inputs.previous_build_sha }}
-        run: |
-          version="minotaur-2.3-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          if [ "$MINOTAUR_PACKAGE_MODE" = full ]; then
-            # A full installation starts a new base (the full 2.3 desktop release): no patch to an older one.
-            if [ -n "$REQUESTED_BASE$PREVIOUS_BUILD_SHA" ]; then
-              echo "package_mode=full builds a new base; baseline_version and previous_build_sha are for update/both"
-              exit 1
-            fi
-            printf 'MINOTAUR_BASE_PATH=\nMINOTAUR_BASE_SHA=\nMINOTAUR_RELEASE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          base_version="$REQUESTED_BASE"
-          if [ -z "$base_version" ]; then
-            base_version=$(/ucrt64/bin/python.exe -c "import json; print(json.load(open('packaging/minotaur/latest-baseline.json'))['version'])")
-          fi
-          [[ "$base_version" =~ ^minotaur-[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || exit 1
-          base_path="packaging/minotaur/bases/$base_version.json"
-          read -r checked_version base_sha <<< "$(/ucrt64/bin/python.exe tools/minotaur_updates.py check-base "$base_path")"
-          test "$checked_version" = "$base_version"
-          if [ -n "$PREVIOUS_BUILD_SHA" ] && [ "$PREVIOUS_BUILD_SHA" != "$base_sha" ]; then
-            echo "previous_build_sha must match the selected baseline"; exit 1
-          fi
-          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=%s\n' \
-            "$base_path" "$base_sha" "$version" >> "$GITHUB_ENV"
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .ccache
+          key: ccache-minotaur-windows-${{ github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-minotaur-windows-${{ github.ref_name }}-
+            ccache-minotaur-windows-
 
       - name: Detect actual runner resources and compilation parallelism
-        run: /ucrt64/bin/python.exe tools/measure_windows_build.py --probe
+        run: |
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --probe
+          ccache --zero-stats
+          ccache --show-config | grep -E "cache_dir|max_size|base_dir|compression" || true
 
+      # Thin and without content, as upstream's Windows job: the package job adds the content.
       - name: Configure release build
         run: >-
           cmake -S . -B build-windows -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DPython3_EXECUTABLE="$(cygpath -m /ucrt64/bin/python.exe)"
           -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=ON
           -DOPENYAMM_BUILD_TESTS=ON
           -DOPENYAMM_COOK_ON_BUILD=OFF
           -DOPENYAMM_RELEASE_VERSION=${MINOTAUR_RELEASE_VERSION}
           -DOPENYAMM_RELEASE_THIN=ON
-          -DOPENYAMM_RELEASE_CONTENT_DIR="$(cygpath -m "$PWD/build-windows/minotaur-content")"
           -DOPENYAMM_BUILD_EDITOR=OFF
           -DOPENYAMM_BUILD_TOOLS=OFF
 
       - name: Record package revision and changes
+        env:
+          PREVIOUS_BUILD_SHA: ${{ needs.preflight.outputs.base_sha }}
         run: |
-          PREVIOUS_BUILD_SHA="$MINOTAUR_BASE_SHA"
           revision_file="BUILD-REVISION.txt"
           printf 'Commit SHA: %s\nRepository: %s\nRef: %s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_REF" > "$revision_file"
           printf 'Upstream release: v%s\nUpstream SHA: %s\n' "$MINOTAUR_UPSTREAM_VERSION" "$MINOTAUR_UPSTREAM_SHA" >> "$revision_file"
@@ -221,6 +400,8 @@ jobs:
             git fetch --no-tags --depth=1 origin "$PREVIOUS_BUILD_SHA"
             printf '\nPrevious confirmed package SHA: %s\nChanged files:\n' "$PREVIOUS_BUILD_SHA" >> "$revision_file"
             git diff --no-renames --name-status "$PREVIOUS_BUILD_SHA" "$GITHUB_SHA" >> "$revision_file"
+          elif [ "$MINOTAUR_PACKAGE_MODE" = full ]; then
+            printf '\nA new full base: the whole OpenYAMM %s desktop release with the Minotaur changes.\n' "$MINOTAUR_UPSTREAM_VERSION" >> "$revision_file"
           else
             printf '\nPrevious package SHA was not supplied; comparison is pending.\nSee BUILD-NOTES.md and CHANGELOG.md for the planned changes.\n' >> "$revision_file"
           fi
@@ -229,145 +410,46 @@ jobs:
           cat "$revision_file" >> BUILD-NOTES.md
           printf '\n```\n' >> BUILD-NOTES.md
 
-      - name: Build Windows program, shaders and cooker
+      - name: Build Windows program and shaders
         run: >-
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase program --
           cmake --build build-windows
-          --target openyamm openyamm_launcher openyamm_runtime_shaders openyamm_sprite_atlas_cook
+          --target openyamm openyamm_launcher openyamm_runtime_shaders
           --parallel "$MINOTAUR_BUILD_JOBS"
 
-      - name: Build and test Minotaur combat and save compatibility
+      - name: Build the tests
         run: |
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests openyamm_runtime_tests --parallel "$MINOTAUR_BUILD_JOBS"
-          # MM9's and Chedian's cases run in their own step after the packages are uploaded; Bloodaxe is not an Axe
-          # mechanic test.
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inventory hotfix*,Bottle stacks*,Inspect *,*potion*,*bag*,technology skills are appended*,*summary*,*summaries*,*history*,item search*,*steal*,*creation*,*quick item*,*party item*,*teacher*,*trainer*,*completion*,*basebar*,*carried*,*world completion*,resistance and monster effect*,*lich immunit*,*Lich*immun*,*condition immun*,undead and vampires*' --test-case-exclude='MM9*,*MM9 RUDE*,*Chedian*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*,Inventory hotfix*,*steal*'
+          ccache --show-stats
 
-      - name: Test Medusa and the portrait and doll importer
-        run: |
-          # Two upstream cases need a case-sensitive file system (files differing only in case side by side); upstream
-          # runs its unit tests on Linux and macOS only, and NTFS cannot hold them.
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase medusa-importer-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*ProjectMedusaTests.cpp,*CustomPortraitTests.cpp,*AssetFileSystemTests.cpp' --test-case-exclude='AssetFileSystem reads aliased package files case-insensitively,AssetFileSystem rejects ambiguous case fallback while preserving exact names'
+      - name: Save the compiler cache
+        if: always() && !cancelled()
+        uses: actions/cache/save@v6
+        with:
+          path: .ccache
+          key: ccache-minotaur-windows-${{ github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Test official updater and upstream world regressions
-        run: |
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase updater-engine-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*UpdaterTests.cpp'
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase upstream-ai-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*GameplayActorAiSystemTests.cpp,*ActorPathRuntimeTests.cpp,*GameplayBolsterRuntimeTests.cpp,*CharacterSheetRegressionTests.cpp' --test-case-exclude='*MM9*'
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase upstream-indoor-tests -- build-windows/tests/openyamm_runtime_tests.exe --source-file='*IndoorActorFlyingRuntimeTests.cpp,*IndoorActorDetectionRuntimeTests.cpp,*IndoorActorFactionRuntimeTests.cpp'
+      - name: Build the thin program stage
+        run: /ucrt64/bin/python.exe tools/measure_windows_build.py --phase package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
 
-      - name: Prepare indexed content (not included in unchanged update payloads)
-        # The whole desktop release: the worlds tools/packaging/packs.yml ships (MM6-MM9) and every language's packs.
-        run: |
-          df -h .
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content -- \
-            /ucrt64/bin/python.exe tools/package_runtime_assets.py \
-            --assets-root assets_dev --output build-windows/minotaur-content \
-            --profile desktop --cooker build-windows/game/openyamm_sprite_atlas_cook.exe \
-            --release "${MINOTAUR_RELEASE_VERSION}" --build "${GITHUB_SHA}" --report
-          df -h .
-
-      - name: Package and verify the small program archive
-        run: |
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
-          /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
-            build-windows/release/OpenYAMM-windows-x64-Release.zip \
-            --stage build-windows/release/Release/OpenYAMM \
-            --thin --content-dir build-windows/minotaur-content --full
-
-      - name: Create incremental ZIP and next baseline
-        if: env.MINOTAUR_PACKAGE_MODE != 'full'
-        run: >-
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase update-zip --
-          /ucrt64/bin/python.exe tools/minotaur_updates.py build
-          --stage build-windows/release/Release/OpenYAMM
-          --content build-windows/minotaur-content
-          --base "${MINOTAUR_BASE_PATH}" --source-sha "${GITHUB_SHA}"
-          --output "build-windows/minotaur-update/Minotaur-Update-${MINOTAUR_RELEASE_VERSION}.zip"
-          --baseline-output build-windows/minotaur-update/minotaur-baseline.json
-
-      - name: Create the new full baseline
-        if: env.MINOTAUR_PACKAGE_MODE == 'full'
-        run: >-
-          /ucrt64/bin/python.exe tools/minotaur_updates.py baseline
-          --stage build-windows/release/Release/OpenYAMM --source-sha "${GITHUB_SHA}"
-          --output build-windows/minotaur-update/minotaur-baseline.json
-
-      - name: Upload incremental ZIP
-        if: env.MINOTAUR_PACKAGE_MODE != 'full'
+      - name: Upload the program stage
         uses: actions/upload-artifact@v7
         with:
-          name: minotaur-update-${{ github.sha }}-windows-x64
-          path: build-windows/minotaur-update/*.zip
-          archive: false
+          name: minotaur-windows-stage
+          path: build-windows/release/Release/
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload baseline and size/checksum report
-        uses: actions/upload-artifact@v7
-        with:
-          name: minotaur-update-metadata-${{ github.sha }}
-          path: build-windows/minotaur-update/*.json
-          if-no-files-found: error
-          retention-days: 90
+      - name: Mark the stage uploaded
+        id: stage
+        run: echo "uploaded=true" >> "$GITHUB_OUTPUT"
 
-      - name: Create optional full installation
-        if: env.MINOTAUR_PACKAGE_MODE != 'update'
-        run: |
-          cmake -S . -B build-windows -DOPENYAMM_RELEASE_THIN=OFF
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase full-package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
-          /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
-            build-windows/release/OpenYAMM-windows-x64-Release.zip \
-            --stage build-windows/release/Release/OpenYAMM --full
-          ls -l build-windows/release/OpenYAMM-windows-x64-Release.zip
-          df -h .
-
-      - name: Upload optional full installation
-        if: env.MINOTAUR_PACKAGE_MODE != 'update'
-        uses: actions/upload-artifact@v7
-        with:
-          name: openyamm-minotaur-${{ github.sha }}-windows-x64
-          path: build-windows/release/OpenYAMM-windows-x64-Release.zip
-          archive: false
-          if-no-files-found: error
-          retention-days: 7
-
-      # The checks below come after the uploads, so the packages exist even when one fails.
-      - name: Test the roguelike run
-        if: hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''
-        run: build-windows/tests/openyamm_unit_tests.exe --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp'
-
-      - name: Test MM9 and Chedian with the MM9 world shipped
-        run: |
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase mm9-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='MM9*,*MM9 RUDE*,*Chedian*'
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase mm9-ai-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*GameplayActorAiSystemTests.cpp,*ActorPathRuntimeTests.cpp,*GameplayBolsterRuntimeTests.cpp,*CharacterSheetRegressionTests.cpp' --test-case='*MM9*'
-
-      - name: Play the roguelike run on the packaged content
-        if: env.MINOTAUR_PACKAGE_MODE == 'update' && hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''
-        run: |
-          game="build-windows/release/Release/OpenYAMM/app/${MINOTAUR_RELEASE_VERSION}/openyamm.exe"
-          mkdir -p build-windows/roguelike-user
-          "$game" --user-data "$PWD/build-windows/roguelike-user" \
-            --asset-root "$PWD/build-windows/minotaur-content" \
-            --headless-run-scenario "$PWD/tests/scenarios/rulesets/roguelike_run.yml"
-
-      # The full installation plays on its own content (no --asset-root: the game checks and mounts the installed
-      # packs): upstream's release scenarios, an MM9 map and shop in a game begun in MM7, Medusa and the roguelike run.
-      - name: Play the full installation
-        if: env.MINOTAUR_PACKAGE_MODE != 'update'
-        run: |
-          set -e
-          game="build-windows/release/Release/OpenYAMM/app/${MINOTAUR_RELEASE_VERSION}/openyamm.exe"
-          scenarios=$(sed -e 's/\r$//' -e '/^\s*\(#\|$\)/d' tests/scenarios/release/scenarios.txt)
-          number=0
-          for scenario in $scenarios mm9/shop_after_world_switch.yml rulesets/medusa_start.yml rulesets/roguelike_run.yml; do
-            number=$((number + 1))
-            echo "::group::$scenario"
-            mkdir -p "build-windows/full-user/$number"
-            "$game" --user-data "$PWD/build-windows/full-user/$number" \
-              --headless-run-scenario "$PWD/tests/scenarios/$scenario"
-            echo "::endgroup::"
-          done
+      # After the upload, so the package job still runs when a test fails. Every group runs and every failure is
+      # reported (tools/minotaur_ci_tests.sh, the same selections as on a development machine).
+      - name: Run the Minotaur, Medusa, importer, updater, upstream, roguelike and MM9 tests
+        env:
+          MEASURE: /ucrt64/bin/python.exe tools/measure_windows_build.py --phase
+        run: bash tools/minotaur_ci_tests.sh build-windows/tests
 
       - name: Upload runner resource measurements even on failure
         if: always()
@@ -377,3 +459,161 @@ jobs:
           path: build-resources/
           if-no-files-found: warn
           retention-days: 90
+
+  package:
+    name: Windows packages and scenarios
+    needs: [preflight, content, windows]
+    if: >-
+      ${{ !cancelled() && inputs.tests_only != true
+          && (needs.content.result == 'success' || inputs.reuse_content_run != '')
+          && (needs.windows.outputs.stage == 'true' || inputs.reuse_build_run != '') }}
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      MINOTAUR_BASE_PATH: ${{ needs.preflight.outputs.base_path }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /tools/
+            /packaging/minotaur/
+            /tests/scenarios/
+            /assets_dev/engine/data_tables/npc.txt
+            /assets_dev/engine/data_tables/npc_topic.txt
+            /assets_dev/engine/ui/gameplay/character.yml
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Download the program stage
+        if: inputs.reuse_build_run == ''
+        uses: actions/download-artifact@v7
+        with:
+          name: minotaur-windows-stage
+          path: stage
+
+      - name: Download the program stage of run ${{ inputs.reuse_build_run }}
+        if: inputs.reuse_build_run != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: minotaur-windows-stage
+          path: stage
+          run-id: ${{ inputs.reuse_build_run }}
+          github-token: ${{ github.token }}
+
+      - name: Download the content
+        if: inputs.reuse_content_run == ''
+        uses: actions/download-artifact@v7
+        with:
+          name: minotaur-content-desktop
+          path: content
+
+      - name: Download the content of run ${{ inputs.reuse_content_run }}
+        if: inputs.reuse_content_run != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: minotaur-content-desktop
+          path: content
+          run-id: ${{ inputs.reuse_content_run }}
+          github-token: ${{ github.token }}
+
+      - name: Join the stage and the content
+        run: |
+          version=$(tr -d '\r\n' < stage/OpenYAMM/app/current)
+          echo "MINOTAUR_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          python tools/assemble_minotaur_package.py --stage stage/OpenYAMM --content content \
+            --thin-output packages/OpenYAMM-windows-x64-thin.zip
+          python tools/verify_minotaur_windows_package.py packages/OpenYAMM-windows-x64-thin.zip \
+            --stage stage/OpenYAMM --thin --content-dir content
+          df -h .
+
+      - name: Create incremental ZIP and next baseline
+        if: env.MINOTAUR_PACKAGE_MODE != 'full'
+        run: >-
+          python tools/minotaur_updates.py build
+          --stage stage/OpenYAMM --content content
+          --base "$MINOTAUR_BASE_PATH" --source-sha "$GITHUB_SHA"
+          --output "packages/update/Minotaur-Update-$MINOTAUR_RELEASE_VERSION.zip"
+          --baseline-output packages/update/minotaur-baseline.json
+
+      - name: Create the new full baseline
+        if: env.MINOTAUR_PACKAGE_MODE == 'full'
+        run: >-
+          python tools/minotaur_updates.py baseline
+          --stage stage/OpenYAMM --source-sha "$GITHUB_SHA"
+          --output packages/update/minotaur-baseline.json
+
+      - name: Upload incremental ZIP
+        if: env.MINOTAUR_PACKAGE_MODE != 'full'
+        uses: actions/upload-artifact@v7
+        with:
+          name: minotaur-update-${{ github.sha }}-windows-x64
+          path: packages/update/*.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload baseline and size/checksum report
+        uses: actions/upload-artifact@v7
+        with:
+          name: minotaur-update-metadata-${{ github.sha }}
+          path: packages/update/*.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create the full installation
+        if: env.MINOTAUR_PACKAGE_MODE != 'update'
+        run: |
+          python tools/assemble_minotaur_package.py --stage stage/OpenYAMM --content content \
+            --full-output packages/OpenYAMM-windows-x64-Release.zip
+          python tools/verify_minotaur_windows_package.py packages/OpenYAMM-windows-x64-Release.zip \
+            --stage stage/OpenYAMM
+          ls -l packages/OpenYAMM-windows-x64-Release.zip
+          df -h .
+
+      - name: Upload the full installation
+        if: env.MINOTAUR_PACKAGE_MODE != 'update'
+        uses: actions/upload-artifact@v7
+        with:
+          name: openyamm-minotaur-${{ github.sha }}-windows-x64
+          path: packages/OpenYAMM-windows-x64-Release.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
+      # The packaged game plays upstream's release scenarios, an MM9 map and shop in a game begun in MM7, Medusa's
+      # start and the roguelike run. The full installation plays on its own content (no --asset-root: the game checks
+      # and mounts the installed packs); an update build plays the stage on the packed content. Every scenario runs
+      # and every failure is reported.
+      - name: Play the packaged game
+        run: |
+          game="stage/OpenYAMM/app/$MINOTAUR_RELEASE_VERSION/openyamm.exe"
+          content=()
+          if [ "$MINOTAUR_PACKAGE_MODE" = update ]; then
+            content=(--asset-root "$PWD/content")
+          fi
+          scenarios=$(sed -e 's/\r$//' -e '/^\s*\(#\|$\)/d' tests/scenarios/release/scenarios.txt)
+          failed=()
+          number=0
+          for scenario in $scenarios mm9/shop_after_world_switch.yml rulesets/medusa_start.yml rulesets/roguelike_run.yml; do
+            number=$((number + 1))
+            echo "::group::$scenario"
+            mkdir -p "users/$number"
+            if ! "$game" --user-data "$PWD/users/$number" "${content[@]}" \
+                --headless-run-scenario "$PWD/tests/scenarios/$scenario"; then
+              failed+=("$scenario")
+            fi
+            echo "::endgroup::"
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            for scenario in "${failed[@]}"; do echo "::error::Scenario failed: $scenario"; done
+            exit 1
+          fi
+          echo "All $number scenarios passed"

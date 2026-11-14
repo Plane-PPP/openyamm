@@ -1,3 +1,13 @@
+# Windows CI: upstream's layout, a preflight, a compiler cache and reusable runs (2026-11-14)
+
+The workflow follows upstream's packages.yml: the content is packed once on Linux while the Windows program builds,
+and a package job joins them (tools/assemble_minotaur_package.py) into the update ZIP or the new base and the full
+installation, then plays the release scenarios. A Linux preflight checks the workflow against packs.yml and upstream
+(tools/check_minotaur_workflow.py) and tests the tools in a minute or two; the Windows compile goes through ccache;
+reuse_build_run and reuse_content_run take the program or the content of an earlier run. The test selections live
+in tools/minotaur_ci_tests.sh, run alike in CI and locally, and every group and scenario runs to report every
+failure at once. Rationale and the local checklist: docs/research/minotaur-ci-practice.md.
+
 # Windows: the full OpenYAMM 2.3 desktop release as the new Minotaur base (2026-11-14)
 
 The Windows workflow checked out and packed MM6-MM8 only, a limit kept from the 1.x packages; 2.3 ships MM9 and the

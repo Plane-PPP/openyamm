@@ -36,7 +36,10 @@ def expected_release(source):
     config = yaml.safe_load((source / "tools/packaging/packs.yml").read_text(encoding="utf-8"))
     worlds = list(config["worlds"])
     languages = {}
-    for folder in sorted((source / "assets_dev/languages").iterdir()):
+    root = source / "assets_dev/languages"
+    # Folders are joined by name: under MSYS2's Python on Windows iterdir() joins with a backslash and rglob() with a
+    # slash, and relative_to then takes a folder's own files for outside it.
+    for folder in sorted(root / child.name for child in root.iterdir()):
         if folder.is_dir() and folder.name != "templates" and (folder / "language.yml").is_file():
             overlays = [p for p in folder.rglob("*") if p.is_file()
                         and p.relative_to(folder).parts[0] in ("engine", "worlds")
@@ -71,7 +74,7 @@ def verify_full(index, content, source):
         if optional and not any(pack.get("language") == language for pack in index["packs"]):
             raise ValueError(f"Missing optional packs of language {language}")
     rulesets = source / "assets_dev/engine/rulesets"
-    for folder in sorted(p for p in rulesets.iterdir() if (p / "ruleset.yml").is_file()):
+    for folder in sorted(rulesets / p.name for p in rulesets.iterdir() if (p / "ruleset.yml").is_file()):
         required = ([p for p in folder.rglob("*") if p.is_file() and p.suffix != ".md"]
                     if folder.name in OWN_RULESETS else [folder / "ruleset.yml"])
         for path in required:
@@ -86,6 +89,23 @@ def verify_full(index, content, source):
         if f"engine/rulesets/{ruleset}/icons_x2/{PORTRAIT}" not in files:
             raise ValueError(f"Missing the Medusa heroine's portrait in ruleset {ruleset}")
     return sorted(packages), sorted(languages)
+
+
+def verify_content(content, source):
+    """Packed content alone (the content job, before any installation exists): its index, every pack's hash and size
+    and the full release's composition."""
+    index = json.loads((Path(content) / "index.json").read_text(encoding="utf-8"))
+    validate_index(index)
+    for pack in index["packs"]:
+        local = Path(content) / "packs" / pack["file"]
+        with local.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if digest != pack["sha256"] or local.stat().st_size != pack["size"]:
+            raise ValueError(f"Content pack hash/size mismatch: {pack['file']}")
+    packages, languages = verify_full(index, Path(content), source)
+    size = sum(pack["size"] for pack in index["packs"])
+    print(f"Content verified: {len(index['packs'])} packs, {size / 2**30:.2f} GiB; {', '.join(packages)}; "
+          f"languages {', '.join(languages)}; rulesets {', '.join(OWN_RULESETS)} with the heroine's portrait")
 
 
 def verify(path, stage, source, content_dir=None, thin=False, full=False):
@@ -147,12 +167,18 @@ def verify(path, stage, source, content_dir=None, thin=False, full=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("archive", type=Path)
-    parser.add_argument("--stage", required=True, type=Path)
+    parser.add_argument("archive", type=Path, nargs="?")
+    parser.add_argument("--stage", type=Path)
+    parser.add_argument("--content-only", type=Path, help="Check packed content alone (index.json and packs/)")
     parser.add_argument("--content-dir", type=Path)
     parser.add_argument("--thin", action="store_true")
     parser.add_argument("--full", action="store_true", help="Require the whole desktop release of the checkout")
     args = parser.parse_args()
+    if args.content_only:
+        verify_content(args.content_only, Path(__file__).resolve().parents[1])
+        return
+    if args.archive is None or args.stage is None:
+        parser.error("an archive and --stage are required unless --content-only is given")
     verify(args.archive, args.stage, Path(__file__).resolve().parents[1], args.content_dir, args.thin, args.full)
 
 
