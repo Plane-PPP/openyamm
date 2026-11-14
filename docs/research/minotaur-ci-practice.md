@@ -41,8 +41,8 @@
 
 1. `python3 tools/check_minotaur_workflow.py` и тесты инструментов в `tools/` (`test_minotaur_updates.py`,
    `test_verify_minotaur_windows_package.py`, `test_assemble_minotaur_package.py`).
-2. `tools/minotaur_ci_tests.sh build/tests <группы>` через `safe-heavy-run`: те же фильтры, что в CI. Группы `mm9` и
-   `mm9-ai` и три случая `ScriptedMapRegressionTests` требуют полные данные карт, которых нет в разреженной рабочей
+2. `tools/minotaur_ci_tests.sh build/tests <группы>` через `safe-heavy-run`: те же фильтры, что в CI. Группа `mm9` и
+   три случая `ScriptedMapRegressionTests` требуют полные данные карт, которых нет в разреженной рабочей
    копии; их результат здесь не показателен.
 3. Для изменений C++ — тесты под AddressSanitizer: обращение к освобождённой памяти, которое на Linux проходит молча,
    а на Windows ломает тест, видно сразу. Каталог `build-asan`, конфигурация как у `build` плюс
@@ -65,3 +65,12 @@
 | Тесты регистра имён на NTFS | группа `medusa-importer` с исключениями, одна для CI и локально |
 | Упаковщику нужен MM9 | `check_minotaur_workflow.py` |
 | `iterdir`/`rglob` под Python MSYS2 | упаковка на Linux; инструменты проверяются на Windows-Python в `update_tests` за минуты |
+
+## Первый запуск новой схемы (43593147533)
+
+Preflight 11 с, установщик 38 с, ресурсы на Linux 22 мин параллельно с компиляцией. Все группы тестов на Windows
+прошли, кроме одного случая MM9, устаревшего в самом upstream 2.3 (данные: множители цен 10/12 и версия генерации
+7, тест ждёт 1.0/1.2 и 6; исключён в `tools/minotaur_ci_tests.sh`). Группа `mm9-ai` оказалась пустой (в тех файлах
+нет случаев MM9) и убрана. Сборка установки упала на проверке `character.yml`: задача упаковки выкачивала ресурсы
+с преобразованием концов строк (`.gitattributes` ставит ресурсам `!text`, и на Windows действует `core.autocrlf`);
+добавлен тот же шаг `core.autocrlf input`, что в задаче `windows`.
