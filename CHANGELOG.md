@@ -1,3 +1,15 @@
+# Windows: the full OpenYAMM 2.3 desktop release as the new Minotaur base (2026-11-14)
+
+The Windows workflow checked out and packed MM6-MM8 only, a limit kept from the 1.x packages; 2.3 ships MM9 and the
+language packs as well. It now checks out the whole desktop release as upstream's packages.yml does (MM6-MM9 and
+assets_dev/languages), packs the worlds packs.yml lists, and `package_mode=full` builds a new base: the full
+installation and its baseline, without a patch to minotaur-1.21. The package verifier's --full requires every
+package and language of the checkout and this fork's rulesets file for file with the Medusa heroine's portrait; the
+update tools and Apply-MinotaurUpdate.ps1 accept MM9 and the languages' packs (a pack's language is part of its
+identity; the 1.x baselines keep theirs). The full installation plays upstream's release scenarios, an MM9 map and
+shop in a game begun in MM7, Medusa's start and the roguelike run on its own content. Also fixed: a dangling table
+pointer in the Medusa test, and two case-sensitivity cases kept off NTFS.
+
 # Roguelike rules v0 on the 2.3 base — Linux checks passed (2026-11-14)
 
 Branch feature/roguelike-v0 from the skeleton d3670e16. A run.yml `rules` block turns the skeleton into a run of four

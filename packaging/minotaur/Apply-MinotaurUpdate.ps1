@@ -68,7 +68,10 @@ function Assert-Index($Index) {
         Assert-Record $pack $true
         Assert-Relative $pack.file
         Assert-Relative $pack.id
-        if (@('engine','mm6','mm7','mm8') -cnotcontains $pack.package) { throw 'Unknown world package.' }
+        # The full 2.3 base adds MM9 and the languages' optional packs (fonts, voices, videos) to the 1.x worlds.
+        if (@('engine','mm6','mm7','mm8','mm9') -cnotcontains $pack.package) { throw 'Unknown world package.' }
+        if ($null -ne $pack.PSObject.Properties['language'] -and
+            $pack.language -cnotmatch '^[a-z]{2,3}(-[a-z0-9]{2,8})?$') { throw 'Invalid pack language.' }
         $mount = '/worlds/' + $pack.package
         if ($pack.package -ceq 'engine') { $mount = '/engine' }
         if ($pack.mount -cne $mount -and -not $pack.mount.StartsWith($mount + '/', [StringComparison]::Ordinal)) {
@@ -79,7 +82,9 @@ function Assert-Index($Index) {
         $map.Add($pack.id, $pack)
         [void]$packages.Add($pack.package)
     }
-    if ($packages.Count -ne 4) { throw 'Missing engine or MM6/MM7/MM8 content.' }
+    foreach ($required in @('engine','mm6','mm7','mm8')) {
+        if (-not $packages.Contains($required)) { throw 'Missing engine or MM6/MM7/MM8 content.' }
+    }
     return ,$map
 }
 
@@ -87,7 +92,10 @@ function Same-Content($Left, $Right) {
     foreach ($key in @('id','package','mount','content_id')) {
         if ($Left.$key -cne $Right.$key) { return $false }
     }
-    return $true
+    # A language pack is the same content only for the same language (tools/minotaur_updates.py logical_pack).
+    $leftLanguage = if ($null -ne $Left.PSObject.Properties['language']) { [string]$Left.language } else { '' }
+    $rightLanguage = if ($null -ne $Right.PSObject.Properties['language']) { [string]$Right.language } else { '' }
+    return $leftLanguage -ceq $rightLanguage
 }
 
 function Assert-SameIndex($Expected, $Actual) {

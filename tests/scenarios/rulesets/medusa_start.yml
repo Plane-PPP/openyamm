@@ -1,0 +1,23 @@
+# Project Medusa's ruleset in a release: a new game under it starts on Mount Nighon (the package's start, MM7's
+# out10.odm), keeps the ruleset through a save and a load, and a Standard game started between them does not.
+#   ./build/game/openyamm --headless-run-scenario tests/scenarios/rulesets/medusa_start.yml
+# Needs the Medusa package installed (packaging/medusa/install_content.py).
+id: rulesets.medusa_start
+title: "Project Medusa - a new game on Mount Nighon keeps its ruleset through save and load"
+world: mm7
+mode: faithful
+tags: [rulesets, medusa, release]
+steps:
+  - new_game_flow: {start_map: out10.odm, ruleset: {id: medusa}}
+  - assert:
+      map: out10.odm
+      ruleset: {id: medusa}
+  - advance_runtime: {seconds: 1}
+  - save_game: medusa_start
+  - new_game_flow: {start_map: 7out01.odm}
+  - assert:
+      map: 7out01.odm
+  - load_game: medusa_start
+  - assert:
+      map: out10.odm
+      ruleset: {id: medusa}

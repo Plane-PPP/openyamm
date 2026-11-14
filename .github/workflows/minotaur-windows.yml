@@ -62,6 +62,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
+      # The full-release check of the package verifier reads packs.yml.
+      - name: Install PyYAML
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
       - name: Test generation, safety and the actual Windows installer
         run: python tools/test_minotaur_updates.py
       - name: Test full and thin package validation
@@ -116,6 +119,9 @@ jobs:
             /assets_dev/worlds/mm6/
             /assets_dev/worlds/mm7/
             /assets_dev/worlds/mm8/
+            /assets_dev/worlds/mm9/
+            /assets_dev/languages/
+            !/assets_dev/languages/templates/
 
       - name: Select the pinned Medusa content
         shell: pwsh
@@ -163,6 +169,16 @@ jobs:
           REQUESTED_BASE: ${{ inputs.baseline_version }}
           PREVIOUS_BUILD_SHA: ${{ inputs.previous_build_sha }}
         run: |
+          version="minotaur-2.3-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          if [ "$MINOTAUR_PACKAGE_MODE" = full ]; then
+            # A full installation starts a new base (the full 2.3 desktop release): no patch to an older one.
+            if [ -n "$REQUESTED_BASE$PREVIOUS_BUILD_SHA" ]; then
+              echo "package_mode=full builds a new base; baseline_version and previous_build_sha are for update/both"
+              exit 1
+            fi
+            printf 'MINOTAUR_BASE_PATH=\nMINOTAUR_BASE_SHA=\nMINOTAUR_RELEASE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+            exit 0
+          fi
           base_version="$REQUESTED_BASE"
           if [ -z "$base_version" ]; then
             base_version=$(/ucrt64/bin/python.exe -c "import json; print(json.load(open('packaging/minotaur/latest-baseline.json'))['version'])")
@@ -174,8 +190,8 @@ jobs:
           if [ -n "$PREVIOUS_BUILD_SHA" ] && [ "$PREVIOUS_BUILD_SHA" != "$base_sha" ]; then
             echo "previous_build_sha must match the selected baseline"; exit 1
           fi
-          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=minotaur-2.3-%s-%s-%s\n' \
-            "$base_path" "$base_sha" "${GITHUB_SHA:0:12}" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          printf 'MINOTAUR_BASE_PATH=%s\nMINOTAUR_BASE_SHA=%s\nMINOTAUR_RELEASE_VERSION=%s\n' \
+            "$base_path" "$base_sha" "$version" >> "$GITHUB_ENV"
 
       - name: Detect actual runner resources and compilation parallelism
         run: /ucrt64/bin/python.exe tools/measure_windows_build.py --probe
@@ -223,7 +239,8 @@ jobs:
       - name: Build and test Minotaur combat and save compatibility
         run: |
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase unit-build -- cmake --build build-windows --target openyamm_unit_tests openyamm_runtime_tests --parallel "$MINOTAUR_BUILD_JOBS"
-          # MM9 is not shipped by this MM6/MM7/MM8 package; Bloodaxe is not an Axe mechanic test.
+          # MM9's and Chedian's cases run in their own step after the packages are uploaded; Bloodaxe is not an Axe
+          # mechanic test.
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase gameplay-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='*alchemy*,*resistance*,*lethal*,*minotaur*,*axe*,*levitate*,*lava*,Reagent stacks*,Inventory hotfix*,Bottle stacks*,Inspect *,*potion*,*bag*,technology skills are appended*,*summary*,*summaries*,*history*,item search*,*steal*,*creation*,*quick item*,*party item*,*teacher*,*trainer*,*completion*,*basebar*,*carried*,*world completion*,resistance and monster effect*,*lich immunit*,*Lich*immun*,*condition immun*,undead and vampires*' --test-case-exclude='MM9*,*MM9 RUDE*,*Chedian*,*Bloodaxe*,MM8 lava terrain is drawn by the liquid shader'
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase world-tests -- build-windows/tests/openyamm_runtime_tests.exe --test-case='Lethal Strike*,Inventory hotfix*,*steal*'
 
@@ -240,15 +257,15 @@ jobs:
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase upstream-indoor-tests -- build-windows/tests/openyamm_runtime_tests.exe --source-file='*IndoorActorFlyingRuntimeTests.cpp,*IndoorActorDetectionRuntimeTests.cpp,*IndoorActorFactionRuntimeTests.cpp'
 
       - name: Prepare indexed content (not included in unchanged update payloads)
-        # MM6-MM8 only: 2.3's packs.yml lists MM9 too, which this package neither checks out nor ships; the game reads
-        # MM9's tables only when its world package is mounted (GameDataLoader, isWorldPackageMounted).
-        run: >-
-          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content --
-          /ucrt64/bin/python.exe tools/package_runtime_assets.py
-          --assets-root assets_dev --output build-windows/minotaur-content
-          --profile desktop --cooker build-windows/game/openyamm_sprite_atlas_cook.exe
-          --world mm6 --world mm7 --world mm8
-          --release "${MINOTAUR_RELEASE_VERSION}" --build "${GITHUB_SHA}"
+        # The whole desktop release: the worlds tools/packaging/packs.yml ships (MM6-MM9) and every language's packs.
+        run: |
+          df -h .
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase content -- \
+            /ucrt64/bin/python.exe tools/package_runtime_assets.py \
+            --assets-root assets_dev --output build-windows/minotaur-content \
+            --profile desktop --cooker build-windows/game/openyamm_sprite_atlas_cook.exe \
+            --release "${MINOTAUR_RELEASE_VERSION}" --build "${GITHUB_SHA}" --report
+          df -h .
 
       - name: Package and verify the small program archive
         run: |
@@ -256,9 +273,10 @@ jobs:
           /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
             build-windows/release/OpenYAMM-windows-x64-Release.zip \
             --stage build-windows/release/Release/OpenYAMM \
-            --thin --content-dir build-windows/minotaur-content
+            --thin --content-dir build-windows/minotaur-content --full
 
       - name: Create incremental ZIP and next baseline
+        if: env.MINOTAUR_PACKAGE_MODE != 'full'
         run: >-
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase update-zip --
           /ucrt64/bin/python.exe tools/minotaur_updates.py build
@@ -267,6 +285,13 @@ jobs:
           --base "${MINOTAUR_BASE_PATH}" --source-sha "${GITHUB_SHA}"
           --output "build-windows/minotaur-update/Minotaur-Update-${MINOTAUR_RELEASE_VERSION}.zip"
           --baseline-output build-windows/minotaur-update/minotaur-baseline.json
+
+      - name: Create the new full baseline
+        if: env.MINOTAUR_PACKAGE_MODE == 'full'
+        run: >-
+          /ucrt64/bin/python.exe tools/minotaur_updates.py baseline
+          --stage build-windows/release/Release/OpenYAMM --source-sha "${GITHUB_SHA}"
+          --output build-windows/minotaur-update/minotaur-baseline.json
 
       - name: Upload incremental ZIP
         if: env.MINOTAUR_PACKAGE_MODE != 'full'
@@ -286,21 +311,6 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      # The roguelike branch only, after the uploads so the update ZIP exists even when a check fails: the run's unit
-      # tests, then its scenario played headless by the packaged game on the packaged content.
-      - name: Test the roguelike run
-        if: hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''
-        run: build-windows/tests/openyamm_unit_tests.exe --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp'
-
-      - name: Play the roguelike run on the packaged game
-        if: hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''
-        run: |
-          game="build-windows/release/Release/OpenYAMM/app/${MINOTAUR_RELEASE_VERSION}/openyamm.exe"
-          mkdir -p build-windows/roguelike-user
-          "$game" --user-data "$PWD/build-windows/roguelike-user" \
-            --asset-root "$PWD/build-windows/minotaur-content" \
-            --headless-run-scenario "$PWD/tests/scenarios/rulesets/roguelike_run.yml"
-
       - name: Create optional full installation
         if: env.MINOTAUR_PACKAGE_MODE != 'update'
         run: |
@@ -308,7 +318,9 @@ jobs:
           /ucrt64/bin/python.exe tools/measure_windows_build.py --phase full-package -- cmake --build build-windows --target openyamm_release_package --parallel "$MINOTAUR_BUILD_JOBS"
           /ucrt64/bin/python.exe tools/verify_minotaur_windows_package.py \
             build-windows/release/OpenYAMM-windows-x64-Release.zip \
-            --stage build-windows/release/Release/OpenYAMM
+            --stage build-windows/release/Release/OpenYAMM --full
+          ls -l build-windows/release/OpenYAMM-windows-x64-Release.zip
+          df -h .
 
       - name: Upload optional full installation
         if: env.MINOTAUR_PACKAGE_MODE != 'update'
@@ -319,6 +331,43 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 7
+
+      # The checks below come after the uploads, so the packages exist even when one fails.
+      - name: Test the roguelike run
+        if: hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''
+        run: build-windows/tests/openyamm_unit_tests.exe --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp'
+
+      - name: Test MM9 and Chedian with the MM9 world shipped
+        run: |
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase mm9-tests -- build-windows/tests/openyamm_unit_tests.exe --test-case='MM9*,*MM9 RUDE*,*Chedian*'
+          /ucrt64/bin/python.exe tools/measure_windows_build.py --phase mm9-ai-tests -- build-windows/tests/openyamm_unit_tests.exe --source-file='*GameplayActorAiSystemTests.cpp,*ActorPathRuntimeTests.cpp,*GameplayBolsterRuntimeTests.cpp,*CharacterSheetRegressionTests.cpp' --test-case='*MM9*'
+
+      - name: Play the roguelike run on the packaged content
+        if: env.MINOTAUR_PACKAGE_MODE == 'update' && hashFiles('assets_dev/engine/rulesets/roguelike/run.yml') != ''
+        run: |
+          game="build-windows/release/Release/OpenYAMM/app/${MINOTAUR_RELEASE_VERSION}/openyamm.exe"
+          mkdir -p build-windows/roguelike-user
+          "$game" --user-data "$PWD/build-windows/roguelike-user" \
+            --asset-root "$PWD/build-windows/minotaur-content" \
+            --headless-run-scenario "$PWD/tests/scenarios/rulesets/roguelike_run.yml"
+
+      # The full installation plays on its own content (no --asset-root: the game checks and mounts the installed
+      # packs): upstream's release scenarios, an MM9 map and shop in a game begun in MM7, Medusa and the roguelike run.
+      - name: Play the full installation
+        if: env.MINOTAUR_PACKAGE_MODE != 'update'
+        run: |
+          set -e
+          game="build-windows/release/Release/OpenYAMM/app/${MINOTAUR_RELEASE_VERSION}/openyamm.exe"
+          scenarios=$(sed -e 's/\r$//' -e '/^\s*\(#\|$\)/d' tests/scenarios/release/scenarios.txt)
+          number=0
+          for scenario in $scenarios mm9/shop_after_world_switch.yml rulesets/medusa_start.yml rulesets/roguelike_run.yml; do
+            number=$((number + 1))
+            echo "::group::$scenario"
+            mkdir -p "build-windows/full-user/$number"
+            "$game" --user-data "$PWD/build-windows/full-user/$number" \
+              --headless-run-scenario "$PWD/tests/scenarios/$scenario"
+            echo "::endgroup::"
+          done
 
       - name: Upload runner resource measurements even on failure
         if: always()

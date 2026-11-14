@@ -16,6 +16,12 @@ SHA = re.compile(r"[0-9a-f]{64}\Z")
 # 32 characters and reports "app\\current is missing", so a longer version could never start.
 VERSION = re.compile(r"(?=[^\n]{1,32}\Z)minotaur-[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z")
 PACK_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.zip\Z")
+# The packages a Minotaur index may hold. Every index needs the engine and MM6-MM8 (the 1.x baselines hold exactly
+# those); the full 2.3 base adds MM9 and the languages' optional packs, and a full release checks its whole
+# composition against packs.yml (verify_minotaur_windows_package.py --full).
+PACKAGES = ("engine", "mm6", "mm7", "mm8", "mm9")
+REQUIRED_PACKAGES = frozenset(("engine", "mm6", "mm7", "mm8"))
+LANGUAGE = re.compile(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})?\Z")
 
 
 def read_json(path):
@@ -43,7 +49,7 @@ def safe_relative(path):
     return path
 
 
-def validate_index(index):
+def validate_index(index, required=REQUIRED_PACKAGES):
     if (index.get("schema") != 1 or index.get("profile") != "desktop"
             or index.get("content_format") != 1 or not isinstance(index.get("packs"), list)):
         raise ValueError("Expected an upstream schema1 desktop content index")
@@ -52,9 +58,12 @@ def validate_index(index):
         package = pack["package"]
         mount = "/engine" if package == "engine" else "/worlds/" + package
         safe_relative(pack["id"])
-        if (package not in {"engine", "mm6", "mm7", "mm8"}
+        if (package not in PACKAGES
                 or not (pack["mount"] == mount or pack["mount"].startswith(mount + "/"))):
             raise ValueError("Unexpected package or mount")
+        # A language's optional pack (fonts, voices, videos), mounted over the game's folder of the same name.
+        if "language" in pack and not (isinstance(pack["language"], str) and LANGUAGE.fullmatch(pack["language"])):
+            raise ValueError("Invalid pack language")
         safe_relative(pack["mount"].lstrip("/"))
         safe_relative(pack["file"])
         if (not PACK_FILE.fullmatch(pack["file"]) or not SHA.fullmatch(pack["sha256"])
@@ -66,12 +75,17 @@ def validate_index(index):
         ids.add(pack["id"])
         files.add(pack["file"].casefold())
         packages.add(package)
-    if packages != {"engine", "mm6", "mm7", "mm8"}:
-        raise ValueError("The mod requires engine and MM6/MM7/MM8")
+    missing = set(required) - packages
+    if missing:
+        raise ValueError("The content index lacks packages: " + ", ".join(sorted(missing))
+                         + " (every Minotaur package needs engine and MM6/MM7/MM8)")
 
 
 def logical_pack(pack):
-    return {k: pack[k] for k in ("id", "package", "mount", "content_id")}
+    # The language belongs to a pack's identity: the same files mean another thing for another language. Packs without
+    # one (every 1.x baseline) keep their former identity.
+    keys = ("id", "package", "mount", "content_id") + (("language",) if "language" in pack else ())
+    return {k: pack[k] for k in keys}
 
 
 def logical_index(index):
@@ -200,6 +214,14 @@ def build_update(stage, content, base, source_sha, output, baseline_output):
     return manifest
 
 
+def build_baseline(stage, source_sha, output):
+    stage = Path(stage)
+    version = (stage / "app/current").read_text(encoding="utf-8-sig").strip()
+    target = make_baseline(version, source_sha, read_json(stage / "app" / version / "index.json"))
+    write_json(output, target)
+    return target
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -209,11 +231,20 @@ def main():
     build.add_argument("--source-sha", required=True)
     check = sub.add_parser("check-base")
     check.add_argument("path", type=Path)
+    # A full installation starts a new base: its baseline only, no patch to an older one.
+    baseline = sub.add_parser("baseline")
+    baseline.add_argument("--stage", type=Path, required=True)
+    baseline.add_argument("--source-sha", required=True)
+    baseline.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "check-base":
         base = read_json(args.path)
         validate_baseline(base)
         print(base["version"] + " " + base["source_sha"])
+    elif args.command == "baseline":
+        target = build_baseline(args.stage, args.source_sha, args.output)
+        packages = sorted({p["package"] for p in target["index"]["packs"]})
+        print(f"Baseline {target['version']}: {len(target['index']['packs'])} packs of {', '.join(packages)}")
     else:
         result = build_update(args.stage, args.content, read_json(args.base), args.source_sha,
                               args.output, args.baseline_output)

@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Validate the versioned Windows mod package and its content packs on OpenYAMM 1.10."""
+"""Validate the versioned Windows mod package and its content packs.
+
+With --full the package must also be a whole desktop release of its checkout: every package packs.yml ships (the
+engine and every world, MM9 included), every language's text and optional packs, every ruleset, and this fork's own
+rulesets (Project Medusa, the roguelike run) file for file with the heroine's portrait."""
 import argparse
 import hashlib
 import json
 from pathlib import Path
 import struct
 import zipfile
+
 from minotaur_updates import VERSION, validate_index
 
 APP = "app/minotaur-1.10/"
@@ -19,9 +24,71 @@ APP_REQUIRED = ("openyamm.exe", "index.json", "OpenYAMM-launcher.exe",
                 "runtime/shaders/glsl/fs_sprite_atlas.bin", "runtime/shaders/glsl/fs_model_emissive.bin")
 REQUIRED = ROOT_REQUIRED + tuple(APP + name for name in APP_REQUIRED)
 HOTFIX_FILES = ("data_tables/npc.txt", "data_tables/npc_topic.txt", "ui/gameplay/character.yml")
+# This fork's rulesets: shipped file for file (the packager leaves out only their .md documentation).
+OWN_RULESETS = ("medusa", "roguelike")
+PORTRAIT = "med01-01.png"
 
 
-def verify(path, stage, source, content_dir=None, thin=False):
+def expected_release(source):
+    """(packages, {language: has optional files}) a full desktop release of the checkout ships."""
+    import yaml  # only --full reads packs.yml; the installer tests run without PyYAML otherwise
+
+    config = yaml.safe_load((source / "tools/packaging/packs.yml").read_text(encoding="utf-8"))
+    worlds = list(config["worlds"])
+    languages = {}
+    for folder in sorted((source / "assets_dev/languages").iterdir()):
+        if folder.is_dir() and folder.name != "templates" and (folder / "language.yml").is_file():
+            overlays = [p for p in folder.rglob("*") if p.is_file()
+                        and p.relative_to(folder).parts[0] in ("engine", "worlds")
+                        and (p.relative_to(folder).parts[0] == "engine" or p.relative_to(folder).parts[1] in worlds)]
+            languages[folder.name] = bool(overlays)
+    return {"engine", *worlds}, languages
+
+
+def verify_full(index, content, source):
+    packages, languages = expected_release(source)
+    shipped = {pack["package"] for pack in index["packs"]}
+    if shipped != packages:
+        raise ValueError(f"Packages {sorted(shipped)} differ from the full release's {sorted(packages)}")
+    # Every file the packs hold, by its virtual path (mount + name), for the base game (no language).
+    files = {}
+    for pack in index["packs"]:
+        if "language" in pack:
+            continue
+        with zipfile.ZipFile(content / "packs" / pack["file"]) as archive:
+            for name in archive.namelist():
+                if not name.endswith("/"):
+                    files[pack["mount"].lstrip("/") + "/" + name] = pack["file"]
+
+    def packed(virtual):
+        with zipfile.ZipFile(content / "packs" / files[virtual]) as archive:
+            prefix = next(p["mount"].lstrip("/") + "/" for p in index["packs"] if p["file"] == files[virtual])
+            return archive.read(virtual[len(prefix):])
+
+    for language, optional in languages.items():
+        if f"engine/languages/{language}/language.yml" not in files:
+            raise ValueError(f"Missing language text: {language}")
+        if optional and not any(pack.get("language") == language for pack in index["packs"]):
+            raise ValueError(f"Missing optional packs of language {language}")
+    rulesets = source / "assets_dev/engine/rulesets"
+    for folder in sorted(p for p in rulesets.iterdir() if (p / "ruleset.yml").is_file()):
+        required = ([p for p in folder.rglob("*") if p.is_file() and p.suffix != ".md"]
+                    if folder.name in OWN_RULESETS else [folder / "ruleset.yml"])
+        for path in required:
+            virtual = "engine/rulesets/" + path.relative_to(rulesets).as_posix()
+            if virtual not in files:
+                raise ValueError(f"Missing ruleset file: {virtual}")
+            if packed(virtual) != path.read_bytes():
+                raise ValueError(f"Ruleset file differs from checkout: {virtual}")
+    for ruleset in OWN_RULESETS:
+        if f"engine/rulesets/{ruleset}/run.yml" not in files and f"engine/rulesets/{ruleset}/ruleset.yml" not in files:
+            raise ValueError(f"Missing ruleset: {ruleset}")
+        if f"engine/rulesets/{ruleset}/icons_x2/{PORTRAIT}" not in files:
+            raise ValueError(f"Missing the Medusa heroine's portrait in ruleset {ruleset}")
+    return sorted(packages), sorted(languages)
+
+
+def verify(path, stage, source, content_dir=None, thin=False, full=False):
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
         missing = ["OpenYAMM/" + name for name in ROOT_REQUIRED if "OpenYAMM/" + name not in names]
@@ -71,7 +138,11 @@ def verify(path, stage, source, content_dir=None, thin=False):
                             found.add(name)
         if found != set(HOTFIX_FILES):
             raise ValueError(f"Missing embedded hotfix resources: {set(HOTFIX_FILES) - found}")
-    print("Windows x64 launcher/game, all content pack hashes, MM6/MM7/MM8 and embedded hotfix verified")
+        if full:
+            packages, languages = verify_full(index, content, source)
+            print(f"Full release verified: {', '.join(packages)}; languages {', '.join(languages)}; "
+                  f"rulesets {', '.join(OWN_RULESETS)} with the heroine's portrait")
+    print("Windows x64 launcher/game, all content pack hashes and embedded hotfix verified")
 
 
 def main():
@@ -80,8 +151,9 @@ def main():
     parser.add_argument("--stage", required=True, type=Path)
     parser.add_argument("--content-dir", type=Path)
     parser.add_argument("--thin", action="store_true")
+    parser.add_argument("--full", action="store_true", help="Require the whole desktop release of the checkout")
     args = parser.parse_args()
-    verify(args.archive, args.stage, Path(__file__).resolve().parents[1], args.content_dir, args.thin)
+    verify(args.archive, args.stage, Path(__file__).resolve().parents[1], args.content_dir, args.thin, args.full)
 
 
 if __name__ == "__main__":
