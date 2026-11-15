@@ -8,6 +8,8 @@ New MAW solo secondary targets keep the existing one-Lethal-Strike-roll-per-acti
 Added a second genuine old MAW save fixture and bound real settings in the two spell-service test fixtures
 that upstream's new solo HUD now reads. CI adds native UI and MAW regression groups, checks their reference
 inputs, and removes the MM9 case exclusion upstream 2.4 repaired.
+The portrait-asset test checks real filename casing on every file system and POSIX0644 only on POSIX;
+Windows NTFS no longer produces a false failure while the asset hash remains mandatory.
 No new playtest design wishes are implemented. Verification and delivery status:
 docs/research/openyamm-2.4-integration.md.
 

@@ -185,7 +185,7 @@ alchemist поля schema179 и сохранение всего MawGameState/rul
 `devdocs/maw/data/{loot.yml,rarity_golden.csv}`),324 cases прошли. Ресурсы восстанавливаются;
 окончательный повтор:330/330 cases,49 583/49 583 assertions, exit0,
 run20261115T141107Z-f832501ef9, `build/v24-maw-tests.log`.
-Точная команда воспроизведения — source-file invocation из `build/v24-controls.sh`;
+Точная повторяемая selection: `safe-heavy-run run -- bash tools/minotaur_ci_tests.sh build/tests maw24`;
 защищённый фактический запуск `safe-heavy-run run --label v24-maw-final -- bash -c '<unit invocation; tail log>'`.
 
 Расширенная runtime-проверка UI/создания партии/spell service сначала упала SIGSEGV на quick cast.
@@ -219,17 +219,36 @@ run20261115T141439Z-9845f5d1e2, peak340.6MiB. Логи `build/v24-release-*.log`
 Вместе с Roguelike126, Standard10, Medusa8 и MAW potion17 —16 сценариев/302 шага.
 Локальные X1/headless проверки не подтверждают реальные текстуры4x, звук или GPU-рендер.
 
+Для воспроизведения дополнительных native UI проверок после сборки:
+`safe-heavy-run run -- bash tools/minotaur_ci_tests.sh build/tests native-ui`.
+Для всех текущих CI selections: `safe-heavy-run run -- bash tools/minotaur_ci_tests.sh build/tests`;
+локально для полного запуска нужны X4/полный звук и MM9 assets, которых в sparse checkout нет.
+Прошедшие стандартные сценарии перечислены в tracked `tests/scenarios/release/scenarios.txt`;
+каждый запускается через `safe-heavy-run run -- ./build/game/openyamm --asset-scale 1 --user-data <fresh-dir> --asset-root <repo>/assets_dev --headless-run-scenario <repo>/tests/scenarios/<scenario.yml>`.
+Временные queue scripts и журналы `build/` сохранены локально, но не нужны для понимания selections.
+
 ## Windows-поставка
 
 Используется существующий `.github/workflows/minotaur-windows.yml`, обновлённый на2.4/f052579;
 version `minotaur-2.4-<actual SHA>-<run>-<attempt>`. Новая ветка не добавлена в push-trigger:
 сборка запускается явно один раз через workflow_dispatch. Полный пакет содержит MM6–MM9, языки,
 Medusa, Roguelike, portraits/paperdolls/maps/scripts и verifier проверяет own rulesets file-for-file.
-Параллелизм Windows определяется по ресурсам runner и ограничен4; content cooker parallel4.
+Параллелизм Windows выбирается по CPU и доступной RAM (`choose_jobs`, верхний предел8);
+на стандартном4-vCPU runner он не превышает4. Content cooker использует parallel4.
+Фактическое число jobs и peak RAM берутся из отчёта job, а не предполагаются по имени runner.
 [Actions run43720418061](https://github.com/Plane-PPP/openyamm/actions/runs/43720418061)
 запущен из source `763f7701b9c0a0f78167d63f3413fbf838d220a7`:
 `gh workflow run minotaur-windows.yml --repo Plane-PPP/openyamm --ref integration/minotaur-v2.4-20261115 -f package_mode=full`.
-Preflight, Windows PowerShell installer tests и полный content job прошли; Windows program/tests job выполняется.
+Первый run: программа, оба test targets, полный content, сборка пакета и все18 packaged scenarios passed.
+Windows test job имел один platform-only отказ в новом широком upstream24 профиле:
+`dwi temple proprietor portrait uses mm8 overlay icon` ожидал регистрозависимый exists и POSIX0644.
+На NTFS exists(uppercase) законно находит lowercase файл, а permissions возвращает DOS flags.
+Тест исправлен без исключения случая: фактические имена сравниваются по directory entries на всех
+платформах, путь и hash обязательны везде, POSIX0644 проверяется на POSIX. Итоговый CI запускается
+с этой правкой и дополнительными native-ui/MAW selections.
+Первый source763f7701 пакет уже доступен, но не выбран финальным, потому что общий run завершился failure.
+Программа1351.04s, test build962.34s; фактически4CPU/jobs4, whole-runner peak8 630 444 032bytes
+(8.04GiB), minimum available8 543 916 032bytes. Ни один resource guard не останавливал сборки.
 Выбран full package для отдельной установки и ручного тестирования; baseline прежних updates
 не заменяется автоматически. Main, теги, GitHub Releases и официальный updater не публикуются.
 

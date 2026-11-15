@@ -4036,18 +4036,25 @@ TEST_CASE("dwi temple proprietor portrait uses mm8 overlay icon")
     // Restored portraits live in the x2 icon tiers (engine/icon_packages.txt); the original icons folders are retired.
     const std::filesystem::path worldPortrait =
         sourceRoot / "assets_dev/worlds/mm8/icons_x2/npc1130.png";
-    const std::filesystem::path uppercaseWorldPortrait =
-        sourceRoot / "assets_dev/worlds/mm8/icons_x2/NPC1130.png";
     const std::filesystem::path enginePortrait =
         sourceRoot / "assets_dev/engine/icons_x2/npc1130.png";
-    const std::filesystem::path uppercaseEnginePortrait =
-        sourceRoot / "assets_dev/engine/icons_x2/NPC1130.png";
 
     REQUIRE(std::filesystem::exists(worldPortrait));
-    CHECK_FALSE(std::filesystem::exists(uppercaseWorldPortrait));
     CHECK_FALSE(std::filesystem::exists(enginePortrait));
-    CHECK_FALSE(std::filesystem::exists(uppercaseEnginePortrait));
+    // Check the stored filename, including on case-insensitive file systems where exists("NPC1130.png") is true
+    // for the correctly named npc1130.png.
+    for (const std::filesystem::path &directory : {worldPortrait.parent_path(), enginePortrait.parent_path()})
+    {
+        const bool hasUppercaseName = std::any_of(std::filesystem::directory_iterator(directory),
+            std::filesystem::directory_iterator{}, [](const std::filesystem::directory_entry &entry)
+            {
+                return entry.path().filename().string() == "NPC1130.png";
+            });
+        CHECK_FALSE(hasUppercaseName);
+    }
 
+#ifndef _WIN32
+    // Windows reports DOS access flags here, rather than POSIX mode 0644.
     const std::filesystem::perms portraitPermissions = std::filesystem::status(worldPortrait).permissions();
     CHECK_EQ(
         portraitPermissions & std::filesystem::perms::all,
@@ -4055,6 +4062,7 @@ TEST_CASE("dwi temple proprietor portrait uses mm8 overlay icon")
             | std::filesystem::perms::owner_write
             | std::filesystem::perms::group_read
             | std::filesystem::perms::others_read);
+#endif
 
     CHECK_EQ(fnv1a64(readBinaryFileBytes(worldPortrait)), 0x4503bad3e143623dull);
 }

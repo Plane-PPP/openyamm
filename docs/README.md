@@ -9,6 +9,8 @@
 
 | Документ | Назначение | Язык |
 |---|---|---|
+| [Интеграция OpenYAMM 2.4](research/openyamm-2.4-integration.md) | Ревизии, конфликты, saves, проверки и Windows-поставка | RU |
+| [Roguelike: handoff Fable](research/roguelike-first-playtest-2026-11-15/03-fable-handoff.md) | Текущая база2.4 и сохранённые результаты первого теста2.3 | RU |
 | [Windows-патч 1.21](research/windows-1.21-build.md) | ZIP, исходная версия, сейвы, ресурсы и откат | EN |
 | [ROADMAP](ROADMAP.md) | Текущее состояние, планы, история | RU, [EN](ROADMAP.en.md) |
 | [Описание мода](MINOTAUR_REBALANCE.md) | Механики, формулы, диагностика, тестирование | RU, [EN](MINOTAUR_REBALANCE.en.md) |
@@ -52,4 +54,4 @@
 | 3 | `research/windows-ci-optimization.md`, `research/upstream-fc4e117-fix-integration.md`, `research/minotaur-incremental-updates.md` | Процесс и инфраструктура |
 | 4 | `research/monster-lore.md`, `research/monster-stats.md`, `research/monster-size-classification.md`, `research/reproduce.md`, `research/lethal-strike-teacher-*.md`, `research/damage-resistance-layout-bug.md`, `patches/README.md` | Узкие или исторические материалы |
 
-Остальные документы `docs/research/` уже написаны на английском.
+Остальные более ранние документы `docs/research/` написаны на английском. Указанные выше материалы интеграции2.4 и первого тестирования написаны на русском.

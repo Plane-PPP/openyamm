@@ -9,6 +9,8 @@ Everything in `docs/`, plus `CHANGELOG.md` and `BUILD-NOTES.md`, belongs to the 
 
 | Document | Purpose | Language |
 |---|---|---|
+| [OpenYAMM 2.4 integration](research/openyamm-2.4-integration.md) | Revisions, conflicts, saves, verification and Windows delivery | RU |
+| [Roguelike: Fable handoff](research/roguelike-first-playtest-2026-11-15/03-fable-handoff.md) | Current2.4 base and the preserved first2.3 playtest | RU |
 | [Windows 1.21 update](research/windows-1.21-build.md) | ZIP, base version, save checks, resources and rollback | EN |
 | [ROADMAP](ROADMAP.en.md) | Current state, plans, history | [RU](ROADMAP.md), EN |
 | [Mod description](MINOTAUR_REBALANCE.en.md) | Mechanics, formulas, diagnostics, testing | [RU](MINOTAUR_REBALANCE.md), EN |
@@ -52,4 +54,4 @@ suffix: `ROADMAP.md` and `ROADMAP.en.md`. The first line of both versions switch
 | 3 | `research/windows-ci-optimization.md`, `research/upstream-fc4e117-fix-integration.md`, `research/minotaur-incremental-updates.md` | Process and infrastructure |
 | 4 | `research/monster-lore.md`, `research/monster-stats.md`, `research/monster-size-classification.md`, `research/reproduce.md`, `research/lethal-strike-teacher-*.md`, `research/damage-resistance-layout-bug.md`, `patches/README.md` | Narrow or historical material |
 
-The remaining `docs/research/` documents are already in English.
+The remaining older `docs/research/` documents are in English. The2.4 integration and first-playtest records above are in Russian.
