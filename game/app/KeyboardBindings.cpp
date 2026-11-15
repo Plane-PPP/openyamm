@@ -102,8 +102,6 @@ const std::array<KeyboardBindingDefinition, KeyboardActionCount> KeyboardBinding
         KeyboardBindingColumn::Left, 0, {}, true},
     {KeyboardAction::GatherLoot, "gather_loot", Engine::trNoop("Gather Loot"), KeyboardBindingPage::Hidden,
         KeyboardBindingColumn::Left, 0, {InputBindingKind::Keyboard, SDL_SCANCODE_G, 0}, true},
-    {KeyboardAction::AlchemistPick, "alchemist_pick", Engine::trNoop("Alchemist"), KeyboardBindingPage::Hidden,
-        KeyboardBindingColumn::Left, 0, {InputBindingKind::Keyboard, SDL_SCANCODE_A, 0}, true},
     {KeyboardAction::SkillCover, "skill_cover", Engine::trNoop("Cover Switch"), KeyboardBindingPage::Hidden,
         KeyboardBindingColumn::Left, 0, {InputBindingKind::Keyboard, SDL_SCANCODE_P, 0}, true},
     {KeyboardAction::SkillManaShield, "skill_mana_shield", Engine::trNoop("Mana Shield Switch"),
@@ -179,9 +177,18 @@ const std::array<KeyboardBindingDefinition, KeyboardActionCount> KeyboardBinding
         KeyboardBindingColumn::Left, 0, {InputBindingKind::Keyboard, SDL_SCANCODE_F11, 0}, true},
     {KeyboardAction::QuestBook, "quest_book", Engine::trNoop("Quest Book"), KeyboardBindingPage::Hidden,
         KeyboardBindingColumn::Left, 0, {}, true},
+    {KeyboardAction::NextWeapon, "next_weapon", Engine::trNoop("Next Weapon"), KeyboardBindingPage::Hidden,
+        KeyboardBindingColumn::Left, 0, {InputBindingKind::MouseWheelDown, SDL_SCANCODE_UNKNOWN, 0}, true},
+    {KeyboardAction::AutoWalk, "auto_walk", Engine::trNoop("Auto Walk"), KeyboardBindingPage::Hidden,
+        KeyboardBindingColumn::Left, 0, {InputBindingKind::Keyboard, SDL_SCANCODE_NUMLOCKCLEAR, 0}, true},
+    // The middle button, as in GrayFace's patch.
+    {KeyboardAction::CursorMode, "cursor_mode", Engine::trNoop("Free Cursor"), KeyboardBindingPage::Hidden,
+        KeyboardBindingColumn::Left, 0, {InputBindingKind::MouseButton, SDL_SCANCODE_UNKNOWN, SDL_BUTTON_MIDDLE}, true},
+    {KeyboardAction::PreviousWeapon, "previous_weapon", Engine::trNoop("Previous Weapon"), KeyboardBindingPage::Hidden,
+        KeyboardBindingColumn::Left, 0, {InputBindingKind::MouseWheelUp, SDL_SCANCODE_UNKNOWN, 0}, true},
 }};
 
-const std::array<KeyboardScancodeName, 97> KeyboardScancodeNames = {{
+const std::array<KeyboardScancodeName, 98> KeyboardScancodeNames = {{
     {SDL_SCANCODE_A, "A"},
     {SDL_SCANCODE_B, "B"},
     {SDL_SCANCODE_C, "C"},
@@ -248,6 +255,7 @@ const std::array<KeyboardScancodeName, 97> KeyboardScancodeNames = {{
     {SDL_SCANCODE_KP_PERIOD, "Decimal"},
     {SDL_SCANCODE_KP_ENTER, "Num Enter"},
     {SDL_SCANCODE_KP_MINUS, "Subtract"},
+    {SDL_SCANCODE_NUMLOCKCLEAR, "Num_Lock"},
     {SDL_SCANCODE_BACKSPACE, "Backspace"},
     {SDL_SCANCODE_CAPSLOCK, "Caps_Lock"},
     {SDL_SCANCODE_GRAVE, "Grave"},

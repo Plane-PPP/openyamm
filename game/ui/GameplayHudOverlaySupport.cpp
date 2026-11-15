@@ -1,4 +1,6 @@
 #include "game/items/ReagentStacks.h"
+#include "game/gameplay/TurnBasedCombatRuntime.h"
+#include "game/ui/GameplaySoloHud.h"
 #include "game/ui/GameplayBuffHud.h"
 #include "engine/Localization.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
@@ -535,8 +537,10 @@ CharacterSkillUiData buildCharacterSkillUiData(const Character *pCharacter)
     return data;
 }
 
+// 0: reachable now, 1: after a promotion, 2: never. The rules may lift the class's cap (MAW's solo Lone Discipline).
 int skillMasteryAvailability(
     const ClassSkillTable *pClassSkillTable,
+    const SkillRules *pSkillRules,
     const Character *pCharacter,
     const std::string &skillName,
     SkillMastery mastery)
@@ -546,18 +550,22 @@ int skillMasteryAvailability(
         return 0;
     }
 
-    if (pClassSkillTable->getEffectiveCap(pCharacter->className, pCharacter->raceId, skillName) >= mastery)
+    SkillMastery now = pClassSkillTable->getEffectiveCap(pCharacter->className, pCharacter->raceId, skillName);
+    SkillMastery promoted =
+        pClassSkillTable->getHighestPromotionEffectiveCap(pCharacter->className, pCharacter->raceId, skillName);
+
+    if (pSkillRules != nullptr)
+    {
+        now = pSkillRules->masteryCap(*pCharacter, skillName, now);
+        promoted = pSkillRules->promotedMasteryCap(*pCharacter, skillName, promoted);
+    }
+
+    if (now >= mastery)
     {
         return 0;
     }
 
-    if (pClassSkillTable->getHighestPromotionEffectiveCap(pCharacter->className, pCharacter->raceId, skillName)
-        >= mastery)
-    {
-        return 1;
-    }
-
-    return 2;
+    return promoted >= mastery ? 1 : 2;
 }
 }
 
@@ -1009,9 +1017,12 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                     overlay.body += "\n\n" + GameMechanics::lethalStrikeBaseChanceText(*pCharacter, russian);
                 }
 
+                const SkillRules *popupSkillRules =
+                    context.partyReadOnly() != nullptr ? &gameRulesFor(context.partyReadOnly()).skills : nullptr;
                 overlay.normal.text = Engine::tr("Normal: {effect}", {{"effect", normalDescription}});
                 overlay.normal.availability = skillMasteryAvailability(
                     context.classSkillTable(),
+                    popupSkillRules,
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Normal);
@@ -1019,6 +1030,7 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                 overlay.expert.text = Engine::tr("Expert: {effect}", {{"effect", expertDescription}});
                 overlay.expert.availability = skillMasteryAvailability(
                     context.classSkillTable(),
+                    popupSkillRules,
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Expert);
@@ -1026,6 +1038,7 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                 overlay.master.text = Engine::tr("Master: {effect}", {{"effect", masterDescription}});
                 overlay.master.availability = skillMasteryAvailability(
                     context.classSkillTable(),
+                    popupSkillRules,
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Master);
@@ -1033,6 +1046,7 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                 overlay.grandmaster.text = Engine::tr("Grandmaster: {effect}", {{"effect", grandmasterDescription}});
                 overlay.grandmaster.availability = skillMasteryAvailability(
                     context.classSkillTable(),
+                    popupSkillRules,
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Grandmaster);
@@ -1141,7 +1155,7 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
         {
             overlay.title = popup->title;
             overlay.body = popup->body;
-            overlay.above = true;
+            overlay.above = popup->above;
             anchor({popup->x, popup->y, popup->width, popup->height, 1.0f});
         }
     }
@@ -1168,12 +1182,68 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
             anchor(*gems);
         }
     }
+    // A solo HUD's buff and condition tiles: the one under the pointer names itself, on hover.
+    if (!overlay.active && context.soloHud() && context.currentHudScreenState() == GameplayHudScreenState::Gameplay)
+    {
+        if (const std::optional<GameplaySoloHud::BuffTileHit> tile =
+                GameplaySoloHud::buffTileAt(context, width, height, pInput->pointerX, pInput->pointerY))
+        {
+            const size_t memberIndex = pParty->activeMemberIndex();
+            const Character *pMember = pParty->activeMember();
+            const PartyBuffState *pPartyBuff = tile->kind == GameplaySoloHud::BuffTileKind::Party
+                ? pParty->partyBuff(PartyBuffId(tile->index)) : nullptr;
+            const CharacterBuffState *pCharacterBuff = tile->kind == GameplaySoloHud::BuffTileKind::Character
+                ? pParty->characterBuff(memberIndex, CharacterBuffId(tile->index)) : nullptr;
+            std::vector<GameplayPotionEffectLine> potions;
+            if (tile->kind == GameplaySoloHud::BuffTileKind::Potion && pMember != nullptr)
+            {
+                potions = gameplayPotionEffectLines(*pMember, context.spellTable());
+            }
+            if (pPartyBuff != nullptr)
+            {
+                overlay.title = Engine::localize(GameplayBuffHudDefinitions[tile->index].pName, "spell");
+                overlay.body = formatBuffDuration(*pParty, pPartyBuff->spellId, pPartyBuff->remainingSeconds,
+                    formatRemainingDuration);
+                if (pPartyBuff->power > 0)
+                {
+                    appendPopupBodyLine(overlay.body,
+                        Engine::tr("Power: {power}", {{"power", int64_t(pPartyBuff->power)}}));
+                }
+            }
+            else if (pCharacterBuff != nullptr && pMember != nullptr)
+            {
+                overlay.title = Engine::localize(
+                    personalBuffName(context.spellTable(), *pParty, *pMember, tile->index, *pCharacterBuff), "spell");
+                overlay.body = formatBuffDuration(*pParty, pCharacterBuff->spellId, pCharacterBuff->remainingSeconds,
+                    formatRemainingDuration);
+            }
+            else if (tile->index < potions.size())
+            {
+                overlay.title = potions[tile->index].name;
+                overlay.body = formatRemainingDuration(potions[tile->index].remainingSeconds);
+            }
+            else if (tile->kind == GameplaySoloHud::BuffTileKind::Condition)
+            {
+                overlay.title = Engine::localizeKnown(GameMechanics::conditionName(CharacterCondition(tile->index)));
+            }
+            if (!overlay.title.empty())
+            {
+                anchor(tile->rect);
+                return;
+            }
+        }
+    }
     if (!pInput->rightMouseButton.held || context.currentHudScreenState() != GameplayHudScreenState::Gameplay)
     {
         return;
     }
+    // A solo HUD draws no hero or skull panel: its tiles (above) stand for them.
     for (GameplayBuffPresentation panel : {GameplayBuffPresentation::Hero, GameplayBuffPresentation::Skull})
     {
+        if (context.soloHud())
+        {
+            break;
+        }
         const std::optional<GameplayResolvedHudLayoutElement> rect =
             context.resolveHudLayoutElement(gameplayBuffPanelLayoutId(panel), width, height, 0, 0);
         if (!rect || !GameplayHudCommon::isPointerInsideResolvedElement(*rect, pInput->pointerX, pInput->pointerY))
@@ -1646,6 +1716,12 @@ void GameplayHudOverlaySupport::renderGameplayMouseLookOverlay(
             armLength, stroke),
         gameplayHudPaletteQuad(*dotColorTexel, centerX + armGap, centerY - stroke * 0.5f, armLength, stroke)};
     context.submitHudQuadBatch(quads);
+
+    // A solo run's recovery brackets beside the cross (real time only: turn-based recovery is in turns).
+    if (context.soloHud() && !context.turnBasedCombatRuntime().active())
+    {
+        GameplaySoloHud::renderCrosshairBrackets(context, centerX, centerY, overlayScale);
+    }
 }
 
 void GameplayHudOverlaySupport::renderItemRarityGlow(

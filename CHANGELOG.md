@@ -1,3 +1,13 @@
+# OpenYAMM 2.4 integration (2026-11-15)
+
+Merged official v2.4/f052579 on the complete tested Roguelike v0/da1bb162 base, retaining Minotaur,
+Medusa and custom portrait/paperdoll import. Save writer OYMINO1/184 maps to official183; production180 maps
+explicitly to179, with a frozen old-writer regression fixture. The departure dialog closes before Camp takes over;
+the run scenario now uses the real Goblinwatch event and dialog actions through Camp and the second dungeon.
+New MAW solo secondary targets keep the existing one-Lethal-Strike-roll-per-action contract.
+No new playtest design wishes are implemented. Verification and delivery status:
+docs/research/openyamm-2.4-integration.md.
+
 # Windows CI: upstream's layout, a preflight, a compiler cache and reusable runs (2026-11-14)
 
 The workflow follows upstream's packages.yml: the content is packed once on Linux while the Windows program builds,

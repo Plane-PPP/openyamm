@@ -288,6 +288,8 @@ struct GameplayCombatFeedbackEvent
     bool killed = false;
     // A critical hit: its number pops (CombatFloatingText).
     bool critical = false;
+    // A blow or missile that missed the monster (or did it no harm): "Miss" floats instead of a number.
+    bool miss = false;
 };
 
 enum class GameplayActorControlMode : uint8_t
@@ -309,6 +311,13 @@ inline bool gameplayActorFightsForParty(GameplayActorControlMode mode)
 {
     return mode == GameplayActorControlMode::Enslaved || mode == GameplayActorControlMode::ControlUndead
         || mode == GameplayActorControlMode::Reanimated;
+}
+
+// A monster the party's mind spell turned for a while (Charm, Berserk): what it kills, and its own death at another
+// monster's hand, are the party's doing (MonsterKillReward::mindControlled).
+inline bool gameplayActorMindControlled(GameplayActorControlMode mode)
+{
+    return mode == GameplayActorControlMode::Charm || mode == GameplayActorControlMode::Berserk;
 }
 
 enum class GameplayActorAiType : uint8_t
@@ -585,7 +594,8 @@ struct GameplayPartyAttackActorFacts
     GameplayWorldPoint position = {};
     uint16_t radius = 0;
     uint16_t height = 0;
-    // GameplayRuntimeActorState::targetHeight.
+    // Where a party shot aims at it: GameplayRuntimeActorState::targetHeight, raised toward its top when the line from
+    // the party to there is blocked and a higher one is clear (GameMechanics::clearPartyShotAimHeight).
     float targetHeight = 0.0f;
     int currentHp = 0;
     int maxHp = 0;
@@ -675,6 +685,10 @@ struct GameplayPartyAttackProjectileRequest
     bool homing = false;
     // Its damage was a critical hit (CharacterAttackResult::criticalDamage).
     bool critical = false;
+    // A solo run's Piercing Arrows: it flies on through this many more monsters, each struck at pierceShare of its
+    // damage (ProjectileState::pierceLeft).
+    uint8_t pierceCount = 0;
+    float pierceShare = 0.0f;
 };
 
 struct GameplayPartyAttackFallbackQuery
@@ -747,10 +761,6 @@ public:
     {
         return std::nullopt;
     }
-    virtual bool isUnderwaterMap() const
-    {
-        return false;
-    }
     virtual bool allowsLloydsBeacon() const
     {
         return true;
@@ -760,6 +770,11 @@ public:
         return true;
     }
     virtual bool allowsRest() const
+    {
+        return true;
+    }
+    // The map's allow_spellcasting restriction (false only in MM7's Shoals, OY-350).
+    virtual bool allowsSpellcasting() const
     {
         return true;
     }
@@ -1421,10 +1436,13 @@ public:
     {
         return {};
     }
+    // A party attack's outcome on its target; `missed` for a blow that reached it and missed (or did no harm), or a
+    // missile whose hit roll failed.
     virtual void recordPartyAttackWorldResult(
         std::optional<size_t> actorIndex,
         bool attacked,
-        bool actionPerformed) = 0;
+        bool actionPerformed,
+        bool missed) = 0;
     virtual bool worldInteractionReady() const = 0;
     virtual bool worldInspectModeActive() const = 0;
     virtual GameplayWorldPickRequest buildWorldPickRequest(const GameplayWorldPickRequestInput &input) const = 0;

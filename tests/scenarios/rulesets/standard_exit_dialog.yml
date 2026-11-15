@@ -1,0 +1,24 @@
+id: rulesets.standard_exit_dialog
+title: Standard - Goblinwatch Cancel stays inside and OK leaves through the ordinary departure dialog
+world: mm6
+mode: faithful
+tags: [rulesets, regression, travel]
+steps:
+  - new_game_flow: {start_map: 6d01.blv}
+  - assert:
+      map: 6d01.blv
+      ruleset: {id: mmerge}
+  - execute_event: {id: 51}
+  - assert:
+      dialog: {active: true, action_label_present: "OK"}
+  - select_topic: {kind: map_transition_cancel, action_id: 0, match_label: "Close"}
+  - assert:
+      map: 6d01.blv
+      dialog: {active: false}
+  - execute_event: {id: 51}
+  - select_topic: {kind: map_transition_confirm, action_id: 0, match_label: "OK"}
+  - advance_runtime: {seconds: 0.1, follow_map_move: true}
+  - assert:
+      map: oute3.odm
+      ruleset: {id: mmerge}
+      dialog: {active: false}

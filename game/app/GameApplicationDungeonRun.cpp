@@ -664,6 +664,9 @@ bool GameApplication::holdMapMoveForDungeonRunCamp(const EventRuntimeState::Pend
         return false;
     }
 
+    // The confirmation keeps its departure dialog until map loading normally closes it. The camp takes over
+    // before loading, so consume that deferred close before presenting a new dialog.
+    m_gameSession.gameplayScreenRuntime().closeActiveDialogForMapMove();
     restoreDungeonRunParty();
 
     // The camp lasts until the morning, when its shops are open (the houses keep their hours).

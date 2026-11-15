@@ -1,0 +1,9 @@
+Genuine previous production writer output, frozen 2026-11-15 before the 2.4 build.
+Source da1bb1624580ceb7caa3626d637c020727f5aa46; OYMINO1/v180, upstream schema179.
+Original unchanged Linux binary SHA256 4498ce1082cd17fed32a87f30c453ade4a95047d36464db3a03740b51900bd51.
+First 37 steps of the production roguelike_run.yml: seed4, Goblinwatch, 4 members,
+three level-ups and all 12 cards chosen, guardian alive, Earth Magic books carried.
+Captured using OPENYAMM_SCENARIO_SAVE_DIR with the old binary and its original assets.
+Protected run 20261115T132449Z-f5fb1c4687: 37/37 steps passed, exit0.
+407887 bytes; SHA256 a01ad150195ea74db1ef8c83e26d775d3b10ee83f9a251506e144624a8c448ff.
+No private player save used or changed. Never regenerate with a newer writer.

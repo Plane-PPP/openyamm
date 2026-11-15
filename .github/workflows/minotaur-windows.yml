@@ -72,8 +72,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MINOTAUR_UPSTREAM_VERSION: "2.3"
-  MINOTAUR_UPSTREAM_SHA: f4a6b8032759a218505532b2600ac56b6d80c7af
+  MINOTAUR_UPSTREAM_VERSION: "2.4"
+  MINOTAUR_UPSTREAM_SHA: f052579667e2233d6318d9855dce29097e8ca9ef
   MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
 
 jobs:
@@ -117,10 +117,10 @@ jobs:
           REQUESTED_BASE: ${{ inputs.baseline_version }}
           PREVIOUS_BUILD_SHA: ${{ inputs.previous_build_sha }}
         run: |
-          version="minotaur-2.3-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          version="minotaur-2.4-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [ "$MINOTAUR_PACKAGE_MODE" = full ]; then
-            # A full installation starts a new base (the full 2.3 desktop release): no patch to an older one.
+            # A full installation starts a new base (the full 2.4 desktop release): no patch to an older one.
             if [ -n "$REQUESTED_BASE$PREVIOUS_BUILD_SHA" ]; then
               echo "::error::package_mode=full builds a new base; baseline_version and previous_build_sha are for update/both"
               exit 1
@@ -607,7 +607,9 @@ jobs:
           scenarios=$(sed -e 's/\r$//' -e '/^\s*\(#\|$\)/d' tests/scenarios/release/scenarios.txt)
           failed=()
           number=0
-          for scenario in $scenarios mm9/shop_after_world_switch.yml rulesets/medusa_start.yml rulesets/roguelike_run.yml; do
+          for scenario in $scenarios mm9/shop_after_world_switch.yml rulesets/medusa_start.yml \
+              rulesets/roguelike_run.yml rulesets/standard_exit_dialog.yml \
+              mm8/plane_gateway_keeps_buffs.yml turn_based/maw_potion_spends_turn.yml; do
             number=$((number + 1))
             echo "::group::$scenario"
             mkdir -p "users/$number"

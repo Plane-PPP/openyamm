@@ -2,6 +2,7 @@
 
 #include "game/content/DungeonRun.h"
 #include "game/party/Party.h"
+#include "game/maps/SaveGame.h"
 #include "game/rules/roguelike/RoguelikeRules.h"
 #include "game/tables/ClassSkillTable.h"
 
@@ -303,4 +304,53 @@ TEST_CASE("a run's numbers go to the save's variables and back")
     CHECK(restored == state);
     OpenYAMM::Game::readRunState({}, restored);
     CHECK(restored == RoguelikeRunState{});
+}
+
+TEST_CASE("Minotaur frozen 2.3 v180 preserves the Roguelike run when migrated to 2.4")
+{
+    using namespace OpenYAMM::Game;
+    const std::filesystem::path fixture = std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "tests/fixtures/minotaur-2.3-v180-roguelike.oysav";
+    std::string error;
+    const std::optional<GameSaveData> original = loadGameDataFromPath(fixture, error);
+    REQUIRE_MESSAGE(original, error);
+    CHECK(original->sourceSaveVersion == 179);
+    CHECK(original->mapFileName == "6d01.blv");
+    CHECK(original->ruleset.id == "roguelike");
+    CHECK_FALSE(original->ruleset.options.soloRun);
+    REQUIRE(original->party.members.size() == 4);
+    RoguelikeRunState state;
+    readRunState(original->namedGlobalVars, state);
+    CHECK(state.entered == 1);
+    CHECK(state.levelUps == 3);
+    CHECK(state.guardian == RoguelikeRunState::GuardianAlive);
+    const std::optional<GameSaveSummary> summary = loadGameSaveSummaryFromPath(fixture, error);
+    REQUIRE_MESSAGE(summary, error);
+    CHECK(summary->ruleset == original->ruleset);
+    CHECK(summary->mapFileName == original->mapFileName);
+
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "minotaur-v180-to-v184.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, *original, error), error);
+    const std::optional<GameSaveData> restored = loadGameDataFromPath(path, error);
+    REQUIRE_MESSAGE(restored, error);
+    CHECK(restored->sourceSaveVersion == 183);
+    CHECK(restored->namedGlobalVars == original->namedGlobalVars);
+    CHECK(restored->ruleset == original->ruleset);
+    CHECK(restored->randomRootSeed == original->randomRootSeed);
+    REQUIRE(restored->party.members.size() == original->party.members.size());
+    for (size_t index = 0; index < original->party.members.size(); ++index)
+    {
+        const Character &before = original->party.members[index];
+        const Character &after = restored->party.members[index];
+        CHECK(after.level == 13);
+        CHECK(after.eventVariables == before.eventVariables);
+        CHECK(after.inventory == before.inventory);
+        CHECK(after.equipment == before.equipment);
+        CHECK(after.knownSpellIds == before.knownSpellIds);
+        CHECK(after.characterDataId == before.characterDataId);
+        CHECK(after.portraitTextureName == before.portraitTextureName);
+        CHECK(after.actionBar == before.actionBar);
+        CHECK(after.talentRanks == before.talentRanks);
+    }
+    std::filesystem::remove(path);
 }

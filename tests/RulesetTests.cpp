@@ -128,7 +128,8 @@ constexpr uint64_t IndoorLayoutMarker = 0x0bb1a5e0bb1a5e01ull;
 constexpr float FleetFootBuffMarker = 4321.875f;
 // The time left of the indoor state's Armageddon (version 170), which older saves lack.
 constexpr float IndoorArmageddonMarker = 6543.125f;
-constexpr float IndoorMovementMarker = 1234.375f;
+// The indoor party's movement accumulator, followed by its pending jump and its swim memory (version 166).
+constexpr float IndoorMoveAccumulatorMarker = 7654.375f;
 
 OpenYAMM::Game::GameSaveData minimalSave()
 {
@@ -137,9 +138,9 @@ OpenYAMM::Game::GameSaveData minimalSave()
     save.saveName = "ruleset check";
     save.outdoorWorld.mapLayoutIdentity = OutdoorLayoutMarker;
     save.indoorScene.mapLayoutIdentity = IndoorLayoutMarker;
-    save.indoorScene.partyRuntime.movementAccumulatorSeconds = IndoorMovementMarker;
     save.party.partyBuffs[size_t(OpenYAMM::Game::PartyBuffId::FleetFoot)].remainingSeconds = FleetFootBuffMarker;
     save.indoorScene.worldRuntime.armageddon.remainingSeconds = IndoorArmageddonMarker;
+    save.indoorScene.partyRuntime.movementAccumulatorSeconds = IndoorMoveAccumulatorMarker;
     return save;
 }
 
@@ -526,8 +527,7 @@ TEST_CASE("saves with out-of-range ruleset options are refused")
 
 namespace
 {
-// These synthetic upstream fixtures contain no map actors (and hence no mod combatLevel fields).
-// Their envelope must be official: a numeric upstream version is not an OYMINO1 version.
+// Synthetic official fixtures contain no map actors or mod combatLevel fields.
 void stampOfficialSaveVersion(std::vector<uint8_t> &bytes, uint32_t version)
 {
     constexpr char magic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
@@ -574,6 +574,55 @@ void moveSummaryPlaythroughToLegacyPlace(std::vector<uint8_t> &bytes)
     bytes.insert(bytes.end() - static_cast<std::ptrdiff_t>(sizeof(uint64_t)), sizeof(uint64_t), uint8_t(0));
 }
 
+// Saves before version 181 have no solo run: cuts the ruleset's last byte (the solo flag, before the name, the preview
+// and the playthrough id and time that end the summary block) and every character's empty action bar (twenty slots of
+// a kind byte, an id and a quick item slot, between the six empty quick item slots and the spellbook page, -1 in these
+// saves), and every character's empty talent ranks (version 182) that end it. The first step for a save then stamped
+// with an older version, while the playthrough is still in the summary.
+void eraseSoloRun(std::vector<uint8_t> &bytes, const OpenYAMM::Game::GameSaveData &save)
+{
+    constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
+    constexpr size_t PlaythroughSize = sizeof(uint64_t) + sizeof(double);
+    uint32_t summarySize = 0;
+    std::memcpy(&summarySize, bytes.data() + HeaderSize, sizeof(summarySize));
+    const size_t nameAndPreviewSize =
+        sizeof(uint64_t) + save.saveName.size() + sizeof(uint64_t) + save.previewBmp.size();
+    const size_t soloOffset =
+        HeaderSize + sizeof(summarySize) + summarySize - PlaythroughSize - nameAndPreviewSize - sizeof(bool);
+    REQUIRE_EQ(bytes[soloOffset], uint8_t(save.ruleset.options.soloRun ? 1 : 0));
+    eraseBytes(bytes, soloOffset, sizeof(bool));
+    --summarySize;
+    std::memcpy(bytes.data() + HeaderSize, &summarySize, sizeof(summarySize));
+
+    constexpr size_t QuickSlotsSize = OpenYAMM::Game::QuickItemSlotCount * (sizeof(uint32_t) + sizeof(uint8_t));
+    constexpr size_t SlotSize = sizeof(uint8_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t);
+    constexpr size_t BarSize = OpenYAMM::Game::ActionBarSlotCount * SlotSize;
+    std::vector<uint8_t> pattern(QuickSlotsSize + BarSize, uint8_t(0));
+    pattern.insert(pattern.end(), sizeof(int32_t), uint8_t(0xff));
+    const size_t characters = save.party.members.size() + save.party.mm9Hirelings.size();
+    // The characters come first in the party, so their bars are the first matches (later zero runs can match too).
+    size_t found = 0;
+    auto it = bytes.begin();
+    while (found < characters && (it = std::search(it, bytes.end(), pattern.begin(), pattern.end())) != bytes.end())
+    {
+        const size_t offset = static_cast<size_t>(it - bytes.begin()) + QuickSlotsSize;
+        eraseBytes(bytes, offset, BarSize);
+        // After the bar: the spellbook page, the implants, the condition expiry times, the empty statistics id, the
+        // empty battle orders, their fallback byte, the empty upkeep list, then the empty talent ranks' count.
+        const size_t talentsOffset = offset + sizeof(int32_t) + sizeof(OpenYAMM::Game::Character::implants)
+            + sizeof(OpenYAMM::Game::Character::conditionExpireGameMinutes) + sizeof(uint64_t) + sizeof(uint64_t)
+            + sizeof(uint8_t) + sizeof(uint64_t);
+        REQUIRE(talentsOffset + sizeof(uint64_t) <= bytes.size());
+        REQUIRE(std::all_of(bytes.begin() + static_cast<std::ptrdiff_t>(talentsOffset),
+            bytes.begin() + static_cast<std::ptrdiff_t>(talentsOffset + sizeof(uint64_t)),
+            [](uint8_t byte) { return byte == 0; }));
+        eraseBytes(bytes, talentsOffset, sizeof(uint64_t));
+        it = bytes.begin() + static_cast<std::ptrdiff_t>(offset);
+        ++found;
+    }
+    REQUIRE_EQ(found, characters);
+}
+
 // Saves before version 162 have no map layout identities: cuts minimalSave's two, for a save stamped older.
 // Saves from version 163 end with the playthrough id and its statistics timeline: two strings, empty in these saves.
 void erasePlaythroughStatistics(std::vector<uint8_t> &bytes)
@@ -602,8 +651,6 @@ void eraseMapLayoutIdentities(std::vector<uint8_t> &bytes)
 {
     eraseBytes(bytes, findValue(bytes, OutdoorLayoutMarker), sizeof(uint64_t));
     eraseBytes(bytes, findValue(bytes, IndoorLayoutMarker), sizeof(uint64_t));
-    // These fixtures also predate swim memory (166): two bools after the movement accumulator and pending jump.
-    eraseBytes(bytes, findValue(bytes, IndoorMovementMarker) + sizeof(float) + sizeof(bool), 2 * sizeof(bool));
 }
 
 // Saves before version 168 have one party buff fewer: cuts minimalSave's last (Fleet Foot), its time left, spell id,
@@ -621,6 +668,17 @@ void eraseIndoorArmageddon(std::vector<uint8_t> &bytes)
 {
     eraseBytes(bytes, findValue(bytes, IndoorArmageddonMarker),
         3 * sizeof(float) + 4 * sizeof(uint32_t) + sizeof(std::underlying_type_t<OpenYAMM::Game::SkillMastery>));
+}
+
+// Saves before version 166 have no indoor swim memory: cuts its two flags, after minimalSave's indoor movement
+// accumulator and pending jump.
+void eraseIndoorSwimMemory(std::vector<uint8_t> &bytes)
+{
+    const size_t offset = findValue(bytes, IndoorMoveAccumulatorMarker) + sizeof(float) + sizeof(bool);
+    REQUIRE(offset + 2 * sizeof(bool) <= bytes.size());
+    REQUIRE_EQ(bytes[offset], 0);
+    REQUIRE_EQ(bytes[offset + 1], 0);
+    eraseBytes(bytes, offset, 2 * sizeof(bool));
 }
 
 // Saves from version 140 lead with the summary block (its size, the map, the time, the ruleset, the name and the
@@ -729,6 +787,7 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
     REQUIRE_MESSAGE(OpenYAMM::Game::saveGameDataToPath(path, save, error), error);
 
     std::vector<uint8_t> bytes = readBytes(path);
+    eraseSoloRun(bytes, save);
     moveSummaryPlaythroughToLegacyPlace(bytes);
     erasePlaythroughStatistics(bytes);
     eraseWorldCompletions(bytes, completionMarker);
@@ -749,6 +808,7 @@ TEST_CASE("saves written before rulesets load as the Standard ruleset")
     eraseMapLayoutIdentities(bytes);
     eraseFleetFootBuff(bytes);
     eraseIndoorArmageddon(bytes);
+    eraseIndoorSwimMemory(bytes);
     const uint32_t previousVersion = 95;
     stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
@@ -798,6 +858,7 @@ TEST_CASE("the save list reads a save's summary alone, and older saves' summary 
         restored->ruleset, restored->saveName, restored->previewBmp});
 
     std::vector<uint8_t> bytes = readBytes(path);
+    eraseSoloRun(bytes, save);
     moveSummaryPlaythroughToLegacyPlace(bytes);
     erasePlaythroughStatistics(bytes);
     eraseWorldCompletions(bytes, completionMarker);
@@ -805,6 +866,7 @@ TEST_CASE("the save list reads a save's summary alone, and older saves' summary 
     eraseMapLayoutIdentities(bytes);
     eraseFleetFootBuff(bytes);
     eraseIndoorArmageddon(bytes);
+    eraseIndoorSwimMemory(bytes);
     const uint32_t previousVersion = 139;
     stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
@@ -812,7 +874,7 @@ TEST_CASE("the save list reads a save's summary alone, and older saves' summary 
 
     // A summary that claims more than the file holds is refused rather than read past the end.
     bytes = readBytes(path);
-    const uint32_t currentVersion = 143;
+    const uint32_t currentVersion = 140;
     std::memcpy(bytes.data() + 8, &currentVersion, sizeof(currentVersion));
     const uint32_t oversizedSummary = uint32_t(bytes.size());
     bytes.insert(bytes.begin() + 12, reinterpret_cast<const uint8_t *>(&oversizedSummary),
@@ -835,6 +897,7 @@ TEST_CASE("saves with the retired per-game loot choice load without it")
     // Versions 172 to 177 wrote the choice as the ruleset's last byte, in the summary block before the name, the
     // preview and the playthrough id and time. Put one back (off) and stamp version 177.
     std::vector<uint8_t> bytes = readBytes(path);
+    eraseSoloRun(bytes, save);
     constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
     constexpr size_t PlaythroughSize = sizeof(uint64_t) + sizeof(double);
     uint32_t summarySize = 0;
@@ -883,8 +946,8 @@ TEST_CASE("saves before the Bow preference load with the bow on")
     // The summary block holds the map, the time, the ruleset, the name and the preview; the Bow preference (version
     // 154) is the ruleset's last byte, after the trainer hints (152). Cut it and stamp version 153.
     std::vector<uint8_t> bytes = readBytes(path);
+    eraseSoloRun(bytes, save);
     moveSummaryPlaythroughToLegacyPlace(bytes);
-    erasePlaythroughStatistics(bytes);
     constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
     uint32_t summarySize = 0;
     std::memcpy(&summarySize, bytes.data() + HeaderSize, sizeof(summarySize));
@@ -897,9 +960,11 @@ TEST_CASE("saves before the Bow preference load with the bow on")
     --summarySize;
     std::memcpy(bytes.data() + HeaderSize, &summarySize, sizeof(summarySize));
     eraseMm9HirelingCount(bytes, completionMarker);
+    erasePlaythroughStatistics(bytes);
     eraseMapLayoutIdentities(bytes);
     eraseFleetFootBuff(bytes);
     eraseIndoorArmageddon(bytes);
+    eraseIndoorSwimMemory(bytes);
     const uint32_t previousVersion = 153;
     stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
@@ -928,12 +993,14 @@ TEST_CASE("saves before the MM9 hirelings load with none")
 
     // Cut the party's hireling count (version 157) and stamp version 154 (before the last outdoor map, 155).
     std::vector<uint8_t> bytes = readBytes(path);
+    eraseSoloRun(bytes, save);
     moveSummaryPlaythroughToLegacyPlace(bytes);
-    erasePlaythroughStatistics(bytes);
     eraseMm9HirelingCount(bytes, completionMarker);
+    erasePlaythroughStatistics(bytes);
     eraseMapLayoutIdentities(bytes);
     eraseFleetFootBuff(bytes);
     eraseIndoorArmageddon(bytes);
+    eraseIndoorSwimMemory(bytes);
     const uint32_t previousVersion = 154;
     stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
@@ -954,13 +1021,15 @@ TEST_CASE("saves before the MM9 formation load without member cells and with neu
     OpenYAMM::Game::Mm9PartyHireling hireling;
     hireling.rudeId = 42;
     hireling.character.name = "Hrolf Spearmaster";
-    hireling.character.quickSpellName = "quickspellmarker";
     // The hireling's last saved field, found again in the bytes: the formation cell count follows it.
     const int32_t cellMarker = 0x7e57ce11;
     hireling.formationCell = cellMarker;
     // Its character's condition expiry times (version 159, after the formation): found by the first one's value.
     const float expiryMarker = 123456.5f;
     hireling.character.conditionExpireGameMinutes[0] = expiryMarker;
+    // Its quick spell, which older saves follow with the attack spell.
+    const std::string quickSpellMarker = "quickspellmarker";
+    hireling.character.quickSpellName = quickSpellMarker;
     save.party.mm9Hirelings.push_back(hireling);
     const std::filesystem::path path = makeTemporaryRoot("mm9_formation").replace_extension(".oysav");
     std::string error;
@@ -968,6 +1037,7 @@ TEST_CASE("saves before the MM9 formation load without member cells and with neu
 
     // Cut the party's formation cell count (version 158) and stamp version 157.
     std::vector<uint8_t> bytes = readBytes(path);
+    eraseSoloRun(bytes, save);
     moveSummaryPlaythroughToLegacyPlace(bytes);
     std::array<uint8_t, sizeof(cellMarker)> markerBytes = {};
     std::memcpy(markerBytes.data(), &cellMarker, sizeof(cellMarker));
@@ -976,23 +1046,24 @@ TEST_CASE("saves before the MM9 formation load without member cells and with neu
     // The party's empty last outdoor map after it (version 155) stays.
     const size_t countOffset = static_cast<size_t>(markerIt - bytes.begin()) + sizeof(cellMarker);
     eraseEmptyCounts(bytes, countOffset, 1);
-    // A157 character has neither expiry times nor stats/battle/upkeep fields at its end. Its empty attack spell
-    // belongs after the quick spell, not where the current empty battle-orders count sits.
+    // A version 157 character has no condition expiry times either (version 159), nor what follows them: the
+    // statistics identity (163), the empty battle orders and their fallback (167) and the empty upkeep list (176).
     std::array<uint8_t, sizeof(expiryMarker)> expiryBytes = {};
     std::memcpy(expiryBytes.data(), &expiryMarker, sizeof(expiryMarker));
     const auto expiryIt = std::search(bytes.begin(), bytes.end(), expiryBytes.begin(), expiryBytes.end());
     REQUIRE(expiryIt != bytes.end());
     eraseBytes(bytes, static_cast<size_t>(expiryIt - bytes.begin()),
-        sizeof(float) * hireling.character.conditionExpireGameMinutes.size() + 2 * sizeof(uint64_t) + sizeof(uint8_t)
-            + sizeof(uint64_t));
-    const std::string quickMarker = hireling.character.quickSpellName;
-    const auto quickIt = std::search(bytes.begin(), bytes.end(), quickMarker.begin(), quickMarker.end());
-    REQUIRE(quickIt != bytes.end());
-    bytes.insert(quickIt + static_cast<std::ptrdiff_t>(quickMarker.size()), sizeof(uint64_t), uint8_t(0));
+        sizeof(float) * hireling.character.conditionExpireGameMinutes.size() + sizeof(uint64_t) + sizeof(uint64_t)
+            + sizeof(uint8_t) + sizeof(uint64_t));
+    // Saves before the battle orders (167) hold the attack spell's name (empty here) right after the quick spell's.
+    const auto quickSpellIt = std::search(bytes.begin(), bytes.end(), quickSpellMarker.begin(), quickSpellMarker.end());
+    REQUIRE(quickSpellIt != bytes.end());
+    bytes.insert(quickSpellIt + static_cast<std::ptrdiff_t>(quickSpellMarker.size()), sizeof(uint64_t), uint8_t(0));
     erasePlaythroughStatistics(bytes);
     eraseMapLayoutIdentities(bytes);
     eraseFleetFootBuff(bytes);
     eraseIndoorArmageddon(bytes);
+    eraseIndoorSwimMemory(bytes);
     const uint32_t previousVersion = 157;
     stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
@@ -1003,6 +1074,9 @@ TEST_CASE("saves before the MM9 formation load without member cells and with neu
     CHECK(restored->party.memberFormationCells.empty());
     REQUIRE_EQ(restored->party.mm9Hirelings.size(), 1u);
     const OpenYAMM::Game::Character &character = restored->party.mm9Hirelings[0].character;
+    CHECK_EQ(character.name, hireling.character.name);
+    CHECK_EQ(character.quickSpellName, quickSpellMarker);
+    CHECK_EQ(restored->party.mm9Hirelings[0].formationCell, cellMarker);
     CHECK_EQ(character.might, OpenYAMM::Game::Party::Mm9HirelingPrimaryStat);
     CHECK_EQ(character.speed, OpenYAMM::Game::Party::Mm9HirelingPrimaryStat);
     CHECK_EQ(character.luck, OpenYAMM::Game::Party::Mm9HirelingPrimaryStat);
@@ -1711,4 +1785,35 @@ TEST_CASE("saves keep a solo character's bag tags past the eighth bag (OY-344)")
     REQUIRE_EQ(restored->party.members.size(), 1u);
     CHECK_EQ(restored->party.members[0].rulesetState.craftingBags, 1u << 20);
     CHECK_EQ(restored->party.members[0].rulesetState.alchemyBags, 1u << 24);
+}
+
+// eraseSoloRun gives back a save of the version before the solo run: it loads, with a hireling (a character outside
+// the party's members) too.
+TEST_CASE("saves before the solo run load as party games")
+{
+    for (int variant = 0; variant < 2; ++variant)
+    {
+        OpenYAMM::Game::GameSaveData save = minimalSave();
+        if (variant == 1)
+        {
+            OpenYAMM::Game::Mm9PartyHireling hireling;
+            hireling.character.name = "Hrolf";
+            save.party.mm9Hirelings.push_back(hireling);
+        }
+        const std::filesystem::path path = makeTemporaryRoot("pre_solo").replace_extension(".oysav");
+        std::string error;
+        REQUIRE(OpenYAMM::Game::saveGameDataToPath(path, save, error));
+        std::vector<uint8_t> bytes = readBytes(path);
+        eraseSoloRun(bytes, save);
+        // Version 180: the last before the solo run (181) and its talents (182).
+        const uint32_t previousVersion = 180;
+        stampOfficialSaveVersion(bytes, previousVersion);
+        writeBytes(path, bytes);
+        const auto restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
+        std::filesystem::remove(path);
+        INFO("variant " << variant << " " << error);
+        REQUIRE(restored.has_value());
+        CHECK_FALSE(restored->ruleset.options.soloRun);
+        CHECK_EQ(restored->party.mm9Hirelings.size(), size_t(variant));
+    }
 }

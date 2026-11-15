@@ -30,6 +30,8 @@ add_library(openyamm_game STATIC
     debug/ScreenshotCaptureService.cpp
     debug/VideoCapture.cpp
     debug/ScreenshotTour.cpp
+    debug/PinInbox.cpp
+    debug/ExitPose.cpp
     debug/AiArena.cpp
     debug/AiArenaOverlay.cpp
     debug/MenuInputTour.cpp
@@ -272,6 +274,7 @@ add_library(openyamm_game STATIC
     rules/maw/MawPromotions.cpp
     rules/maw/MawSkillRules.cpp
     rules/maw/MawSpellFormulas.cpp
+    rules/maw/MawSoloTalents.cpp
     rules/maw/MawSpellRules.cpp
     rules/maw/MawTexts.cpp
     rules/maw/MawTrainerHints.cpp
@@ -280,12 +283,17 @@ add_library(openyamm_game STATIC
     rules/CraftingRules.cpp
     rules/PotionRules.cpp
     rules/SkillRules.cpp
+    rules/SoloTalents.cpp
     rules/SpellRules.cpp
     tables/NpcDialogTable.cpp
     tables/ObjectTable.cpp
     render/SpriteAtlasCook.cpp
     render/SpriteAtlasCache.cpp
     render/ActorModelPreview.cpp
+    render/FirstPersonViewModel.cpp
+    render/FirstPersonViewModelFx.cpp
+    render/FirstPersonViewModelKit.cpp
+    render/HeldWeapons.cpp
     render/NativeSpriteTextureCache.cpp
     render/SpriteAtlasMipmaps.cpp
     outdoor/OutdoorBillboardRenderer.cpp
@@ -363,12 +371,16 @@ add_library(openyamm_game STATIC
     ui/HouseShopLayout.cpp
     ui/HouseShopLedger.cpp
     ui/GameplayHouseShopLedgerRenderer.cpp
+    ui/SpellbookKnowledgeMarkers.cpp
     ui/CombatFloatingText.cpp
     ui/EnemyHealthBarRenderer.cpp
     ui/GameplayHudRenderer.cpp
     ui/GameplayUiSkin.cpp
     ui/GameplayPortraitGems.cpp
     ui/GameplayBuffHud.cpp
+    ui/GameplaySoloHud.cpp
+    ui/GameplaySoloTalentsPage.cpp
+    ui/GameplaySoloBarSelector.cpp
     ui/GameplayCombatLogPanel.cpp
     ui/CalendarText.cpp
     ui/GameplayHudCommon.cpp

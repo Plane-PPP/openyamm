@@ -14,7 +14,7 @@ tests="${1:?usage: minotaur_ci_tests.sh <tests directory> [group ...]}"
 shift
 groups=("$@")
 if [ ${#groups[@]} -eq 0 ]; then
-    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9)
+    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9 upstream24)
 fi
 
 suffix=""
@@ -56,6 +56,8 @@ for group in "${groups[@]}"; do
             run upstream-indoor-tests "$runtime" --source-file='*IndoorActorFlyingRuntimeTests.cpp,*IndoorActorDetectionRuntimeTests.cpp,*IndoorActorFactionRuntimeTests.cpp' ;;
         roguelike)
             run roguelike-tests "$unit" --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp' ;;
+        upstream24)
+            run upstream-24-tests "$unit" --source-file='*RulesetTests.cpp,*SoloRunTests.cpp,*SoloTalentTests.cpp,*HeldWeaponTests.cpp,*BattleOrdersTests.cpp,*GameInputSystemTests.cpp,*InventoryEquipRegressionTests.cpp,*AlchemyBenchRegressionTests.cpp,*QuickItemSlotTests.cpp,*HouseDialogueRegressionTests.cpp,*HouseShopLedgerTests.cpp,*AudioRegressionTests.cpp' ;;
         mm9)
             # Needs assets_dev/worlds/mm9 (the full 2.3 release ships it). One upstream case is stale against 2.3's own
             # data (Mm9RudeDialogueTests.cpp:1539-1566, 1743, 1935: it expects stock generation 6 and Sturmford's price

@@ -782,7 +782,7 @@ TEST_CASE("Lethal Strike latest separates technology and named mod skills throug
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     save = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(save, error);
-    CHECK(save->sourceSaveVersion == 179);
+    CHECK(save->sourceSaveVersion == 183);
     const auto &c = save->party.members[0];
     CHECK(c.techPoints == 321);
     CHECK(c.spellbookSchool == 2);
@@ -814,7 +814,7 @@ TEST_CASE("Lethal Strike production 1.14 v132 migrates to current schema without
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     auto loaded = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(loaded, error);
-    CHECK(loaded->sourceSaveVersion == 179);
+    CHECK(loaded->sourceSaveVersion == 183);
     CHECK(loaded->party.members.front().inventory == old.inventory);
     CHECK(loaded->party.members.front().techPoints == 321);
     CHECK(loaded->party.members.front().findSkill("LethalStrike")->level == 7);
@@ -824,7 +824,7 @@ TEST_CASE("Lethal Strike production 1.14 v132 migrates to current schema without
     std::filesystem::remove(path);
 }
 
-TEST_CASE("Minotaur frozen production 1.21 v155 migrates to 2.3 without losing skills and progress")
+TEST_CASE("Minotaur frozen production 1.21 v155 migrates to 2.4 without losing skills and progress")
 {
     std::string error;
     const auto original = loadGameDataFromPath(std::filesystem::path(OPENYAMM_SOURCE_DIR)
@@ -838,11 +838,11 @@ TEST_CASE("Minotaur frozen production 1.21 v155 migrates to 2.3 without losing s
     REQUIRE(member.findSkill("LethalStrike"));
     CHECK(member.findSkill("LethalStrike")->level == 7);
     CHECK(member.findSkill("LethalStrike")->mastery == SkillMastery::Master);
-    const auto path = std::filesystem::temp_directory_path() / "minotaur-v155-to-v180.oysav";
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-v155-to-v184.oysav";
     REQUIRE_MESSAGE(saveGameDataToPath(path, *original, error), error);
     const auto loaded = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(loaded, error);
-    CHECK(loaded->sourceSaveVersion == 179);
+    CHECK(loaded->sourceSaveVersion == 183);
     REQUIRE(loaded->party.members.size() == 1);
     const Character &restored = loaded->party.members.front();
     CHECK(restored.inventory == member.inventory);
@@ -881,4 +881,63 @@ TEST_CASE("Minotaur rejects unknown mod envelopes instead of decoding them as of
         CHECK_FALSE(loadGameSaveSummaryFromPath(path, error));
     }
     std::filesystem::remove(path);
+}
+
+TEST_CASE("Lethal Strike keeps one roll per action when solo talents add extra melee targets")
+{
+    int primaryKills = 0;
+    for (uint32_t seedValue = 0; seedValue < 80; ++seedValue)
+    {
+        int extraDamage = 0;
+        for (int variant = 0; variant < 3; ++variant)
+        {
+            Character member = minotaur();
+            member.skills["Axe"] = {"Axe", 10, SkillMastery::Grandmaster};
+            member.skills["LethalStrike"].level = 20;
+            member.skills["Perception"].level = 20;
+            member.equipment.mainHand = weapon("Axe", "Weapon");
+            if (variant == 1)
+            {
+                member.skills.erase("LethalStrike");
+            }
+            Party party;
+            party.setItemTable(&data().itemTable);
+            PartySeed seed;
+            seed.members.push_back(member);
+            party.seed(seed);
+            LethalWorld world;
+            GameplayActionController::PartyAttackConfig config;
+            config.pParty = &party;
+            config.pWorldRuntime = &world;
+            config.pItemTable = &data().itemTable;
+            config.pSpellTable = &data().spellTable;
+            config.pMonsterTable = &data().monsterTable;
+            config.directTargetActorIndex = 0;
+            config.randomSeed = seedValue;
+            config.talentExtraBlow = variant != 2;
+            config.talentShare = 0.5f;
+            const GameplayActionController::PartyAttackExecutionResult result =
+                GameplayActionController::executePartyAttack(config);
+            REQUIRE(result.actionPerformed);
+            if (variant != 2)
+            {
+                CHECK_FALSE(result.lethalStrikeSucceeded);
+                CHECK(world.deaths == 0);
+                CHECK(party.member(0)->recoverySecondsRemaining == 0.0f);
+                if (variant == 0)
+                {
+                    extraDamage = world.damage;
+                }
+                else
+                {
+                    CHECK(world.damage == extraDamage);
+                }
+            }
+            else
+            {
+                primaryKills += world.deaths;
+            }
+        }
+    }
+    CHECK(primaryKills > 0);
 }

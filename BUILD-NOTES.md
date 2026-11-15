@@ -1,3 +1,15 @@
+# OpenYAMM 2.4 integration — Windows build pending (2026-11-15)
+
+Official target f052579667e2233d6318d9855dce29097e8ca9ef. Complete previous confirmed Windows source:
+da1bb1624580ceb7caa3626d637c020727f5aa46, run43598461895, full package
+minotaur-2.3-da1bb1624580-46-1. Actions API confirmed success and exact head SHA.
+The current task retains that full Roguelike v0 base, Minotaur, Medusa and importer, merges official2.4,
+adds save180->179 compatibility/new writer184->183, a genuine old-writer fixture, real exit/Camp regression,
+and preserves one LS-roll per action for new solo extra targets. No new game design is implemented.
+Linux game compiled; test targets/checks continue. The new Windows source SHA and artifact will be recorded
+only after commit/CI, in docs/research/openyamm-2.4-integration.md and the next entry here.
+No public release, tag, main merge or baseline promotion. Historical notes below are retained.
+
 # Roguelike skeleton /2.3 — local Linux verification, no Windows package
 
 Verified base530d75a3b65cf7b2b7e0c4020cdd936fcc7fb66b, branch integration/minotaur-v2.3-20261113.

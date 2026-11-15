@@ -34,6 +34,8 @@
 #include <bitset>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -216,6 +218,8 @@ struct ScenarioGameApplicationAccess
         application.m_settings.formationsEverywhere = false;
         // Scenarios check the combat log (the combat_log step) in every ruleset and world.
         application.m_settings.combatLog = CombatLogMode::On;
+        // A scenario's `pin` never lands in the player's pin inbox, which the Map Studio imports.
+        application.m_settings.pinInboxPath = (std::filesystem::temp_directory_path() / "openyamm-scenario-pins").string();
         return true;
     }
 
@@ -293,6 +297,18 @@ struct ScenarioGameApplicationAccess
         return success;
     }
 
+    static bool runStartupConsoleFile(GameApplication &application, const std::filesystem::path &path,
+        std::string &message)
+    {
+        return application.runStartupConsoleFile(path, message);
+    }
+
+    static bool writeExitPoseFile(GameApplication &application, const std::filesystem::path &path,
+        std::string &message)
+    {
+        return application.writeExitPoseFile(path, message);
+    }
+
     static OutdoorPartyRuntime *outdoorPartyRuntime(GameApplication &application)
     {
         return application.m_pOutdoorPartyRuntime.get();
@@ -331,6 +347,16 @@ struct ScenarioGameApplicationAccess
     static bool processPendingMapMove(GameApplication &application)
     {
         return application.processPendingMapMove();
+    }
+
+    static bool dungeonRunCampHoldsMapMove(const GameApplication &application)
+    {
+        return application.m_dungeonRunCampOpen && application.m_dungeonRunCampMove.has_value();
+    }
+
+    static void updateDungeonRunRules(GameApplication &application)
+    {
+        application.updateDungeonRunRules();
     }
 
     // The game's defeat (processPendingPartyDefeat, then handleCompletedPartyDefeatScreen) without its movie: the
@@ -633,6 +659,11 @@ bool ScenarioRuntimeDriver::startNewGame(
     // As a new game from party creation: the ruleset's own start.
     Party &sessionParty = *session.partyState();
     sessionParty.rules().experience.prepareNewParty(sessionParty);
+    // A solo run (RulesetOptions::soloRun), as from party creation: one member, its action bar filled.
+    if (ruleset.options.soloRun)
+    {
+        makeSoloRunParty(sessionParty);
+    }
     session.setGameMinutes(9.0f * 60.0f);
     static_cast<void>(continentId);
     return loadSelectedMapRuntime(startMapFileName, failure);
@@ -806,6 +837,12 @@ bool ScenarioRuntimeDriver::processPendingMapMove(std::string &failure)
 
     if (!ScenarioGameApplicationAccess::processPendingMapMove(m_application))
     {
+        // A confirmed departure can hand its move to the run's camp without loading a map yet. Keep the actual
+        // dialog state for assertions: a camp flag alone does not prove that its dialog was presented.
+        if (ScenarioGameApplicationAccess::dungeonRunCampHoldsMapMove(m_application))
+        {
+            return true;
+        }
         failure = "no pending scenario map move could be processed";
         return false;
     }
@@ -3079,6 +3116,37 @@ bool ScenarioRuntimeDriver::runConsoleLine(const std::string &line, std::string 
     return true;
 }
 
+bool ScenarioRuntimeDriver::runStartupConsoleFile(
+    const std::filesystem::path &path,
+    std::string &output,
+    std::string &failure)
+{
+    if (!ScenarioGameApplicationAccess::runStartupConsoleFile(m_application, path, output))
+    {
+        failure = "startup console file: " + output;
+        return false;
+    }
+
+    return true;
+}
+
+bool ScenarioRuntimeDriver::writeExitPose(const std::filesystem::path &path, std::string &output, std::string &failure)
+{
+    std::string message;
+
+    if (!ScenarioGameApplicationAccess::writeExitPoseFile(m_application, path, message))
+    {
+        failure = "exit pose: " + message;
+        return false;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    std::ostringstream text;
+    text << file.rdbuf();
+    output = text.str();
+    return true;
+}
+
 bool ScenarioRuntimeDriver::setRulesetBanks(const std::array<double, 4> &levels, std::string &failure)
 {
     MawRules *pMawRules = ScenarioGameApplicationAccess::gameSession(m_application).mawRules();
@@ -3897,6 +3965,9 @@ bool ScenarioRuntimeDriver::selectDialogAction(size_t actionIndex, std::string &
         ScenarioGameApplicationAccess::indoorGameView(m_application).executeActiveDialogAction();
     }
 
+    // The application takes a ruleset choice on the next frame. Exercise that same path rather than the debug
+    // `run pick` command, which closes the dialog itself and can hide ownership bugs.
+    ScenarioGameApplicationAccess::updateDungeonRunRules(m_application);
     const EventRuntimeState *pEventRuntimeState = eventRuntimeState();
 
     // Closing a transition dialog transfers its move from event state into the session queue.

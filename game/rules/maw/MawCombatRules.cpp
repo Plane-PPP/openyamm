@@ -1,4 +1,5 @@
 #include "game/rules/maw/MawCombatRules.h"
+#include "game/rules/maw/MawSoloTalents.h"
 #include "engine/Localization.h"
 
 #include "game/StringUtils.h"
@@ -1528,9 +1529,11 @@ std::optional<int> MawCombatRules::characterAttackRecoveryTicks(
     const SpecialItemEnchantTable *pSpecialTable) const
 {
     const CharacterSheetSummary sheet = characterSheet(character, &itemTable, pStandardTable, pSpecialTable);
-    return mawCharacterAttackDelay(
+    const int delay = mawCharacterAttackDelay(
         m_rules, character, itemTable, mode, sheet.speed.actual, m_rules.auraSkill(5, &character))
         .delay;
+    // A solo run's Frenzy talent shortens weapon attacks' recovery while it lasts.
+    return m_rules.options().soloRun ? int(std::lround(delay * MawSoloTalents::attackRecoveryScale(character))) : delay;
 }
 
 void MawCombatRules::resolveCharacterAttack(
@@ -1685,7 +1688,9 @@ void MawCombatRules::resolveCharacterAttack(
             }
         }
 
+        // An item's stun (Thor) is the engine's: a stagger, outside diminishing returns (MAW leaves it to the engine).
         attack.stunTarget = attack.itemStunTarget && !mawIgnoresCrowdControl(*context.pTargetFacts);
+        attack.stunSeconds = StaggerStunSeconds;
         attack.paralyzeTarget = false;
         applyWeaponStun(m_rules, attack, context, delay.damageMultiplier, targetLevel);
         applyRetaliation(attack, context);
@@ -2166,6 +2171,22 @@ std::optional<SkillMastery> MawCombatRules::spellChainMastery(int spellId, Skill
 
 int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical) const
 {
+    const int damage = rollSpellDamageBeforeTalents(cast, pCritical);
+
+    // A solo run's Attunement and Spell Surge talents, and Overload on an area spell into a crowd.
+    if (m_rules.options().soloRun && cast.pCaster != nullptr && damage > 0)
+    {
+        const double overload = cast.pSpell != nullptr && isAreaSpell(uint32_t(cast.pSpell->id))
+            ? MawSoloTalents::overloadScale(*cast.pCaster, cast.monstersNearTarget)
+            : 1.0;
+        return int(std::lround(damage * MawSoloTalents::spellDamageScale(*cast.pCaster) * overload));
+    }
+
+    return damage;
+}
+
+int MawCombatRules::rollSpellDamageBeforeTalents(const CharacterSpellCast &cast, bool *pCritical) const
+{
     bool critical = false;
     const auto reportCritical = [pCritical, &critical](int damage)
     {
@@ -2554,6 +2575,12 @@ int MawCombatRules::absorbCharacterDamage(Party &party, size_t memberIndex, int 
         return damage;
     }
 
+    // A solo run's Shield Wall, Unbroken and Cheat Death's cut take their share before anything absorbs the blow.
+    if (m_rules.options().soloRun)
+    {
+        damage = MawSoloTalents::absorbDamage(*pMember, damage, Party::effectiveMaximumHealth(*pMember));
+    }
+
     // Mana Shield first, then legendary 15 on what is left, then Divine Protection (DM:1866-1903).
     if (pMember->hasSkill("ManaShield") && !pMember->rulesetState.manaShieldDisabled)
     {
@@ -2563,7 +2590,24 @@ int MawCombatRules::absorbCharacterDamage(Party &party, size_t memberIndex, int 
         damage = std::max(0, shielded.damage);
     }
 
-    return divineProtection(party, memberIndex, legendaryProtection(party, memberIndex, damage));
+    damage = divineProtection(party, memberIndex, legendaryProtection(party, memberIndex, damage));
+
+    // A solo run's Cheat Death keystone, when nothing else saved the member.
+    if (m_rules.options().soloRun && damage > 0)
+    {
+        const int left = MawSoloTalents::cheatDeath(*pMember, damage, pMember->health,
+            Party::effectiveMaximumHealth(*pMember));
+
+        if (left < damage)
+        {
+            m_statusMessages.push_back(Engine::tr("Cheat Death!"));
+            m_soundNames.push_back("talent_cheat_death");
+        }
+
+        damage = left;
+    }
+
+    return damage;
 }
 
 int MawCombatRules::legendaryProtection(Party &party, size_t memberIndex, int damage) const
@@ -2970,9 +3014,17 @@ void MawCombatRules::updateCombat(Party &party, IGameplayWorldRuntime &world, fl
         {
             pRuntimeState->statusMessages.push_back(std::move(message));
         }
+
+        for (std::string &soundName : m_soundNames)
+        {
+            EventRuntimeState::PendingSound sound;
+            sound.soundName = std::move(soundName);
+            pRuntimeState->pendingSounds.push_back(std::move(sound));
+        }
     }
 
     m_statusMessages.clear();
+    m_soundNames.clear();
 
     for (const Character &member : party.members())
     {
@@ -3078,6 +3130,12 @@ void MawCombatRules::applyPartyHitEffects(Party &party, const PartyHitOnMonster 
     if (hit.damage <= 0 || pMember == nullptr || hit.pTarget == nullptr)
     {
         return;
+    }
+
+    // A solo run's Onslaught talent: a kill adds an attack-speed stack.
+    if (hit.killed && m_rules.options().soloRun)
+    {
+        MawSoloTalents::noteKill(*party.member(hit.memberIndex));
     }
 
     // A Grandmaster spear blow stacks more physical damage on its target until it dies (DM:546-583).
@@ -3326,6 +3384,18 @@ std::optional<int> MawCombatRules::spellRecoveryTicks(
     return m_rules.gameRules().spells.recoveryTicks(cast, spellNumbersAtMastery(*pSpell, cast.mastery).recoveryTicks);
 }
 
+// A solo talent's extra blow (Cleave's other monsters, Sweeping Blows): its leech and on-hit gains are a third as
+// strong (user, 2026-11-15). Only a solo run's talents make extra blows; any other game gains in full.
+namespace
+{
+constexpr double ExtraBlowShare = 1.0 / 3.0;
+
+double extraBlowShare(const RulesetOptions &options, const PartyHitOnMonster &hit)
+{
+    return hit.extraBlow && options.soloRun ? ExtraBlowShare : 1.0;
+}
+}
+
 void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) const
 {
     Character &member = *party.member(hit.memberIndex);
@@ -3343,6 +3413,16 @@ void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) cons
     {
         MawBalanceModel &model = m_rules.model(int(std::max<size_t>(1, party.members().size())));
         share += skillLevel(member, "Regeneration") / std::max(1.0, model.skill(hit.pTarget->level)) * 0.05;
+    }
+
+    // A solo run's Bloodthirst talent: more leech on blows, bow shots and spells (never a dragon's breath) and a
+    // stronger floor.
+    const bool breath = !hit.melee && !spell && mawIsDragon(member);
+    const double floorDivisor = m_rules.options().soloRun ? MawSoloTalents::leechFloorDivisor(member) : 5.0;
+
+    if (m_rules.options().soloRun && !breath)
+    {
+        share += MawSoloTalents::leechBonus(member);
     }
 
     if ((share == 0 && leech.spell == 0 && !drainSpell) || hit.pTarget->level <= 0 || party.itemTable() == nullptr)
@@ -3370,12 +3450,12 @@ void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) cons
                 party.specialItemEnchantTable())
                 .speed.actual,
             m_rules.auraSkill(5, &member));
-        floor = full * share / 5 * delay.delay / 100;
+        floor = full * share / floorDivisor * delay.delay / 100;
     }
     else if (const std::optional<int> recovery = spellRecoveryTicks(party, member, hit.spellId))
     {
         // An area spell's floor is less: / 2.5, and / 4 for Fire Spike, Meteor Shower and Starburst.
-        floor = full * share / 5 * *recovery / 100;
+        floor = full * share / floorDivisor * *recovery / 100;
         floor /= isAreaSpell(hit.spellId) ? 2.5 : 1;
         floor /= hit.spellId == 9 || hit.spellId == 22 || hit.spellId == 43 ? 4 : 1;
     }
@@ -3387,6 +3467,9 @@ void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) cons
     {
         heal = std::max(heal, floor);
     }
+
+    // A solo talent's extra blow leeches a third: one swing through a crowd does not heal fully once per monster.
+    heal *= extraBlowShare(m_rules.options(), hit);
 
     if (heal > 0)
     {
@@ -3454,6 +3537,8 @@ void MawCombatRules::applyClassHitEffects(Party &party, const PartyHitOnMonster 
             - m_rules.gameRules().spells.reservedSpellPoints(party, hit.memberIndex);
         member.spellPoints = std::max(member.spellPoints, std::min(maximum, member.spellPoints + int(amount)));
     };
+    // A solo talent's extra blow gains a third of what a blow does.
+    const double gain = extraBlowShare(m_rules.options(), hit);
 
     const bool meleeBlow = hit.melee && hit.type == CombatDamageType::Physical;
     const bool arrow = !hit.melee && hit.spellId == 0;
@@ -3560,7 +3645,7 @@ void MawCombatRules::applyClassHitEffects(Party &party, const PartyHitOnMonster 
 
         if (lowest)
         {
-            party.healMember(*lowest, heal);
+            party.healMember(*lowest, int(mawRound(heal * gain)));
             Character &healed = *party.member(*lowest);
 
             if (healed.health > 0)
@@ -3574,26 +3659,26 @@ void MawCombatRules::applyClassHitEffects(Party &party, const PartyHitOnMonster 
         // Mind returns spell points, Body hit points (DM:673-693).
         if (const double spellPoints = mawShamanMindSpellPoints(member); spellPoints > 0)
         {
-            addSpellPoints(spellPoints);
+            addSpellPoints(spellPoints * gain);
         }
 
         if (const int heal = mawShamanBodyHeal(member); heal > 0)
         {
-            party.healMember(hit.memberIndex, heal);
+            party.healMember(hit.memberIndex, int(mawRound(heal * gain)));
         }
     }
     else if (line == "dragon" && mawIsDragon(member))
     {
         // A dragon's bite refills its fixed pool: 10 SP a hit, 20 for a Great Wyrm; the bite needs the race, the pool
         // the class (DM:599-627).
-        addSpellPoints(canonicalClassName(member.className) == "GreatWyrm" ? 20 : 10);
+        addSpellPoints(mawRound((canonicalClassName(member.className) == "GreatWyrm" ? 20 : 10) * gain));
     }
     else if (line == "death_knight")
     {
         // 10, 15 or 20 SP a hit by promotion, half again for a killing blow (MCC:17-21).
         const std::string className = canonicalClassName(member.className);
         const double perHit = className == "LichKing" ? 20 : className == "DeathLord" ? 15 : 10;
-        addSpellPoints(perHit * (hit.killed ? 1.5 : 1));
+        addSpellPoints(perHit * (hit.killed ? 1.5 : 1) * gain);
 
         // Blood Leech heals max(FullHP^0.5 s^1.5 / 70 (1 + m/4), 2s) a hit for 6 SP, the Superior one twice that for
         // 12, the cost not checked against the pool (DM:743-768).
@@ -3605,8 +3690,9 @@ void MawCombatRules::applyClassHitEffects(Party &party, const PartyHitOnMonster 
             const double full = member.maxHealth + member.permanentBonuses.maxHealth + member.magicalBonuses.maxHealth;
             const double heal =
                 std::max(std::sqrt(full) * std::pow(blood, 1.5) / 70 * (1 + mastery / 4.0), 2 * blood);
-            member.spellPoints = std::max(0, member.spellPoints - (superior ? 12 : 6));
-            party.healMember(hit.memberIndex, int(mawRound(heal * (superior ? 2 : 1))));
+            // An extra blow's heal and cost are both a third.
+            member.spellPoints = std::max(0, member.spellPoints - int(mawRound((superior ? 12 : 6) * gain)));
+            party.healMember(hit.memberIndex, int(mawRound(heal * (superior ? 2 : 1) * gain)));
         }
 
         // Death Grasp spends 15 SP a hit while the pool has them to hold the target in Dark Grasp for one game

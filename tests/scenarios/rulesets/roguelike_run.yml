@@ -73,21 +73,39 @@ steps:
   # The guardian's death opens the way out. Between two dungeons stands the camp: its shops, then the way on.
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
   - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian slain"}
-  - console: {line: "run leave", expect_contains: "The camp."}
-  - assert: {map: 6d01.blv}
+  # The real Goblinwatch door and its OK action, including the deferred departure-dialog close. A debug `run leave`
+  # skips that dialog and missed the first Windows playtest's blocker.
+  - execute_event: {id: 51}
+  - select_topic: {kind: map_transition_cancel, action_id: 0, match_label: "Close"}
+  - assert:
+      map: 6d01.blv
+      dialog: {active: false}
+  - execute_event: {id: 51}
+  - assert:
+      dialog: {active: true, action_label_present: "OK"}
+  - select_topic: {kind: map_transition_confirm, action_id: 0, match_label: "OK"}
+  - assert:
+      map: 6d01.blv
+      dialog: {active: true, action_label_present: "Go on to the next dungeon"}
   - console: {line: "run", expect_contains: "asks: [1] Weapons [2] Armor [3] Potions and magic"}
   # A shop of the camp is a house of the game with its own trade; closing it returns to the camp's menu.
-  - console: {line: "run pick 1", expect_contains: "Picked: Weapons"}
+  - select_topic: {kind: event_choice, action_id: 0, match_label: "Weapons"}
   - assert:
       dialog: {active: true, house_dialog: true, source_id: 22, action_label_present: "Buy Standard"}
-  - console: {line: "run close", expect_contains: "The camp."}
-  - console: {line: "run pick 4", expect_contains: "Picked: Spell books: elements"}
+  - press_action: {action: cancel_dialog}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - assert:
+      dialog: {active: true, action_label_present: "Go on to the next dungeon"}
+  - select_topic: {kind: event_choice, action_id: 3, match_label: "Spell books: elements"}
   - assert:
       dialog: {active: true, house_dialog: true, source_id: 1214}
-  - console: {line: "run close", expect_contains: "The camp."}
+  - press_action: {action: cancel_dialog}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - assert:
+      dialog: {active: true, action_label_present: "Go on to the next dungeon"}
   - console: {line: "run", expect_contains: "asks: [1] Weapons [2] Armor [3] Potions and magic"}
   # The way on: the second stop is a dungeon of tier 2, with the map's own guardian and the party restored.
-  - console: {line: "run pick 6", expect_contains: "Picked: Go on to the next dungeon; map 6t3.blv"}
+  - select_topic: {kind: event_choice, action_id: 5, match_label: "Go on to the next dungeon"}
   - assert: {map: 6t3.blv}
   - advance_runtime: {seconds: 0.1}
   - console: {line: "run", expect_contains: "dungeon 2 of 4, map 6t3.blv (on course)"}

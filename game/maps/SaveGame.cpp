@@ -23,8 +23,8 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 180;
-constexpr uint32_t UpstreamSaveVersion = 179;
+constexpr uint32_t SaveVersion = 184;
+constexpr uint32_t UpstreamSaveVersion = 183;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -143,8 +143,10 @@ constexpr uint32_t SaveVersionMawFixedAuras = 109;
 constexpr uint32_t SaveVersionMawMultibag = 110;
 // Characters keep the masteries a switch to horizontal progression, and a lone character's utility skills, took.
 constexpr uint32_t SaveVersionProgressionMasteries = 111;
-// The member who takes alchemy items when the party sorts (MAW).
+// Saves 112 to 179 hold MAW's retired alchemist, the member who took the party's alchemy items when it sorted; it is
+// read and dropped (the Workbench reaches every member's bags).
 constexpr uint32_t SaveVersionMawAlchemist = 112;
+constexpr uint32_t SaveVersionMawAlchemistRetired = 180;
 // MAW's challenge modes (devdocs/maw/PHASE9_SCOPE.md): the food Road to Insanity holds back, Beyond Madness's boss pity,
 // the special attacks the Doom modes gave monsters.
 constexpr uint32_t SaveVersionMawChallengeModes = 113;
@@ -306,6 +308,13 @@ constexpr uint32_t SaveVersionMm9Routines = 174;
 constexpr uint32_t SaveVersionSummaryPlaythrough = 175;
 // Each battle order's place and renew time, and each character's upkeep list (game/party/BattleOrders.h).
 constexpr uint32_t SaveVersionUpkeepOrders = 176;
+// The augmented solo run (RulesetOptions::soloRun) and each character's action bar (Character::actionBar); older saves
+// are party games with empty bars.
+constexpr uint32_t SaveVersionSoloRun = 181;
+// The talents a MAW solo run's character learned (Character::talentRanks); older saves have none.
+constexpr uint32_t SaveVersionSoloTalents = 182;
+// A battle order's HP condition can read the member's own HP (BattleOrder::ownHealth); older orders read the allies'.
+constexpr uint32_t SaveVersionOwnHealthOrders = 183;
 constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
 constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
@@ -326,6 +335,7 @@ std::optional<uint32_t> saveSchemaVersion(bool modHeader, uint32_t version)
     case 140: return 139;
     case 143: return 142;
     case 155: return 154;
+    case 180: return 179;
     case SaveVersion: return UpstreamSaveVersion;
     default: return std::nullopt;
     }
@@ -821,6 +831,26 @@ bool readValue(BinaryReader &reader, QuickItemSlot &value)
     return true;
 }
 
+void writeValue(BinaryWriter &writer, const ActionBarSlot &value)
+{
+    writeValue(writer, uint8_t(value.kind));
+    writeValue(writer, value.id);
+    writeValue(writer, value.item);
+}
+
+bool readValue(BinaryReader &reader, ActionBarSlot &value)
+{
+    uint8_t kind = 0;
+
+    if (!readValue(reader, kind) || !readValue(reader, value.id) || !readValue(reader, value.item))
+    {
+        return false;
+    }
+
+    value.kind = kind <= uint8_t(ActionBarSlotKind::Talent) ? ActionBarSlotKind(kind) : ActionBarSlotKind::Empty;
+    return true;
+}
+
 void writeValue(BinaryWriter &writer, const CharacterSkill &value)
 {
     writeValue(writer, value.name);
@@ -1142,7 +1172,6 @@ void writeValue(BinaryWriter &writer, const MawGameState &value)
     writeValue(writer, value.mapsDropped);
     writeValue(writer, value.soldUniqueItems);
     writeValue(writer, value.fixedAuraMaps);
-    writeValue(writer, value.alchemistMember);
     writeValue(writer, value.heldFood);
     writeValue(writer, value.broodlordPity);
     writeValue(writer, value.omnipotentPity);
@@ -1168,6 +1197,7 @@ bool readValue(BinaryReader &reader, MawMapVisit &value)
 
 bool readValue(BinaryReader &reader, MawGameState &value)
 {
+    int32_t retiredAlchemist = -1;
     return readValue(reader, value.continentLevels)
         && readValue(reader, value.bankedExperience)
         && readValue(reader, value.bankedLevel)
@@ -1194,7 +1224,8 @@ bool readValue(BinaryReader &reader, MawGameState &value)
                 && readValue(reader, value.mapsDropped)))
         && (reader.version() < SaveVersionMawCharacterTimers || readValue(reader, value.soldUniqueItems))
         && (reader.version() < SaveVersionMawFixedAuras || readValue(reader, value.fixedAuraMaps))
-        && (reader.version() < SaveVersionMawAlchemist || readValue(reader, value.alchemistMember))
+        && (reader.version() < SaveVersionMawAlchemist || reader.version() >= SaveVersionMawAlchemistRetired
+            || readValue(reader, retiredAlchemist))
         && (reader.version() < SaveVersionMawChallengeModes
             || (readValue(reader, value.heldFood)
                 && readValue(reader, value.broodlordPity)
@@ -1556,6 +1587,7 @@ void writeValue(BinaryWriter &writer, const BattleOrder &value)
     writeValue(writer, value.keepSpellPointsPercent);
     writeValue(writer, value.place);
     writeValue(writer, value.renewBelowMinutes);
+    writeValue(writer, value.ownHealth);
 }
 
 bool readValue(BinaryReader &reader, BattleOrder &value)
@@ -1567,7 +1599,8 @@ bool readValue(BinaryReader &reader, BattleOrder &value)
         && readValue(reader, value.allyHealthBelowPercent)
         && readValue(reader, value.keepSpellPointsPercent)
         && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.place))
-        && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.renewBelowMinutes));
+        && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.renewBelowMinutes))
+        && (reader.version() < SaveVersionOwnHealthOrders || readValue(reader, value.ownHealth));
 }
 
 void writeValue(BinaryWriter &writer, const Character &value)
@@ -1634,6 +1667,7 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.rulesetState);
     writeValue(writer, value.extraQuickSpellNames);
     writeValue(writer, value.quickItemSlots);
+    writeValue(writer, value.actionBar);
     writeValue(writer, value.spellbookSchool);
     writeValue(writer, value.implants);
     writeValue(writer, value.conditionExpireGameMinutes);
@@ -1641,6 +1675,7 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.battleOrders);
     writeValue(writer, value.battleOrderFallback);
     writeValue(writer, value.upkeepOrders);
+    writeValue(writer, value.talentRanks);
 }
 
 // Saves before SaveVersionWideExperience hold a character's experience in 32 bits.
@@ -1733,13 +1768,15 @@ bool readValue(BinaryReader &reader, Character &value)
         && (reader.version() < SaveVersionCharacterRulesetState || readValue(reader, value.rulesetState))
         && (reader.version() < SaveVersionExtraQuickSpells || readValue(reader, value.extraQuickSpellNames))
         && (reader.version() < SaveVersionQuickItemSlots || readValue(reader, value.quickItemSlots))
+        && (reader.version() < SaveVersionSoloRun || readValue(reader, value.actionBar))
         && (reader.version() < SaveVersionSpellbookSchool || readValue(reader, value.spellbookSchool))
         && (reader.version() < SaveVersionCharacterImplants || readValue(reader, value.implants))
         && (reader.version() < SaveVersionConditionExpiry || readValue(reader, value.conditionExpireGameMinutes))
         && (reader.version() < SaveVersionPlaythroughStatistics || readValue(reader, value.statsMemberId))
         && (reader.version() < SaveVersionBattleOrders || readValue(reader, value.battleOrders))
         && (reader.version() < SaveVersionBattleOrders || readValue(reader, value.battleOrderFallback))
-        && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.upkeepOrders));
+        && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.upkeepOrders))
+        && (reader.version() < SaveVersionSoloTalents || readValue(reader, value.talentRanks));
 
     if (read && reader.version() < SaveVersionBattleOrders)
     {
@@ -5184,6 +5221,7 @@ void writeValue(BinaryWriter &writer, const RulesetSelection &value)
     writeValue(writer, value.options.preferences.disintegration);
     writeValue(writer, value.options.preferences.trainerHints);
     writeValue(writer, value.options.preferences.bowDisabled);
+    writeValue(writer, value.options.soloRun);
 }
 
 // The retired per-game loot choice of saves 172 to 177 (SaveVersionOtherWorldsLootRetired).
@@ -5234,6 +5272,7 @@ bool readValue(BinaryReader &reader, RulesetSelection &value)
         && (reader.version() < SaveVersionBowDisabled
             || readValue(reader, value.options.preferences.bowDisabled))
         && skipRetiredOtherWorldsLoot(reader)
+        && (reader.version() < SaveVersionSoloRun || readValue(reader, value.options.soloRun))
         && !value.id.empty()
         && rulesetOptionsValid(value.options);
 }

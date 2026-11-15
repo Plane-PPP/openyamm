@@ -2,6 +2,20 @@
 
 # Minotaur Rebalance — Roadmap
 
+## OpenYAMM 2.4 — current integration (2026-11-15)
+
+Target: `v2.4`, `f052579667e2233d6318d9855dce29097e8ca9ef`. The complete prototype base is
+`da1bb1624580ceb7caa3626d637c020727f5aa46`, including Minotaur, Medusa, the importer and Roguelike v0.
+The `OYMINO1/v184` envelope maps to upstream183; previous mod180 explicitly maps to179.
+A genuine180 fixture was written by the previous binary before the new build. Agreed formulas are unchanged;
+MAW solo Cleave/Sweeping Blows additional targets do not add Lethal Strike rolls:
+one check per primary melee action is retained. Existing LS tooltips already describe this rule.
+The exit-dialog handoff to Camp has a minimal fix, without new Camp, Rest or reward rules.
+Current verification results and known limits: [2.4 integration](research/openyamm-2.4-integration.md).
+[Current Fable handoff](research/roguelike-first-playtest-2026-11-15/03-fable-handoff.md).
+The first playtest's further design requests remain open; this update does not authorize their implementation.
+Historical integration records below do not describe the current delivery's status.
+
 ## OpenYAMM 2.3 — integration, checks in progress
 
 Target: `f4a6b8032759a218505532b2600ac56b6d80c7af` (v2.3). Project Medusa and the portrait/paperdoll
