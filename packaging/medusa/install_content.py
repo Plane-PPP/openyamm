@@ -41,6 +41,19 @@ def main():
     for name in files:
         print("  " + name)
 
+    # The dungeon run's package offers the Medusa heroine too (its character_data row 79): her faces go into its own
+    # icons_x2/, the one folder a ruleset package's pictures are read from.
+    roguelike = args.assets / "engine/rulesets/roguelike"
+    if (roguelike / "ruleset.yml").is_file():
+        faces = sorted((target / "icons_x2").glob("med01-*.png"))
+        icons = roguelike / "icons_x2"
+        if icons.is_symlink():
+            sys.exit(f"{icons} is a development link; remove it before a release copy")
+        icons.mkdir(exist_ok=True)
+        for face in faces:
+            shutil.copy2(face, icons / face.name)
+        print(f"Installed {len(faces)} Medusa faces into {icons}")
+
 
 if __name__ == "__main__":
     main()

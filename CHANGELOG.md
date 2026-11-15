@@ -1,3 +1,39 @@
+# Windows CI: upstream's layout, a preflight, a compiler cache and reusable runs (2026-11-14)
+
+The workflow follows upstream's packages.yml: the content is packed once on Linux while the Windows program builds,
+and a package job joins them (tools/assemble_minotaur_package.py) into the update ZIP or the new base and the full
+installation, then plays the release scenarios. A Linux preflight checks the workflow against packs.yml and upstream
+(tools/check_minotaur_workflow.py) and tests the tools in a minute or two; the Windows compile goes through ccache;
+reuse_build_run and reuse_content_run take the program or the content of an earlier run. The test selections live
+in tools/minotaur_ci_tests.sh, run alike in CI and locally, and every group and scenario runs to report every
+failure at once. Rationale and the local checklist: docs/research/minotaur-ci-practice.md.
+
+# Windows: the full OpenYAMM 2.3 desktop release as the new Minotaur base (2026-11-14)
+
+The Windows workflow checked out and packed MM6-MM8 only, a limit kept from the 1.x packages; 2.3 ships MM9 and the
+language packs as well. It now checks out the whole desktop release as upstream's packages.yml does (MM6-MM9 and
+assets_dev/languages), packs the worlds packs.yml lists, and `package_mode=full` builds a new base: the full
+installation and its baseline, without a patch to minotaur-1.21. The package verifier's --full requires every
+package and language of the checkout and this fork's rulesets file for file with the Medusa heroine's portrait; the
+update tools and Apply-MinotaurUpdate.ps1 accept MM9 and the languages' packs (a pack's language is part of its
+identity; the 1.x baselines keep theirs). The full installation plays upstream's release scenarios, an MM9 map and
+shop in a game begun in MM7, Medusa's start and the roguelike run on its own content. Also fixed: a dangling table
+pointer in the Medusa test, and two case-sensitivity cases kept off NTFS.
+
+# Roguelike rules v0 on the 2.3 base — Linux checks passed (2026-11-14)
+
+Branch feature/roguelike-v0 from the skeleton d3670e16. A run.yml `rules` block turns the skeleton into a run of four
+dungeons by tier: the clearing is counted by the hit points of the slain monsters of the map's first fill; past the
+share (50%) the map's strongest kind comes to the entrance as a guardian (health x4) and its death opens the exit;
+ten level-ups a run (+4 levels for every hero, one card of three each: a skill step, a numeric perk, explosive
+arrows); a school card owes real spell books; a camp between dungeons restores hit and spell points and opens MM6
+shops; a promotion follows the second guardian; leaving the fourth dungeon wins. The Medusa heroine (portrait 79)
+joins the package with cards free of class caps; her artwork stays in Project Medusa and is installed by
+packaging/medusa/install_content.py. Every number is a test value in run.yml. No save format change: the run lives in
+the save's named variables and the heroes' event variables. 15 run unit cases, the 117-step headless scenario, the
+selected 284 unit and 26 native regression cases passed. Not verified: play on screen, Windows, pace, the arrows'
+burst, a purchase, the party's defeat. Details: docs/research/roguelike-rules-v0.md. Local commits only; no push or CI.
+
 # Roguelike skeleton on the verified2.3 base — Linux checks passed (2026-11-13)
 
 Separate integration branch from530d75a3; original roguelike branch unchanged. Existing8-dungeon rules/pool retained;

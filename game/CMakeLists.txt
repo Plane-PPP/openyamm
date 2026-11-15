@@ -260,6 +260,7 @@ add_library(openyamm_game STATIC
     rules/maw/MawProgress.cpp
     rules/maw/MawNpcPresence.cpp
     rules/maw/MawRules.cpp
+    rules/roguelike/RoguelikeRules.cpp
     rules/maw/MawRulesFactory.cpp
     rules/maw/MawSkillFormulas.cpp
     rules/maw/MawClassRules.cpp

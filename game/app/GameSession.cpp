@@ -406,12 +406,25 @@ void GameSession::setRuleset(const RulesetSelection &ruleset)
         }
     }
 
+    m_pRoguelikeRules.reset();
+
+    if (!m_pMawRules && m_dungeonRunLoader)
+    {
+        std::optional<DungeonRunDefinition> run = m_dungeonRunLoader(ruleset.id);
+
+        if (run.has_value() && run->rules.has_value())
+        {
+            m_pRoguelikeRules = std::make_unique<RoguelikeRules>(std::move(*run));
+            readRunState(m_namedGlobalVars, m_pRoguelikeRules->state());
+        }
+    }
+
     if (m_partyState)
     {
         m_partyState->setRules(rulesetGameRules());
     }
 
-    bindGameRules(m_pMawRules ? &m_pMawRules->gameRules() : nullptr);
+    bindGameRules(rulesetGameRules());
 }
 
 void GameSession::setRulesetOptions(const RulesetOptions &options)
@@ -431,7 +444,27 @@ void GameSession::setRulesetOptions(const RulesetOptions &options)
 
 const GameRules *GameSession::rulesetGameRules() const
 {
+    if (m_pRoguelikeRules)
+    {
+        return &m_pRoguelikeRules->gameRules();
+    }
+
     return m_pMawRules ? &m_pMawRules->gameRules() : nullptr;
+}
+
+RoguelikeRules *GameSession::roguelikeRules()
+{
+    return m_pRoguelikeRules.get();
+}
+
+const RoguelikeRules *GameSession::roguelikeRules() const
+{
+    return m_pRoguelikeRules.get();
+}
+
+void GameSession::setDungeonRunLoader(std::function<std::optional<DungeonRunDefinition>(const std::string &)> loader)
+{
+    m_dungeonRunLoader = std::move(loader);
 }
 
 MawRules *GameSession::mawRules()
@@ -2391,6 +2424,11 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
     // Saves from before the random streams get their root seed when first loaded.
     setRandomRootSeed(saveData.randomRootSeed != 0 ? saveData.randomRootSeed : freshRandomRootSeed());
     m_namedGlobalVars = saveData.namedGlobalVars;
+
+    if (m_pRoguelikeRules)
+    {
+        readRunState(m_namedGlobalVars, m_pRoguelikeRules->state());
+    }
     const bool collectLegacyNamedGlobalVars = m_namedGlobalVars.empty();
 
     if (m_gameMinutes <= 0.0f)

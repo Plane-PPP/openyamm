@@ -9860,6 +9860,16 @@ bool GameApplication::activateRuleset(const std::string &rulesetId, std::string 
         return false;
     }
 
+    // The session makes a dungeon run's rules from the ruleset's run.yml.
+    m_gameSession.setDungeonRunLoader(
+        [this](const std::string &runRulesetId) -> std::optional<DungeonRunDefinition>
+        {
+            std::string runError;
+            return m_pAssetFileSystem != nullptr
+                ? loadDungeonRunDefinition(*m_pAssetFileSystem, runRulesetId, runError)
+                : std::nullopt;
+        });
+
     const std::optional<RulesetDefinition> ruleset = loadRulesetDefinition(*m_pAssetFileSystem, rulesetId, error);
 
     if (!ruleset)
@@ -12770,6 +12780,7 @@ bool GameApplication::quickLoadFromPath(const std::filesystem::path &path, bool 
 
     m_gameSession.restoreFromSaveData(*saveData);
     m_gameSession.setCurrentSavePath(path);
+    resetDungeonRunChoices();
     // The seed restoreFromSaveData kept (or gave a save older than the seeds) links older saves of the party.
     m_gameSession.playthroughStatistics().attachLoadedSave(
         saveData->playthroughId,
@@ -14062,6 +14073,7 @@ void GameApplication::renderFrame(int width, int height, float mouseWheelDelta, 
     if (!debugConsoleFreezesGameplay)
     {
         updatePendingInputPrompt();
+        updateDungeonRunRules();
         processPendingDimensionDoorOverlay();
     }
     recordFrameDiagnostics(m_framePerformanceDiagnostics.pendingStateNanoseconds, pendingPromptBeginTickCount);
@@ -14866,6 +14878,27 @@ bool GameApplication::processPendingMapMove()
     }
 
     synchronizeSessionFromRuntime();
+
+    // A dungeon run keeps the party on the map until its guardian is slain; no autosave for a refused exit.
+    if (!autosaveRequested && dungeonRunExitSealed())
+    {
+        const bool leavesMap = pendingMapMove->mapName && !pendingMapMove->mapName->empty()
+            && *pendingMapMove->mapName != "0" && *pendingMapMove->mapName != "0."
+            && (pendingMapMove->useMapStartPosition
+                || !sameMapFileName(*pendingMapMove->mapName, m_gameSession.currentMapFileName()));
+
+        if (leavesMap)
+        {
+            dungeonRunExitSealed(true);
+            return false;
+        }
+    }
+
+    // Between two dungeons the run's camp comes first; the move goes on when the party leaves the camp.
+    if (!autosaveRequested && holdMapMoveForDungeonRunCamp(*pendingMapMove))
+    {
+        return false;
+    }
 
     const bool isSameMapTeleport =
         !pendingMapMove->mapName

@@ -113,6 +113,9 @@ struct CharacterResistanceImmunitySet
     bool magic = false;
 };
 
+// A hero's arrows burst as a bow of Carnage's do (Character::playerBits; a dungeon run's perk).
+inline constexpr uint32_t RunExplosiveArrowsPlayerBit = 61001;
+
 struct CharacterStatBonuses
 {
     int might = 0;

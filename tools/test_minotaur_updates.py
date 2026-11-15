@@ -29,7 +29,8 @@ def pack(folder, package, data, compression=zipfile.ZIP_STORED):
             'file': name, 'size': path.stat().st_size, 'sha256': digest_file(path), 'content_id': identity}
 
 
-def release(root, version, *, engine=b'old-table', compressed=False, program=b'new-program'):
+def release(root, version, *, engine=b'old-table', compressed=False, program=b'new-program',
+            worlds=('mm6', 'mm7', 'mm8'), languages=()):
     stage, content = root / version / 'stage', root / version / 'content'
     app = stage / 'app' / version
     app.mkdir(parents=True)
@@ -41,7 +42,15 @@ def release(root, version, *, engine=b'old-table', compressed=False, program=b'n
     # A large unchanged resource makes accidental resource inclusion visible in the ZIP test.
     records = [pack(content, name, engine if name == 'engine' else (name.encode() * (1024 * 512)),
                     zipfile.ZIP_DEFLATED if compressed else zipfile.ZIP_STORED)
-               for name in ['engine', 'mm6', 'mm7', 'mm8']]
+               for name in ['engine', *worlds]]
+    # A language's optional pack (the full 2.3 base): mounted over the engine's fonts for that language only.
+    for language in languages:
+        record = pack(content, 'engine', language.encode() * 64)
+        record.update(id=f'lang-{language}.engine.fonts', mount='/engine/fonts', language=language)
+        renamed = content / 'packs' / f'lang-{language}.{record["file"]}'
+        (content / 'packs' / record['file']).rename(renamed)
+        record['file'] = renamed.name
+        records.append(record)
     index = {'schema': 1, 'profile': 'desktop', 'content_format': 1, 'store': '../../assets/packs',
              'release': version, 'build': 'fixture', 'packs': records}
     write_json(app / 'index.json', index)
@@ -135,6 +144,49 @@ class PlannerTests(Fixture):
         with self.assertRaises(ValueError): validate_index(bad)
 
 
+class FullBaseTests(unittest.TestCase):
+    """The full 2.3 base: MM9 and the languages' optional packs beside the 1.x worlds."""
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.worlds = ('mm6', 'mm7', 'mm8', 'mm9')
+        _, _, self.base = release(self.root, 'minotaur-2.3-base', worlds=self.worlds, languages=('ru', 'zh-cn'))
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def test_full_index_validates_and_reuses_every_pack(self):
+        validate_index(self.base['index'])
+        validate_index(self.base['index'], required={'engine', *self.worlds})
+        stage, content, _ = release(self.root, 'minotaur-2.3-next', worlds=self.worlds, languages=('ru', 'zh-cn'))
+        manifest = build_update(stage, content, self.base, 'b' * 40, self.root / 'next.zip', self.root / 'next.json')
+        self.assertEqual(manifest['changed_packs'], [])
+        self.assertEqual(len(manifest['reused_packs']), 7)
+
+    def test_language_is_part_of_a_pack_identity(self):
+        other = copy.deepcopy(self.base['index'])
+        other['packs'][-1]['language'] = 'de'
+        self.assertNotEqual(index_identity(other), index_identity(self.base['index']))
+        unlabelled = copy.deepcopy(self.base['index'])
+        del unlabelled['packs'][-1]['language']
+        self.assertNotEqual(index_identity(unlabelled), index_identity(self.base['index']))
+
+    def test_missing_world_and_bad_language_refused(self):
+        without = copy.deepcopy(self.base['index'])
+        without['packs'] = [p for p in without['packs'] if p['package'] != 'mm9']
+        validate_index(without)
+        with self.assertRaises(ValueError):
+            validate_index(without, required={'engine', *self.worlds})
+        bad = copy.deepcopy(self.base['index'])
+        bad['packs'][-1]['language'] = '../ru'
+        with self.assertRaises(ValueError):
+            validate_index(bad)
+        unknown = copy.deepcopy(self.base['index'])
+        unknown['packs'][1].update(package='mm10', mount='/worlds/mm10')
+        with self.assertRaises(ValueError):
+            validate_index(unknown)
+
+
 class RangeZipTests(Fixture):
     def test_metadata_read_does_not_fetch_heavy_payload(self):
         stream = io.BytesIO()
@@ -226,6 +278,25 @@ class WindowsInstallerTests(Fixture):
         second, _, directory = self.update('minotaur-next', base=first['target'], engine=b'changed', compressed=True)
         self.apply(directory)
         self.assertEqual(self.current(), second['target']['version'])
+
+    def test_patch_of_a_full_base_with_mm9_and_languages(self):
+        # The full 2.3 base: MM9 and a language's optional pack installed, then a patch changes the engine table.
+        worlds, languages = ('mm6', 'mm7', 'mm8', 'mm9'), ('ru',)
+        base_stage, base_content, base = release(self.root, 'minotaur-2.3-full', worlds=worlds, languages=languages)
+        shutil.rmtree(self.install)
+        shutil.copytree(base_stage, self.install)
+        shutil.copytree(base_content / 'packs', self.install / 'assets/packs')
+        (self.install / 'settings.ini').write_bytes(b'player-settings')
+        (self.install / 'saves').mkdir()
+        (self.install / 'saves/precious.oysav').write_bytes(b'player-progress')
+        manifest, _, directory = self.update('minotaur-2.3-patch', base=base, engine=b'changed',
+                                             worlds=worlds, languages=languages)
+        self.assertEqual(manifest['changed_packs'], ['engine.core'])
+        self.apply(directory)
+        self.assertEqual(self.current(), 'minotaur-2.3-patch')
+        installed = read_json(self.install / 'app' / self.current() / 'index.json')
+        self.assertIn('mm9', {p['package'] for p in installed['packs']})
+        self.assertEqual([p['language'] for p in installed['packs'] if 'language' in p], ['ru'])
 
     def test_wrong_base_refused_before_switch(self):
         _, _, directory = self.update()

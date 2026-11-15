@@ -279,7 +279,9 @@ def collect_languages(languages_root, worlds):
     text, overlays = {}, {}
     if not languages_root.is_dir():
         return text, overlays
-    for folder in sorted(languages_root.iterdir()):
+    # Each folder is joined by name, as the worlds' are: on Windows (MSYS2's Python) iterdir() joins with a backslash
+    # and rglob() with a slash, and relative_to then took the language's own files for outside its folder.
+    for folder in sorted(languages_root / child.name for child in languages_root.iterdir()):
         if not folder.is_dir() or folder.name == "templates":
             continue
         if not (folder / "language.yml").is_file():
