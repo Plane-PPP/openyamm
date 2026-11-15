@@ -1,8 +1,10 @@
 # Интеграция OpenYAMM 2.4 — 2026-11-15
 
 Рабочая ветка: `integration/minotaur-v2.4-20261115`.
-Статус: merge `763f7701b9c0a0f78167d63f3413fbf838d220a7` создан и отправлен; проверки идут. Этот документ обновляется результатами;
-успешная компиляция сама по себе не означает успешного прохождения кампаний.
+Код интегрирован и отправлен в рабочую ветку. Windows source: `b54edf462b4ec4da50452926497399211df7c50b`.
+Linux-сборка и адресные проверки прошли. Итоговый Windows CI **success**: все11 групп тестов,
+полный пакет, проверка ресурсов и18 сценариев установленной сборки прошли.
+Успешная компиляция сама по себе не означает успешного прохождения кампаний.
 
 ## Ревизии, исходные материалы и возврат
 
@@ -147,8 +149,7 @@ SDL этого build настроен headless/offscreen (X11/Wayland OFF), OPEN
   run20261115T132449Z-f5fb1c4687,37/37 passed. Сценарий эквивалентен первым37 шагам старого run.yml.
 - Сборка: `safe-heavy-run run --label v24-linux-build -- env LD_LIBRARY_PATH=/home/plane/.local/share/openyamm-toolchain/root/usr/lib/x86_64-linux-gnu /home/plane/.local/share/openyamm-toolchain/root/usr/bin/cmake --build build --target openyamm openyamm_unit_tests openyamm_runtime_tests`,
   run20261115T132626Z-5cbe2aa646, exit0, все3 цели собраны, peak5117.3MiB. Итоговая incremental сборка также exit0.
-- `python3 tools/check_minotaur_workflow.py`: passed, MM6/MM7/MM8/MM9 и9 групп тестов.
-- Остальные test results/Windows source SHA/artifact будут добавлены по фактическому завершению.
+- `python3 tools/check_minotaur_workflow.py`: passed, MM6/MM7/MM8/MM9 и11 групп тестов (после расширения CI).
 
 Первый широкий Linux-прогон9 CI-групп (run20261115T133830Z-07d5571e6b) обнаружил отсутствующие
 sparse-ресурсы, а не успешный полный suite: held.yml/dragon_forelegs, X4 texture directories для
@@ -182,7 +183,7 @@ production logic ради тестов не менялась.
 run20261115T135824Z-b47d7d0a2c,2/2 passed. Проверяет чтение действительно присутствующего retired
 alchemist поля schema179 и сохранение всего MawGameState/rulesetState в roundtrip183.
 Расширенный330-case MAW профиль первоначально имел6 resource failures (картинки spellbook и
-`devdocs/maw/data/{loot.yml,rarity_golden.csv}`),324 cases прошли. Ресурсы восстанавливаются;
+`devdocs/maw/data/{loot.yml,rarity_golden.csv}`),324 cases прошли. Ресурсы восстановлены;
 окончательный повтор:330/330 cases,49 583/49 583 assertions, exit0,
 run20261115T141107Z-f832501ef9, `build/v24-maw-tests.log`.
 Точная повторяемая selection: `safe-heavy-run run -- bash tools/minotaur_ci_tests.sh build/tests maw24`;
@@ -211,7 +212,7 @@ source repository git status чист. Перебейк не понадобил�
 Windows checkout теперь включает `/devdocs/maw/data/`, и preflight требует этот путь.
 Это устраняет реальную зависимость тестов от missing reference data. Новые fixtures/header-namespace
 assertions и spell harness correction добавлены после исходного CI commit763f7701;
-финальная поставка должна чётко записывать SHA использованного Windows job.
+финальная поставка использует b54edf462b4ec4da50452926497399211df7c50b.
 
 `safe-heavy-run run --label v24-linux-release-scenarios -- bash build/v24-release-scenarios.sh`
 — все12 штатных `tests/scenarios/release/scenarios.txt` passed,141 шаг,
@@ -231,7 +232,7 @@ run20261115T141439Z-9845f5d1e2, peak340.6MiB. Логи `build/v24-release-*.log`
 
 Используется существующий `.github/workflows/minotaur-windows.yml`, обновлённый на2.4/f052579;
 version `minotaur-2.4-<actual SHA>-<run>-<attempt>`. Новая ветка не добавлена в push-trigger:
-сборка запускается явно один раз через workflow_dispatch. Полный пакет содержит MM6–MM9, языки,
+сборка запускается только явно через workflow_dispatch. Полный пакет содержит MM6–MM9, языки,
 Medusa, Roguelike, portraits/paperdolls/maps/scripts и verifier проверяет own rulesets file-for-file.
 Параллелизм Windows выбирается по CPU и доступной RAM (`choose_jobs`, верхний предел8);
 на стандартном4-vCPU runner он не превышает4. Content cooker использует parallel4.
@@ -244,13 +245,86 @@ Windows test job имел один platform-only отказ в новом шир
 `dwi temple proprietor portrait uses mm8 overlay icon` ожидал регистрозависимый exists и POSIX0644.
 На NTFS exists(uppercase) законно находит lowercase файл, а permissions возвращает DOS flags.
 Тест исправлен без исключения случая: фактические имена сравниваются по directory entries на всех
-платформах, путь и hash обязательны везде, POSIX0644 проверяется на POSIX. Итоговый CI запускается
+платформах, путь и hash обязательны везде, POSIX0644 проверяется на POSIX. Итоговый CI прошёл
 с этой правкой и дополнительными native-ui/MAW selections.
 Первый source763f7701 пакет уже доступен, но не выбран финальным, потому что общий run завершился failure.
 Программа1351.04s, test build962.34s; фактически4CPU/jobs4, whole-runner peak8 630 444 032bytes
 (8.04GiB), minimum available8 543 916 032bytes. Ни один resource guard не останавливал сборки.
 Выбран full package для отдельной установки и ручного тестирования; baseline прежних updates
 не заменяется автоматически. Main, теги, GitHub Releases и официальный updater не публикуются.
+
+Итоговый run с11 группами: [43735792016](https://github.com/Plane-PPP/openyamm/actions/runs/43735792016),
+source **b54edf462b4ec4da50452926497399211df7c50b**, run_number48.
+Запуск: `gh workflow run minotaur-windows.yml --repo Plane-PPP/openyamm --ref integration/minotaur-v2.4-20261115 -f package_mode=full -f reuse_content_run=43720418061`.
+Preflight/installer tests, Windows job и package job **success**; все11 групп успешны. `git diff --exit-code 763f7701 HEAD -- game engine assets_dev cmake CMakeLists.txt`
+подтвердил отсутствие изменений программы/ресурсов: после первой сборки менялись тесты, CI и документация.
+Контент берётся из прошедшего content job первого run; итоговый бинарник собирается из b54edf46.
+Фактическая app version: `minotaur-2.4-b54edf462b4e-48-1`, source SHA b54edf46 подтверждён
+`minotaur-baseline.json`. Контент:294packs,10 324 769 929bytes (engine58, MM6:68, MM7:45,
+MM8:45, MM9:78). Index identity: `acea6fbaaea527f48d0be6c358a83e3f55de4ea58905af2b6b92221a7f573475`.
+В content index закономерно остаются build763f7701/release47 первого cooker run; это происхождение
+неизменённых packs, а не SHA новой программы. Метаданные source/app version содержат b54edf46/run48.
+[Baseline metadata](https://github.com/Plane-PPP/openyamm/actions/runs/43735792016/artifacts/14171702408)
+не означает автоматическую замену прежней updater baseline.
+
+Фактические результаты итогового Windows job (selected cases; группы пересекаются, сумма не означает
+количество уникальных тестов):
+
+| CI group | Cases passed | Assertions passed |
+| --- | ---: | ---: |
+| gameplay | 277 | 52 133 |
+| world/runtime | 7 | 163 |
+| Medusa/importer | 48 | 1 723 |
+| updater | 17 | 156 |
+| upstream AI | 154 | 2 264 |
+| upstream indoor | 20 | 1 130 |
+| Roguelike | 16 | 1 819 |
+| MM9 | 187 | 71 863 |
+| upstream2.4/UI/input/items/save | 418 | 49 313 |
+| native UI/spells/creation | 28 | 2 903 |
+| MAW | 330 | 49 583 |
+
+Итоговый runner:4vCPU,17 174 360 064bytes RAM, jobs4. С compiler cache программа225.03s,
+оба test targets115.22s, stage7.96s; whole-runner sampled peak7 581 708 288bytes (7.06GiB),
+minimum available9 592 651 776bytes (8.93GiB). Все monitored phases exit0/reason completed,
+resource guard не срабатывал. PSI/cgroup/disk-swap на Windows не измеряются (null), не считать их нулём.
+[Ресурсный отчёт](https://github.com/Plane-PPP/openyamm/actions/runs/43735792016/artifacts/14170629805),
+локальная копия `/tmp/openyamm-v24-final-resources.zip`; времена второго run ускорены compiler cache.
+
+Во всех11 группах0 failures. Полный журнал: `build/v24-final-windows.log`;
+воспроизведение selections: `bash tools/minotaur_ci_tests.sh build-windows/tests` после Windows build.
+Предыдущие два case-sensitive AssetFileSystem случая по-прежнему исключены только в Windows-oriented
+профиле (NTFS не может содержать два sibling files, отличающихся лишь регистром); на Linux эти случаи
+входили в прошедший source-file selection. Не исключать другие тесты вместо устранения отказов.
+Не считать первый общий run зелёным: он имел описанный NTFS test failure, хотя пакет и18 сценариев прошли.
+
+Итоговый Windows package job132885665661: **success**, `build/v24-final-package.log`.
+Проверены x64 PE launcher/game,294content packs и их SHA256, встроенные Minotaur hotfix/data,
+Medusa hero portraits/paperdolls и own rulesets file-for-file. Полный пакет проверен до upload;
+сценарии затем выполнялись на установленном stage с теми же packs, без подмены `--asset-root`.
+Все **18 сценариев прошли**:12 штатных release checks, MM9 shop_after_world_switch,
+Medusa start/save/load, Roguelike126steps, Standard exit10steps, MM8 plane gateway сохраняет buffs,
+MAW potion spends turn. Это включает настоящий Goblinwatch event51/Cancel/OK→Camp→shop→Close→Next→dungeon2;
+остальные этапы run до Victory всё ещё частично используют исторические debug helpers.
+Весь [run43735792016](https://github.com/Plane-PPP/openyamm/actions/runs/43735792016) завершился **success**.
+Отдельный настоящий mouse-input/Windows desktop playthrough из этого результата не следует.
+
+## Итоговый Windows x64 артефакт
+
+[Скачать полный OpenYAMM-windows-x64-Release.zip](https://github.com/Plane-PPP/openyamm/actions/runs/43735792016/artifacts/14171981107).
+Размер:10 351 504 677bytes (~10.35GB/9.64GiB), Actions digest SHA256:
+`885279ef27d96eb6d3c7b961a5b326b180b5fcbbd30796125ffbfec255219918`.
+`archive:false`: это digest самого загруженного ZIP. Локально10GB ZIP повторно не скачивался;
+полное содержимое/hash verification выполнил Windows package job перед upload.
+Retention до **2026-11-22 17:08:34 UTC** по Actions API; это CI artifact, не публичный release.
+App source: b54edf462b4ec4da50452926497399211df7c50b. Последующий финальный documentation commit
+не меняет game/engine/assets/CMake; не приписывать его SHA упакованному exe.
+
+Распаковать полную установку в отдельную папку и запускать её `OpenYAMM.exe`.
+Старую установку и исходные saves оставить для возврата. Для тестирования перенести копии saves
+и пользовательских импортов, а не заменять новые engine/content packs старыми; сохранять в новый slot.
+Это новый полный пакет, не incremental patch к1.21 и не автоматическая публикация updater.
+Ручные Windows/GPU/кампанийные проверки ниже остаются необходимыми.
 
 ## Что остаётся Fable и ручной проверке
 

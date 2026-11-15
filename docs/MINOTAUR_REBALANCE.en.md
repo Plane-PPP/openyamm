@@ -10,7 +10,10 @@ A genuine180 fixture was written by the previous binary before the new build. Ag
 MAW solo Cleave/Sweeping Blows additional targets do not add Lethal Strike rolls:
 one check per primary melee action is retained. Existing LS tooltips already describe this rule.
 The exit-dialog handoff to Camp has a minimal fix, without new Camp, Rest or reward rules.
-Current verification results and known limits: [2.4 integration](research/openyamm-2.4-integration.md).
+Linux: the game and both test targets build;16 headless scenarios/302steps passed.
+Windows source `b54edf462b4ec4da50452926497399211df7c50b`: all11 test groups passed;
+the full x64 ZIP is verified and available,18 installed-packs scenarios passed. Manual verification is pending.
+Delivery, detailed verification and known limits: [2.4 integration](research/openyamm-2.4-integration.md).
 [Current Fable handoff](research/roguelike-first-playtest-2026-11-15/03-fable-handoff.md).
 The first playtest's further design requests remain open; this update does not authorize their implementation.
 Historical integration records below do not describe the current delivery's status.

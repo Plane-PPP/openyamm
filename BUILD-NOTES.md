@@ -1,14 +1,38 @@
-# OpenYAMM 2.4 integration — Windows build pending (2026-11-15)
+# OpenYAMM 2.4 integration — verified Windows x64 ZIP (2026-11-15)
 
-Official target f052579667e2233d6318d9855dce29097e8ca9ef. Complete previous confirmed Windows source:
-da1bb1624580ceb7caa3626d637c020727f5aa46, run43598461895, full package
-minotaur-2.3-da1bb1624580-46-1. Actions API confirmed success and exact head SHA.
-The current task retains that full Roguelike v0 base, Minotaur, Medusa and importer, merges official2.4,
-adds save180->179 compatibility/new writer184->183, a genuine old-writer fixture, real exit/Camp regression,
-and preserves one LS-roll per action for new solo extra targets. No new game design is implemented.
-Linux game compiled; test targets/checks continue. The new Windows source SHA and artifact will be recorded
-only after commit/CI, in docs/research/openyamm-2.4-integration.md and the next entry here.
-No public release, tag, main merge or baseline promotion. Historical notes below are retained.
+Windows executable source: `b54edf462b4ec4da50452926497399211df7c50b`.
+Branch: `integration/minotaur-v2.4-20261115`; official target `f052579667e2233d6318d9855dce29097e8ca9ef`.
+[Final CI](https://github.com/Plane-PPP/openyamm/actions/runs/43735792016): program, both test targets,
+all11 selected Windows test groups, offline installer tests, full package/resource verification and all18
+installed-packs scenarios passed. The entire workflow succeeded.
+Later documentation-only commits on this branch do not change the packaged executable source SHA.
+Version: `minotaur-2.4-b54edf462b4e-48-1`.
+[Download full Windows x64 ZIP](https://github.com/Plane-PPP/openyamm/actions/runs/43735792016/artifacts/14171981107):
+10,351,504,677bytes, expires2026-11-22 17:08:34UTC (Actions retention).
+SHA256: `885279ef27d96eb6d3c7b961a5b326b180b5fcbbd30796125ffbfec255219918`.
+The294 content packs are reused unchanged from verified run43720418061/source763f7701;
+the executable is newly built from b54edf46. No local10GB download is claimed.
+
+Previous confirmed complete Windows source: `da1bb1624580ceb7caa3626d637c020727f5aa46`,
+[successful2.3 run43598461895](https://github.com/Plane-PPP/openyamm/actions/runs/43598461895),
+package `minotaur-2.3-da1bb1624580-46-1`. Actions API confirmed its success and exact head SHA;
+the specific installation used by the player was not hashed.
+Compared with that package: full official2.4 merge (MAW solo/talents/action bar, UI/input/spell/item/combat
+fixes), all Minotaur/Medusa/importer/Roguelike features retained; save writer184->official183 with explicit
+old mod180->179 migration and two genuine old-writer fixtures; minimal departure-dialog/Camp ownership fix;
+MAW solo extra targets retain the existing one-Lethal-Strike-roll-per-action rule. No new game design.
+Additional changes are regression tests, fixture settings, portable NTFS asset assertions and11 CI groups.
+
+Linux game/unit/runtime targets built under safe-heavy-run/jobs4; focused328cases/52,719assertions,
+MAW330/49,583 and native UI28/2,903 passed (profiles overlap). Sixteen headless scenarios/302steps passed.
+Windows4vCPU/jobs4, sampled whole-runner peak7.06GiB, no resource guard stop. The cached second build took
+225.03s for the program and115.22s for test targets. No full-suite or manual/GPU/playthrough claim.
+
+[Full integration, conflict, save, P0 and verification report](docs/research/openyamm-2.4-integration.md).
+[Fable handoff](docs/research/roguelike-first-playtest-2026-11-15/03-fable-handoff.md).
+Use a separate full installation and copies of old saves/custom imports; save into a new slot.
+No public release, tag, main merge, updater publication or automatic baseline promotion.
+Historical notes below describe their own checkpoints, not this delivery.
 
 # Roguelike skeleton /2.3 — local Linux verification, no Windows package
 

@@ -10,7 +10,9 @@ that upstream's new solo HUD now reads. CI adds native UI and MAW regression gro
 inputs, and removes the MM9 case exclusion upstream 2.4 repaired.
 The portrait-asset test checks real filename casing on every file system and POSIX0644 only on POSIX;
 Windows NTFS no longer produces a false failure while the asset hash remains mandatory.
-No new playtest design wishes are implemented. Verification and delivery status:
+Linux game/unit/runtime builds and16 headless scenarios passed. Final Windows CI run43735792016/source
+b54edf46 passed all11 test groups, full resource verification and18 installed-packs scenarios; full x64 ZIP available.
+No new playtest design wishes are implemented. Manual gameplay remains pending. Verification and delivery status:
 docs/research/openyamm-2.4-integration.md.
 
 # Windows CI: upstream's layout, a preflight, a compiler cache and reusable runs (2026-11-14)
