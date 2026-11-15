@@ -5,6 +5,9 @@ Medusa and custom portrait/paperdoll import. Save writer OYMINO1/184 maps to off
 explicitly to179, with a frozen old-writer regression fixture. The departure dialog closes before Camp takes over;
 the run scenario now uses the real Goblinwatch event and dialog actions through Camp and the second dungeon.
 New MAW solo secondary targets keep the existing one-Lethal-Strike-roll-per-action contract.
+Added a second genuine old MAW save fixture and bound real settings in the two spell-service test fixtures
+that upstream's new solo HUD now reads. CI adds native UI and MAW regression groups, checks their reference
+inputs, and removes the MM9 case exclusion upstream 2.4 repaired.
 No new playtest design wishes are implemented. Verification and delivery status:
 docs/research/openyamm-2.4-integration.md.
 

@@ -299,6 +299,7 @@ jobs:
             /CHANGELOG.md
             /BUILD-NOTES.md
             /docs/
+            /devdocs/maw/data/
             /CMakeLists.txt
             /LICENSE
             /COPYRIGHT

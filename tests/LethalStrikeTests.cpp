@@ -867,7 +867,7 @@ TEST_CASE("Minotaur rejects unknown mod envelopes instead of decoding them as of
     std::vector<char> bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     REQUIRE(bytes.size() > 12);
     const auto path = std::filesystem::temp_directory_path() / "minotaur-unknown-envelope.oysav";
-    for (uint32_t version : {154u, 176u, 177u, 179u})
+    for (uint32_t version : {154u, 176u, 177u, 179u, 181u, 182u, 183u, 185u})
     {
         std::memcpy(bytes.data() + 8, &version, sizeof(version));
         {

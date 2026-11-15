@@ -58,6 +58,9 @@ def main():
         if f"/assets_dev/worlds/{world}/" not in windows:
             problems.append(f"windows job does not check out /assets_dev/worlds/{world}/ its tests read")
 
+    if "/devdocs/maw/data/" not in windows:
+        problems.append("windows job does not check out /devdocs/maw/data/ for the MAW formula regression tables")
+
     text = (ROOT / ".github/workflows/minotaur-windows.yml").read_text(encoding="utf-8")
     for scenario in sorted(set(re.findall(r"\b((?:release|mm9|rulesets|shared_fx|turn_based)/[\w./-]+\.yml)", text))):
         if not (ROOT / "tests/scenarios" / scenario).is_file():

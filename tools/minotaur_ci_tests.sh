@@ -14,7 +14,7 @@ tests="${1:?usage: minotaur_ci_tests.sh <tests directory> [group ...]}"
 shift
 groups=("$@")
 if [ ${#groups[@]} -eq 0 ]; then
-    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9 upstream24)
+    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9 upstream24 native-ui maw24)
 fi
 
 suffix=""
@@ -58,13 +58,13 @@ for group in "${groups[@]}"; do
             run roguelike-tests "$unit" --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp' ;;
         upstream24)
             run upstream-24-tests "$unit" --source-file='*RulesetTests.cpp,*SoloRunTests.cpp,*SoloTalentTests.cpp,*HeldWeaponTests.cpp,*BattleOrdersTests.cpp,*GameInputSystemTests.cpp,*InventoryEquipRegressionTests.cpp,*AlchemyBenchRegressionTests.cpp,*QuickItemSlotTests.cpp,*HouseDialogueRegressionTests.cpp,*HouseShopLedgerTests.cpp,*AudioRegressionTests.cpp' ;;
+        native-ui)
+            run native-ui-tests "$runtime" --source-file='*NewGameScreenTests.cpp,*PartyCreationSheetTests.cpp,*GameplayUiRuntimeTests.cpp,*GameplaySpellServiceTests.cpp' ;;
+        maw24)
+            run maw-24-tests "$unit" --source-file='*MawCombatFormulaTests.cpp,*MawItemFormulaTests.cpp,*MawSkillTests.cpp,*MawSpellTests.cpp,*MawClassTests.cpp,*MawPotionTests.cpp,*MawCraftingTests.cpp,*MawGapTests.cpp,*MawSpellClassTests.cpp,*MawAuditCombatSpellTests.cpp,*MawMonsterItemAuditTests.cpp,*MawContentUiTests.cpp' ;;
         mm9)
-            # Needs assets_dev/worlds/mm9 (the full 2.3 release ships it). One upstream case is stale against 2.3's own
-            # data (Mm9RudeDialogueTests.cpp:1539-1566, 1743, 1935: it expects stock generation 6 and Sturmford's price
-            # multipliers 1.0/1.2, 2.3's service_venues.txt has 10/12 and generation 7); test and data are unchanged
-            # from v2.3, whose CI runs no test that needs game content.
-            run mm9-tests "$unit" --test-case='MM9*,*MM9 RUDE*,*Chedian*' \
-                --test-case-exclude='MM9 world data loads transitions trainers and source monster gameplay' ;;
+            # Upstream 2.4 repaired the stock-generation and merchant-price assertions that 2.3 excluded.
+            run mm9-tests "$unit" --test-case='MM9*,*MM9 RUDE*,*Chedian*' ;;
         *)
             echo "Unknown test group: $group" >&2
             exit 2 ;;

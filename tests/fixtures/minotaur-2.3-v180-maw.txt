@@ -1,0 +1,8 @@
+Genuine Minotaur2.3 MAW writer output, captured2026-11-15.
+Source da1bb1624580ceb7caa3626d637c020727f5aa46; OYMINO1/v180, upstream schema179.
+Unchanged original Linux binary SHA256 4498ce1082cd17fed32a87f30c453ade4a95047d36464db3a03740b51900bd51.
+Scenario: new_game_flow worldmm8, out01.odm, rulesetmaw; save_game.
+Protected run20261115T135824Z-b47d7d0a2c: 2/2steps passed, exit0.
+574793bytes; SHA256 3b258205584800f3f20f2c011d51772451e3f9297b2da791bd7ac26290d4ee45.
+Retains the old MAW alchemist field removed in official180. No private save used.
+Never regenerate with a newer writer.

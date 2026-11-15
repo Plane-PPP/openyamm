@@ -1,7 +1,7 @@
 # Интеграция OpenYAMM 2.4 — 2026-11-15
 
 Рабочая ветка: `integration/minotaur-v2.4-20261115`.
-Статус: merge подготовлен, сборка и проверки идут. Этот документ обновляется результатами;
+Статус: merge `763f7701b9c0a0f78167d63f3413fbf838d220a7` создан и отправлен; проверки идут. Этот документ обновляется результатами;
 успешная компиляция сама по себе не означает успешного прохождения кампаний.
 
 ## Ревизии, исходные материалы и возврат
@@ -114,7 +114,21 @@ Headless driver учитывает обычный ответ ruleset на сле
 от неудачного map move; assert отдельно требует фактическое окно Camp, не только внутренний flag.
 Старые bypass-команды остальных этапов сценария остаются историческим покрытием.
 
-**Результат реального runtime-пути: ожидается, не заявлен до прогона.**
+**Результат:** после удаления временных trace126/126 шагов прошли до Victory:
+run20261115T134846Z-2c27d64f90, `build/v24-green-rulesets-roguelike_run.log`.
+Отдельная red-проверка без одной строки исправления (run20261115T134741Z-0c5da225b7)
+прошла OK, затем упала на assert52: вместо Camp/Next оставалось окно Goblinwatch/OK/Close.
+Возврат строки дал green. Сам red/green wrapper остановился после ожидаемого red из-за слишком
+узкой строки поиска в диагностике (`missing` вместо фактического `not offered`); исходник восстановлен
+trap, green выполнен отдельным защищённым запуском. Это ошибка wrapper, не обход проверки.
+Первый отказ driver до trace исчез после принудительной пересборки: исходник редактировался во время
+первой компиляции. Итоговые выводы основаны на свежей сборке финального исходника и red/green.
+Никакой дополнительной runtime-подмены/ослабления assert для green не внесено.
+
+Контроль обычной кампании:10/10 шагов Standard event51/Cancel/OK→oute3.odm и закрытый departure dialog.
+Medusa:8/8 шагов нового старта Нигон→save→обычная партия→load→Нигон.
+Оба прошли run20261115T135954Z-107837b9b6 после восстановления точных liquid masks/maps.
+MAW potion-spends-turn17/17 шагов прошли run20261115T133830Z-07d5571e6b.
 Не доказанные первым исследованием немедленный Close и все Windows double-click/renderer эффекты
 не объявляются исправленными без отдельных проверок.
 
@@ -132,9 +146,78 @@ SDL этого build настроен headless/offscreen (X11/Wayland OFF), OPEN
 - Freeze: `safe-heavy-run run --label v24-freeze-v23-kept -- bash build/v24-freeze.sh`,
   run20261115T132449Z-f5fb1c4687,37/37 passed. Сценарий эквивалентен первым37 шагам старого run.yml.
 - Сборка: `safe-heavy-run run --label v24-linux-build -- env LD_LIBRARY_PATH=/home/plane/.local/share/openyamm-toolchain/root/usr/lib/x86_64-linux-gnu /home/plane/.local/share/openyamm-toolchain/root/usr/bin/cmake --build build --target openyamm openyamm_unit_tests openyamm_runtime_tests`,
-  run20261115T132626Z-5cbe2aa646, выполняется.
+  run20261115T132626Z-5cbe2aa646, exit0, все3 цели собраны, peak5117.3MiB. Итоговая incremental сборка также exit0.
 - `python3 tools/check_minotaur_workflow.py`: passed, MM6/MM7/MM8/MM9 и9 групп тестов.
 - Остальные test results/Windows source SHA/artifact будут добавлены по фактическому завершению.
+
+Первый широкий Linux-прогон9 CI-групп (run20261115T133830Z-07d5571e6b) обнаружил отсутствующие
+sparse-ресурсы, а не успешный полный suite: held.yml/dragon_forelegs, X4 texture directories для
+RegressionMapLoader, MM9 quest_interactions/common Lua/icons/music и часть speech/monster WAV.
+Зелёные группы: world7/163, Medusa/importer48/1723, updater17/157, AI154/2264,
+indoor20/1130, Roguelike16/1819. Остальные группы не объявляются прошедшими.
+Материализованы23 точных tracked resources (held/dragon, liquid mask, portrait и MM9 metadata),
+без изменения их содержимого. Графический X4/полный audio/MM9 набор проверяет полный Windows checkout.
+
+Дополнение к2.3: upstream исправил прежние неверные assertions MM9 stock generation/merchant prices.
+Старое исключение этого случая убрано из `tools/minotaur_ci_tests.sh` после первого прогона;
+оно больше не считается унаследованной необходимостью2.4. Результаты новой selection указываются отдельно.
+
+Python: `python3 tools/test_minotaur_updates.py` —23 cases:11 passed,12 Windows-only skips;
+`python3 tools/test_verify_minotaur_windows_package.py` и `python3 tools/test_assemble_minotaur_package.py`
+—passed. `python3 tools/check_doc_i18n.py` —0errors/8 прежних warnings.
+`python3 tools/lighting/stale_bakes.py` —0stale в доступном sparse-наборе; скрытые карты не аудировались.
+Scoped `git diff --no-renames --check` —passed. Независимый reviewer отдельно проверил финальные
+save/LS/Camp/driver изменения; подтверждённых или вероятных дефектов не нашёл.
+
+Итоговый адресный unit-набор: **328/328 cases,52 719/52 719 assertions**, exit0,
+run20261115T140134Z-162cfbeaaa, лог `build/v24-focused-tests.log`.
+Команда: `safe-heavy-run run --label v24-focused-final -- ./build/tests/openyamm_unit_tests --source-file=*LethalStrikeTests.cpp,*AxeRebalanceTests.cpp,*ReagentStackTests.cpp,*InspectSupplementTests.cpp,*BottleStackHotfixTests.cpp,*InventoryGeometryHotfixTests.cpp,*ItemNamingHotfixTests.cpp,*RulesetTests.cpp,*CustomPortraitTests.cpp,*ProjectMedusaTests.cpp,*AssetFileSystemTests.cpp,*GameplaySaveLoadUiSupportTests.cpp,*MapLayoutIdentityTests.cpp,*PlaythroughStatisticsTests.cpp,*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp,*BattleOrdersTests.cpp,*SoloRunTests.cpp,*SoloTalentTests.cpp,*GameInputSystemTests.cpp,*InventoryEquipRegressionTests.cpp,*AlchemyBenchRegressionTests.cpp,*QuickItemSlotTests.cpp,*HeldWeaponTests.cpp` (source-file selection24 групп исходников,
+LS/Axe/stacks/saves/Medusa/importer/run/BattleOrders/solo/input/books/alchemy/held weapons).
+Включены новые тесты frozen MAW180 и отказ envelopes181/182/183/185.
+Две resource failures предыдущего327-case прогона устранены восстановлением held_tiers и моделей;
+production logic ради тестов не менялась.
+
+Дополнительный frozen MAW180: `tests/fixtures/minotaur-2.3-v180-maw.oysav` и receipt TXT;
+старый бинарник da1bb162/его assets, `new_game_flow out01.odm ruleset:maw; save_game`,
+run20261115T135824Z-b47d7d0a2c,2/2 passed. Проверяет чтение действительно присутствующего retired
+alchemist поля schema179 и сохранение всего MawGameState/rulesetState в roundtrip183.
+Расширенный330-case MAW профиль первоначально имел6 resource failures (картинки spellbook и
+`devdocs/maw/data/{loot.yml,rarity_golden.csv}`),324 cases прошли. Ресурсы восстанавливаются;
+окончательный повтор:330/330 cases,49 583/49 583 assertions, exit0,
+run20261115T141107Z-f832501ef9, `build/v24-maw-tests.log`.
+Точная команда воспроизведения — source-file invocation из `build/v24-controls.sh`;
+защищённый фактический запуск `safe-heavy-run run --label v24-maw-final -- bash -c '<unit invocation; tail log>'`.
+
+Расширенная runtime-проверка UI/создания партии/spell service сначала упала SIGSEGV на quick cast.
+Изолированный case повторил падение. Независимый reviewer установил точный путь2.4:
+`tryCastSpellRequest → soloHud → settingsSnapshot().soloHudPreview`, а два старых test fixtures
+не привязывали настройки. Production привязывает их штатно. Исправлены только fixtures
+`quick cast attacks instead...` и `a quick Lifedrain...` в `tests/GameplaySpellServiceTests.cpp`:
+реальные default GameSettings живут дольше session и привязаны через bindSettings.
+Никакого nullable fallback в production/изменения глобальных rules ради теста не добавлено.
+Повтор: `safe-heavy-run run --label v24-native-ui-final -- ./build/tests/openyamm_runtime_tests --source-file='*NewGameScreenTests.cpp,*PartyCreationSheetTests.cpp,*GameplayUiRuntimeTests.cpp,*GameplaySpellServiceTests.cpp'`,
+28/28 cases,2903/2903 assertions, exit0, run20261115T140952Z-6756b977bf.
+Фактический wrapper перенаправлял stdout/stderr в `build/v24-native-ui-final.log`.
+Первые падения/логи runner сохранены,
+тест не исключён.
+
+После материализации карт расширился lighting-аудит: для двух MM7 bakes не хватало242 исходных BMP.
+Это были отсутствующие файлы sparse source tree, не изменённый runtime. Отдельный чистый
+`assets_source` переведён на pin365385aba75b5afba060f8bcc3bad1393950995d из v2.4; точные242 BMP
+восстановлены из этого commit. Повтор `python3 tools/lighting/stale_bakes.py` —0stale,
+source repository git status чист. Перебейк не понадобился: входные hashes совпали.
+
+Постоянный CI расширен до11 групп: native-ui28 и MAW330 добавлены к прежним9;
+Windows checkout теперь включает `/devdocs/maw/data/`, и preflight требует этот путь.
+Это устраняет реальную зависимость тестов от missing reference data. Новые fixtures/header-namespace
+assertions и spell harness correction добавлены после исходного CI commit763f7701;
+финальная поставка должна чётко записывать SHA использованного Windows job.
+
+`safe-heavy-run run --label v24-linux-release-scenarios -- bash build/v24-release-scenarios.sh`
+— все12 штатных `tests/scenarios/release/scenarios.txt` passed,141 шаг,
+run20261115T141439Z-9845f5d1e2, peak340.6MiB. Логи `build/v24-release-*.log`.
+Вместе с Roguelike126, Standard10, Medusa8 и MAW potion17 —16 сценариев/302 шага.
+Локальные X1/headless проверки не подтверждают реальные текстуры4x, звук или GPU-рендер.
 
 ## Windows-поставка
 
@@ -143,6 +226,10 @@ version `minotaur-2.4-<actual SHA>-<run>-<attempt>`. Новая ветка не 
 сборка запускается явно один раз через workflow_dispatch. Полный пакет содержит MM6–MM9, языки,
 Medusa, Roguelike, portraits/paperdolls/maps/scripts и verifier проверяет own rulesets file-for-file.
 Параллелизм Windows определяется по ресурсам runner и ограничен4; content cooker parallel4.
+[Actions run43720418061](https://github.com/Plane-PPP/openyamm/actions/runs/43720418061)
+запущен из source `763f7701b9c0a0f78167d63f3413fbf838d220a7`:
+`gh workflow run minotaur-windows.yml --repo Plane-PPP/openyamm --ref integration/minotaur-v2.4-20261115 -f package_mode=full`.
+Preflight, Windows PowerShell installer tests и полный content job прошли; Windows program/tests job выполняется.
 Выбран full package для отдельной установки и ручного тестирования; baseline прежних updates
 не заменяется автоматически. Main, теги, GitHub Releases и официальный updater не публикуются.
 

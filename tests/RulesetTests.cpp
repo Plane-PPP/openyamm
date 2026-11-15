@@ -1817,3 +1817,33 @@ TEST_CASE("saves before the solo run load as party games")
         CHECK_EQ(restored->party.mm9Hirelings.size(), size_t(variant));
     }
 }
+
+TEST_CASE("Minotaur frozen MAW mod180 reads the retired alchemist as schema179 and migrates to 2.4")
+{
+    using namespace OpenYAMM::Game;
+    const std::filesystem::path fixture = std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "tests/fixtures/minotaur-2.3-v180-maw.oysav";
+    std::string error;
+    const std::optional<GameSaveData> original = loadGameDataFromPath(fixture, error);
+    REQUIRE_MESSAGE(original, error);
+    CHECK(original->sourceSaveVersion == 179);
+    CHECK(original->ruleset.id == "maw");
+    REQUIRE(original->mawState);
+    CHECK_FALSE(original->ruleset.options.soloRun);
+    const std::optional<GameSaveSummary> summary = loadGameSaveSummaryFromPath(fixture, error);
+    REQUIRE_MESSAGE(summary, error);
+    CHECK(summary->ruleset == original->ruleset);
+    const std::optional<GameSaveData> restored = roundTrip(*original, error);
+    REQUIRE_MESSAGE(restored, error);
+    CHECK(restored->sourceSaveVersion == 183);
+    CHECK(restored->ruleset == original->ruleset);
+    REQUIRE(restored->mawState);
+    CHECK(*restored->mawState == *original->mawState);
+    CHECK(restored->namedGlobalVars == original->namedGlobalVars);
+    REQUIRE(restored->party.members.size() == original->party.members.size());
+    for (size_t index = 0; index < original->party.members.size(); ++index)
+    {
+        CHECK(restored->party.members[index].inventory == original->party.members[index].inventory);
+        CHECK(restored->party.members[index].rulesetState == original->party.members[index].rulesetState);
+    }
+}

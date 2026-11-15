@@ -1,5 +1,6 @@
 #include "engine/AssetFileSystem.h"
 #include "game/app/GameSession.h"
+#include "game/app/GameSettings.h"
 #include "game/data/GameDataLoader.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayActionController.h"
@@ -202,10 +203,12 @@ TEST_CASE("quick cast attacks instead when the quick spell lacks mana or a targe
     party.member(1)->health = 1;
     Tests::PartySpellTestWorldRuntime world;
     world.bindParty(&party);
+    Game::GameSettings settings = Game::GameSettings::createDefault();
     Game::GameSession session;
     session.bindDataRepository(&data);
     session.bindActiveWorldRuntime(&world);
     Game::GameplayScreenRuntime &runtime = session.gameplayScreenRuntime();
+    runtime.bindSettings(&settings);
     StartingSceneAdapter scene;
     runtime.bindSceneAdapter(&scene);
     Game::GameplaySpellService &spells = session.gameplaySpellService();
@@ -494,10 +497,12 @@ TEST_CASE("a quick Lifedrain takes a hostile within reach; beyond reach it attac
     Tests::PartySpellTestWorldRuntime world;
     world.bindParty(&party);
     world.setPartyPosition(0.0f, 0.0f, 0.0f);
+    Game::GameSettings settings = Game::GameSettings::createDefault();
     Game::GameSession session;
     session.bindDataRepository(&data);
     session.bindActiveWorldRuntime(&world);
     Game::GameplayScreenRuntime &runtime = session.gameplayScreenRuntime();
+    runtime.bindSettings(&settings);
     StartingSceneAdapter scene;
     runtime.bindSceneAdapter(&scene);
     Game::GameplaySpellService &spells = session.gameplaySpellService();
