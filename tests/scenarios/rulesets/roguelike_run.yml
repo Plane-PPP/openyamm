@@ -84,28 +84,42 @@ steps:
   - assert:
       dialog: {active: true, action_label_present: "OK"}
   - select_topic: {kind: map_transition_confirm, action_id: 0, match_label: "OK"}
+  # The camp's own menu: three answers, so that the way on is never cut off below the answer panel (the 2.4
+  # playtest saw five shops and no "Go on" line).
   - assert:
       map: 6d01.blv
-      dialog: {active: true, action_label_present: "Go on to the next dungeon"}
+      dialog: {active: true, action_label_present: "Next dungeon"}
+  - console: {line: "run", expect_contains: "asks: [1] Camp [2] Rest [3] Next dungeon"}
+  # Camp: the shops' list. A shop is a house of the game with its own trade; closing it returns to the list.
+  - select_topic: {kind: event_choice, action_id: 0, match_label: "Camp"}
   - console: {line: "run", expect_contains: "asks: [1] Weapons [2] Armor [3] Potions and magic"}
-  # A shop of the camp is a house of the game with its own trade; closing it returns to the camp's menu.
   - select_topic: {kind: event_choice, action_id: 0, match_label: "Weapons"}
   - assert:
       dialog: {active: true, house_dialog: true, source_id: 22, action_label_present: "Buy Standard"}
   - press_action: {action: cancel_dialog}
   - console: {line: "run", expect_contains: "guardian slain"}
   - assert:
-      dialog: {active: true, action_label_present: "Go on to the next dungeon"}
+      dialog: {active: true, action_label_present: "Spell books: elements"}
+  # A guild of the camp sells its books to the run's party without a membership bought in a town.
   - select_topic: {kind: event_choice, action_id: 3, match_label: "Spell books: elements"}
   - assert:
-      dialog: {active: true, house_dialog: true, source_id: 1214}
+      dialog: {active: true, house_dialog: true, source_id: 1214, action_label_present: "Buy Fire Spells"}
   - press_action: {action: cancel_dialog}
   - console: {line: "run", expect_contains: "guardian slain"}
   - assert:
-      dialog: {active: true, action_label_present: "Go on to the next dungeon"}
-  - console: {line: "run", expect_contains: "asks: [1] Weapons [2] Armor [3] Potions and magic"}
-  # The way on: the second stop is a dungeon of tier 2, with the map's own guardian and the party restored.
-  - select_topic: {kind: event_choice, action_id: 5, match_label: "Go on to the next dungeon"}
+      dialog: {active: true, action_label_present: "Spell books: elements"}
+  # Closing the shops' list returns to the camp's menu.
+  - press_action: {action: cancel_dialog}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - assert:
+      dialog: {active: true, action_label_present: "Rest"}
+  # Rest: hit and spell points for food.
+  - select_topic: {kind: event_choice, action_id: 1, match_label: "Rest"}
+  - console: {line: "run", expect_contains: "asks: [1] Camp [2] Rest [3] Next dungeon"}
+  - assert:
+      dialog: {active: true, text_contains: "The party rested"}
+  # The way on: the second stop is a dungeon of tier 2, with the map's own guardian.
+  - select_topic: {kind: event_choice, action_id: 2, match_label: "Next dungeon"}
   - assert: {map: 6t3.blv}
   - advance_runtime: {seconds: 0.1}
   - console: {line: "run", expect_contains: "dungeon 2 of 4, map 6t3.blv (on course)"}
@@ -134,7 +148,7 @@ steps:
   - console: {line: "run", expect_contains: "guardian slain"}
   - console: {line: "run", expect_contains: "Roderick L25 Cavalier cards owed 0 Alexis L25 WarriorMage"}
   - console: {line: "run leave", expect_contains: "The camp."}
-  - console: {line: "run pick 6", expect_contains: "Picked: Go on to the next dungeon; map 6d12.blv"}
+  - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6d12.blv"}
   - advance_runtime: {seconds: 0.1}
   - console: {line: "run", expect_contains: "dungeon 3 of 4, map 6d12.blv (on course)"}
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
@@ -150,7 +164,7 @@ steps:
   - console: {line: "run pick 1", expect_contains: "Picked: "}
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
   - console: {line: "run leave", expect_contains: "The camp."}
-  - console: {line: "run pick 6", expect_contains: "Picked: Go on to the next dungeon; map 6d07.blv"}
+  - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6d07.blv"}
   - advance_runtime: {seconds: 0.1}
   - console: {line: "run", expect_contains: "dungeon 4 of 4, map 6d07.blv (on course)"}
   # The last dungeon: the tenth level-up comes with its guardian, and no clearing gives an eleventh.

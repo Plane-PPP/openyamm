@@ -255,6 +255,8 @@ private:
     bool holdMapMoveForDungeonRunCamp(const EventRuntimeState::PendingMapMove &pendingMapMove);
     std::vector<DungeonRunShop> currentDungeonRunShops();
     bool openDungeonRunCamp();
+    bool openDungeonRunCampShops();
+    void restDungeonRunCamp();
     // The promotion after the guardian of the rules' stop: every hero takes the next class of their line.
     void promoteDungeonRunParty();
     void shutdownRenderer();
@@ -541,6 +543,7 @@ private:
         Door,
         Card,
         Camp,
+        CampShops,
     };
     DungeonRunChoice m_dungeonRunChoice = DungeonRunChoice::None;
     size_t m_dungeonRunChoiceMember = 0;
@@ -551,6 +554,9 @@ private:
     bool m_dungeonRunCampOpen = false;
     std::optional<EventRuntimeState::PendingMapMove> m_dungeonRunCampMove;
     bool m_dungeonRunCampLeaving = false;
+    // The camp's shop list is open (a shop closed returns to it, not to the camp's own menu).
+    bool m_dungeonRunCampInShops = false;
+    std::string m_dungeonRunCampNote;
     // The run's numbers as last written to the save's variables.
     std::optional<RoguelikeRunState> m_storedDungeonRunState;
     // A map move held for a few frames while the leaving map's autosave captures its preview.

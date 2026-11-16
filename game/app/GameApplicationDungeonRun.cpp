@@ -488,6 +488,8 @@ void GameApplication::resetDungeonRunChoices()
     m_dungeonRunCampOpen = false;
     m_dungeonRunCampMove.reset();
     m_dungeonRunCampLeaving = false;
+    m_dungeonRunCampInShops = false;
+    m_dungeonRunCampNote.clear();
     m_storedDungeonRunState.reset();
 }
 
@@ -564,13 +566,15 @@ void GameApplication::restDungeonRunPartyBetweenStops()
         return;
     }
 
-    restoreDungeonRunParty();
+    // The party is no longer restored for free on the way: the camp's Rest restores it for food.
     RoguelikeRunState &state = pRules->state();
     state.guardian = RoguelikeRunState::GuardianNone;
     state.guardianActor = -1;
     state.doorOffered = 0;
     m_dungeonRunCampOpen = false;
     m_dungeonRunCampMove.reset();
+    m_dungeonRunCampInShops = false;
+    m_dungeonRunCampNote.clear();
 }
 
 void GameApplication::restoreDungeonRunParty()
@@ -618,6 +622,26 @@ std::vector<DungeonRunShop> GameApplication::currentDungeonRunShops()
 
 bool GameApplication::openDungeonRunCamp()
 {
+    // Three answers only: the dialog's answer panel holds about five lines, and the shops' list (five shops and
+    // the way on) did not fit - the way on was cut off below the panel.
+    int foodRequired = m_gameSession.gameplayScreenRuntime().restFoodRequired();
+    foodRequired = std::max(foodRequired, 1);
+    std::string text = m_dungeonRunCampNote.empty()
+        ? "Camp: the shops. Rest: hit and spell points restored for " + std::to_string(foodRequired)
+            + " food. Next dungeon: the way on."
+        : m_dungeonRunCampNote;
+
+    if (!openDungeonRunChoice("Camp", text, {"Camp", "Rest", "Next dungeon"}))
+    {
+        return false;
+    }
+
+    m_dungeonRunChoice = DungeonRunChoice::Camp;
+    return true;
+}
+
+bool GameApplication::openDungeonRunCampShops()
+{
     std::vector<std::string> answers;
 
     for (const DungeonRunShop &shop : currentDungeonRunShops())
@@ -625,18 +649,39 @@ bool GameApplication::openDungeonRunCamp()
         answers.push_back(shop.name);
     }
 
-    answers.push_back("Go on to the next dungeon");
-
-    if (!openDungeonRunChoice(
-            "Camp",
-            "The party rests: hit points and spell points are restored. The shops are open before the next dungeon.",
-            answers))
+    if (answers.empty()
+        || !openDungeonRunChoice("Camp", "The camp's shops. Close returns to the camp.", answers))
     {
         return false;
     }
 
-    m_dungeonRunChoice = DungeonRunChoice::Camp;
+    m_dungeonRunChoice = DungeonRunChoice::CampShops;
     return true;
+}
+
+void GameApplication::restDungeonRunCamp()
+{
+    IGameplayWorldRuntime *pWorldRuntime = m_gameSession.activeWorldRuntime();
+    Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr;
+
+    if (pParty == nullptr)
+    {
+        return;
+    }
+
+    const int foodRequired = std::max(m_gameSession.gameplayScreenRuntime().restFoodRequired(), 1);
+
+    if (pParty->food() < foodRequired)
+    {
+        m_dungeonRunCampNote = "Not enough food to rest: " + std::to_string(foodRequired) + " needed, "
+            + std::to_string(pParty->food()) + " carried.";
+        return;
+    }
+
+    pParty->addFood(-foodRequired);
+    restoreDungeonRunParty();
+    m_dungeonRunCampNote = "The party rested (" + std::to_string(foodRequired)
+        + " food): hit and spell points are restored.";
 }
 
 bool GameApplication::holdMapMoveForDungeonRunCamp(const EventRuntimeState::PendingMapMove &pendingMapMove)
@@ -667,7 +712,18 @@ bool GameApplication::holdMapMoveForDungeonRunCamp(const EventRuntimeState::Pend
     // The confirmation keeps its departure dialog until map loading normally closes it. The camp takes over
     // before loading, so consume that deferred close before presenting a new dialog.
     m_gameSession.gameplayScreenRuntime().closeActiveDialogForMapMove();
-    restoreDungeonRunParty();
+
+    // The run's party never visits a town to join a guild: the camp's guilds serve it as members. The membership
+    // is the party's own variable (HouseInteraction's guild types 5-15), so standard games keep their rules.
+    if (Party *pParty = m_gameSession.activeWorldRuntime() != nullptr
+            ? m_gameSession.activeWorldRuntime()->party()
+            : nullptr)
+    {
+        for (uint16_t guildType = 5; guildType <= 15; ++guildType)
+        {
+            pParty->setEventVariableValue(static_cast<uint16_t>(0x8000u | guildType), 1);
+        }
+    }
 
     // The camp lasts until the morning, when its shops are open (the houses keep their hours).
     if (IGameplayWorldRuntime *pWorldRuntime = m_gameSession.activeWorldRuntime())
@@ -683,6 +739,8 @@ bool GameApplication::holdMapMoveForDungeonRunCamp(const EventRuntimeState::Pend
 
     m_dungeonRunCampMove = pendingMapMove;
     m_dungeonRunCampOpen = true;
+    m_dungeonRunCampInShops = false;
+    m_dungeonRunCampNote.clear();
     openDungeonRunCamp();
     return true;
 }
@@ -934,6 +992,42 @@ void GameApplication::answerDungeonRunChoice(int answer)
 
     if (choice == DungeonRunChoice::Camp)
     {
+        EventRuntimeState *pRuntimeState = pWorldRuntime->eventRuntimeState();
+
+        if (pRuntimeState == nullptr)
+        {
+            return;
+        }
+
+        if (answer == 1)
+        {
+            // The shops' list opens on the next frame, when this dialog is gone.
+            m_dungeonRunCampInShops = true;
+            return;
+        }
+
+        if (answer == 2)
+        {
+            restDungeonRunCamp();
+            return;
+        }
+
+        m_dungeonRunCampOpen = false;
+        m_dungeonRunCampInShops = false;
+        m_dungeonRunCampNote.clear();
+
+        if (m_dungeonRunCampMove.has_value())
+        {
+            m_dungeonRunCampLeaving = true;
+            pRuntimeState->pendingMapMove = std::move(m_dungeonRunCampMove);
+            m_dungeonRunCampMove.reset();
+        }
+
+        return;
+    }
+
+    if (choice == DungeonRunChoice::CampShops)
+    {
         const std::vector<DungeonRunShop> shops = currentDungeonRunShops();
         EventRuntimeState *pRuntimeState = pWorldRuntime->eventRuntimeState();
 
@@ -954,16 +1048,6 @@ void GameApplication::answerDungeonRunChoice(int answer)
             pRuntimeState->dialogueState.hostHouseId = houseId;
             pRuntimeState->pendingDialogueContext = std::move(context);
             m_gameSession.gameplayScreenRuntime().presentPendingEventDialog(0, true);
-            return;
-        }
-
-        m_dungeonRunCampOpen = false;
-
-        if (m_dungeonRunCampMove.has_value())
-        {
-            m_dungeonRunCampLeaving = true;
-            pRuntimeState->pendingMapMove = std::move(m_dungeonRunCampMove);
-            m_dungeonRunCampMove.reset();
         }
 
         return;
@@ -1074,17 +1158,35 @@ void GameApplication::updateDungeonRunRules()
         {
             m_dungeonRunCampOpen = false;
             m_dungeonRunCampMove.reset();
+            m_dungeonRunCampInShops = false;
+            m_dungeonRunCampNote.clear();
+        }
+        const bool shopsListClosed = m_dungeonRunChoice == DungeonRunChoice::CampShops;
+
+        if (shopsListClosed)
+        {
+            // The shops' list closed: back to the camp's own menu, at once.
+            m_dungeonRunCampInShops = false;
         }
 
         m_dungeonRunChoice = DungeonRunChoice::None;
-        m_dungeonRunChoiceRetryTicks = SDL_GetTicks() + 400;
+
+        if (!shopsListClosed)
+        {
+            m_dungeonRunChoiceRetryTicks = SDL_GetTicks() + 400;
+        }
     }
 
     // Back from a shop: the camp's menu again.
     if (!dialogBusy && m_dungeonRunCampOpen && m_dungeonRunChoice == DungeonRunChoice::None
         && !pRuntimeState->pendingMapMove)
     {
-        openDungeonRunCamp();
+        if (!m_dungeonRunCampInShops || !openDungeonRunCampShops())
+        {
+            m_dungeonRunCampInShops = false;
+            openDungeonRunCamp();
+        }
+
         deliverDungeonRunBooks();
         storeDungeonRunState();
         return;
