@@ -122,15 +122,12 @@ constexpr float IndoorMinimapWorldExtent = IndoorMinimapWorldHalfExtent * 2.0f;
 constexpr float TicksPerSecond = 128.0f;
 constexpr float OeRealtimeRecoveryScale = 2.133333333333333f;
 constexpr float ActorUpdateStepSeconds = 1.0f / 128.0f;
+// Catch-up limits per frame in real time; the game speed (setGameSpeed) multiplies them.
 constexpr float MaxAccumulatedActorUpdateSeconds = 0.1f;
 constexpr float ProjectileUpdateStepSeconds = 1.0f / 60.0f;
 constexpr int MaxProjectileUpdateStepsPerFrame = 4;
-constexpr float MaxAccumulatedProjectileUpdateSeconds =
-    ProjectileUpdateStepSeconds * static_cast<float>(MaxProjectileUpdateStepsPerFrame);
 constexpr float WorldItemUpdateStepSeconds = 1.0f / 128.0f;
 constexpr int MaxWorldItemUpdateStepsPerFrame = 4;
-constexpr float MaxAccumulatedWorldItemUpdateSeconds =
-    WorldItemUpdateStepSeconds * static_cast<float>(MaxWorldItemUpdateStepsPerFrame);
 constexpr uint32_t EventSpellSourceId = std::numeric_limits<uint32_t>::max();
 constexpr float ActorInertiaVelocityDecay = 0.8392334f;
 constexpr float ActorInertiaReferenceFrameRate = 60.0f;
@@ -4097,6 +4094,7 @@ void IndoorWorldRuntime::initialize(
     const MapItemSourceData *pItemSourceData
 )
 {
+    m_worldItemSpotter.reset();
     m_map = map;
     gameRulesFor(pParty).monsters.adjustMapEncounters(*m_map);
     m_mapName = map.name;
@@ -4252,6 +4250,7 @@ void IndoorWorldRuntime::initialize(
     const MapItemSourceData *pItemSourceData
 )
 {
+    m_worldItemSpotter.reset();
     m_map = map;
     gameRulesFor(pParty).monsters.adjustMapEncounters(*m_map);
     m_mapName = map.name;
@@ -8915,7 +8914,9 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                     {projectile.sourceX, projectile.sourceY, projectile.sourceZ},
                     GameplayProjectileService::projectileShieldTier(projectile),
                     GameplayProjectileService::partyShieldModifiers(projectile, m_pParty),
-                    projectile.critical))
+                    projectile.critical,
+                    // An arrow's Chaining Arrows leap (it struck a monster before) makes no flinch.
+                    projectile.chainStruckActorIds.empty()))
             {
                 appliedDamage = 0;
             }
@@ -8939,7 +8940,8 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                     projectile.spellId,
                     impact.hit,
                     beforeHp > 0 && afterHp <= 0,
-                    projectile.critical);
+                    projectile.critical,
+                    projectile.hitCredit);
             }
         }
         else if (impact.queuePartyProjectileActorEvent && m_pGameplayCombatController != nullptr)
@@ -8958,7 +8960,8 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                 projectile.spellId,
                 impact.hit,
                 false,
-                projectile.critical);
+                projectile.critical,
+                projectile.hitCredit);
         }
         else if (impact.applyNonPartyProjectileDamage && impact.damage > 0)
         {
@@ -9154,7 +9157,8 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                                 {projectile.sourceX, projectile.sourceY, projectile.sourceZ},
                                 GameplayProjectileService::projectileShieldTier(projectile),
                                 GameplayProjectileService::partyShieldModifiers(projectile, m_pParty),
-                                projectile.critical))
+                                projectile.critical,
+                                projectile.chainStruckActorIds.empty()))
                         {
                             appliedDamage = 0;
                         }
@@ -9319,6 +9323,16 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
         m_pGameplayProjectileService->expireProjectile(projectile, frameResult.endPoint);
     }
 
+    if (frameResult.chainArrow && frameResult.directActorImpact
+        && m_pGameplayProjectileService->chainArrow(
+            projectile,
+            *this,
+            *frameResult.directActorImpact,
+            frameResult.endPoint.value_or(GameplayWorldPoint{projectile.x, projectile.y, projectile.z})))
+    {
+        refreshProjectileSector();
+    }
+
     // A copy: spawning the children below may move the projectile list.
     const std::optional<GameplayProjectileService::ProjectileState> deathBlossom =
         frameResult.deathBlossomFalloutPoint
@@ -9409,6 +9423,10 @@ void IndoorWorldRuntime::updateIndoorProjectiles(float deltaSeconds)
         return;
     }
 
+    const GameplayWorldPoint partyNow = {partyX(), partyY(), partyFootZ()};
+    const GameplayWorldPoint partyPreviousFrame = m_projectilePreviousFramePartyPosition.value_or(partyNow);
+    m_projectilePreviousFramePartyPosition = partyNow;
+
     const bool hasActiveProjectile =
         std::any_of(
             m_pGameplayProjectileService->projectiles().begin(),
@@ -9462,17 +9480,25 @@ void IndoorWorldRuntime::updateIndoorProjectiles(float deltaSeconds)
         pProjectileGeometryCache = &runtimeGeometry.geometryCache;
     }
 
-    m_projectileUpdateAccumulatorSeconds =
-        std::min(m_projectileUpdateAccumulatorSeconds + deltaSeconds, MaxAccumulatedProjectileUpdateSeconds);
+    const int maxProjectileUpdateSteps =
+        static_cast<int>(std::ceil(static_cast<float>(MaxProjectileUpdateStepsPerFrame) * m_gameSpeed));
+    m_projectileUpdateAccumulatorSeconds = std::min(
+        m_projectileUpdateAccumulatorSeconds + deltaSeconds,
+        ProjectileUpdateStepSeconds * static_cast<float>(maxProjectileUpdateSteps));
 
+    const int projectileStepsThisFrame = std::min(
+        maxProjectileUpdateSteps,
+        static_cast<int>(m_projectileUpdateAccumulatorSeconds / ProjectileUpdateStepSeconds));
     int projectileUpdateStepCount = 0;
 
     while (m_projectileUpdateAccumulatorSeconds >= ProjectileUpdateStepSeconds
-        && projectileUpdateStepCount < MaxProjectileUpdateStepsPerFrame)
+        && projectileUpdateStepCount < maxProjectileUpdateSteps)
     {
         std::vector<GameplayProjectileService::ProjectileState> &projectiles =
             m_pGameplayProjectileService->projectiles();
         const size_t projectileCount = projectiles.size();
+        const GameplayWorldPoint partyAtStep = GameplayProjectileService::partyPositionAtStep(
+            partyPreviousFrame, partyNow, projectileUpdateStepCount, projectileStepsThisFrame);
 
         for (size_t projectileIndex = 0;
              projectileIndex < projectileCount && projectileIndex < projectiles.size();
@@ -9495,7 +9521,7 @@ void IndoorWorldRuntime::updateIndoorProjectiles(float deltaSeconds)
                 continue;
             }
 
-            if (projectile.homing && steerIndoorHomingProjectile(projectile, ProjectileUpdateStepSeconds))
+            if (projectile.homing && steerIndoorHomingProjectile(projectile, ProjectileUpdateStepSeconds, partyAtStep))
             {
                 m_pGameplayProjectileService->expireProjectile(projectile);
                 continue;
@@ -10517,13 +10543,16 @@ void IndoorWorldRuntime::updateWorldItems(float deltaSeconds)
 
     RuntimeGeometryCache &runtimeGeometry = runtimeGeometryCache();
 
-    m_worldItemUpdateAccumulatorSeconds =
-        std::min(m_worldItemUpdateAccumulatorSeconds + deltaSeconds, MaxAccumulatedWorldItemUpdateSeconds);
+    const int maxWorldItemUpdateSteps =
+        static_cast<int>(std::ceil(static_cast<float>(MaxWorldItemUpdateStepsPerFrame) * m_gameSpeed));
+    m_worldItemUpdateAccumulatorSeconds = std::min(
+        m_worldItemUpdateAccumulatorSeconds + deltaSeconds,
+        WorldItemUpdateStepSeconds * static_cast<float>(maxWorldItemUpdateSteps));
 
     int worldItemUpdateStepCount = 0;
 
     while (m_worldItemUpdateAccumulatorSeconds >= WorldItemUpdateStepSeconds
-        && worldItemUpdateStepCount < MaxWorldItemUpdateStepsPerFrame)
+        && worldItemUpdateStepCount < maxWorldItemUpdateSteps)
     {
         changed = updateWorldItemsStep(
             WorldItemUpdateStepSeconds,
@@ -12800,7 +12829,7 @@ void IndoorWorldRuntime::updateActorAi(float deltaSeconds)
     recordDiagnostics(m_actorAiPerformanceDiagnostics.activationNanoseconds, activationBeginTickCount);
 
     m_actorUpdateAccumulatorSeconds =
-        std::min(m_actorUpdateAccumulatorSeconds + deltaSeconds, MaxAccumulatedActorUpdateSeconds);
+        std::min(m_actorUpdateAccumulatorSeconds + deltaSeconds, MaxAccumulatedActorUpdateSeconds * m_gameSpeed);
 
     if (m_actorUpdateAccumulatorSeconds >= ActorUpdateStepSeconds)
     {
@@ -13284,8 +13313,20 @@ std::string IndoorWorldRuntime::mapWorldId() const
     return m_map ? m_map->worldId : std::string();
 }
 
-void IndoorWorldRuntime::advanceTurnBasedActorTimers(float seconds)
+void IndoorWorldRuntime::advanceTurnBasedWorldTime(float seconds)
 {
+    updateImmolation(seconds);
+
+    if (m_pPartyRuntime != nullptr && seconds > 0.0f)
+    {
+        m_pPartyRuntime->advanceTurnBasedHazards(seconds);
+
+        if (m_pGameplayView != nullptr && !m_pPartyRuntime->movementStatusText().empty())
+        {
+            m_pGameplayView->setStatusBarEvent(m_pPartyRuntime->movementStatusText());
+        }
+    }
+
     if (m_pGameplayActorService == nullptr || seconds <= 0.0f)
     {
         return;
@@ -13328,6 +13369,11 @@ void IndoorWorldRuntime::hideExpiredSummons()
             actor.attributes |= invisible;
         }
     }
+}
+
+void IndoorWorldRuntime::setGameSpeed(float speed)
+{
+    m_gameSpeed = std::max(1.0f, speed);
 }
 
 void IndoorWorldRuntime::setTurnBasedActorMode(ActorTurnBasedMode mode)
@@ -13394,8 +13440,18 @@ void IndoorWorldRuntime::setActorAttackCooldownSeconds(size_t actorIndex, float 
 
 void IndoorWorldRuntime::updateWorld(float deltaSeconds)
 {
+    if (m_firstFillOpen)
+    {
+        recordFillPositions();
+    }
+
     m_firstFillOpen = false;
-    updateImmolation(deltaSeconds);
+    // In turn-based combat the aura burns only by each completed turn's game time (advanceTurnBasedWorldTime), as the
+    // original burns it from the turn's timed effects; wall-clock time on the party's turn must not burn monsters.
+    if (m_turnBasedActorFacts.mode == ActorTurnBasedMode::RealTime)
+    {
+        updateImmolation(deltaSeconds);
+    }
     updateWorldItems(deltaSeconds);
     updateIndoorProjectiles(deltaSeconds);
     updateFireSpikeTraps(deltaSeconds);
@@ -13403,6 +13459,7 @@ void IndoorWorldRuntime::updateWorld(float deltaSeconds)
     runPendingDestructibleEvents();
     runPendingScriptedActorArrivals();
     updateMm9FoundPlayerEvents(deltaSeconds);
+    updateWorldItemSpotting(deltaSeconds);
 }
 
 void IndoorWorldRuntime::updateImmolation(float deltaSeconds)
@@ -13841,7 +13898,8 @@ void IndoorWorldRuntime::attachTrueAim(
 
 bool IndoorWorldRuntime::steerIndoorHomingProjectile(
     GameplayProjectileService::ProjectileState &projectile,
-    float deltaSeconds)
+    float deltaSeconds,
+    const GameplayWorldPoint &party)
 {
     using TargetKind = GameplayProjectileService::ProjectileHoming::TargetKind;
     const GameplayProjectileService::ProjectileHoming &homing = *projectile.homing;
@@ -13851,7 +13909,7 @@ bool IndoorWorldRuntime::steerIndoorHomingProjectile(
     if (homing.targetKind == TargetKind::Party)
     {
         // Where the actors aim at the party.
-        target = GameplayWorldPoint{partyX(), partyY(), partyFootZ() + PartyTargetHeightOffset};
+        target = GameplayWorldPoint{party.x, party.y, party.z + PartyTargetHeightOffset};
     }
     else if (pMapDeltaData != nullptr && homing.targetActorIndex < m_mapActorAiStates.size()
         && homing.targetActorIndex < pMapDeltaData->actors.size())
@@ -14708,6 +14766,140 @@ void IndoorWorldRuntime::wakeIndoorActorNeighbours(size_t actorIndex)
         aiState.hasDetectedParty = true;
         aiState.spellEffects.hasDetectedParty = true;
     }
+}
+
+namespace
+{
+// A ground item the party could spot or collect: an item or gold lying on the floor, not a loot container, a missile,
+// an object the party cannot pick up or an item the loot filter left on the ground.
+bool indoorGroundItemObject(const MapDeltaSpriteObject &object, const ObjectTable *pObjectTable)
+{
+    if ((object.attributes & (SpriteAttrRemoved | SpriteAttrMissile)) != 0 || object.semanticLootContainer
+        || (!object.heldItem && !hasContainingItemPayload(object.rawContainingItem))
+        || (object.heldItem && object.heldItem->rulesetFields.lootFiltered != 0))
+    {
+        return false;
+    }
+
+    const ObjectEntry *pObjectEntry = pObjectTable != nullptr ? pObjectTable->get(object.objectDescriptionId) : nullptr;
+    return pObjectEntry == nullptr || (pObjectEntry->flags & ObjectDescUnpickable) == 0;
+}
+}
+
+std::vector<size_t> IndoorWorldRuntime::collectableSpottedWorldItemIndices() const
+{
+    std::vector<size_t> indices;
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr)
+    {
+        return indices;
+    }
+
+    for (size_t index = pMapDeltaData->spriteObjects.size(); index-- > 0;)
+    {
+        const MapDeltaSpriteObject &object = pMapDeltaData->spriteObjects[index];
+
+        if ((object.attributes & SpriteAttrSpotted) == 0 || !indoorGroundItemObject(object, m_pObjectTable)
+            || !placedWorldItemCollectable(object))
+        {
+            continue;
+        }
+
+        indices.push_back(index);
+    }
+
+    return indices;
+}
+
+bool IndoorWorldRuntime::placedWorldItemCollectable(const MapDeltaSpriteObject &object) const
+{
+    if (!object.semanticPlacedPickup)
+    {
+        return true;
+    }
+
+    const auto sourceIt = std::find_if(
+        m_itemSourceData.worldItems.begin(),
+        m_itemSourceData.worldItems.end(),
+        [&object](const MapWorldItemSource &source)
+        {
+            return source.sourceId == object.semanticSourceId;
+        });
+    return sourceIt != m_itemSourceData.worldItems.end() && m_pParty != nullptr
+        && worldItemCollectable(*sourceIt, *m_pParty);
+}
+
+bool IndoorWorldRuntime::hasSpottedWorldItems() const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+    return pMapDeltaData != nullptr
+        && std::any_of(
+            pMapDeltaData->spriteObjects.begin(),
+            pMapDeltaData->spriteObjects.end(),
+            [](const MapDeltaSpriteObject &object)
+            {
+                return (object.attributes & SpriteAttrSpotted) != 0 && (object.attributes & SpriteAttrRemoved) == 0;
+            });
+}
+
+void IndoorWorldRuntime::unspotWorldItem(size_t worldItemIndex)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData != nullptr && worldItemIndex < pMapDeltaData->spriteObjects.size())
+    {
+        pMapDeltaData->spriteObjects[worldItemIndex].attributes &= ~SpriteAttrSpotted;
+    }
+}
+
+void IndoorWorldRuntime::updateWorldItemSpotting(float deltaSeconds)
+{
+    const std::optional<WorldItemSpotting> spotting =
+        m_pParty != nullptr ? m_pParty->rules().items.worldItemSpotting() : std::nullopt;
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (!spotting || m_pPartyRuntime == nullptr || pMapDeltaData == nullptr)
+    {
+        return;
+    }
+
+    // The ray ends a little above where the item lies, clear of the floor it rests on.
+    constexpr float SpotPointHeight = 32.0f;
+    const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
+    const bx::Vec3 eye = {moveState.x, moveState.y, moveState.eyeZ()};
+    const int16_t eyeSectorId = moveState.eyeSectorId >= 0 ? moveState.eyeSectorId : moveState.sectorId;
+    std::vector<MapDeltaSpriteObject> &objects = pMapDeltaData->spriteObjects;
+    m_worldItemSpotter.update(
+        deltaSeconds,
+        spotting->indoorRadius,
+        eye,
+        objects.size(),
+        [this, &objects](size_t index) -> std::optional<bx::Vec3>
+        {
+            const MapDeltaSpriteObject &object = objects[index];
+
+            if ((object.attributes & SpriteAttrSpotted) != 0 || !indoorGroundItemObject(object, m_pObjectTable))
+            {
+                return std::nullopt;
+            }
+
+            return bx::Vec3{float(object.x), float(object.y), float(object.z) + SpotPointHeight};
+        },
+        [this, &objects, eyeSectorId, &spotting](size_t index, const bx::Vec3 &from, const bx::Vec3 &to)
+        {
+            MapDeltaSpriteObject &object = objects[index];
+
+            // Only what the gather key may take is spotted: a placed item its quest locks, or whose pickup runs an
+            // event, is tried again on later passes.
+            if (placedWorldItemCollectable(object)
+                && hasIndoorCombatLineOfSight(
+                    {from.x, from.y, from.z}, eyeSectorId, {to.x, to.y, to.z}, object.sectorId,
+                    spotting->indoorRadius + 1.0f))
+            {
+                object.attributes |= SpriteAttrSpotted;
+            }
+        });
 }
 
 std::vector<size_t> IndoorWorldRuntime::lootableCorpseActorIndices() const
@@ -17174,6 +17366,11 @@ bool IndoorWorldRuntime::applyPartySpellToActor(
     return actor.hp != previousHp;
 }
 
+bool IndoorWorldRuntime::hasClearLineBetween(const GameplayWorldPoint &from, const GameplayWorldPoint &to) const
+{
+    return hasIndoorCombatLineOfSight(from, -1, to, -1);
+}
+
 std::vector<size_t> IndoorWorldRuntime::collectMapActorIndicesWithinRadius(
     float centerX,
     float centerY,
@@ -19181,8 +19378,7 @@ bool IndoorWorldRuntime::activateWorldHit(const GameplayWorldHit &hit)
 
         if (m_pGameplayView != nullptr)
         {
-            m_pGameplayView->setStatusBarEvent(
-                formatFoundItemStatusText(itemName) + storedPickupOwnerSuffix(*m_pParty, *stored));
+            m_pGameplayView->setStatusBarEvent(formatFoundItemStatusText(itemName));
         }
 
         if (m_pEventRuntimeState != nullptr && *m_pEventRuntimeState)
@@ -19695,6 +19891,27 @@ bool IndoorWorldRuntime::mapKillProgress(MapKillProgress &progress) const
     return true;
 }
 
+void IndoorWorldRuntime::recordFillPositions()
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr)
+    {
+        return;
+    }
+
+    syncMapActorAiStates();
+
+    for (MapDeltaActor &actor : pMapDeltaData->actors)
+    {
+        if (!actor.spawnedAfterFill && !actor.fillPosition)
+        {
+            actor.fillPosition = std::array<int32_t, 3>{actor.x, actor.y, actor.z};
+            actor.fillSectorId = actor.sectorId;
+        }
+    }
+}
+
 size_t IndoorWorldRuntime::reviveSlainMonsters(float experienceShare)
 {
     MapDeltaData *pMapDeltaData = mapDeltaData();
@@ -19724,6 +19941,15 @@ size_t IndoorWorldRuntime::reviveSlainMonsters(float experienceShare)
         actor.rulesetFacts.risen = true;
         actor.rulesetFacts.spearDamageTaken = 0;
         actor.rulesetFacts.legendaryDamageTaken = 0;
+
+        // MAW raises the slain where the map first placed them (zzMaw-Monsters.lua LeaveMap).
+        if (actor.fillPosition)
+        {
+            actor.x = (*actor.fillPosition)[0];
+            actor.y = (*actor.fillPosition)[1];
+            actor.z = (*actor.fillPosition)[2];
+            actor.sectorId = actor.fillSectorId;
+        }
 
         // A searched corpse gave up its loot for good.
         if (actorIndex < m_mapActorCorpseViews.size() && m_mapActorCorpseViews[actorIndex])
@@ -20028,6 +20254,7 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     ShieldAttackTier shieldTier,
     const ShieldHitModifiers &shieldModifiers,
     bool critical,
+    bool hitReaction,
     bool lethalStrike)
 {
     MapDeltaData *pMapDeltaData = mapDeltaData();
@@ -20169,7 +20396,7 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
         }
     }
 
-    if (previousHp > 0 && nextHp > 0 && nextHp < previousHp)
+    if (hitReaction && previousHp > 0 && nextHp > 0 && nextHp < previousHp)
     {
         beginMapActorHitReaction(actorIndex, actor, &source);
         const MonsterTable::MonsterStatsEntry *pStats =
@@ -20246,10 +20473,11 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     const GameplayWorldPoint &source,
     ShieldAttackTier shieldTier,
     const ShieldHitModifiers &shieldModifiers,
-    bool critical)
+    bool critical,
+    bool hitReaction)
 {
     return applyPartyAttackMeleeDamage(actorIndex, damage, CombatDamageType::Physical, source, shieldTier,
-        shieldModifiers, critical);
+        shieldModifiers, critical, hitReaction);
 }
 
 bool IndoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
@@ -20267,7 +20495,7 @@ bool IndoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
 
 bool IndoorWorldRuntime::killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source)
 {
-    return applyPartyAttackMeleeDamage(actorIndex, 0, CombatDamageType::Physical, source, ShieldAttackTier::Physical, {}, false, true);
+    return applyPartyAttackMeleeDamage(actorIndex, 0, CombatDamageType::Physical, source, ShieldAttackTier::Physical, {}, false, true, true);
 }
 
 std::vector<GameplayCombatFeedbackEvent> IndoorWorldRuntime::drainCombatFeedbackEvents()
@@ -20499,8 +20727,10 @@ bool IndoorWorldRuntime::spawnPartyAttackProjectile(const GameplayPartyAttackPro
     spawnRequest.blastMinimumDamage = request.blastMinimumDamage;
     spawnRequest.blastMaximumDamage = request.blastMaximumDamage;
     spawnRequest.critical = request.critical;
-    spawnRequest.pierceCount = request.pierceCount;
-    spawnRequest.pierceShare = request.pierceShare;
+    spawnRequest.chainCount = request.chainCount;
+    spawnRequest.chainShare = request.chainShare;
+    spawnRequest.chainRadius = request.chainRadius;
+    spawnRequest.hitCredit = request.hitCredit;
     spawnRequest.impactSoundIdOverride = request.impactSoundId;
     spawnRequest.turnBasedPendingAction = request.turnBasedPendingAction;
     spawnRequest.sourceX = request.source.x;
@@ -21391,6 +21621,7 @@ void IndoorWorldRuntime::collectGameplayMinimapMarkers(std::vector<GameplayMinim
             GameplayMinimapMarkerState marker = {};
             marker.type = (pObjectEntry->flags & ObjectDescUnpickable) != 0
                 ? GameplayMinimapMarkerType::Projectile
+                : (spriteObject.attributes & SpriteAttrSpotted) != 0 ? GameplayMinimapMarkerType::SpottedWorldItem
                 : GameplayMinimapMarkerType::WorldItem;
             const GameplayMinimapPoint markerPoint = gameplayMinimapWorldToUv(
                 minimapState,
@@ -24026,6 +24257,7 @@ IndoorWorldRuntime::Snapshot IndoorWorldRuntime::snapshot() const
 
 void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
 {
+    m_worldItemSpotter.reset();
     // the scene restored its map state (its placed items' runtime-only pickup locks unset): evaluate them again
     m_placedWorldItemRevision = 0;
     m_actorShields.clear();

@@ -446,6 +446,10 @@ function(openyamm_configure_runtime_shaders)
         fragment
         "fs_menu_tint.bin")
     openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/vs_hud.sc" "vertex" "vs_hud.bin")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_hud.sc" "fragment" "fs_hud.bin")
+    openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/fs_shadowmaps_texture.sc"
         "fragment"
         "fs_shadowmaps_texture.bin")
@@ -697,14 +701,6 @@ function(openyamm_configure_runtime_shaders)
         "${CMAKE_SOURCE_DIR}/game/shaders/fs_spell_area_preview.sc"
         "fragment"
         "fs_spell_area_preview.bin")
-    openyamm_compile_bgfx_shader(
-        "${CMAKE_SOURCE_DIR}/game/shaders/vs_editor_preview_material.sc"
-        "vertex"
-        "vs_editor_preview_material.bin")
-    openyamm_compile_bgfx_shader(
-        "${CMAKE_SOURCE_DIR}/game/shaders/fs_editor_preview_material.sc"
-        "fragment"
-        "fs_editor_preview_material.bin")
 
     openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/vs_terrain_decoration.sc"
@@ -771,6 +767,7 @@ function(openyamm_configure_runtime_shaders)
         vs_shadowmaps_texture.bin
         fs_shadowmaps_texture.bin
         fs_menu_tint.bin
+        vs_hud.bin fs_hud.bin
         vs_water.bin fs_water.bin fs_indoor_water.bin fs_water_ripples.bin fs_indoor_water_ripples.bin
         vs_weather.bin fs_weather.bin vs_weather_snow.bin fs_weather_snow.bin vs_weather_curtain.bin
         fs_weather_curtain.bin vs_weather_splash.bin fs_weather_splash.bin
@@ -793,8 +790,6 @@ function(openyamm_configure_runtime_shaders)
         vs_model_instanced.bin vs_model_shadow_instanced.bin fs_model_prepassed.bin vs_model_skinned_instanced.bin
         vs_spell_area_preview.bin
         fs_spell_area_preview.bin
-        vs_editor_preview_material.bin
-        fs_editor_preview_material.bin
     )
     list(APPEND runtimeShaderNames
         vs_outdoor_bmodel_lightmap.bin fs_outdoor_bmodel_lightmap.bin

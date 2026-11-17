@@ -52,6 +52,8 @@ These rules apply to all AI-generated contributions in this repository.
   [Releases](packaging/RELEASE.md) and [Incremental updates](packaging/UPDATER_PLAN.md).
 - Saves and changed maps: each saved map state records its map's layout identity, and a map rebuilt since the save
   resets its state when entered (party state kept); see [Saved map states](devdocs/SAVED_MAP_STATE_IDENTITY.md).
+- For named mods (`mods/<id>/mod.yml`, `mods/enabled.yml`, their mount order, table rows and id-range checks, the
+  `mods` console command, saves of maps a mod brought), start with [Named mods](devdocs/NAMED_MODS.md).
 - When the user explicitly asks for mockups, always also build an HTML viewer page for them without being asked:
   one page that shows every mockup live (scaled to fit, with a link to full size), switches between them and
   their states, lists what each shows, and includes the captures. Keep it beside the mockups (`viewer.html`), publish
@@ -122,8 +124,8 @@ These rules apply to all AI-generated contributions in this repository.
   [Turn-based combat audit](devdocs/TURN_BASED_COMBAT_AUDIT.md).
 - For battle orders (what each member's Attack does: ordered spells and weapons with conditions, the weapon or hold
   fallback, the Battle Orders window over the spellbook, the spellbook's spell menu and the quick keys) and the upkeep
-  list (the buffs, heals and cures the Upkeep key casts when they are due), start with
-  [Battle orders](devdocs/BATTLE_ORDERS.md).
+  list (the buffs, heals and cures the Upkeep key casts when they are due, and the buff potions it drinks, with their
+  stock and auto-brew), start with [Battle orders](devdocs/BATTLE_ORDERS.md).
 - For per-world monster data add-ons: modifiers (`modifiers.yml`: true aim, never staggers, blink and the rest) are in
   [Monster modifiers](devdocs/MONSTER_MODIFIERS.md); energy shields and faction relations (`shields.yml`,
   `relations.yml`) are in [Energy shields and relations](devdocs/ENERGY_SHIELDS_AND_RELATIONS.md).
@@ -219,6 +221,11 @@ These rules apply to all AI-generated contributions in this repository.
   `pgrep -f <text>`: your own `bash -c` command line, heredoc or launcher
   contains that text, so the wait matches itself and never ends. Run one sequential queue script rather than chained
   background waiters.
+- For anything drawn on the gameplay HUD or the fullscreen gameplay screens, follow
+  [HUD rendering](devdocs/HUD_RENDERING.md): draw only through the HUD functions (they fill one draw list that is
+  drawn once per frame, in call order); read game state when drawing and keep no "changed" flags; a number that
+  needs a walk over actors or bags goes through `HudReading`; group fills, frames and text lines of a row into one
+  call. Check a change with `avg_hud_draws` in the run log and the `[HudDraw]` listing.
 - For "the FPS dropped" or "this mode is slower" questions, start with the fastest route in the
   [perf workflow](tools/PERF_PROFILING.md#fastest-route-where-does-the-frame-time-go): two visible isolated runs for
   the numbers (`[FramePerf]`, `[GameFramePerf]`, draws), then `perf record --call-graph dwarf` on the ordinary build,
@@ -457,7 +464,8 @@ Subsystem layers:
 
 - `engine/`
 - `game/`
-- `editor/`
+- `core/` (the code the game shares with Map Studio, `openyamm-studio/`: map formats, scene files,
+  collision and the map builds in `core/compile/`; see `core/CMakeLists.txt`)
 - `tools/`
 
 Treat gameplay systems as shared by default. Fixes for HUD, UI screens, input/keybind semantics, inventory, items,
@@ -556,7 +564,7 @@ missing world hooks. Prefer fixing the shared path or the world hook over adding
 - Renderer uses bgfx. Keep rendering simple: static meshes, sprites/billboards, UI, basic lighting, fog.
 - Audio uses SDL3 with an engine mixer layer for effects, music, volume groups, and fades.
 - Video uses FFmpeg OGV decoding with audio/video sync and looping/cutscene support.
-- Editor code must reuse runtime engine systems and must not duplicate gameplay logic.
+- Map Studio must reuse the shared core (`core/`) and must not duplicate gameplay logic.
 
 ## Minotaur Rebalance maintenance
 

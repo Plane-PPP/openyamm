@@ -20,7 +20,7 @@ struct InventoryItem;
 struct ItemDefinition;
 struct ItemGenerationRequest;
 struct ItemRulesetFields;
-enum class BagTag : uint8_t;
+enum class ItemPouch : uint8_t;
 class RecentLootDrops;
 struct LootFilterFacts;
 struct RulesetLootFilter;
@@ -72,6 +72,14 @@ struct LootGathering
 {
     size_t corpses = 0;
     size_t items = 0;
+};
+
+// How near the party must pass a ground item, with nothing of the map in between, to spot it: the gather key on a
+// completed map collects the spotted items, and the minimap shows them in their own colour (WorldItemSpotter).
+struct WorldItemSpotting
+{
+    float outdoorRadius = 0.0f;
+    float indoorRadius = 0.0f;
 };
 
 // How random items are rolled, what they give and what they are worth (devdocs/maw/HANDOFF.md §3.5). This class is the
@@ -169,12 +177,17 @@ public:
     // Whether the inventory has the item search field (MAW, for its many bags; user 2026-11-04).
     virtual bool inventorySearch() const;
     // Lines the rules add to the inspect popup below the item's type and stats (MAW: enchantments, level required).
+    // craftPreview: also, in grey, what crafting would add to the item next (the Craftable stats setting; MAW: the
+    // Hourglass's enchantment, the Eye of Void's special, the bonus power and its cap).
     virtual std::vector<ItemInspectLine> inspectLines(
         const InventoryItem &item,
         const ItemDefinition &itemDefinition,
         const StandardItemEnchantTable *pStandardTable,
         const SpecialItemEnchantTable *pSpecialTable,
-        const Character *pViewer) const;
+        const Character *pViewer,
+        bool craftPreview) const;
+    // Whether the rules have such a preview (the Craftable stats setting and its key); Standard has no crafting.
+    virtual bool previewsCrafting() const;
 
     // A member's merchant value (the percent off house prices, up to 100) when the rules compute it themselves (MAW:
     // skill x mastery plus Glamour, no reputation); nothing for Standard's skill, bonus and reputation.
@@ -239,11 +252,16 @@ public:
     // What the gather key brings to the party (MAW: 30 corpses and 30 ground items). Standard: nothing, the key does
     // nothing.
     virtual std::optional<LootGathering> lootGathering() const;
+    // Whether and how near the party spots ground items (MAW: 1200 outdoors, 1000 indoors). Standard: never.
+    virtual std::optional<WorldItemSpotting> worldItemSpotting() const;
     // Whether the gather key brings this ground item (MAW: crafting items and dimension maps).
     virtual bool gathersItem(const InventoryItem &item) const;
-    // The tagged bag a ground item goes to when the party picks it up (MAW: crafting items to a crafting bag, potions
-    // and reagents to an alchemy bag). Standard: none, bags are not tagged.
-    virtual std::optional<BagTag> bagTag(const ItemDefinition &definition) const;
+    // The party's shared pouch the item lives in instead of the members' bags (MAW: Workbench materials in the
+    // crafting pouch; potions, bottles and reagents in the alchemy pouch; quest items, worth nothing, in the quest
+    // pouch): the party keeps such an item nowhere else (Party::pouchFor). Standard: none, there are no pouches.
+    virtual std::optional<ItemPouch> pouch(const ItemDefinition &definition) const;
+    // Whether the party has the pouches `pouch` names (the inventory's endless tabs). Standard: no.
+    virtual bool hasPouches() const;
     // Why the party cannot open a chest on a map of this lock rating (MapStatsEntry::disarmDifficulty), or nothing
     // (Standard: chests always open, their traps aside).
     virtual std::optional<std::string> chestOpenRefusal(const Party &party, int mapLock) const;

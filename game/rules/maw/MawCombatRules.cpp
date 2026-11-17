@@ -38,6 +38,22 @@ namespace OpenYAMM::Game
 {
 namespace
 {
+// A solo talent's extra blow (Cleave's other monsters, Sweeping Blows; user, 2026-11-15): its leech and on-hit gains
+// are a third as strong, and the special on-hit effects (stuns, paralysis, slows, pushes, artifact spells, Death
+// Grasp, Retaliation's stacks) are the main blow's alone. Only a solo run's talents make extra blows; any other game
+// is untouched.
+constexpr double ExtraBlowShare = 1.0 / 3.0;
+
+bool soloExtraBlow(const RulesetOptions &options, bool extraBlow)
+{
+    return extraBlow && options.soloRun;
+}
+
+double extraBlowShare(const RulesetOptions &options, const PartyHitOnMonster &hit)
+{
+    return soloExtraBlow(options, hit.extraBlow) ? ExtraBlowShare : 1.0;
+}
+
 constexpr uint32_t FirstPlayerStyleMonsterSpell = 100;
 // Recovery ticks to real seconds, as the engine converts attack recovery.
 constexpr float MawRealtimeRecoveryScale = 2.133333333333333f;
@@ -184,6 +200,24 @@ bool conscious(const Character &member)
         && !member.conditions.test(size_t(CharacterCondition::Dead))
         && !member.conditions.test(size_t(CharacterCondition::Petrified))
         && !member.conditions.test(size_t(CharacterCondition::Eradicated));
+}
+
+// Auto-repair: the best Repair skill x mastery of the members who can act; it mends every broken item whose repair
+// difficulty it reaches (S:1314-1333).
+int autoRepairLevel(const Party &party)
+{
+    int repair = 0;
+
+    for (const Character &member : party.members())
+    {
+        if (conscious(member) && !member.conditions.test(size_t(CharacterCondition::Paralyzed))
+            && !member.conditions.test(size_t(CharacterCondition::Asleep)))
+        {
+            repair = std::max(repair, skillLevel(member, "RepairItem") * int(skillMastery(member, "RepairItem")));
+        }
+    }
+
+    return repair;
 }
 
 // The party member side of calcMawDamage for this character, without the hit.
@@ -1032,6 +1066,20 @@ MawCombatRules::MawCombatRules(MawRules &rules)
                 hit.amount = 0;
             }
         });
+    m_damageToMonster.add(
+        "solo-early-cut",
+        [this](MonsterDamageHit &hit)
+        {
+            // A solo run's early monster cut, the HP half: the party's hits count for more, which is the monster's HP
+            // divided by the cut without touching its HP, experience or loot (POWER_CURVE_DIRECTION.md §8). Last, so
+            // it scales everything the other stages added.
+            const double cut = m_rules.options().soloRun ? m_rules.soloMonsterCut() : 1.0;
+
+            if (cut > 1.0 && hit.attackerFacts.level <= 0 && hit.amount > 0)
+            {
+                hit.amount = int(mawRound(hit.amount * cut));
+            }
+        });
 
     m_damageToCharacter.add(
         "damage-recompute",
@@ -1081,6 +1129,19 @@ MawCombatRules::MawCombatRules(MawRules &rules)
             }
 
             hit.amount = std::max(0, int(mawRound(damage)));
+        });
+    m_damageToCharacter.add(
+        "solo-early-cut",
+        [this](CharacterDamageHit &hit)
+        {
+            // A solo run's early monster cut, the damage half: a monster's hit is divided before armour, resistances
+            // and the class's flat cut see it, as if the monster were that much weaker. Falls and traps are not cut.
+            const double cut = m_rules.options().soloRun ? m_rules.soloMonsterCut() : 1.0;
+
+            if (cut > 1.0 && mawMonsterHit(hit) && hit.amount > 0)
+            {
+                hit.amount = std::max(1, int(mawRound(hit.amount / cut)));
+            }
         });
     m_damageToCharacter.add(
         "map-energy",
@@ -1243,6 +1304,17 @@ MawCombatRules::MawCombatRules(MawRules &rules)
             }
 
             hit.amount = int(mawRound(amount));
+        });
+    m_damageToCharacter.add(
+        "solo-spell-suppression",
+        [this](CharacterDamageHit &hit)
+        {
+            // A solo run's Spell Suppression: the last cut of a hit that is not physical, from a monster, a trap or
+            // anything else, after the 90 % cap of armour and resistances (user, 2026-11-16).
+            if (m_rules.options().soloRun && hit.amount > 0 && hit.type != CombatDamageType::Physical)
+            {
+                hit.amount = int(mawRound(hit.amount * MawSoloTalents::nonPhysicalDamageScale(*hit.pCharacter)));
+            }
         });
 }
 
@@ -1689,11 +1761,17 @@ void MawCombatRules::resolveCharacterAttack(
         }
 
         // An item's stun (Thor) is the engine's: a stagger, outside diminishing returns (MAW leaves it to the engine).
-        attack.stunTarget = attack.itemStunTarget && !mawIgnoresCrowdControl(*context.pTargetFacts);
+        // A solo talent's extra blow stuns, paralyses and spends Retaliation's stacks on nothing: the main blow does.
+        const bool extraBlow = soloExtraBlow(m_rules.options(), context.extraBlow);
+        attack.stunTarget = attack.itemStunTarget && !extraBlow && !mawIgnoresCrowdControl(*context.pTargetFacts);
         attack.stunSeconds = StaggerStunSeconds;
         attack.paralyzeTarget = false;
-        applyWeaponStun(m_rules, attack, context, delay.damageMultiplier, targetLevel);
-        applyRetaliation(attack, context);
+
+        if (!extraBlow)
+        {
+            applyWeaponStun(m_rules, attack, context, delay.damageMultiplier, targetLevel);
+            applyRetaliation(attack, context);
+        }
 
         if (skillMastery(character, "Cover") >= SkillMastery::Grandmaster)
         {
@@ -2173,7 +2251,7 @@ int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast, bool *pCriti
 {
     const int damage = rollSpellDamageBeforeTalents(cast, pCritical);
 
-    // A solo run's Attunement and Spell Surge talents, and Overload on an area spell into a crowd.
+    // A solo run's Spell Surge talent, and Overload on an area spell into a crowd.
     if (m_rules.options().soloRun && cast.pCaster != nullptr && damage > 0)
     {
         const double overload = cast.pSpell != nullptr && isAreaSpell(uint32_t(cast.pSpell->id))
@@ -2420,8 +2498,10 @@ int MawCombatRules::trapDamage(
     const int perception = int(skillMastery(member, "Perception"));
     const CharacterSheetSummary sheet = characterSheet(member, pItemTable, pStandardTable, pSpecialTable);
     MawMitigationInputs inputs = characterMitigation(m_rules, member, sheet, pItemTable, partyCount);
-    inputs.damage = model.monsterDamage(std::max(1.0, m_rules.state().totalLevel()))
-        * std::min((11 - 2 * perception) / 10.0, 1.0);
+    // MAW measures it at the party's total level; ours at the map's monsters' mean level where that is higher, so a
+    // party that goes ahead of its level meets the map's traps (deviation 193).
+    const double level = std::max({1.0, m_rules.state().totalLevel(), m_rules.mapMeanMonsterLevel().value_or(0.0)});
+    inputs.damage = model.monsterDamage(level) * std::min((11 - 2 * perception) / 10.0, 1.0);
     inputs.type = type;
     // A trap is measured against the victim's own level; legendaries 18 and 22 cut it before the class's flat
     // reduction, as a monster's hit (ST:761-776).
@@ -2468,9 +2548,9 @@ bool MawCombatRules::bowDisabled() const
 float MawCombatRules::monsterMissileHomingLockRate(uint32_t spellId) const
 {
     // MAW re-aims while the missile points within 0.5° of the party, tested once a rendered frame, so its grip grows
-    // with the frame rate. Ours is the same at any frame rate and firmer, 300° a second (user, 2026-10-27): a party
-    // strafing on foot or flying (768 a second) is still hit, one flying fast straight across the flight escapes.
-    constexpr float LockRadiansPerSecond = 300.0f * 3.14159265f / 180.0f;
+    // with the frame rate. Ours is a rate, the same at any frame rate, set to MAW's intent (its author, 2026-11-16): a
+    // strafe (384 a second) is hit, a run straight across the flight (768) escapes, a run at 45° sometimes does.
+    constexpr float LockRadiansPerSecond = 60.0f * 3.14159265f / 180.0f;
     constexpr std::array<uint32_t, 6> NeverHoming = {9, 15, 22, 24, 32, 93};
 
     if (std::find(NeverHoming.begin(), NeverHoming.end(), spellId) != NeverHoming.end())
@@ -2771,19 +2851,7 @@ void MawCombatRules::updateArtifacts(Party &party, IGameplayWorldRuntime &world)
             || member.conditions.test(size_t(CharacterCondition::Petrified))
             || member.conditions.test(size_t(CharacterCondition::Eradicated));
     };
-
-    // Auto-repair: the best Repair skill x mastery of the members who can act mends every broken item whose repair
-    // difficulty it reaches (S:1314-1333).
-    int repair = 0;
-
-    for (const Character &member : party.members())
-    {
-        if (!out(member) && conscious(member) && !member.conditions.test(size_t(CharacterCondition::Paralyzed))
-            && !member.conditions.test(size_t(CharacterCondition::Asleep)))
-        {
-            repair = std::max(repair, skillLevel(member, "RepairItem") * int(skillMastery(member, "RepairItem")));
-        }
-    }
+    const int repair = autoRepairLevel(party);
 
     bool repaired = false;
 
@@ -3113,6 +3181,12 @@ CombatDamageType MawCombatRules::partySpellDamageType(uint32_t spellId, CombatDa
     return spellId == Blades ? CombatDamageType::Physical : tableType;
 }
 
+bool MawCombatRules::autoRepairs(const Party &party, const ItemDefinition &item) const
+{
+    const int repair = autoRepairLevel(party);
+    return repair > 0 && item.identifyRepairDifficulty <= repair;
+}
+
 bool MawCombatRules::immuneToMonsterSpecialAttacks(const Character &member) const
 {
     return mawWearsLegendaryAffix(member, LegendaryStatusImmunity);
@@ -3160,8 +3234,12 @@ void MawCombatRules::applyPartyHitEffects(Party &party, const PartyHitOnMonster 
 
     // A dragon's bite throws its target along the blow once Dragon Ability reaches Fangs: 800 × fang / level^0.75
     // falling to nothing over 60 × its root frames, about 400 × mult^1.5 units at 60 frames a second (DM:599-610, zzClasses:471-484).
-    if (hit.melee && !hit.killed && mawIsDragon(*pMember) && hit.pWorld != nullptr && hit.targetActorIndex
-        && hit.pTarget->level > 0)
+    // A solo talent's extra blow: none of the special on-hit effects below (the push, Snake's Slow, the artifacts'
+    // spells); the main blow has them.
+    const bool extraBlow = soloExtraBlow(m_rules.options(), hit.extraBlow);
+
+    if (hit.melee && !hit.killed && !extraBlow && mawIsDragon(*pMember) && hit.pWorld != nullptr
+        && hit.targetActorIndex && hit.pTarget->level > 0)
     {
         const int fang = skillLevel(*pMember, "Unarmed");
         GameplayRuntimeActorState target = {};
@@ -3200,7 +3278,7 @@ void MawCombatRules::applyPartyHitEffects(Party &party, const PartyHitOnMonster 
     }
 
     // Snake and Finality cast Slow on the monster they strike, at the wielder's Sword skill (zzzMaw_Artifacts.lua:124-138).
-    if (hit.melee && hit.pWorld != nullptr && hit.targetActorIndex && party.itemTable() != nullptr)
+    if (hit.melee && !extraBlow && hit.pWorld != nullptr && hit.targetActorIndex && party.itemTable() != nullptr)
     {
         for (const HeldWeapon &weapon : heldWeapons(*pMember, *party.itemTable(), true, false))
         {
@@ -3235,7 +3313,8 @@ void MawCombatRules::applyPartyHitEffects(Party &party, const PartyHitOnMonster 
 
     // Splitter, Thor, Percival and Hades cast a spell on the monster they strike, at the wielder's skill in the
     // weapon; Thor only when it survives (zzzMaw_Artifacts.lua:52-64, 175-271). A broken one casts nothing.
-    if (hit.pWorld != nullptr && hit.targetActorIndex && hit.spellId == 0 && party.itemTable() != nullptr)
+    if (!extraBlow && hit.pWorld != nullptr && hit.targetActorIndex && hit.spellId == 0
+        && party.itemTable() != nullptr)
     {
         for (const HeldWeapon &weapon : heldWeapons(*pMember, *party.itemTable(), hit.melee, !hit.melee))
         {
@@ -3384,18 +3463,6 @@ std::optional<int> MawCombatRules::spellRecoveryTicks(
     return m_rules.gameRules().spells.recoveryTicks(cast, spellNumbersAtMastery(*pSpell, cast.mastery).recoveryTicks);
 }
 
-// A solo talent's extra blow (Cleave's other monsters, Sweeping Blows): its leech and on-hit gains are a third as
-// strong (user, 2026-11-15). Only a solo run's talents make extra blows; any other game gains in full.
-namespace
-{
-constexpr double ExtraBlowShare = 1.0 / 3.0;
-
-double extraBlowShare(const RulesetOptions &options, const PartyHitOnMonster &hit)
-{
-    return hit.extraBlow && options.soloRun ? ExtraBlowShare : 1.0;
-}
-}
-
 void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) const
 {
     Character &member = *party.member(hit.memberIndex);
@@ -3425,7 +3492,11 @@ void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) cons
         share += MawSoloTalents::leechBonus(member);
     }
 
-    if ((share == 0 && leech.spell == 0 && !drainSpell) || hit.pTarget->level <= 0 || party.itemTable() == nullptr)
+    // Manathirst: the same share of the SP bar back, with its own floor (solo run only, never a breath).
+    const double manaShare = m_rules.options().soloRun && !breath ? MawSoloTalents::manaLeechShare(member) : 0;
+
+    if ((share == 0 && leech.spell == 0 && !drainSpell && manaShare == 0) || hit.pTarget->level <= 0
+        || party.itemTable() == nullptr)
     {
         return;
     }
@@ -3439,7 +3510,8 @@ void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) cons
     const double elementalShare = counted > 0 ? std::min<double>(hit.elementalDamage, counted) / counted : 0;
     double heal = spell ? bar * share : bar * (1 - elementalShare) * share + bar * elementalShare * leech.spell;
     heal += drainSpell ? bar * 0.1 : 0;
-    double floor = 0;
+    // The floor's attack scale: the recovery of the attack or spell per 100.
+    double attackScale = 0;
 
     if (!spell)
     {
@@ -3450,18 +3522,37 @@ void MawCombatRules::applyLeech(Party &party, const PartyHitOnMonster &hit) cons
                 party.specialItemEnchantTable())
                 .speed.actual,
             m_rules.auraSkill(5, &member));
-        floor = full * share / floorDivisor * delay.delay / 100;
+        attackScale = delay.delay / 100.0;
     }
     else if (const std::optional<int> recovery = spellRecoveryTicks(party, member, hit.spellId))
     {
         // An area spell's floor is less: / 2.5, and / 4 for Fire Spike, Meteor Shower and Starburst.
-        floor = full * share / floorDivisor * *recovery / 100;
-        floor /= isAreaSpell(hit.spellId) ? 2.5 : 1;
-        floor /= hit.spellId == 9 || hit.spellId == 22 || hit.spellId == 43 ? 4 : 1;
+        attackScale = *recovery / 100.0;
+        attackScale /= isAreaSpell(hit.spellId) ? 2.5 : 1;
+        attackScale /= hit.spellId == 9 || hit.spellId == 22 || hit.spellId == 43 ? 4 : 1;
     }
 
+    double floor = full * share / floorDivisor * attackScale;
     // A dimension map's weaker leech cuts the heal before the floor, which it leaves whole (DM:1229-1230, CMB-15).
-    heal *= 1 - m_rules.mapAffix(MawMapAffix::Leech).value_or(0) / 100;
+    const double mapLeech = 1 - m_rules.mapAffix(MawMapAffix::Leech).value_or(0) / 100;
+    heal *= mapLeech;
+
+    // Manathirst gives SP the way the heal is worked out: the same share of the SP bar as the heal's of the HP bar (the
+    // bar share is in HP: it is turned into a share of full HP first), at least its floor, a third for an extra blow,
+    // and an area spell's from at most three monsters at once.
+    if (manaShare > 0 && full > 0
+        && (!spell || !isAreaSpell(hit.spellId) || MawSoloTalents::takeAreaManaLeech(member)))
+    {
+        const int fullMana = Party::effectiveMaximumSpellPoints(member);
+        const double mana = std::max(bar / full * manaShare * fullMana * mapLeech,
+                                fullMana * manaShare / MawSoloTalents::manaLeechFloorDivisor(member) * attackScale)
+            * extraBlowShare(m_rules.options(), hit);
+
+        if (fullMana > 0 && member.spellPoints < fullMana && mana > 0)
+        {
+            member.spellPoints = std::min(fullMana, member.spellPoints + int(std::ceil(mana)));
+        }
+    }
 
     if (share > 0)
     {
@@ -3699,7 +3790,8 @@ void MawCombatRules::applyClassHitEffects(Party &party, const PartyHitOnMonster 
         // minute, refreshed on every hit (DM:770-779).
         constexpr int GraspCost = 15;
 
-        if (member.rulesetState.classToggleOn(96) && member.spellPoints >= GraspCost && hit.pWorld != nullptr
+        if (member.rulesetState.classToggleOn(96) && !soloExtraBlow(m_rules.options(), hit.extraBlow)
+            && member.spellPoints >= GraspCost && hit.pWorld != nullptr
             && hit.targetActorIndex && !mawIgnoresCrowdControl(*hit.pTarget)
             && hit.pWorld->debuffActor(*hit.targetActorIndex, GameplayActorHitDebuff::DarkGrasp, 2.0f, 1.0f))
         {

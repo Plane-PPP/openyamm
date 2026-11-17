@@ -737,11 +737,10 @@ constexpr float OutdoorPathSpatialGridCellSize = 512.0f;
 constexpr float OutdoorGroundPathMinWaypointReachDistance = 48.0f;
 constexpr float OutdoorGroundPathMaxWaypointReachDistance = 128.0f;
 constexpr float OutdoorActorWaterRestrictionBModelSupportRise = 128.0f;
+// Catch-up limits per frame in real time; the game speed (setGameSpeed) multiplies them.
 constexpr float MaxAccumulatedActorUpdateSeconds = 0.1f;
 constexpr float ProjectileUpdateStepSeconds = 1.0f / 60.0f;
 constexpr int MaxProjectileUpdateStepsPerFrame = 4;
-constexpr float MaxAccumulatedProjectileUpdateSeconds =
-    ProjectileUpdateStepSeconds * static_cast<float>(MaxProjectileUpdateStepsPerFrame);
 constexpr int JournalRevealWidth = 88;
 constexpr int JournalRevealHeight = 88;
 constexpr int JournalRevealBytesPerRow = 11;
@@ -2948,6 +2947,7 @@ OutdoorWorldRuntime::MapActorState buildMapActorState(
     const bool authoredMm9CivilianHostility = state.mm9Civilian && actor.hostilityType != 0;
     const bool templateHostility = !state.mm9Civilian && monsterTable.isHostileToParty(relationMonsterId);
     state.hostileToParty = authoredAggressor || authoredMm9CivilianHostility || templateHostility;
+    state.aggressor = authoredAggressor;
     state.hostilityType = actor.hostilityType;
 
     if (state.hostilityType == 0 && state.hostileToParty && pStats != nullptr)
@@ -4117,7 +4117,7 @@ OutdoorTargetFacts resolveOutdoorTargetFacts(
     const float worldSenseRange = mm9Sight
         ? pGameplayActorService->partyEngagementRange(actorPolicyState)
         : pGameplayActorService->partyNoticeRange(actorPolicyState,
-            actor.hasDetectedParty || actor.angeredByParty || actor.provokedByParty,
+            actor.hasDetectedParty || actor.angeredByParty || actor.provokedByParty || actor.aggressor,
             pEventRuntimeState != nullptr ? &pEventRuntimeState->monsterRelationOverrides : nullptr);
     const float partySenseRange = mm9Sight && worldSenseRange > 0.0f
         ? mm9SenseRange(worldSenseRange, mm9Sight->range, GameplayActorService::MaximumPartyEngagementRange)
@@ -5074,6 +5074,7 @@ void OutdoorWorldRuntime::initialize(
     const MapItemSourceData *pItemSourceData
 )
 {
+    m_worldItemSpotter.reset();
     m_mapId = map.id;
     m_map = map;
     gameRulesFor(pParty).monsters.adjustMapEncounters(m_map);
@@ -6117,7 +6118,7 @@ void OutdoorWorldRuntime::spawnMonsterDeathDropsForActor(size_t actorIndex, cons
     }
 
     // Without a corpse, what the rules add to the loot (MAW's crafting drops) lands on the ground or with the party
-    // (in a tagged bag first, as a pickup), from the rolls the corpse would have made.
+    // (in its pouch, as a pickup), from the rolls the corpse would have made.
     const MonsterTable::MonsterStatsEntry *pStats = m_pMonsterTable->findStatsById(actor.monsterId);
 
     if (!leaveCorpse && actor.proceduralDeathLoot && pStats != nullptr)
@@ -7260,6 +7261,7 @@ void OutdoorWorldRuntime::refreshConditionalMonsterRelations()
 
         const bool hostile = m_pMonsterTable->isHostileToParty(relationMonsterId);
         actor.angeredByParty = false;
+        actor.aggressor = actor.aggressor && hostile;
         actor.hostileToParty = hostile;
         actor.hasDetectedParty = actor.hasDetectedParty && hostile;
     }
@@ -7594,6 +7596,108 @@ std::vector<size_t> OutdoorWorldRuntime::lootableCorpseActorIndices() const
     }
 
     return actorIndices;
+}
+
+std::vector<size_t> OutdoorWorldRuntime::collectableSpottedWorldItemIndices() const
+{
+    std::vector<size_t> indices;
+
+    for (size_t index = m_worldItems.size(); index-- > 0;)
+    {
+        const WorldItemState &worldItem = m_worldItems[index];
+
+        if ((worldItem.attributes & SpriteAttrSpotted) == 0 || !spottableWorldItem(worldItem))
+        {
+            continue;
+        }
+
+        indices.push_back(index);
+    }
+
+    return indices;
+}
+
+bool OutdoorWorldRuntime::spottableWorldItem(const WorldItemState &worldItem) const
+{
+    if (worldItem.isExpired || worldItem.semanticLootContainer || worldItem.item.rulesetFields.lootFiltered != 0)
+    {
+        return false;
+    }
+
+    if (!worldItem.semanticPlacedPickup)
+    {
+        return true;
+    }
+
+    const auto sourceIt = std::find_if(
+        m_itemSourceData.worldItems.begin(),
+        m_itemSourceData.worldItems.end(),
+        [&worldItem](const MapWorldItemSource &source)
+        {
+            return source.sourceId == worldItem.semanticSourceId;
+        });
+    return sourceIt != m_itemSourceData.worldItems.end() && m_pParty != nullptr
+        && worldItemCollectable(*sourceIt, *m_pParty);
+}
+
+bool OutdoorWorldRuntime::hasSpottedWorldItems() const
+{
+    return std::any_of(
+        m_worldItems.begin(),
+        m_worldItems.end(),
+        [](const WorldItemState &worldItem)
+        {
+            return (worldItem.attributes & SpriteAttrSpotted) != 0 && !worldItem.isExpired;
+        });
+}
+
+void OutdoorWorldRuntime::unspotWorldItem(size_t worldItemIndex)
+{
+    if (worldItemIndex < m_worldItems.size())
+    {
+        m_worldItems[worldItemIndex].attributes &= ~SpriteAttrSpotted;
+    }
+}
+
+void OutdoorWorldRuntime::updateWorldItemSpotting(float deltaSeconds)
+{
+    const std::optional<WorldItemSpotting> spotting =
+        m_pParty != nullptr ? m_pParty->rules().items.worldItemSpotting() : std::nullopt;
+
+    if (!spotting || m_pPartyRuntime == nullptr)
+    {
+        return;
+    }
+
+    // The ray ends a little above where the item lies, clear of the ground it rests on.
+    constexpr float SpotPointHeight = 32.0f;
+    const bx::Vec3 eye = {partyX(), partyY(), partyEyeZ()};
+    m_worldItemSpotter.update(
+        deltaSeconds,
+        spotting->outdoorRadius,
+        eye,
+        m_worldItems.size(),
+        [this](size_t index) -> std::optional<bx::Vec3>
+        {
+            const WorldItemState &worldItem = m_worldItems[index];
+
+            if ((worldItem.attributes & SpriteAttrSpotted) != 0 || worldItem.isExpired
+                || worldItem.semanticLootContainer || worldItem.item.rulesetFields.lootFiltered != 0)
+            {
+                return std::nullopt;
+            }
+
+            return bx::Vec3{worldItem.x, worldItem.y, worldItem.z + SpotPointHeight};
+        },
+        [this](size_t index, const bx::Vec3 &from, const bx::Vec3 &to)
+        {
+            // Only what the gather key may take is spotted: a placed item its quest hides or locks, or whose pickup
+            // runs an event, is tried again on later passes.
+            if (spottableWorldItem(m_worldItems[index]) && hasClearOutdoorLineOfSight(from, to))
+            {
+                m_worldItems[index].attributes |= SpriteAttrSpotted;
+            }
+        });
 }
 
 bool OutdoorWorldRuntime::openActorCorpseView(size_t actorIndex)
@@ -8356,8 +8460,20 @@ bool OutdoorWorldRuntime::turnBasedActorActionInProgress() const
         });
 }
 
-void OutdoorWorldRuntime::advanceTurnBasedActorTimers(float seconds)
+void OutdoorWorldRuntime::advanceTurnBasedWorldTime(float seconds)
 {
+    updateImmolation(seconds);
+
+    if (m_pPartyRuntime != nullptr && seconds > 0.0f)
+    {
+        m_pPartyRuntime->advanceTurnBasedHazards();
+
+        if (m_pInteractionView != nullptr && !m_pPartyRuntime->movementStatusText().empty())
+        {
+            m_pInteractionView->setStatusBarEvent(m_pPartyRuntime->movementStatusText());
+        }
+    }
+
     if (m_pGameplayActorService == nullptr || m_pMonsterTable == nullptr || seconds <= 0.0f)
     {
         return;
@@ -8378,6 +8494,11 @@ void OutdoorWorldRuntime::advanceTurnBasedActorTimers(float seconds)
     }
 
     hideExpiredSummons();
+}
+
+void OutdoorWorldRuntime::setGameSpeed(float speed)
+{
+    m_gameSpeed = std::max(1.0f, speed);
 }
 
 void OutdoorWorldRuntime::setTurnBasedActorMode(ActorTurnBasedMode mode)
@@ -8521,7 +8642,12 @@ void OutdoorWorldRuntime::runPendingScriptedActorArrivals()
 
 void OutdoorWorldRuntime::updateWorld(float deltaSeconds)
 {
-    updateImmolation(deltaSeconds);
+    // In turn-based combat the aura burns only by each completed turn's game time (advanceTurnBasedWorldTime), as the
+    // original burns it from the turn's timed effects; wall-clock time on the party's turn must not burn monsters.
+    if (m_turnBasedActorFacts.mode == ActorTurnBasedMode::RealTime)
+    {
+        updateImmolation(deltaSeconds);
+    }
     updateOutdoorTriggerVolumes();
     runPendingScriptedActorArrivals();
 
@@ -8529,6 +8655,8 @@ void OutdoorWorldRuntime::updateWorld(float deltaSeconds)
     {
         updateOutdoorJournalRevealMask(*m_pPartyRuntime, *m_pOutdoorMapDeltaData);
     }
+
+    updateWorldItemSpotting(deltaSeconds);
 
     if (!m_eventRuntimeState || m_eventRuntimeState->outdoorModelMechanisms.empty())
     {
@@ -8989,6 +9117,7 @@ OutdoorWorldRuntime::Snapshot OutdoorWorldRuntime::snapshot() const
 
 void OutdoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
 {
+    m_worldItemSpotter.reset();
     m_pendingMonsterKilledEvents.clear();
     m_pendingDeathExplosions.clear();
     m_actorSightCache.clear();
@@ -10170,8 +10299,7 @@ void OutdoorWorldRuntime::updateActorFrameGlobalEffects(
     updateGameplayScreenOverlay(deltaSeconds);
     updateArmageddon(deltaSeconds, partyX, partyY, partyZ);
     m_actorUpdateAccumulatorSeconds =
-        std::min(m_actorUpdateAccumulatorSeconds + deltaSeconds, MaxAccumulatedActorUpdateSeconds);
-
+        std::min(m_actorUpdateAccumulatorSeconds + deltaSeconds, MaxAccumulatedActorUpdateSeconds * m_gameSpeed);
 }
 
 std::vector<bool> OutdoorWorldRuntime::selectOutdoorActiveActors(float partyX, float partyY, float partyZ)
@@ -15795,7 +15923,9 @@ void OutdoorWorldRuntime::applyProjectileFrameResult(
                     projectile.sourceZ,
                     GameplayProjectileService::projectileShieldTier(projectile),
                     GameplayProjectileService::partyShieldModifiers(projectile, m_pParty),
-                    projectile.critical))
+                    projectile.critical,
+                    // An arrow's Chaining Arrows leap (it struck a monster before) makes no flinch.
+                    projectile.chainStruckActorIds.empty()))
             {
                 appliedDamage = 0;
             }
@@ -15828,7 +15958,8 @@ void OutdoorWorldRuntime::applyProjectileFrameResult(
                     projectile.spellId,
                     impact.hit,
                     killed,
-                    projectile.critical);
+                    projectile.critical,
+                    projectile.hitCredit);
             }
         }
         else if (impact.applyNonPartyProjectileDamage)
@@ -15998,7 +16129,8 @@ void OutdoorWorldRuntime::applyProjectileFrameResult(
                         projectile.sourceZ,
                         GameplayProjectileService::projectileShieldTier(projectile),
                         GameplayProjectileService::partyShieldModifiers(projectile, m_pParty),
-                        projectile.critical))
+                        projectile.critical,
+                        projectile.chainStruckActorIds.empty()))
                 {
                     appliedDamage = 0;
                 }
@@ -16108,6 +16240,15 @@ void OutdoorWorldRuntime::applyProjectileFrameResult(
         projectileService().expireProjectile(projectile, frameResult.endPoint);
     }
 
+    if (frameResult.chainArrow && frameResult.directActorImpact)
+    {
+        projectileService().chainArrow(
+            projectile,
+            *this,
+            *frameResult.directActorImpact,
+            frameResult.endPoint.value_or(GameplayWorldPoint{projectile.x, projectile.y, projectile.z}));
+    }
+
     if (frameResult.deathBlossomFalloutPoint)
     {
         spawnDeathBlossomFalloutProjectiles(
@@ -16197,6 +16338,10 @@ void OutdoorWorldRuntime::updateProjectiles(float deltaSeconds, float partyX, fl
         return;
     }
 
+    const GameplayWorldPoint partyNow = {partyX, partyY, partyZ};
+    const GameplayWorldPoint partyPreviousFrame = m_projectilePreviousFramePartyPosition.value_or(partyNow);
+    m_projectilePreviousFramePartyPosition = partyNow;
+
     const bool hasActiveProjectile =
         std::any_of(
             projectileService().projectiles().begin(),
@@ -16212,16 +16357,24 @@ void OutdoorWorldRuntime::updateProjectiles(float deltaSeconds, float partyX, fl
         return;
     }
 
-    m_projectileUpdateAccumulatorSeconds =
-        std::min(m_projectileUpdateAccumulatorSeconds + deltaSeconds, MaxAccumulatedProjectileUpdateSeconds);
+    const int maxProjectileUpdateSteps =
+        static_cast<int>(std::ceil(static_cast<float>(MaxProjectileUpdateStepsPerFrame) * m_gameSpeed));
+    m_projectileUpdateAccumulatorSeconds = std::min(
+        m_projectileUpdateAccumulatorSeconds + deltaSeconds,
+        ProjectileUpdateStepSeconds * static_cast<float>(maxProjectileUpdateSteps));
 
+    const int projectileStepsThisFrame = std::min(
+        maxProjectileUpdateSteps,
+        static_cast<int>(m_projectileUpdateAccumulatorSeconds / ProjectileUpdateStepSeconds));
     int projectileUpdateStepCount = 0;
 
     while (m_projectileUpdateAccumulatorSeconds >= ProjectileUpdateStepSeconds
-        && projectileUpdateStepCount < MaxProjectileUpdateStepsPerFrame)
+        && projectileUpdateStepCount < maxProjectileUpdateSteps)
     {
         std::vector<ProjectileState> &projectiles = projectileService().projectiles();
         const size_t projectileCount = projectiles.size();
+        const GameplayWorldPoint partyAtStep = GameplayProjectileService::partyPositionAtStep(
+            partyPreviousFrame, partyNow, projectileUpdateStepCount, projectileStepsThisFrame);
 
         for (size_t projectileIndex = 0;
              projectileIndex < projectileCount && projectileIndex < projectiles.size();
@@ -16235,7 +16388,8 @@ void OutdoorWorldRuntime::updateProjectiles(float deltaSeconds, float partyX, fl
             }
 
             if (projectile.homing
-                && steerOutdoorHomingProjectile(projectile, ProjectileUpdateStepSeconds, partyX, partyY, partyZ))
+                && steerOutdoorHomingProjectile(
+                    projectile, ProjectileUpdateStepSeconds, partyAtStep.x, partyAtStep.y, partyAtStep.z))
             {
                 projectileService().expireProjectile(projectile);
                 continue;
@@ -16331,6 +16485,7 @@ void OutdoorWorldRuntime::applyEventRuntimeState(bool syncPersistentHostilityMas
             }
 
             actor.angeredByParty = false;
+            actor.aggressor = actor.aggressor && hostileToParty;
             actor.hostileToParty = hostileToParty;
             actor.hasDetectedParty = hostileToParty;
             if (hostileToParty)
@@ -18736,9 +18891,9 @@ void OutdoorWorldRuntime::aggroNearbyMapActorFaction(
     float partyY,
     float partyZ)
 {
-    // Only friendly actors change here, and a monster hostile on its own rouses no friendly ally: hitting a raiding
-    // warlock must not turn the town warlocks of its class (see the indoor alert).
-    if (actorIndex >= m_mapActors.size() || m_pMonsterTable == nullptr || !alertsFriendlyActors)
+    // A monster hostile on its own rouses only allies that are hostile too: hitting a raiding warlock must not turn the
+    // town warlocks of its class (see the indoor alert).
+    if (actorIndex >= m_mapActors.size() || m_pMonsterTable == nullptr)
     {
         return;
     }
@@ -18760,10 +18915,8 @@ void OutdoorWorldRuntime::aggroNearbyMapActorFaction(
 
         MapActorState &otherActor = m_mapActors[otherActorIndex];
 
-        // Allies already hostile keep their current action; re-alerting them on every party hit would
-        // cancel their attacks and snap their facing for the whole group under rapid fire.
-        if (otherActor.hostileToParty || isActorUnavailableForCombat(otherActor)
-            || outdoorActorFightsForParty(otherActor))
+        if (isActorUnavailableForCombat(otherActor) || outdoorActorFightsForParty(otherActor)
+            || (!alertsFriendlyActors && !otherActor.hostileToParty))
         {
             continue;
         }
@@ -18801,8 +18954,18 @@ void OutdoorWorldRuntime::aggroNearbyMapActorFaction(
             continue;
         }
 
-        setMapActorHostileToParty(otherActorIndex, partyX, partyY, partyZ, true);
-        otherActor.angeredByParty = true;
+        // MM8's alert sets hostility type 4 and the Aggressor bit (0x439354, 0x43935a), not encounter memory: the
+        // ally notices the party at the engagement range once its AI runs. Allies already hostile keep their current
+        // action; resetting it on every party hit would cancel their attacks and snap their facing for the whole
+        // group under rapid fire.
+        if (!otherActor.hostileToParty)
+        {
+            setMapActorHostileToParty(otherActorIndex, partyX, partyY, partyZ, true);
+            otherActor.angeredByParty = true;
+        }
+
+        otherActor.aggressor = true;
+        otherActor.hostilityType = 4;
     }
 }
 
@@ -19020,6 +19183,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     ShieldAttackTier shieldTier,
     const ShieldHitModifiers &shieldModifiers,
     bool critical,
+    bool hitReaction,
     bool lethalStrike)
 {
     if (actorIndex >= m_mapActors.size() || (!lethalStrike && damage <= 0))
@@ -19107,6 +19271,10 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
         setMapActorHostileToParty(actorIndex, partyX, partyY, partyZ, false);
         actor.angeredByParty = alertsFriendlyActors;
         actor.provokedByParty = !died;
+        // MM8's hit reaction sets hostility type 4 (0x403366) and its faction alert the Aggressor bit (0x439298): it
+        // comes for the party from any distance its AI runs at, not only within its relation's range.
+        actor.aggressor = true;
+        actor.hostilityType = 4;
     }
     else if (!died && !actor.hostileToParty && actor.mm9Civilian)
     {
@@ -19161,7 +19329,7 @@ bool OutdoorWorldRuntime::applyPartyAttackToMapActor(
     }
     else
     {
-        if (damage > 0 && beginMapActorHitReaction(actorIndex))
+        if (hitReaction && damage > 0 && beginMapActorHitReaction(actorIndex))
         {
             faceMapActorReaction(actor, partyX - actor.preciseX, partyY - actor.preciseY);
             const bx::Vec3 knockback = actorKnockbackVelocity(
@@ -19210,10 +19378,11 @@ bool OutdoorWorldRuntime::applyPartyAttackMeleeDamage(
     const GameplayWorldPoint &source,
     ShieldAttackTier shieldTier,
     const ShieldHitModifiers &shieldModifiers,
-    bool critical)
+    bool critical,
+    bool hitReaction)
 {
     return applyPartyAttackToMapActor(
-        actorIndex, damage, source.x, source.y, source.z, shieldTier, shieldModifiers, critical);
+        actorIndex, damage, source.x, source.y, source.z, shieldTier, shieldModifiers, critical, hitReaction);
 }
 
 bool OutdoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
@@ -19229,7 +19398,7 @@ bool OutdoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
 
 bool OutdoorWorldRuntime::killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source)
 {
-    return applyPartyAttackToMapActor(actorIndex, 0, source.x, source.y, source.z, ShieldAttackTier::Physical, {}, false, true);
+    return applyPartyAttackToMapActor(actorIndex, 0, source.x, source.y, source.z, ShieldAttackTier::Physical, {}, false, true, true);
 }
 
 bool OutdoorWorldRuntime::applyPartyAttackMeleeBModelDamage(size_t bModelIndex, int damage)
@@ -19409,8 +19578,10 @@ bool OutdoorWorldRuntime::spawnPartyAttackProjectile(const GameplayPartyAttackPr
     worldRequest.blastMinimumDamage = request.blastMinimumDamage;
     worldRequest.blastMaximumDamage = request.blastMaximumDamage;
     worldRequest.critical = request.critical;
-    worldRequest.pierceCount = request.pierceCount;
-    worldRequest.pierceShare = request.pierceShare;
+    worldRequest.chainCount = request.chainCount;
+    worldRequest.chainShare = request.chainShare;
+    worldRequest.chainRadius = request.chainRadius;
+    worldRequest.hitCredit = request.hitCredit;
     worldRequest.sourceX = request.source.x;
     worldRequest.sourceY = request.source.y;
     worldRequest.sourceZ = request.source.z;
@@ -20168,6 +20339,7 @@ bool OutdoorWorldRuntime::resurrectMapActor(size_t actorIndex, int health, bool 
     actor.hostilityType = friendlyToParty ? 0 : actor.hostilityType;
     actor.alertStatusBit = false;
     actor.angeredByParty = false;
+    actor.aggressor = false;
     actor.hostileToParty = !friendlyToParty
         && m_pMonsterTable != nullptr
         && m_pGameplayActorService != nullptr
@@ -20218,6 +20390,11 @@ int OutdoorWorldRuntime::effectiveMapActorArmorClass(size_t actorIndex) const
     }
 
     return m_pGameplayActorService->effectiveArmorClass(baseArmorClass, buildGameplayActorSpellEffectState(actor));
+}
+
+bool OutdoorWorldRuntime::hasClearLineBetween(const GameplayWorldPoint &from, const GameplayWorldPoint &to) const
+{
+    return hasClearOutdoorLineOfSight({from.x, from.y, from.z}, {to.x, to.y, to.z});
 }
 
 std::vector<size_t> OutdoorWorldRuntime::collectMapActorIndicesWithinRadius(
@@ -23067,8 +23244,10 @@ bool OutdoorWorldRuntime::spawnPartyProjectile(const PartyProjectileRequest &req
     spawnRequest.explosionRadius = request.explosionRadius;
     spawnRequest.blastMinimumDamage = request.blastMinimumDamage;
     spawnRequest.blastMaximumDamage = request.blastMaximumDamage;
-    spawnRequest.pierceCount = request.pierceCount;
-    spawnRequest.pierceShare = request.pierceShare;
+    spawnRequest.chainCount = request.chainCount;
+    spawnRequest.chainShare = request.chainShare;
+    spawnRequest.chainRadius = request.chainRadius;
+    spawnRequest.hitCredit = request.hitCredit;
     spawnRequest.impactSoundIdOverride = request.impactSoundId;
     spawnRequest.turnBasedPendingAction = request.turnBasedPendingAction;
     spawnRequest.sourceX = request.sourceX;
@@ -23685,7 +23864,9 @@ void OutdoorWorldRuntime::collectGameplayMinimapMarkers(std::vector<GameplayMini
             }
 
             GameplayMinimapMarkerState marker = {};
-            marker.type = GameplayMinimapMarkerType::WorldItem;
+            marker.type = (pWorldItem->attributes & SpriteAttrSpotted) != 0
+                ? GameplayMinimapMarkerType::SpottedWorldItem
+                : GameplayMinimapMarkerType::WorldItem;
             const GameplayMinimapPoint markerPoint = gameplayMinimapWorldToUv(
                 minimapState,
                 pWorldItem->x,

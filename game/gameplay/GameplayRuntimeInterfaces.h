@@ -4,6 +4,7 @@
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayActorShields.h"
 #include "game/gameplay/GameplayWorldInteraction.h"
+#include "game/gameplay/GameplayWorldPoint.h"
 #include "game/items/WorldItemShape.h"
 #include "game/party/Party.h"
 #include "game/party/SkillData.h"
@@ -14,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -579,13 +581,6 @@ struct GameplayHeldItemDropRequest
     float yawRadians = 0.0f;
 };
 
-struct GameplayWorldPoint
-{
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-};
-
 struct GameplayPartyAttackActorFacts
 {
     size_t actorIndex = 0;
@@ -685,10 +680,14 @@ struct GameplayPartyAttackProjectileRequest
     bool homing = false;
     // Its damage was a critical hit (CharacterAttackResult::criticalDamage).
     bool critical = false;
-    // A solo run's Piercing Arrows: it flies on through this many more monsters, each struck at pierceShare of its
-    // damage (ProjectileState::pierceLeft).
-    uint8_t pierceCount = 0;
-    float pierceShare = 0.0f;
+    // A solo run's Chaining Arrows: it leaps on from the monster it strikes to this many more, each within
+    // chainRadius of the one before and struck at chainShare of its damage (ProjectileState::chainLeft).
+    uint8_t chainCount = 0;
+    float chainShare = 0.0f;
+    float chainRadius = 0.0f;
+    // A solo run's ordinary bow attack: one credit its arrows share, spent by the first of them to hit a monster
+    // (ProjectileState::hitCredit).
+    std::shared_ptr<bool> hitCredit;
 };
 
 struct GameplayPartyAttackFallbackQuery
@@ -907,14 +906,22 @@ public:
     virtual void stopTurnBasedActorMovement()
     {
     }
+    // How many times faster than real time the frames run (fast mode times the turn-based speed settings). The
+    // world's per-frame catch-up limits, which absorb a hitch, are in real time and scale with it, so actors and
+    // missiles get the whole sped-up frame time the turn engine counts.
+    virtual void setGameSpeed(float speed)
+    {
+        (void)speed;
+    }
     // The turn engine schedules turn-based actor actions; the world applies them to actor AI.
     virtual void setTurnBasedActorMode(ActorTurnBasedMode mode)
     {
         (void)mode;
     }
-    // Turn-based combat: the monsters' spell effects (stun, paralysis, slow, their buffs) run down once per completed
-    // turn by its game time, in equivalent real seconds, instead of by actor AI time (the original's game clock).
-    virtual void advanceTurnBasedActorTimers(float seconds)
+    // Turn-based combat: what the original's timed effects run once per completed turn, by the turn's game time in
+    // equivalent real seconds, never by frame time: the monsters' spell effects (stun, paralysis, slow, their buffs),
+    // the party's Immolation aura, and the water, lava or burning floor under the party (one damage tick per turn).
+    virtual void advanceTurnBasedWorldTime(float seconds)
     {
         (void)seconds;
     }
@@ -1134,6 +1141,14 @@ public:
         (void)viewAspectRatio;
         return collectMapActorIndicesWithinRadius(centerX, centerY, centerZ, radius, true, sourceX, sourceY, sourceZ);
     }
+    // Whether nothing of the map stands on the straight line between two points (a chaining arrow's way from the
+    // monster it struck to the next). A world without a map blocks nothing.
+    virtual bool hasClearLineBetween(const GameplayWorldPoint &from, const GameplayWorldPoint &to) const
+    {
+        (void)from;
+        (void)to;
+        return true;
+    }
     // Items lying on the ground (their models replace the sprites, GROUND_ITEMS_3D_PLAN.md). None by default.
     virtual void collectWorldItemPresentationStates(std::vector<GameplayWorldItemPresentationState> &items) const
     {
@@ -1249,6 +1264,23 @@ public:
     virtual std::vector<size_t> lootableCorpseActorIndices() const
     {
         return {};
+    }
+    // The spotted ground items (WorldItemSpotter) that the gather key on a completed map may take, highest index first:
+    // taking one shifts the indices after it. Loot containers, items a quest still locks and items whose pickup runs
+    // an event are left for the party's own hand.
+    virtual std::vector<size_t> collectableSpottedWorldItemIndices() const
+    {
+        return {};
+    }
+    // Whether any ground item is spotted (the map progress tab's "loot all" hint).
+    virtual bool hasSpottedWorldItems() const
+    {
+        return false;
+    }
+    // Takes a ground item out of the spotted ones (the loot filter left it on the ground: it is no longer the party's).
+    virtual void unspotWorldItem(size_t worldItemIndex)
+    {
+        (void)worldItemIndex;
     }
     // Opens an actor's satchel as the active corpse view, as clicking it does; false when it holds nothing.
     virtual bool openActorCorpseView(size_t actorIndex)
@@ -1378,14 +1410,16 @@ public:
         return std::nullopt;
     }
     // shieldTier: what the blow is to an energy shield (GameplayActorShields); shieldModifiers: what the weapon's tech
-    // skill adds to it.
+    // skill adds to it. hitReaction false: the monster neither flinches nor is knocked back (a solo run's Sweeping
+    // Blows and an arrow's Chaining Arrows leaps).
     virtual bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
         const GameplayWorldPoint &source,
         ShieldAttackTier shieldTier,
         const ShieldHitModifiers &shieldModifiers = {},
-        bool critical = false) = 0;
+        bool critical = false,
+        bool hitReaction = true) = 0;
     virtual bool debugSetActorHealth(size_t actorIndex, int health)
     {
         (void)actorIndex;

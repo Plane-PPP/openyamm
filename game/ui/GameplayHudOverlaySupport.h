@@ -12,9 +12,10 @@ namespace OpenYAMM::Game
 class GameplayScreenRuntime;
 struct Character;
 struct InventoryItem;
-enum class BagTag : uint8_t;
+enum class ItemPouch : uint8_t;
 struct GameplayHudTextureHandle;
 struct GameplayResolvedHudLayoutElement;
+struct InventoryPouchViewState;
 
 namespace InventoryBagOverview
 {
@@ -35,6 +36,9 @@ public:
         int width,
         int height,
         bool requireOpaqueHitTest);
+    // A solo run's bar key under the held right button that holds a potion or scroll (the one it would use) or a
+    // weapon (the equipped one it attacks with or swaps to).
+    static bool tryPopulateItemInspectOverlayFromSoloBar(GameplayScreenRuntime &context, int width, int height);
 
     static void updateCharacterInspectOverlay(
         GameplayScreenRuntime &context,
@@ -60,6 +64,9 @@ public:
     // A glow around an item's icon in the colour the rules give its name (MAW's rarities, none for Common), else teal for
     // an artifact, relic or special item, drawn just before the icon: its silhouette in that colour in two rings around
     // it. The rarity_glow setting: always, while the Show Item Rarity key is held, or never.
+    // showsCraftPreview: whether item popups add, in grey, what crafting would add to the item next (rules with
+    // crafting: MAW). The craft_preview setting: always, while the Show Craftable Stats key is held, or never.
+    static bool showsCraftPreview(GameplayScreenRuntime &context);
     static void renderItemRarityGlow(
         GameplayScreenRuntime &context,
         const InventoryItem &item,
@@ -85,8 +92,46 @@ public:
         const GameplayScreenRuntime &context,
         int width,
         int height);
-    // The bag overview's frame (InventoryBagOverview) inside `grid`: the four bags' surfaces and edges with their tags,
-    // a bronze divider between them; renderBag draws each bag's items on its slot.
+    // The party's pouch the inventory page shows in the bags' place (the hammer and potion buttons; rulesets with
+    // pouches, not the Adventurers' Inn roster nor while a spell picks its item), or none.
+    static std::optional<ItemPouch> inventoryPouchShown(const GameplayScreenRuntime &context);
+    // The same for a chest's or shop's party inventory.
+    static std::optional<ItemPouch> nestedPouchShown(const GameplayScreenRuntime &context);
+    // The row a pouch's view starts at, kept inside what its items allow (InventoryBagOverview::pouchMaximumFirstRow;
+    // a page further while an item is held, to reach free rows).
+    static int pouchFirstRow(
+        const GameplayScreenRuntime &context,
+        const InventoryPouchViewState &view,
+        ItemPouch pouch);
+    static int pouchMaximumFirstRow(const GameplayScreenRuntime &context, ItemPouch pouch);
+    // The slot of the pouch `view` shows inside `grid`, at its scroll position.
+    static InventoryBagOverview::Slot pouchSlot(
+        const GameplayScreenRuntime &context,
+        const InventoryPouchViewState &view,
+        ItemPouch pouch,
+        const GameplayResolvedHudLayoutElement &grid);
+    // A pouch tab's frame inside `grid`: the backdrop, the cells' surface without dividers and the scrollbar.
+    static void renderPouchFrame(
+        GameplayScreenRuntime &context,
+        const GameplayResolvedHudLayoutElement &grid,
+        const InventoryBagOverview::Slot &slot,
+        int maximumFirstRow);
+    // Scrolls the pouch `view` shows by rows; and drags its scrollbar's thumb while the button is held (a press on
+    // the track starts it). True while the pointer drives the scrollbar.
+    static void scrollPouchView(
+        const GameplayScreenRuntime &context,
+        InventoryPouchViewState &view,
+        int rows);
+    static bool dragPouchScrollbar(
+        const GameplayScreenRuntime &context,
+        InventoryPouchViewState &view,
+        const GameplayResolvedHudLayoutElement &grid,
+        float pointerX,
+        float pointerY,
+        bool buttonHeld,
+        bool buttonPressed);
+    // The bag overview's frame (InventoryBagOverview) inside `grid`: the four bags' surfaces and edges, a bronze
+    // divider between them; renderBag draws each bag's items on its slot.
     static void renderBagOverview(
         GameplayScreenRuntime &context,
         const GameplayResolvedHudLayoutElement &grid,
@@ -125,18 +170,8 @@ public:
         float y,
         float width,
         float height);
-    // A bag tag's icon (the hammer of a crafting bag, the potion of an alchemy bag) in the square at x, y.
-    static void renderBagTagIcon(GameplayScreenRuntime &context, BagTag tag, float x, float y, float size);
-    // The tags of `bag` as small icons in the top corners of the box at x, y: the crafting bag's left, the alchemy
-    // bag's right.
-    static void renderBagTagMarks(
-        GameplayScreenRuntime &context,
-        const Character &character,
-        uint8_t bag,
-        float x,
-        float y,
-        float width,
-        float size);
+    // A pouch's icon (the hammer of the crafting pouch, the potion of the alchemy pouch) in the square at x, y.
+    static void renderPouchIcon(GameplayScreenRuntime &context, ItemPouch pouch, float x, float y, float size);
 
     // The on/off switch of a skills page row (MAW's Cover and Mana Shield) and of the Magic heading (an Elementalist's
     // rotation), in logical pixels. A switch row's gem sits at the list's left edge and its name starts

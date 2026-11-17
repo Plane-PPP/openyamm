@@ -28,7 +28,7 @@ namespace
 std::string inspectLine(const ItemRules &items, const InventoryItem &item, const ItemDefinition &definition,
     const Character *pViewer, const std::string &text)
 {
-    for (const ItemInspectLine &line : items.inspectLines(item, definition, nullptr, nullptr, pViewer))
+    for (const ItemInspectLine &line : items.inspectLines(item, definition, nullptr, nullptr, pViewer, false))
     {
         if (line.text == text)
         {
@@ -440,6 +440,21 @@ TEST_CASE("MAW damage enchantments show the range they roll at the item's level"
     item.rulesetFields.itemPower = 0;
     CHECK_EQ(inspectLine(rules.gameRules().items, item, longsword, nullptr, "Adds 2 points of Body damage."),
         "Adds 2 points of Body damage.");
+}
+
+TEST_CASE("MAW's Shielding and Storm name what they do, not the table's half missile damage")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    const ItemRules &items = rules.gameRules().items;
+    const ItemDefinition longsword = itemDefinition(1, "Weapon", "Sword");
+    InventoryItem item;
+    item.objectDescriptionId = 1;
+    item.specialEnchantId = 36;
+    const std::string shielding = "Reduces physical damage taken by 15% (does not stack).";
+    CHECK_EQ(inspectLine(items, item, longsword, nullptr, shielding), shielding);
+
+    item.specialEnchantId = 69;
+    CHECK_EQ(inspectLine(items, item, longsword, nullptr, "+20 Air Resistance."), "+20 Air Resistance.");
 }
 
 TEST_CASE("MAW base enchantments apply both slots through the read transforms")

@@ -81,6 +81,7 @@ TEST_CASE("MAW potion effects load with MAW's drinking rules")
     CHECK_EQ(effects.timedSecondsPerPower(), 0.0f);
     CHECK_EQ(effects.fixedDurationSeconds(), 6 * 3600.0f);
     CHECK_EQ(effects.grandmasterAlchemySecondsPerSkill(), 360.0f);
+    CHECK_EQ(effects.soloDurationSeconds(), 24 * 3600.0f);
     CHECK_EQ(effects.combatRecoveryTicks(), 60.0f);
     CHECK(effects.combatRecoveryOnlyNearEnemies());
     CHECK(effects.allRecipesKnown());
@@ -223,6 +224,22 @@ TEST_CASE("MAW potions: power cap and requirement, charges, combat recovery and 
     CHECK_EQ(CharacterAgeReferenceYear - int(party.members()[0].birthYear) + party.members()[0].ageModifier, 20);
 }
 
+TEST_CASE("a solo run's potions last a game day")
+{
+    REQUIRE_MESSAGE(
+        OpenYAMM::Tests::regressionGameDataLoaded(),
+        OpenYAMM::Tests::regressionGameDataFailure().c_str());
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    MergedPotionSettingTable potions = OpenYAMM::Tests::regressionGameData().mergedPotionSettingTable;
+    potions.setEffects(mawPotionEffects());
+    Party party = mawParty(rules);
+    party.setSoloRun(true);
+
+    drink(party, potions, 228, 120);
+    REQUIRE_FALSE(party.members()[0].rulesetState.potionEffects.empty());
+    CHECK_EQ(party.members()[0].rulesetState.potionEffects.front().remainingSeconds, 24 * 3600.0f);
+}
+
 TEST_CASE("MAW healing potions heal by the expected pool of a character of the potion's level")
 {
     REQUIRE_MESSAGE(
@@ -285,22 +302,23 @@ TEST_CASE("MAW knows every recipe of its mixing table from the start")
     CHECK_EQ(book.entries.size(), book.totalResultCount);
 }
 
-TEST_CASE("MAW's alchemy bag tag takes bottles, reagents and MM6's herbs; crafting materials go to the crafting bag")
+TEST_CASE("MAW's alchemy pouch takes bottles, reagents and MM6's herbs; crafting materials go to the crafting pouch")
 {
     MawRules rules(RulesetOptions{}, MawMapLevels{});
     const ItemRules &items = rules.gameRules().items;
-    const auto tagOf = [&items](uint32_t itemId, const std::string &equipStat)
+    const auto pouchOf = [&items](uint32_t itemId, const std::string &equipStat)
     {
         ItemDefinition definition;
         definition.itemId = itemId;
         definition.equipStat = equipStat;
-        return items.bagTag(definition);
+        return items.pouch(definition);
     };
-    CHECK(tagOf(222, "Bottle") == BagTag::Alchemy);
-    CHECK(tagOf(200, "Reagent") == BagTag::Alchemy);
-    CHECK(tagOf(1762, "Herb") == BagTag::Alchemy);
-    CHECK(tagOf(1050, "Misc") == BagTag::Crafting);
-    CHECK_FALSE(tagOf(1, "Weapon").has_value());
+    CHECK(items.hasPouches());
+    CHECK(pouchOf(222, "Bottle") == ItemPouch::Alchemy);
+    CHECK(pouchOf(200, "Reagent") == ItemPouch::Alchemy);
+    CHECK(pouchOf(1762, "Herb") == ItemPouch::Alchemy);
+    CHECK(pouchOf(1050, "Misc") == ItemPouch::Crafting);
+    CHECK_FALSE(pouchOf(1, "Weapon").has_value());
 }
 
 TEST_CASE("a seeded party needs its ruleset's rules back before MAW's challenge-mode start (Doom: 5000 gold)")

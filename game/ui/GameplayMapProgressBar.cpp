@@ -152,8 +152,8 @@ std::optional<Tab> fitTab(GameplayScreenRuntime &context, const Layout &layout, 
     return std::nullopt;
 }
 
-// On a cleared map with satchels left, the gather key loots them all (GameplayActionController::gatherLoot): "G: loot
-// all" with the key it is bound to; empty otherwise.
+// On a cleared map with satchels or spotted ground items left, the gather key loots them all
+// (GameplayActionController::gatherLoot): "G: loot all" with the key it is bound to; empty otherwise.
 std::string lootAllHint(GameplayScreenRuntime &context, const RulesetMapProgress &progress)
 {
     const Party *pParty = context.partyReadOnly();
@@ -161,7 +161,7 @@ std::string lootAllHint(GameplayScreenRuntime &context, const RulesetMapProgress
 
     if (!progress.complete || progress.kind == RulesetMapProgress::Kind::Arena || pParty == nullptr
         || pWorldRuntime == nullptr || !pParty->rules().items.lootGathering()
-        || pWorldRuntime->lootableCorpseActorIndices().empty())
+        || (pWorldRuntime->lootableCorpseActorIndices().empty() && !pWorldRuntime->hasSpottedWorldItems()))
     {
         return {};
     }
@@ -338,20 +338,11 @@ std::optional<RulesetMapProgress> currentProgress(GameplayScreenRuntime &context
         return std::nullopt;
     }
 
-    // Read ten times a second: the bar's numbers change only when something dies or the map does.
-    constexpr uint64_t ReadingMilliseconds = 100;
-    GameplayOverlayInteractionState &state = context.interactionState();
-    const uint64_t now = SDL_GetTicks();
-
-    if (state.pMapProgressReadingWorld != context.worldRuntime() || state.mapProgressReadingTicks == 0
-        || now - state.mapProgressReadingTicks >= ReadingMilliseconds)
-    {
-        state.mapProgressReading = pParty->rules().monsters.mapProgress(*context.worldRuntime());
-        state.pMapProgressReadingWorld = context.worldRuntime();
-        state.mapProgressReadingTicks = std::max<uint64_t>(now, 1);
-    }
-
-    return state.mapProgressReading;
+    // At most a tenth of a second old: the numbers change only when something dies or the map does.
+    constexpr uint64_t MaxAgeMilliseconds = 100;
+    const IGameplayWorldRuntime *pWorld = context.worldRuntime();
+    return context.interactionState().mapProgress.get(pWorld, SDL_GetTicks(), MaxAgeMilliseconds,
+        [pParty, pWorld]() { return pParty->rules().monsters.mapProgress(*pWorld); });
 }
 }
 

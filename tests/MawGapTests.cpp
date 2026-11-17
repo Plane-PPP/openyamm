@@ -26,8 +26,10 @@
 #include "game/rules/maw/MawCombatFormulas.h"
 #include "game/rules/maw/MawCombatRules.h"
 #include "game/rules/maw/MawDimensionMaps.h"
+#include "game/rules/SoloTalents.h"
 #include "game/rules/maw/MawExperienceCurve.h"
 #include "game/rules/maw/MawItemRules.h"
+#include "game/rules/maw/MawMonsterRules.h"
 #include "game/rules/maw/MawMonsterLevels.h"
 #include "game/rules/maw/MawRules.h"
 #include "game/rules/maw/MawTexts.h"
@@ -58,7 +60,7 @@ namespace
 std::string inspectLine(const ItemRules &items, const InventoryItem &item, const ItemDefinition &definition,
     const Character *pViewer, const std::string &text)
 {
-    for (const ItemInspectLine &line : items.inspectLines(item, definition, nullptr, nullptr, pViewer))
+    for (const ItemInspectLine &line : items.inspectLines(item, definition, nullptr, nullptr, pViewer, false))
     {
         if (line.text == text)
         {
@@ -296,7 +298,7 @@ TEST_CASE("MAW artifact popups show MAW's bonuses, not MMMerge's special powers 
     elderaxe.objectDescriptionId = 504;
     elderaxe.identified = true;
     const std::vector<ItemInspectLine> lines = rules.gameRules().items.inspectLines(
-        elderaxe, *gameData.itemTable.get(504), &gameData.standardItemEnchantTable, nullptr, nullptr);
+        elderaxe, *gameData.itemTable.get(504), &gameData.standardItemEnchantTable, nullptr, nullptr, false);
     const auto hasLine = [&lines](const std::string &text)
     {
         return std::any_of(lines.begin(), lines.end(),
@@ -306,8 +308,24 @@ TEST_CASE("MAW artifact popups show MAW's bonuses, not MMMerge's special powers 
     CHECK(hasLine("Artifact level"));
 
     // The description loses the "(...)" part MMMerge prints its numbers in; Standard keeps it.
-    CHECK_EQ(mawArtifactDescription("(Might +20, Swift) An axe of old."), "An axe of old.");
-    CHECK_EQ(mawArtifactDescription("A sword. (Special Powers: +30 Might)"), "A sword.");
+    const std::string leading = "(Might +20, Swift) An axe of old.";
+    const std::string special = "A sword. (Special Powers: +30 Might)";
+    CHECK_EQ(mawArtifactDescription(leading, leading), "An axe of old.");
+    CHECK_EQ(mawArtifactDescription(special, special), "A sword.");
+    // A translation is cut by the same notes, however it writes and places them.
+    // Chinese writes its notes in full-width parentheses.
+    const std::string chineseAxe = "\xe5\x8f\xa4\xe6\x96\xa7\xe3\x80\x82";
+    CHECK_EQ(mawArtifactDescription(leading,
+            "\xef\xbc\x88\xe5\x8a\x9b\xe9\x87\x8f+20\xef\xbc\x89" + chineseAxe), chineseAxe);
+    CHECK_EQ(mawArtifactDescription(special, "Ein Schwert (Spezialkraft: Macht +30)."), "Ein Schwert.");
+    CHECK_EQ(mawArtifactDescription(special, "(Moc +30) Miecz."), "Miecz.");
+    CHECK_EQ(mawArtifactDescription("An axe (of old) with a note. (Special Powers: Swift)",
+            "Eine Axt (von einst) mit Notiz. (Spezialkraft: Flink)"),
+        "Eine Axt (von einst) mit Notiz.");
+    // A translation with another number of notes is shown whole rather than cut in the wrong place.
+    CHECK_EQ(mawArtifactDescription(special, "Ein Schwert der Macht."), "Ein Schwert der Macht.");
+    CHECK_EQ(mawArtifactDescription(special, "Ein (altes) Schwert (Spezialkraft: Macht)."),
+        "Ein (altes) Schwert (Spezialkraft: Macht).");
     const std::optional<std::string> description = rules.gameRules().items.itemDescription(elderaxe, nullptr);
     REQUIRE(description.has_value());
     CHECK(description->find("(") == std::string::npos);
@@ -321,6 +339,22 @@ TEST_CASE("MAW makes the halberd artifact Guardian two-handed, its budget double
     REQUIRE(pGuardian != nullptr);
     CHECK(pGuardian->twoHanded);
     CHECK(pGuardian->slotMultiplier == doctest::Approx(2));
+}
+
+TEST_CASE("MAW artifacts take their stat losses: Hell's Cleaver lowers Personality and Intellect")
+{
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    const ItemTable &items = OpenYAMM::Tests::regressionGameData().itemTable;
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    REQUIRE(items.get(526) != nullptr);
+    Character wearer;
+    Character bonuses = wearer;
+    EquippedItemRuntimeState state;
+    rules.gameRules().items.applyEquippedEnchantEffects(*items.get(526), state, nullptr, nullptr, wearer, bonuses);
+    CHECK(bonuses.magicalBonuses.might > 0);
+    CHECK(bonuses.magicalBonuses.accuracy > 0);
+    CHECK(bonuses.magicalBonuses.personality < 0);
+    CHECK(bonuses.magicalBonuses.intellect < 0);
 }
 
 TEST_CASE("MAW shows a Celestial item at its viewer's level (audit ITM-4)")
@@ -349,7 +383,7 @@ TEST_CASE("MAW shows a Celestial item at its viewer's level (audit ITM-4)")
     };
     const std::vector<ItemInspectLine> lines =
         rules.gameRules().items.inspectLines(hat, *table.get(114),
-            &OpenYAMM::Tests::regressionGameData().standardItemEnchantTable, nullptr, &viewer);
+            &OpenYAMM::Tests::regressionGameData().standardItemEnchantTable, nullptr, &viewer, false);
     CHECK(hasLine(lines, "+" + std::to_string(int(std::ceil(scaled.standardEnchantPower * 1.5)))));
 }
 
@@ -374,7 +408,7 @@ TEST_CASE("MAW dragons triple their items' Dodging and Unarmed too (audit FITM-2
     CHECK_EQ(bonusOf(5), std::min(3 * human, 20));
 }
 
-TEST_CASE("Lone Discipline: a solo character reaches Expert Bodybuilding whatever its class")
+TEST_CASE("Lone Discipline: a solo character reaches Expert Bodybuilding and Regeneration whatever its class")
 {
     RulesetOptions soloOptions;
     soloOptions.soloRun = true;
@@ -391,6 +425,16 @@ TEST_CASE("Lone Discipline: a solo character reaches Expert Bodybuilding whateve
     CHECK(solo.gameRules().skills.promotedMasteryCap(sorcerer, "Bodybuilding", SkillMastery::None)
         == SkillMastery::Grandmaster);
     CHECK(solo.gameRules().skills.masteryCap(sorcerer, "Sword", SkillMastery::None) == SkillMastery::None);
+
+    // Regeneration: Expert from the start, Master only with the final promotion; a higher class cap stays.
+    CHECK(standard.gameRules().skills.masteryCap(sorcerer, "Regeneration", SkillMastery::None) == SkillMastery::None);
+    CHECK(solo.gameRules().skills.masteryCap(sorcerer, "Regeneration", SkillMastery::None) == SkillMastery::Expert);
+    CHECK(solo.gameRules().skills.promotedMasteryCap(sorcerer, "Regeneration", SkillMastery::None)
+        == SkillMastery::Master);
+    CHECK(solo.gameRules().skills.masteryCap(sorcerer, "Regeneration", SkillMastery::Grandmaster)
+        == SkillMastery::Grandmaster);
+    CHECK(solo.gameRules().skills.promotedMasteryCap(sorcerer, "Regeneration", SkillMastery::Grandmaster)
+        == SkillMastery::Grandmaster);
 }
 
 TEST_CASE("A MAW dragon's items count three times, in a solo run too")
@@ -723,6 +767,11 @@ TEST_CASE("MAW reagents take an item level from where they drop (A4.2)")
     request.dropLevel = 60;
     rules.gameRules().items.rollPlainItem(item, reagent, request);
     CHECK_EQ(item.rulesetFields.dropLevel, 20);
+
+    // MM6's herbs are reagents too.
+    InventoryItem herb;
+    rules.gameRules().items.rollPlainItem(herb, itemDefinition(1762, "Herb", "Misc"), request);
+    CHECK_EQ(herb.rulesetFields.dropLevel, 20);
     request.dropLevel = 300;
     rules.gameRules().items.rollPlainItem(item, reagent, request);
     CHECK_EQ(item.rulesetFields.dropLevel, 30);
@@ -742,6 +791,35 @@ TEST_CASE("MAW reagents take an item level from where they drop (A4.2)")
     InventoryItem potion;
     rules.gameRules().items.rollPlainItem(potion, itemDefinition(222, "Bottle", "Misc"), request);
     CHECK(potion.rulesetFields.empty());
+}
+
+TEST_CASE("MAW rolls MM6's herbs a level and shows their power, like the other reagents")
+{
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    rules.state().continentLevels = {60, 30, 0, 0};
+    Party party = OpenYAMM::Tests::makeSpellRegressionParty(gameData);
+    party.setRules(&rules.gameRules());
+    std::mt19937 rng(17);
+    ItemGenerationRequest request;
+    request.treasureLevel = 1;
+    request.mode = ItemGenerationMode::ChestLoot;
+    request.dropLevel = 60;
+    const std::optional<InventoryItem> herb = ItemGenerator::generateRandomInventoryItem(gameData.itemTable,
+        gameData.standardItemEnchantTable, gameData.specialItemEnchantTable, request, &party, rng,
+        [](const ItemDefinition &entry)
+        {
+            return entry.equipStat == "Herb";
+        });
+    REQUIRE(herb.has_value());
+    const ItemDefinition *pHerb = gameData.itemTable.get(herb->objectDescriptionId);
+    REQUIRE(pHerb != nullptr);
+    CHECK_EQ(pHerb->equipStat, "Herb");
+    CHECK_EQ(herb->rulesetFields.dropLevel, 20);
+
+    // Base power 1 at item level 20: floor(1 * 1.25 + 15).
+    CHECK_EQ(inspectLine(rules.gameRules().items, *herb, *pHerb, nullptr, "Power: 16"), "Power: 16");
 }
 
 TEST_CASE("MAW clubs keep a rolled Unarmed; a second enchantment within one takes the first's strength (audit ITM-8)")
@@ -962,6 +1040,32 @@ TEST_CASE("MAW's Endless Arena: wave corpses carry no gold or item, the wave bos
     const CorpseLoot boss = monsters.corpseLoot(context);
     CHECK_GT(boss.loot.goldDiceRolls, 0);
     CHECK_EQ(boss.loot.itemChance, 100);
+}
+
+TEST_CASE("MAW Omnipotent bosses' corpses roll a Celestial item, other bosses' do not")
+{
+    MercenaryMap world;
+    MawRules rules(RulesetOptions{}, world.mapLevels, installedItemData(), MawPromotionData{}, installedCraftingData());
+    const MonsterRules &monsters = rules.gameRules().monsters;
+    const MonsterTable::MonsterStatsEntry &stats = *world.monsters.findStatsById(194);
+    ActorRulesetFacts facts = monsters.resolveMonster(world.context(), stats, nullptr).rulesetFacts;
+    facts.level = 100;
+    CorpseLootContext context;
+    context.pStats = &stats;
+    context.pMonsterTable = &world.monsters;
+    context.pFacts = &facts;
+    context.pMap = &world.map;
+
+    facts.bossAffix = 1;
+    const CorpseLoot boss = monsters.corpseLoot(context);
+    CHECK(boss.boss);
+    CHECK_FALSE(boss.omnipotent);
+
+    facts.bossAffix = uint8_t(MawBossAffix::Omnipotent);
+    const CorpseLoot omnipotent = monsters.corpseLoot(context);
+    CHECK(omnipotent.boss);
+    CHECK(omnipotent.omnipotent);
+    CHECK_EQ(omnipotent.loot.itemChance, 100);
 }
 
 TEST_CASE("MAW risen monsters' corpses hold a quarter of the item chance and gold dice sides (audit FITM-2-1)")
@@ -1549,6 +1653,84 @@ TEST_CASE("MAW monster missiles home on the party only while it moves slowly acr
     CHECK(combat.monsterMissileHomingLockRate(0) == doctest::Approx(0.0f));
 }
 
+TEST_CASE("MAW monster missiles hit a strafing party but miss one running across their flight")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    const float lockRate = rules.gameRules().combat.monsterMissileHomingLockRate(spellIdValue(SpellId::FireBolt));
+
+    // A missile fired from 3000 units at a party moving at `partySpeed`, `angleDegrees` off the line from the monster
+    // (90: straight across the flight), run as the world runs it: the party moves once a rendered frame, the missile
+    // in 1/60 s steps (at most 4 a frame) toward the party at its step (partyPositionAtStep), and it hits the party
+    // where it is this frame, within the party's radius (37) and its own (16).
+    const auto hits = [lockRate](float missileSpeed, float partySpeed, float angleDegrees, float framesPerSecond)
+    {
+        constexpr float StepSeconds = 1.0f / 60.0f;
+        constexpr float HitRadius = 37.0f + 16.0f;
+        const float frameSeconds = 1.0f / framesPerSecond;
+        const float angle = angleDegrees * 3.14159265f / 180.0f;
+        GameplayWorldPoint party = {3000.0f, 0.0f, 0.0f};
+        GameplayProjectileService::ProjectileState missile;
+        missile.velocityX = missileSpeed;
+        GameplayProjectileService::ProjectileHoming homing;
+        homing.turnRadiansPerSecond = 1000.0f;
+        homing.speed = missileSpeed;
+        homing.lockRadiansPerSecond = lockRate;
+        missile.homing = homing;
+        float accumulatorSeconds = 0.0f;
+
+        for (float seconds = 0.0f; seconds < 6.0f; seconds += frameSeconds)
+        {
+            const GameplayWorldPoint previousFrame = party;
+            party.x += partySpeed * std::cos(angle) * frameSeconds;
+            party.y += partySpeed * std::sin(angle) * frameSeconds;
+            accumulatorSeconds = std::min(accumulatorSeconds + frameSeconds, 4.0f * StepSeconds);
+            const int steps = std::min(4, static_cast<int>(accumulatorSeconds / StepSeconds));
+
+            for (int step = 0; step < steps; ++step)
+            {
+                const GameplayWorldPoint target =
+                    GameplayProjectileService::partyPositionAtStep(previousFrame, party, step, steps);
+                GameplayProjectileService::steerHomingProjectile(missile, &target, StepSeconds);
+                const float moveX = missile.velocityX * StepSeconds;
+                const float moveY = missile.velocityY * StepSeconds;
+                const float along = std::clamp(
+                    ((party.x - missile.x) * moveX + (party.y - missile.y) * moveY) / (moveX * moveX + moveY * moveY),
+                    0.0f,
+                    1.0f);
+
+                if (std::hypot(missile.x + along * moveX - party.x, missile.y + along * moveY - party.y) < HitRadius)
+                {
+                    return true;
+                }
+
+                missile.x += moveX;
+                missile.y += moveY;
+                accumulatorSeconds -= StepSeconds;
+            }
+        }
+
+        return false;
+    };
+
+    // At any frame rate a strafe (running strafes at walking speed) never escapes; a run straight across the flight
+    // always does. Without partyPositionAtStep a strafe escaped at 30 fps, two steps' movement seen in one.
+    for (float framesPerSecond : {20.0f, 30.0f, 45.0f, 60.0f, 144.0f})
+    {
+        CAPTURE(framesPerSecond);
+
+        for (float missileSpeed : {4000.0f, 6000.0f, 8000.0f})
+        {
+            CAPTURE(missileSpeed);
+            CHECK(hits(missileSpeed, 384.0f, 90.0f, framesPerSecond));
+            CHECK_FALSE(hits(missileSpeed, 768.0f, 90.0f, framesPerSecond));
+        }
+    }
+
+    // A run at 60° escapes the usual 4000 missile; at 45° it is held (at the edge: some frame rates let it escape).
+    CHECK_FALSE(hits(4000.0f, 768.0f, 60.0f, 60.0f));
+    CHECK(hits(4000.0f, 768.0f, 45.0f, 60.0f));
+}
+
 TEST_CASE("MAW blasters shoot with the melee rows and put the bow away (A1.11)")
 {
     REQUIRE_MESSAGE(OpenYAMM::Tests::regressionGameDataLoaded(), OpenYAMM::Tests::regressionGameDataFailure().c_str());
@@ -1789,7 +1971,7 @@ TEST_CASE("MAW item popups: Legendary 19 in the range, resistances as reductions
     {
         std::vector<std::string> result;
 
-        for (const ItemInspectLine &line : items.inspectLines(item, ring, nullptr, nullptr, pViewer))
+        for (const ItemInspectLine &line : items.inspectLines(item, ring, nullptr, nullptr, pViewer, false))
         {
             result.push_back(line.text);
         }
@@ -2319,6 +2501,54 @@ TEST_CASE("MAW chest and ground loot drop at the map's own monsters' level (A2.9
     // Another map's cached levels do not count: on a map without its own, the fallback of that map (audit ROB-2-2).
     twoFamilies.setCurrentMap("d01.blv");
     CHECK(twoFamilies.mapDropLevel() != doctest::Approx(twoLevels.at(194)));
+}
+
+TEST_CASE("MAW traps hit at the map's own monsters' level where it is above the party's (deviation 193)")
+{
+    const auto trap = [](MawRules &rules)
+    {
+        PartySeed seed;
+        seed.members.resize(1);
+        seed.members[0].className = "Knight";
+        seed.members[0].level = 5;
+        seed.members[0].maxHealth = 100000;
+        seed.members[0].health = 100000;
+        Party party;
+        party.seed(seed);
+        party.setRules(&rules.gameRules());
+        return rules.gameRules().combat.environmentDamage(party, 0, 7, CombatDamageType::Fire, true);
+    };
+    // A map-less game whose party is at that level.
+    const auto trapAtPartyLevel = [&trap](double level)
+    {
+        MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+        rules.state().continentLevels = {level, 0, 0, 0};
+        return trap(rules);
+    };
+
+    const MercenaryMap mercenaries;
+    MawRules rules(RulesetOptions{}, mercenaries.mapLevels, installedItemData());
+    rules.state().continentLevels = {5, 0, 0, 0};
+    rules.setCurrentMap(mercenaries.map.fileName);
+    const int lowParty = trap(rules);
+    const std::unordered_map<int, int> &levels = rules.monsterLevels(mercenaries.monsters, mercenaries.map);
+    REQUIRE(levels.contains(194));
+    const int mapLevel = levels.at(194);
+    REQUIRE_GT(mapLevel, 5);
+    CHECK(rules.mapMeanMonsterLevel().value_or(0) == doctest::Approx(mapLevel));
+
+    // Ahead of its level the party meets the map's traps, not its own.
+    CHECK_EQ(trap(rules), trapAtPartyLevel(mapLevel));
+    CHECK_GT(trap(rules), lowParty);
+
+    // A party above the map keeps its own level.
+    rules.state().continentLevels = {mapLevel + 100.0, 0, 0, 0};
+    CHECK_EQ(trap(rules), trapAtPartyLevel(mapLevel + 100.0));
+
+    // Another map's levels do not count.
+    rules.state().continentLevels = {5, 0, 0, 0};
+    rules.setCurrentMap("d01.blv");
+    CHECK_EQ(trap(rules), lowParty);
 }
 
 namespace
@@ -3417,4 +3647,103 @@ TEST_CASE("Only MAW outlines items in their rarity colour; Standard MMerge has n
     MawRules rules(RulesetOptions{}, MawMapLevels{});
     CHECK_FALSE(standardGameRules().items.glowsItemRarity());
     CHECK(rules.gameRules().items.glowsItemRarity());
+}
+
+TEST_CASE("A solo run's experience surcharge sets what its character trains by; banks and other games keep MAW's")
+{
+    SoloTalentTable table;
+    std::string error;
+    REQUIRE_MESSAGE(table.loadFromYaml("experience_surcharge: 0.0025\ntalents: []", error), error);
+    bindSoloTalentTable(&table);
+
+    RulesetOptions soloOptions;
+    soloOptions.soloRun = true;
+    MawRules solo(soloOptions, MawMapLevels{});
+    MawRules party(RulesetOptions{}, MawMapLevels{});
+    const ExperienceRules &soloExperience = solo.gameRules().experience;
+    const ExperienceRules &partyExperience = party.gameRules().experience;
+
+    // Up to level 100 the curves agree: 500 L (L - 1) to reach level L.
+    CHECK_EQ(soloExperience.experienceForNextLevel(99), partyExperience.experienceForNextLevel(99));
+    CHECK_EQ(soloExperience.experienceForNextLevel(99), 4950000u);
+    // Level 200 to 201 costs 1000 x 200 x (1 + 100 x 0.0025) = 250,000 in the solo run, 300,000 in MAW.
+    CHECK_EQ(soloExperience.experienceForNextLevel(200) - soloExperience.experienceForNextLevel(199), 250000u);
+    CHECK_EQ(partyExperience.experienceForNextLevel(200) - partyExperience.experienceForNextLevel(199), 300000u);
+    CHECK_EQ(partyExperience.experienceForNextLevel(500), uint64_t(mawExperienceForLevel(501) + 0.5));
+    // The same experience is a higher level for the solo character.
+    const double experience = mawExperienceForLevel(500);
+    CHECK(solo.characterCurve().levelForExperience(experience) > 560);
+    CHECK(party.characterCurve().levelForExperience(experience) == doctest::Approx(500));
+
+    // The continent banks stay on MAW's curve in a solo run.
+    solo.state().addBankedExperience(experience, 1);
+    CHECK(solo.state().totalLevel() == doctest::Approx(500));
+
+    // Without a surcharge in the table the solo run trains by MAW's curve.
+    bindSoloTalentTable(nullptr);
+    CHECK_EQ(soloExperience.experienceForNextLevel(500), partyExperience.experienceForNextLevel(500));
+}
+
+TEST_CASE("A solo run's early monster cut divides monsters' hits and multiplies the party's; nothing else")
+{
+    const auto taken = [](const MawRules &rules, bool monster)
+    {
+        Character member;
+        member.level = 5;
+        member.maxHealth = 500;
+        member.health = 500;
+        CharacterDamageHit hit;
+        hit.amount = 100;
+        hit.pCharacter = &member;
+        hit.monsterAttack = monster;
+        hit.attackerLevel = monster ? 5 : 0;
+        hit.attackerFacts.level = monster ? 5 : 0;
+        hit.attackerFacts.familyLevel = monster ? 5 : 0;
+        hit.attackerFacts.tier = 2;
+        hit.attackerFacts.attack1Damage = 100;
+        std::mt19937 rng(9);
+        hit.pRng = &rng;
+        return rules.gameRules().combat.damageToCharacter(hit);
+    };
+    const auto dealt = [](const MawRules &rules, int attackerLevel)
+    {
+        std::mt19937 rng(1);
+        MonsterDamageHit hit;
+        hit.amount = 400;
+        hit.type = CombatDamageType::Physical;
+        hit.attackerFacts.level = attackerLevel;
+        hit.attackerFacts.attack1Damage = 300;
+        hit.pRng = &rng;
+        return rules.gameRules().combat.damageToMonster(hit);
+    };
+
+    RulesetOptions soloOptions;
+    soloOptions.soloRun = true;
+    MawRules solo(soloOptions, MawMapLevels{});
+    const int plainTaken = taken(solo, true);
+    const int plainFall = taken(solo, false);
+    const int plainDealt = dealt(solo, 0);
+    const int plainMonsterBlow = dealt(solo, 5);
+    REQUIRE(plainTaken > 20);
+    REQUIRE(plainDealt > 0);
+
+    solo.setSoloMonsterCut(2.5);
+    // A monster's hit is cut before armour, so the result is the plain one over the cut, to rounding.
+    CHECK(taken(solo, true) == doctest::Approx(plainTaken / 2.5).epsilon(0.05));
+    // A fall is no monster's hit.
+    CHECK_EQ(taken(solo, false), plainFall);
+    // The party's hit counts for 2.5 times as much; a monster striking a monster is left alone.
+    CHECK(dealt(solo, 0) == doctest::Approx(plainDealt * 2.5).epsilon(0.01));
+    CHECK_EQ(dealt(solo, 5), plainMonsterBlow);
+
+    // The cut never raises a monster above its own numbers.
+    solo.setSoloMonsterCut(0.5);
+    CHECK_EQ(taken(solo, true), plainTaken);
+    CHECK_EQ(dealt(solo, 0), plainDealt);
+
+    // A game that is not a solo run ignores it: a party of one in plain MAW fights MAW's monsters.
+    MawRules party(RulesetOptions{}, MawMapLevels{});
+    party.setSoloMonsterCut(2.5);
+    CHECK_EQ(taken(party, true), plainTaken);
+    CHECK_EQ(dealt(party, 0), plainDealt);
 }

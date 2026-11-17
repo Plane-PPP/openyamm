@@ -118,6 +118,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return settings.workbenchKeepMixedPotions ? "true" : "false";
     }
+    if (id == "upkeep_auto_brew")
+    {
+        return settings.upkeepAutoBrew ? "true" : "false";
+    }
     if (id == "show_hits")
     {
         return settings.showHits ? "true" : "false";
@@ -129,6 +133,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     if (id == "rarity_glow")
     {
         return settings.rarityGlow;
+    }
+    if (id == "craft_preview")
+    {
+        return settings.craftPreview;
     }
     if (id == "skip_event_cutscenes")
     {
@@ -530,14 +538,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
         settings.enemyHealthBarEffects = value == "true";
         return true;
     }
-    if (id == "potion_expiry_warnings" || id == "workbench_keep_mixed_potions")
+    if (id == "potion_expiry_warnings" || id == "workbench_keep_mixed_potions" || id == "upkeep_auto_brew")
     {
         if (value != "true" && value != "false")
         {
             return false;
         }
-        (id == "potion_expiry_warnings" ? settings.potionExpiryWarnings : settings.workbenchKeepMixedPotions) =
-            value == "true";
+        (id == "potion_expiry_warnings"         ? settings.potionExpiryWarnings
+            : id == "workbench_keep_mixed_potions" ? settings.workbenchKeepMixedPotions
+                                                   : settings.upkeepAutoBrew) = value == "true";
         return true;
     }
     if (id == "show_hits")
@@ -565,6 +574,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
             return false;
         }
         settings.rarityGlow = value;
+        return true;
+    }
+    if (id == "craft_preview")
+    {
+        if (!validRarityGlowValue(value))
+        {
+            return false;
+        }
+        settings.craftPreview = value;
         return true;
     }
     if (id == "skip_event_cutscenes")
@@ -1179,8 +1197,10 @@ bool reservedMenuBinding(const InputBinding &binding, KeyboardAction action)
     {
         return false;
     }
-    const bool bagKey = action >= KeyboardAction::Bag1 && action <= KeyboardAction::Bag4;
+    // The party's number keys 1-5 select members, except for the bags and a solo run's action bar.
+    const bool numberKeyAction = (action >= KeyboardAction::Bag1 && action <= KeyboardAction::Bag4)
+        || (action >= KeyboardAction::ActionBar1 && action <= KeyboardAction::ActionBar10);
     return binding.scancode == SDL_SCANCODE_ESCAPE || binding.scancode == SDL_SCANCODE_GRAVE ||
-           (!bagKey && binding.scancode >= SDL_SCANCODE_1 && binding.scancode <= SDL_SCANCODE_5);
+           (!numberKeyAction && binding.scancode >= SDL_SCANCODE_1 && binding.scancode <= SDL_SCANCODE_5);
 }
 } // namespace OpenYAMM::Game

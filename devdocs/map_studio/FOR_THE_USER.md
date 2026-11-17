@@ -98,3 +98,78 @@ goblin slate beside the original's skull lines (the lead assumes the reviews' pr
     per EDITOR_RETIREMENT.md: a large change to the game); (c) optionally a performance pass on the missed hosted
     budgets (Chrome's first open, indoor commit p95 in the browser, outdoor 3D after a commit, the 2.98 MB core).
     Optional hands-on checks any time: `openyamm-studio/build-s4/oymap studio`, open the link, walk a map, pin it.
+
+**Committed 2026-11-15 08:58 (openyamm-03, 2.4, local, not pushed):** item 13 (S5a4's game features incl. the `tp` yaw/pitch and `--extra-mount` extras) and the map_studio records in cf9638e72f and 73d14a8c46.
+
+15. S7 plan written (14:03): `devdocs/map_studio/S7_PLAN.md`. Three things for you before the editor goes:
+    (a) The plan builds the shared core library around the 44 shared game/engine sources where they stand (CMake only,
+        objects checked byte-equal) instead of moving them into `core/` (moving rewrites 827 includes in 493 files; an
+        optional follow-up, S7b). OK?
+    (b) Deleting `editor/` loses, with no replacement: hand editing of faces in the old GUI, OBJ/GLB model import,
+        new-map creation in the old editor, mesh-to-metadata seeding and the editor's own regression suites. No script
+        was found relying on them. Confirm that is fine.
+    (c) Your local MM9 rebuild scripts (`output/mm9_rework/final_r*/r*.sh`) build the target `openyamm-editor`, and the
+        MM9 orchestrator handoff tells the next run to copy them: they will need the new build line (the plan lists it).
+
+16. S6's game changes (14:39; details in `devdocs/map_studio/S6_PLAN.md` and S5.md "S6"), none made, each needs your yes:
+    G1 scene overlays may carry ladders (small); G2 cinematics overlays merged by cinematic id (small); G3 named mods in
+    the game: `mods/<id>/mod.yml`, an enabled list, a switch (Mods page or console), table contributions, id-range
+    checks (medium; this is S6's exit "a mod switched off in the game"); G4 move the cinematic library parser into its
+    own file so the studio can use it (move only, small); G5 overlays may add actors and items (medium: base actor
+    indices and saves).
+
+**Answered 17:58:** item 15: shared sources kept in place; the old editor's GUI-only features may go; the S7 agent updates the local MM9 rebuild scripts. S7 now runs through step 6 (deleting `editor/` last).
+
+**Answered 20:10:** item 16: all five approved (G1-G5), on condition that nothing existing breaks. In progress (new lead,
+two agents: G1/G2/G4/G5 and G3); checked against a frozen baseline of the post-S7 game (`output/studio_lead/g/`:
+unit tests, release and MM9 scenarios, the MM6-8 regression suites, every studio playtest, load times).
+
+17. S7 done (19:50), for your commit (nothing staged). Tracked, modified: `.github/workflows/packages.yml`, `.gitignore`,
+    `AGENTS.md`, `CMakeLists.txt`, `COPYRIGHT`, `README.md`, `android/app/build.gradle`, `cmake/BgfxRuntime.cmake`,
+    `packaging/rehearse_release.py`, `devdocs/map_studio/{EDITOR_RETIREMENT,PLAN,README,S7_PLAN}.md`,
+    `devdocs/mm9_rework/HANDOFF_20261107_ORCHESTRATOR.md`, `devdocs/mm9_rework/overnight/AGENT_BRIEF.md`,
+    `engine/AssetFileSystem.{cpp,h}`, `engine/CMakeLists.txt`, `game/CMakeLists.txt`, `level_generation/PIPELINE_STATUS.md`,
+    the 18 repointed callers and their READMEs under `level_generation/projects/{brackenford_greywatch,hesper_out1-4,
+    mm5_castleview_kalindra,mm9r_common,mm9r_isleofashes}/` and `level_generation/terrain/`, `tests/CMakeLists.txt`,
+    `tests/ImageAssetLoaderTests.cpp`, `tests/IndoorSourceGeometryCompilerTests.cpp`, `tools/CMakeLists.txt`,
+    `tools/PERF_PROFILING.md`, `tools/VULKAN_DLSS_TEST.md`, `tools/mm9_compile_indoor_source_main.cpp`. Deleted: all 61
+    files under `editor/` (16 moved to `core/compile/`), `res/editor_1.webp`, `res/editor_2.webp`, the two editor shaders
+    in `game/shaders/`, `tools/mm9_import_discovery/run_mm9_active_gate.sh`, `assets_dev/worlds/mm8/maps/out01.{map,
+    geometry,terrain}.yml`. New: `core/CMakeLists.txt`, 19 files in `core/compile/`, `third_party/cgltf/`. The commit needs
+    `openyamm-studio/` as well (untracked; the repointed callers and docs use it). Not S7's (leave out of it):
+    `game/debug/MawTestParties.*`, `game/gameplay/GameplaySpellService.cpp`, the MAW test parties yml, `settings.ini`,
+    `devdocs/maw/README.md`, `devdocs/solo_action/README.md`. You may delete `.openyamm-editor.ini`.
+
+18. G1-G5 done (22:05), for your commit (nothing staged); checked against a frozen post-S7 game with no difference (S5.md
+    "S6's game changes G1-G5"). New: `game/content/NamedMods.{h,cpp}`, `game/gameplay/CinematicLibrary.{h,cpp}`,
+    `game/gameplay/GameplayWorldPoint.h`, `tests/SceneOverlayTests.cpp`, `tests/NamedModsTests.cpp`,
+    `tests/scenarios/scene_overlays/`, `tests/scenarios/mods/`, `devdocs/NAMED_MODS.md`. Modified: `engine/AssetPackIndex.h`,
+    `engine/AssetFileSystem.{h,cpp}`, `game/data/GameDataLoader.{h,cpp}`, `game/app/GameApplication.{h,cpp}`,
+    `game/scenario/{ScenarioDocument.h,ScenarioYamlLoader.cpp,ScenarioRunner.cpp}`, `game/gameplay/CinematicRuntime.{h,cpp}`,
+    `game/gameplay/GameplayRuntimeInterfaces.h`, `game/maps/SceneOverlayPaths.{h,cpp}`, `game/maps/IndoorSceneYml.{h,cpp}`,
+    `game/CMakeLists.txt`, `core/CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/AssetFileSystemTests.cpp`,
+    `tests/scenarios/README.md`, `AGENTS.md` (one line: named mods), `packaging/MODDING.md`,
+    `devdocs/{SAVED_MAP_STATE_IDENTITY,INDOOR_ROTATING_MOVERS_AND_LADDERS}.md`, `devdocs/mm9_rework/MM9_CUTSCENES.md`,
+    `devdocs/maw/MM9_BALANCE_DESIGN.md`, and in `openyamm-studio/` (untracked) `core/{Cinematics,Mods}.{h,cpp}`,
+    `tests/S6Tests.cpp`, `README.md`, `schema/{objects,mod}.schema.json`. Shared with S7's uncommitted edits (one
+    commit is simplest; splitting needs hunks): `engine/AssetFileSystem.{h,cpp}`, `core/CMakeLists.txt`,
+    `game/CMakeLists.txt`, `tests/CMakeLists.txt`, `AGENTS.md`.
+
+19. S8 done and merged (2026-11-16, merges 37-39; S8_PLAN.md) and the five new Xeen maps installed (X2, XD-21, XD-27,
+    XD-06, XD-12; `devdocs/xeen/ACT2_BUILD.md`; play commands in `output/studio_play/PLAY.md`). Nothing staged; the
+    studio is untracked (`openyamm-studio/`), the Xeen briefs are under `devdocs/xeen/briefs/`. Game changes found on the
+    way, none made, each needs your yes:
+    - Placed monsters: the scene's own hit points are ignored and the own name shows only on the corpse (every boss:
+      Darzog 1,200 in the scene, 400 in play; the Robber Boss; the Yak Master); boss rows in monster data would do it too.
+    - A no-magic map's refusal says "You can't do that while underwater" (XD-12).
+    - The game reads only one `--extra-mount` (every Xeen agent combined mounts by hand).
+    - Model water faces drawn as level (normal 0,0,1 in `OutdoorRenderer.cpp`: upright falls streak, no falling-water
+      foam), always opaque, hairlines where water faces meet at an angle (Alvar too), flow time never wrapped (S8e).
+    - Scenario runner: `triggered_event: 0` for decoration events (`IndoorRenderer.cpp` ~5727), `status()` loses step
+      lines, `setup_shortcut: {kind: grant_item}` does nothing, event exits leave no transition trace.
+    - MM9: a new map cannot join `openAirMaps` (spells follow indoor rules there); the installed
+      `worlds/mm9/terrain_materials/world.yml` lacks `cliff_layered` and `snow`; headless runs load no terrain
+      materials; `parseTerrainMaterialConfig` is not in the shared core list (S8b).
+    - A windowed run of an outdoor map without a terrain material file fails to start (S8g).
+    - Still open from item 16's helpers: ladder stepping out of `IndoorPartyRuntime` (the browser's walk climbs);
+      bakes honouring `--extra-mount`.

@@ -89,7 +89,7 @@ inline std::optional<CombatLogMode> parseCombatLogModeValue(std::string_view val
     return std::nullopt;
 }
 
-// "off", "hold" or "always" (gameplay.rarity_glow).
+// "off", "hold" or "always" (gameplay.rarity_glow, gameplay.craft_preview).
 inline bool validRarityGlowValue(std::string_view value)
 {
     return value == "off" || value == "hold" || value == "always";
@@ -425,6 +425,9 @@ struct GameSettings
     // The Workbench never uses up carried mixed potions: it brews them from reagents and the basic potions
     // (AlchemyChainPlanner's keepMixedPotions).
     bool workbenchKeepMixedPotions = false;
+    // A fresh press of the Upkeep key first brews what the upkeep lists' potion stock lacks (devdocs/BATTLE_ORDERS.md
+    // "Potions"); set in the Battle Orders window's upkeep list.
+    bool upkeepAutoBrew = false;
     // On by default; only MM9 marks quest givers, so the other worlds show nothing either way.
     bool questMarkers = true;
     // Maps with a painted map (MM9's) show it on the minimap and the journal map; false shows the MM6-MM8 line map
@@ -473,6 +476,9 @@ struct GameSettings
     // rarities, such as MAW; Common items have none; artifacts, relics and special items glow teal): "off", "hold"
     // (while the Show Item Rarity key, Left Alt, is held) or "always".
     std::string rarityGlow = "always";
+    // Item popups show, in grey, what crafting would add to the item next: "off", "hold" (the Show Craftable Stats
+    // key) or "always" (gameplay.craft_preview; rulesets with crafting, such as MAW).
+    std::string craftPreview = "hold";
     // HUD state the game remembers across map loads and saves: the follower panel beside the minimap (shown when the
     // party has followers) and the minimap zoom step (0 zoomed out, 1 default, 2 zoomed in).
     bool followerPanel = true;

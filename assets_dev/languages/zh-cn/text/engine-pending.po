@@ -980,10 +980,6 @@ msgid "CHAIN ARMOR"
 msgstr "锁甲"
 
 # imported from packs (base v1.21)
-msgid "Cannot be lowered later."
-msgstr "之后无法下调。"
-
-# imported from packs (base v1.21)
 msgid "Cannot open "
 msgstr "无法打开 "
 
@@ -1551,11 +1547,6 @@ msgstr "均衡属性：每项 {a}，上限 {b}"
 # imported from packs (base v1.21)
 msgid "Everlasting"
 msgstr "不朽"
-
-# imported from packs (base v1.21)
-msgid ""
-"Every map has a fixed level, about 2.5× its original band; travel between continents to progress. Suits clearing the whole game. Masteries need skill 6, 12 and 20."
-msgstr "每张地图等级固定，约为原版的 2.5 倍；需往返各大陆推进。适合打通整个游戏。宗师级需要技能等级 6、12、20。"
 
 # imported from packs (base v1.21)
 msgid ""
@@ -2183,10 +2174,6 @@ msgstr "群体 99"
 # imported from packs (base v1.21)
 msgid "Group:"
 msgstr "技能组："
-
-# imported from packs (base v1.21)
-msgid "Groups"
-msgstr "怪物数量"
 
 # imported from packs (base v1.21)
 msgid "Grows with its wearer up to level "
@@ -3008,10 +2995,6 @@ msgid "MAGIC"
 msgstr "魔法"
 
 # imported from packs (base v1.21)
-msgid "MAW's rules with no extra challenge."
-msgstr "MAW 规则，无额外挑战。"
-
-# imported from packs (base v1.21)
 msgid "MEDITATION"
 msgstr "冥想术"
 
@@ -3181,23 +3164,10 @@ msgid "Modifier combinations are not supported. Choose a single key."
 msgstr "不支持组合键，请选择单个按键。"
 
 # imported from packs (base v1.21)
-msgid "Monster HP"
-msgstr "怪物生命"
-
-# imported from packs (base v1.21)
-msgid "Monster dmg"
-msgstr "怪物伤害"
-
-# imported from packs (base v1.21)
 msgid ""
 "Monster hits cause conditions, more and stronger monsters spawn, items must be identified before wearing and hirelings are limited. Masteries need skill 6, 12 and 20. Starts with 5,000 gold and bonus experience."
 msgstr ""
 "怪物攻击会附加异常状态，出现更多更强的怪物，装备须鉴定后才能穿戴，随从数量受限。宗师级需要技能等级 6、12、20。开局 5000 金币与额外经验。"
-
-# imported from packs (base v1.21)
-msgid ""
-"Monsters on a new continent gain the levels you earned elsewhere. Suits playing one continent at a time. Masteries need skill 4, 7 and 10."
-msgstr "新大陆的怪物会获得你在其他大陆练就的等级。适合一次只玩一块大陆。宗师级需要技能等级 4、7、10。"
 
 # imported from packs (base v1.21)
 msgid "Move {s} to"
@@ -3321,11 +3291,6 @@ msgstr "次日"
 # imported from packs (base v1.21)
 msgid "Next mastery: {s}"
 msgstr "下一级精通：{s}"
-
-# imported from packs (base v1.21)
-msgid ""
-"No Legendary or Celestial items and no crafting rewards, weaker enchantments and reagents, flatter bosses and a minimum armour value from the armour skills. Combines with any difficulty."
-msgstr "无传说或神圣物品、无合成奖励，附魔与试剂更弱，首领更平滑，护甲技能提供最低护甲值。可与任意难度叠加。"
 
 # imported from packs (base v1.21)
 msgid "No additional skills to choose"
@@ -4285,7 +4250,7 @@ msgid ""
 "I would be even more in your debt if Lord Markham sends this item back with you!\n"
 "I would be sure to favorably record your heroic acts and deeds!"
 msgstr ""
-"啊，你们就是和谐谷城堡的新主人！看起来不怎么象。不过象不象不是我说了算的，老百姓自有评判。我是个历史学家，还是个历史文物的收藏爱好者。听说马克汉姆爵士在这方面和我是同道，他有一件非常珍贵的收藏--- 帕尔森的羽毛笔。那可不是普通的羽毛笔，结束第一次木材战争时签署匹尔邦特和平协议用的就是这支笔。你们既然能成为和谐谷的主人，和马克汉姆爵士的交情肯定不错。麻烦你们把这封信带给他，他现在已经住在泰塔利亚了。如果爵士看了这封信，能把那支羽毛笔托你们交给我，那真是感激不尽，我一定会让您名垂青史。"
+"啊，你们就是哈蒙代尔城堡的新主人！看起来不怎么象。不过象不象不是我说了算的，老百姓自有评判。我是个历史学家，还是个历史文物的收藏爱好者。听说马克汉姆爵士在这方面和我是同道，他有一件非常珍贵的收藏--- 帕尔森的羽毛笔。那可不是普通的羽毛笔，结束第一次木材战争时签署匹尔邦特和平协议用的就是这支笔。你们既然能成为哈蒙代尔的主人，和马克汉姆爵士的交情肯定不错。麻烦你们把这封信带给他，他现在已经住在泰塔利亚了。如果爵士看了这封信，能把那支羽毛笔托你们交给我，那真是感激不尽，我一定会让您名垂青史。"
 
 # imported from packs (base v1.21)
 msgid ""
@@ -4318,7 +4283,7 @@ msgstr "抱歉，我是{prof}，没法鉴定{item}，对这类东西一窍不通
 
 # imported from packs (base v1.21)
 msgid "Southern Village Group in Harmondale"
-msgstr "和谐谷南部村落群"
+msgstr "哈蒙代尔南部村落群"
 
 # imported from packs (base v1.21)
 msgid ""
@@ -5287,10 +5252,6 @@ msgstr "虽说你们晋升大主教的速度快得几乎有些不成体统，"
 # imported from packs (base v1.21)
 msgid "Throne"
 msgstr "王座"
-
-# imported from packs (base v1.21)
-msgid "Throwing"
-msgstr "投掷武器"
 
 # imported from packs (base v1.21)
 msgid "Time advance unavailable"
@@ -7186,3 +7147,18 @@ msgstr "巨魔死亡骑士"
 msgid ""
 "Wanda Lightsworn, Grand Master of Ascension, is in the hire of Charles Quixote, and instructs all of his knights in the skills of Ascension."
 msgstr "飞升宗师汪达·来特史汪受雇于查尔斯·吉科德，向他麾下所有骑士传授飞升技艺。"
+
+# MM9 dialogue topics, from the translators' 2.3 supplement
+msgid "Prices"
+msgstr "价格"
+
+msgid "Magic Portals"
+msgstr "魔法传送门"
+
+# imported from engine_zz-v2.5.po
+msgid "Finger of Death"
+msgstr "死亡之指"
+
+# imported from engine_zz-v2.5.po
+msgid "Travel Seasons"
+msgstr "旅行季节"

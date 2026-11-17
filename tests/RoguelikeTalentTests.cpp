@@ -190,7 +190,7 @@ TEST_CASE("a hero of an older run keeps the removed perks' ranks and is never of
     CHECK_FALSE(offered.contains("sweeping_blows"));
 }
 
-TEST_CASE("Sweeping Blows, Multishot and Piercing Arrows: the extras of an ordinary attack by rank")
+TEST_CASE("Sweeping Blows, Multishot and Piercing (Chaining) Arrows: the extras of an ordinary attack by rank")
 {
     const RoguelikeRules run(installedRun());
     const DungeonRunRules &rules = run.rules();
@@ -199,7 +199,7 @@ TEST_CASE("Sweeping Blows, Multishot and Piercing Arrows: the extras of an ordin
     const CharacterAttackExtras none = combat.characterAttackExtras(hero());
     CHECK_EQ(none.sweepTargets, 0);
     CHECK_EQ(none.fanArrows, 0);
-    CHECK_EQ(none.pierceCount, 0);
+    CHECK_EQ(none.chainCount, 0);
     CHECK_EQ(standardGameRules().combat.characterAttackExtras(heroWith("sweeping_blows", 3)).sweepTargets, 0);
 
     for (int rank = 1; rank <= 3; ++rank)
@@ -217,9 +217,11 @@ TEST_CASE("Sweeping Blows, Multishot and Piercing Arrows: the extras of an ordin
         CHECK_EQ(fan.fanArcDegrees, doctest::Approx(12));
         CHECK_EQ(fan.sweepTargets, 0);
 
-        const CharacterAttackExtras pierce = combat.characterAttackExtras(heroWith("piercing_arrows", rank));
-        CHECK_EQ(pierce.pierceCount, rank);
-        CHECK_EQ(pierce.pierceShare, doctest::Approx(0.5));
+        // OpenYAMM 2.7 made the piercing flight a chain (the same id): leaps to the nearest monster within 10 m.
+        const CharacterAttackExtras chain = combat.characterAttackExtras(heroWith("piercing_arrows", rank));
+        CHECK_EQ(chain.chainCount, rank);
+        CHECK_EQ(chain.chainShare, doctest::Approx(0.5));
+        CHECK_EQ(chain.chainRadius, doctest::Approx(1024));
     }
 
     // The talents add up in one hero.
@@ -227,7 +229,7 @@ TEST_CASE("Sweeping Blows, Multishot and Piercing Arrows: the extras of an ordin
     archer.talentRanks["piercing_arrows"] = 3;
     const CharacterAttackExtras both = RunTalents::attackExtras(rules, archer);
     CHECK_EQ(both.fanArrows, 4);
-    CHECK_EQ(both.pierceCount, 3);
+    CHECK_EQ(both.chainCount, 3);
 }
 
 TEST_CASE("Onslaught: a kill makes the hero's weapon attacks faster for ten seconds")

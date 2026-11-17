@@ -326,8 +326,9 @@ public:
     const TurnBasedCombatRuntime &turnBasedCombat() const;
     // Plays `turns` turn-based turns from the live input path: the party presses Pass whenever it may (each ready
     // member passes, each movement phase ends) and the monsters take their turns. A turn counts when it reaches its
-    // movement phase. False when that takes longer than maxSeconds of game frames or turn-based mode ends.
-    bool playTurnBasedTurns(int turns, float maxSeconds, int &completed, std::string &failure);
+    // movement phase. False when that takes longer than maxSeconds of frames or turn-based mode ends. gameSpeed plays
+    // each frame that many times faster, as fast mode and the turn-based speed settings do in the live game.
+    bool playTurnBasedTurns(int turns, float maxSeconds, float gameSpeed, int &completed, std::string &failure);
     bool executeCombatLoot(
         const ScenarioCombatLootRequest &request,
         ScenarioCombatLootResult &result,
@@ -471,6 +472,9 @@ private:
     ScenarioInteractionResult pickCenterInteractionTarget(bool ignoreActors, std::string &failure);
     bool activateInteractionResult(ScenarioInteractionResult &result, std::string &failure);
     void presentGrantedEventItems();
+    // An indoor map's doors, floor events and clock for this frame, as IndoorRenderer runs them (no clock in turn-based
+    // combat).
+    void advanceIndoorScene(float deltaSeconds);
     // One gameplay frame with this input, as simulateMovementSegment and walkTo run it.
     bool advanceMovementFrame(const GameplayInputFrame &input, float deltaSeconds, bool actorAi, std::string &failure);
     std::vector<ScenarioPose> planWalkRoute(const ScenarioPose &from, const ScenarioPose &to, size_t nodeLimit,

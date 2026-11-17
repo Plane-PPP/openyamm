@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <array>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -169,20 +170,26 @@ public:
         // from the press, so the time it took is taken off.
         bool swingSoundPlayed = false;
         float recoverySpentSeconds = 0.0f;
-        // A solo run's talent blow (devdocs/solo_action/TALENTS.md): the weapon attack whatever the battle orders say,
-        // at this share of its damage. An extra blow (Cleave's and Whirlwind's other targets, Volley's other arrows)
-        // plays no sound and costs no recovery; a shot prefers the bow even in melee reach.
+        // A solo run's talent blow (devdocs/solo_action/TALENT_INTERACTIONS.md): the weapon attack whatever the battle
+        // orders say (Charge's 100 % blow too), at this share of its damage. An extra blow (Cleave's other monsters,
+        // Sweeping Blows) plays no sound and costs no recovery; a shot prefers the bow even in melee reach.
+        bool talentBlow = false;
         float talentShare = 1.0f;
+        // The talent's recovery as a share of the attack's (TalentDefinition::recovery).
+        float talentRecoveryScale = 1.0f;
         bool talentExtraBlow = false;
         bool talentShot = false;
         // Multishot: the bow shot leaves as this many arrows fanned evenly over the arc (radians, the whole width),
         // each on its own heading, hitting the first monster in its line.
         uint8_t talentFanArrows = 0;
         float talentFanArcRadians = 0.0f;
-        // Piercing Arrows: every arrow of a bow shot flies on through this many more monsters at pierceShare of its
-        // damage.
-        uint8_t pierceCount = 0;
-        float pierceShare = 0.0f;
+        // A talent's blow that makes the monster neither flinch nor stagger back (Sweeping Blows' extra blows).
+        bool talentNoHitReaction = false;
+        // Chaining Arrows: every arrow of a bow shot leaps on from the monster it strikes to this many more, each
+        // within chainRadius of the one before and struck at chainShare of its damage.
+        uint8_t chainCount = 0;
+        float chainShare = 0.0f;
+        float chainRadius = 0.0f;
         // A solo run with the bow in the arms (swapped in, ViewModelLink::bowSelected, or an archer with no main-hand
         // weapon): Attack shoots even at melee range, where a party member would strike with the bow's melee fallback
         // (or fists). The one rule a solo run changes.
@@ -190,6 +197,10 @@ public:
     // A solo run with the melee weapon in the arms: Attack never shoots, as a party member out of melee reach would
     // (a weapon order to shoot included); with nothing in reach the blow swings at the air. Talent shots still shoot.
     bool preferMelee = false;
+        // A talent order (BattleOrderKind::Talent) whose conditions hold: uses the talent now and says whether it was
+        // used (learned, off cooldown, a target or a drawn bow where it needs one). Unset, talent orders are passed
+        // over (party runs, turn-based combat, a talent's own blows).
+        std::function<bool(const std::string &talentId)> useTalentOrder;
     };
 
     struct PartyAttackExecutionResult
@@ -205,6 +216,8 @@ public:
         // The acting member held (BattleOrderFallback::Hold): nothing was done. In real time every other ready
         // combatant was tried too; in turn-based mode the caller passes the member's turn.
         bool held = false;
+        // A talent order acted (useTalentOrder): the talent did its own blows, recovery and cooldown.
+        bool talentUsed = false;
     };
 
     // A held Attack or Quick Cast key repeats like an OS key repeat: first after a pause long enough that an ordinary
@@ -226,6 +239,10 @@ public:
     // An Attack press: the active combatant's attack (a member's battle orders, game/party/BattleOrders.h); in real time
     // a member who holds hands the press to the next ready combatant.
     static PartyAttackExecutionResult executePartyAttack(const PartyAttackConfig &config);
+    // The spell the active member's battle orders cast on an Attack made now, as executePartyAttack walks them (whether
+    // it finds a target is left to the cast); none when a blow, shot or talent order comes first, or the fallback.
+    // config.useTalentOrder is only asked whether the talent is ready. A solo view model shows the cast from the press.
+    static std::optional<std::string> attackOrderSpell(const PartyAttackConfig &config);
     // The swing sound of the member's melee weapon at a point (a view model swing plays it as the swing starts).
     static void playMeleeSwingSound(GameplayScreenRuntime &runtime, const Character &attacker, const ItemTable *pItemTable,
                                     float x, float y, float z);

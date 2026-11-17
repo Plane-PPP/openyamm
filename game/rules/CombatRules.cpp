@@ -333,6 +333,11 @@ bool CombatRules::immuneToMonsterSpecialAttacks(const Character &) const
     return false;
 }
 
+bool CombatRules::autoRepairs(const Party &, const ItemDefinition &) const
+{
+    return false;
+}
+
 bool CombatRules::harmsFriendlyActors() const
 {
     return true;

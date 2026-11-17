@@ -772,61 +772,95 @@ void initializePortraitRuntimeState(Character &member)
     member.portraitImageIndex = 0;
 }
 
+// The grid of a bag: a member's bag, filled column by column, or one of the party's pouches (InventoryBags::pouchBag),
+// wider, deep enough to scroll and filled row by row.
+struct BagGridSize
+{
+    int width = Character::InventoryWidth;
+    int height = Character::InventoryHeight;
+    bool rowsFirst = false;
+};
+
+constexpr BagGridSize MemberBagGrid = {};
+constexpr BagGridSize PouchGrid = {InventoryBags::PouchColumns, InventoryBags::PouchRows, true};
+
+// The grid of the character's open bag: a pouch's while one is open for an operation (InventoryBags::withBagOpen).
+BagGridSize openBagGrid(const Character &character)
+{
+    return InventoryBags::isPouchBag(character.rulesetState.currentBag) ? PouchGrid : MemberBagGrid;
+}
+
 std::optional<std::pair<uint8_t, uint8_t>> findFirstFreeInventorySlot(
     const std::vector<InventoryItem> &inventory,
     uint8_t width,
-    uint8_t height)
+    uint8_t height,
+    const BagGridSize &grid = MemberBagGrid)
 {
-    if (width == 0 || height == 0 || width > Character::InventoryWidth || height > Character::InventoryHeight)
+    if (width == 0 || height == 0 || width > grid.width || height > grid.height)
     {
         return std::nullopt;
     }
 
-    std::array<bool, Character::InventoryWidth * Character::InventoryHeight> occupied = {};
+    std::vector<bool> occupied(size_t(grid.width) * size_t(grid.height), false);
 
     for (const InventoryItem &item : inventory)
     {
-        for (uint8_t y = 0; y < item.height; ++y)
+        for (int y = 0; y < item.height; ++y)
         {
-            for (uint8_t x = 0; x < item.width; ++x)
+            for (int x = 0; x < item.width; ++x)
             {
-                const uint8_t cellX = item.gridX + x;
-                const uint8_t cellY = item.gridY + y;
+                const int cellX = item.gridX + x;
+                const int cellY = item.gridY + y;
 
-                if (cellX >= Character::InventoryWidth || cellY >= Character::InventoryHeight)
+                if (cellX >= grid.width || cellY >= grid.height)
                 {
                     continue;
                 }
 
-                occupied[static_cast<size_t>(cellY) * Character::InventoryWidth + cellX] = true;
+                occupied[size_t(cellY) * size_t(grid.width) + size_t(cellX)] = true;
             }
         }
     }
 
-    for (int x = 0; x <= Character::InventoryWidth - width; ++x)
+    const auto freeAt = [&occupied, &grid, width, height](int x, int y)
     {
-        for (int y = 0; y <= Character::InventoryHeight - height; ++y)
+        for (int offsetY = 0; offsetY < height; ++offsetY)
         {
-            bool canPlace = true;
-
-            for (uint8_t offsetY = 0; offsetY < height && canPlace; ++offsetY)
+            for (int offsetX = 0; offsetX < width; ++offsetX)
             {
-                for (uint8_t offsetX = 0; offsetX < width; ++offsetX)
+                if (occupied[size_t(y + offsetY) * size_t(grid.width) + size_t(x + offsetX)])
                 {
-                    const size_t index =
-                        static_cast<size_t>(y + offsetY) * Character::InventoryWidth + static_cast<size_t>(x + offsetX);
-
-                    if (occupied[index])
-                    {
-                        canPlace = false;
-                        break;
-                    }
+                    return false;
                 }
             }
+        }
 
-            if (canPlace)
+        return true;
+    };
+
+    if (grid.rowsFirst)
+    {
+        for (int y = 0; y <= grid.height - height; ++y)
+        {
+            for (int x = 0; x <= grid.width - width; ++x)
             {
-                return std::pair<uint8_t, uint8_t>(static_cast<uint8_t>(x), static_cast<uint8_t>(y));
+                if (freeAt(x, y))
+                {
+                    return std::pair<uint8_t, uint8_t>(uint8_t(x), uint8_t(y));
+                }
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    for (int x = 0; x <= grid.width - width; ++x)
+    {
+        for (int y = 0; y <= grid.height - height; ++y)
+        {
+            if (freeAt(x, y))
+            {
+                return std::pair<uint8_t, uint8_t>(uint8_t(x), uint8_t(y));
             }
         }
     }
@@ -1398,12 +1432,12 @@ void updateMemberIncapacitatedCondition(Character &member, bool preservationActi
     }
 }
 
-bool inventoryItemFitsAt(const InventoryItem &item, uint8_t gridX, uint8_t gridY)
+bool inventoryItemFitsAt(const InventoryItem &item, uint8_t gridX, uint8_t gridY, const BagGridSize &grid)
 {
     return item.width > 0
         && item.height > 0
-        && gridX + item.width <= Character::InventoryWidth
-        && gridY + item.height <= Character::InventoryHeight;
+        && gridX + item.width <= grid.width
+        && gridY + item.height <= grid.height;
 }
 
 bool inventoryItemsOverlap(const InventoryItem &left, const InventoryItem &right)
@@ -2038,7 +2072,7 @@ bool Character::addInventoryItem(const InventoryItem &item, const ItemTable *pTa
         }
         while (remaining.quantity > 0)
         {
-            const auto slot = findFirstFreeInventorySlot(candidate, remaining.width, remaining.height);
+            const auto slot = findFirstFreeInventorySlot(candidate, remaining.width, remaining.height, openBagGrid(*this));
             if (!slot)
             {
                 return false;
@@ -2059,7 +2093,7 @@ bool Character::addInventoryItem(const InventoryItem &item, const ItemTable *pTa
     ReagentStacks::applyDefinitionGeometry(placedItem, pTable);
 
     const std::optional<std::pair<uint8_t, uint8_t>> placement =
-        findFirstFreeInventorySlot(inventory, placedItem.width, placedItem.height);
+        findFirstFreeInventorySlot(inventory, placedItem.width, placedItem.height, openBagGrid(*this));
 
     if (!placement)
     {
@@ -2086,7 +2120,7 @@ bool Character::addInventoryItemAt(const InventoryItem &item, uint8_t gridX, uin
         }
     }
 
-    if (!inventoryItemFitsAt(placedItem, placedItem.gridX, placedItem.gridY))
+    if (!inventoryItemFitsAt(placedItem, placedItem.gridX, placedItem.gridY, openBagGrid(*this)))
     {
         return false;
     }
@@ -2196,6 +2230,11 @@ bool Character::tryPlaceInventoryItemAt(
     ReagentStacks::applyDefinitionGeometry(placedItem, pTable);
     placedItem.gridX = gridX;
     placedItem.gridY = gridY;
+
+    if (!inventoryItemFitsAt(placedItem, gridX, gridY, openBagGrid(*this)))
+    {
+        return false;
+    }
 
     std::optional<size_t> targetItemIndex;
 
@@ -2829,6 +2868,7 @@ Party::Snapshot Party::snapshot() const
     snapshot.chosenMm9RudeRows = m_chosenMm9RudeRows;
     snapshot.teacherLedgers = m_teacherLedgers;
     snapshot.explosiveMixes = m_explosiveMixes;
+    snapshot.pouches = m_pouches;
     snapshot.continentReputations = m_continentReputations;
     snapshot.questBits = m_questBits;
     snapshot.autonotes = m_autonotes;
@@ -2889,6 +2929,7 @@ void Party::restoreSnapshot(const Snapshot &snapshot)
     m_chosenMm9RudeRows = snapshot.chosenMm9RudeRows;
     m_teacherLedgers = snapshot.teacherLedgers;
     m_explosiveMixes = snapshot.explosiveMixes;
+    m_pouches = snapshot.pouches;
     m_continentReputations = snapshot.continentReputations;
     m_questBits = snapshot.questBits;
     m_autonotes = snapshot.autonotes;
@@ -2978,6 +3019,7 @@ void Party::seed(const PartySeed &seed)
     m_chosenMm9RudeRows.clear();
     m_teacherLedgers.clear();
     m_explosiveMixes.clear();
+    m_pouches = {};
     m_continentReputations.clear();
     m_questBits.clear();
     m_autonotes.clear();
@@ -3658,6 +3700,9 @@ uint64_t Party::setMemberExperience(size_t memberIndex, uint64_t experience)
 void Party::setRules(const GameRules *pRules)
 {
     m_pRules = pRules;
+    // A party made before its rules were known (a new game is seeded on Standard's): what the rules keep in a pouch
+    // moves there.
+    gatherPouchItems();
 }
 
 void Party::setStatistics(PlaythroughStatistics *pStatistics)
@@ -3937,8 +3982,40 @@ void Party::requestSpeech(size_t memberIndex, SpeechId speechId)
 namespace
 {
 // Into the member's open bag, else another of their bags (a ruleset with several, MAW); the open bag stays open.
+// Not for an item with a pouch (Party::pouchFor): the callers send those to the pouch.
 bool addToAnyBag(Character &member, const InventoryItem &item, int bagCount, const ItemTable *pTable)
 {
+    // A pouch is the member's open bag for an operation (InventoryBags::withBagOpen): the member's own bags are all
+    // stored, the one that was open among them.
+    if (InventoryBags::isPouchBag(member.rulesetState.currentBag))
+    {
+        InventoryItem placed = item;
+        placed.width = std::max<uint8_t>(1, item.width);
+        placed.height = std::max<uint8_t>(1, item.height);
+        ReagentStacks::applyDefinitionGeometry(placed, pTable);
+
+        for (int bag = 0; bag < std::max(1, bagCount); ++bag)
+        {
+            std::vector<InventoryItem> &items = member.rulesetState.storedBags[uint8_t(bag)];
+
+            if (const std::optional<std::pair<uint8_t, uint8_t>> place =
+                    findFirstFreeInventorySlot(items, placed.width, placed.height))
+            {
+                placed.gridX = place->first;
+                placed.gridY = place->second;
+                items.push_back(placed);
+                return true;
+            }
+
+            if (items.empty())
+            {
+                member.rulesetState.storedBags.erase(uint8_t(bag));
+            }
+        }
+
+        return false;
+    }
+
     if (member.addInventoryItem(item, pTable))
     {
         return true;
@@ -3956,6 +4033,32 @@ bool addToAnyBag(Character &member, const InventoryItem &item, int bagCount, con
     return added;
 }
 
+// One of the item out of a bag's or a pouch's items.
+bool removeOneFrom(std::vector<InventoryItem> &items, uint32_t objectDescriptionId)
+{
+    const auto found = std::find_if(items.begin(), items.end(),
+        [objectDescriptionId](const InventoryItem &item)
+        {
+            return item.objectDescriptionId == objectDescriptionId;
+        });
+
+    if (found == items.end())
+    {
+        return false;
+    }
+
+    if (found->quantity > 1)
+    {
+        --found->quantity;
+    }
+    else
+    {
+        items.erase(found);
+    }
+
+    return true;
+}
+
 // One of the item out of the member's open bag, else out of their other bags (MAW); the open bag stays open.
 bool removeFromAnyBag(Character &member, uint32_t objectDescriptionId)
 {
@@ -3966,23 +4069,8 @@ bool removeFromAnyBag(Character &member, uint32_t objectDescriptionId)
 
     for (auto &[bag, items] : member.rulesetState.storedBags)
     {
-        const auto found = std::find_if(items.begin(), items.end(),
-            [objectDescriptionId](const InventoryItem &item)
-            {
-                return item.objectDescriptionId == objectDescriptionId;
-            });
-
-        if (found != items.end())
+        if (removeOneFrom(items, objectDescriptionId))
         {
-            if (found->quantity > 1)
-            {
-                --found->quantity;
-            }
-            else
-            {
-                items.erase(found);
-            }
-
             return true;
         }
     }
@@ -3996,6 +4084,28 @@ bool Party::tryGrantItem(uint32_t objectDescriptionId, uint32_t quantity)
     if (objectDescriptionId == 0 || quantity == 0)
     {
         return false;
+    }
+
+    // Into its pouch, when the rules keep it in one.
+    if (const std::optional<ItemPouch> pouch = pouchFor(makeInventoryItem(m_pItemTable, objectDescriptionId)))
+    {
+        InventoryItem item = makeInventoryItem(m_pItemTable, objectDescriptionId);
+        item.identified = true;
+        std::vector<InventoryItem> &items = pouchItemsMutable(*pouch);
+        const size_t countBefore = items.size();
+
+        for (uint32_t itemCount = 0; itemCount < quantity; ++itemCount)
+        {
+            if (!addToPouch(*pouch, item))
+            {
+                items.resize(countBefore);
+                m_lastStatus = "inventory full";
+                return false;
+            }
+        }
+
+        recordEverOwnedItemIfRelevant(item);
+        return true;
     }
 
     std::vector<Character> testMembers = m_members;
@@ -4057,7 +4167,15 @@ bool Party::tryGrantInventoryItem(const InventoryItem &item, size_t *pRecipientM
 bool Party::tryGrantInventoryItemToMember(size_t memberIndex, const InventoryItem &item)
 {
     Character *pMember = member(memberIndex);
-    if (pMember == nullptr || item.objectDescriptionId == 0 || item.quantity == 0 || !pMember->addInventoryItem(item, m_pItemTable))
+    const std::optional<ItemPouch> pouch = pMember != nullptr ? pouchFor(item) : std::nullopt;
+    // An item with a pouch goes there; a pouch that is the member's open bag for an operation takes nothing else.
+    const bool added = pMember != nullptr && item.objectDescriptionId != 0 && item.quantity != 0
+        && (pouch ? addToPouch(*pouch, item)
+                  : InventoryBags::isPouchBag(pMember->rulesetState.currentBag)
+                        ? addToAnyBag(*pMember, item, rules().items.bagCount(*this), m_pItemTable)
+                        : pMember->addInventoryItem(item, m_pItemTable));
+
+    if (!added)
     {
         m_lastStatus = "inventory full";
         return false;
@@ -4067,11 +4185,150 @@ bool Party::tryGrantInventoryItemToMember(size_t memberIndex, const InventoryIte
     return true;
 }
 
+std::optional<ItemPouch> Party::pouchFor(const InventoryItem &item) const
+{
+    const ItemDefinition *pDefinition = m_pItemTable != nullptr ? m_pItemTable->get(item.objectDescriptionId) : nullptr;
+    return pDefinition != nullptr ? rules().items.pouch(*pDefinition) : std::nullopt;
+}
+
+const std::vector<InventoryItem> &Party::pouchItems(ItemPouch pouch) const
+{
+    const uint8_t bag = InventoryBags::pouchBag(pouch);
+
+    for (const Character &member : m_members)
+    {
+        if (member.rulesetState.currentBag == bag)
+        {
+            return member.inventory;
+        }
+    }
+
+    return m_pouches[size_t(pouch)];
+}
+
+std::vector<InventoryItem> &Party::pouchItemsMutable(ItemPouch pouch)
+{
+    return const_cast<std::vector<InventoryItem> &>(std::as_const(*this).pouchItems(pouch));
+}
+
+bool Party::addToPouch(ItemPouch pouch, const InventoryItem &item)
+{
+    std::vector<InventoryItem> &items = pouchItemsMutable(pouch);
+
+    // Minotaur's reagent stacks (game/items/ReagentStacks.h) keep stacking in a pouch: a stackable item fills the
+    // pouch's stacks of its kind first, then takes free places of the pouch's grid, all or nothing.
+    if (ReagentStacks::eligible(item, m_pItemTable))
+    {
+        std::vector<InventoryItem> candidate = items;
+        InventoryItem remaining = item;
+        ReagentStacks::applyDefinitionGeometry(remaining, m_pItemTable);
+
+        for (InventoryItem &target : candidate)
+        {
+            if (target.quantity < ReagentStacks::Limit && ReagentStacks::compatible(target, remaining, m_pItemTable))
+            {
+                const uint32_t moved = std::min(remaining.quantity, ReagentStacks::Limit - target.quantity);
+                target.quantity += moved;
+                ReagentStacks::applyDefinitionGeometry(target, m_pItemTable);
+                remaining.quantity -= moved;
+            }
+        }
+
+        while (remaining.quantity > 0)
+        {
+            const std::optional<std::pair<uint8_t, uint8_t>> slot =
+                findFirstFreeInventorySlot(candidate, remaining.width, remaining.height, PouchGrid);
+
+            if (!slot)
+            {
+                return false;
+            }
+
+            InventoryItem part = remaining;
+            part.quantity = std::min(remaining.quantity, ReagentStacks::Limit);
+            part.gridX = slot->first;
+            part.gridY = slot->second;
+            candidate.push_back(part);
+            remaining.quantity -= part.quantity;
+        }
+
+        items = std::move(candidate);
+        return true;
+    }
+
+    InventoryItem placed = item;
+    // At the size its item row gives it: an item made before the table was known (a seeded party's) has none yet.
+    const ItemDefinition *pDefinition = m_pItemTable != nullptr ? m_pItemTable->get(item.objectDescriptionId) : nullptr;
+    placed.width = std::max<uint8_t>(1, pDefinition != nullptr ? pDefinition->inventoryWidth : item.width);
+    placed.height = std::max<uint8_t>(1, pDefinition != nullptr ? pDefinition->inventoryHeight : item.height);
+    const std::optional<std::pair<uint8_t, uint8_t>> place =
+        findFirstFreeInventorySlot(items, placed.width, placed.height, PouchGrid);
+
+    if (!place)
+    {
+        return false;
+    }
+
+    placed.gridX = place->first;
+    placed.gridY = place->second;
+    items.push_back(placed);
+    return true;
+}
+
+size_t Party::gatherPouchItems()
+{
+    if (m_pItemTable == nullptr || !rules().items.hasPouches())
+    {
+        return 0;
+    }
+
+    size_t moved = 0;
+    const auto gather = [this, &moved](std::vector<InventoryItem> &items)
+    {
+        std::erase_if(items,
+            [this, &moved](const InventoryItem &item)
+            {
+                const std::optional<ItemPouch> pouch = pouchFor(item);
+
+                if (!pouch || !addToPouch(*pouch, item))
+                {
+                    return false;
+                }
+
+                ++moved;
+                return true;
+            });
+    };
+
+    for (Character &member : m_members)
+    {
+        // A pouch open for an operation is the member's inventory: nothing of it moves.
+        if (!InventoryBags::isPouchBag(member.rulesetState.currentBag))
+        {
+            gather(member.inventory);
+        }
+
+        for (auto bag = member.rulesetState.storedBags.begin(); bag != member.rulesetState.storedBags.end();)
+        {
+            gather(bag->second);
+            bag = bag->second.empty() ? member.rulesetState.storedBags.erase(bag) : std::next(bag);
+        }
+    }
+
+    return moved;
+}
+
 bool Party::canGrantInventoryItem(const InventoryItem &item) const
 {
     if (item.objectDescriptionId == 0 || item.quantity == 0)
     {
         return false;
+    }
+
+    if (const std::optional<ItemPouch> pouch = pouchFor(item))
+    {
+        return findFirstFreeInventorySlot(pouchItems(*pouch), std::max<uint8_t>(1, item.width),
+            std::max<uint8_t>(1, item.height), PouchGrid).has_value();
     }
 
     const int bagCount = rules().items.bagCount(*this);
@@ -4097,6 +4354,26 @@ bool Party::tryGrantInventoryItemStartingAt(
     if (item.objectDescriptionId == 0 || item.quantity == 0)
     {
         return false;
+    }
+
+    // Into its pouch, when the rules keep it in one: the party's, so the first member asked counts as the recipient.
+    if (const std::optional<ItemPouch> pouch = pouchFor(item))
+    {
+        if (m_members.empty() || !addToPouch(*pouch, item))
+        {
+            m_lastStatus = "inventory full";
+            return false;
+        }
+
+        markArtifactItemFoundIfRelevant(item);
+        recordEverOwnedItemIfRelevant(item);
+
+        if (pRecipientMemberIndex != nullptr)
+        {
+            *pRecipientMemberIndex = std::min(firstMemberIndex, m_members.size() - 1);
+        }
+
+        return true;
     }
 
     std::vector<Character> testMembers = m_members;
@@ -4174,12 +4451,32 @@ bool Party::removeItem(uint32_t objectDescriptionId, uint32_t quantity)
         }
     }
 
+    // The pouches' own storage: one open for an operation is a member's inventory, counted above.
+    for (const std::vector<InventoryItem> &items : m_pouches)
+    {
+        for (const InventoryItem &item : items)
+        {
+            if (item.objectDescriptionId == objectDescriptionId)
+            {
+                availableCount += item.quantity;
+            }
+        }
+    }
+
     if (availableCount < quantity)
     {
         return false;
     }
 
     uint32_t removedCount = 0;
+
+    for (std::vector<InventoryItem> &items : m_pouches)
+    {
+        while (removedCount < quantity && removeOneFrom(items, objectDescriptionId))
+        {
+            removedCount += 1;
+        }
+    }
 
     for (Character &member : m_members)
     {
@@ -4760,6 +5057,7 @@ bool Party::recruitRosterMember(const RosterEntry &rosterEntry)
         m_pSpecialItemEnchantTable);
     rules().experience.prepareRosterCharacter(m_members.back());
     normalizeFormationCells();
+    gatherPouchItems();
 
     m_lastStatus = "party member recruited";
     return true;
@@ -4788,6 +5086,7 @@ bool Party::recruitCharacter(const Character &character)
     GameMechanics::refreshCharacterBaseResources(m_members.back(), true, m_pClassMultiplierTable);
     initializePortraitRuntimeState(m_members.back());
     normalizeFormationCells();
+    gatherPouchItems();
     m_lastStatus = "party member recruited";
     return true;
 }
@@ -4846,6 +5145,7 @@ bool Party::hireAdventurersInnMember(size_t innIndex)
     applyCharacterIdentityFromDollTable(m_members.back(), m_pCharacterDollTable);
     m_adventurersInnMembers.erase(m_adventurersInnMembers.begin() + innIndex);
     normalizeFormationCells();
+    gatherPouchItems();
     m_lastStatus = "adventurer hired from inn";
     return true;
 }
@@ -4957,6 +5257,7 @@ bool Party::replaceMemberWithRosterEntry(size_t memberIndex, const RosterEntry &
         m_pStandardItemEnchantTable,
         m_pSpecialItemEnchantTable);
     rules().experience.prepareRosterCharacter(m_members[memberIndex]);
+    gatherPouchItems();
 
     rebuildMagicalBonusesFromBuffs();
     m_lastStatus = "party member replaced from roster";
@@ -6034,6 +6335,18 @@ int Party::inventoryItemCount(uint32_t objectDescriptionId, std::optional<size_t
         }
     };
 
+    // The party's pouches are every member's (their own storage: one open for an operation is a member's inventory).
+    for (const std::vector<InventoryItem> &items : m_pouches)
+    {
+        for (const InventoryItem &item : items)
+        {
+            if (item.objectDescriptionId == objectDescriptionId)
+            {
+                totalCount += static_cast<int>(item.quantity);
+            }
+        }
+    }
+
     if (memberIndex)
     {
         const Character *pMember = member(*memberIndex);
@@ -6220,8 +6533,9 @@ bool Party::grantItemToMember(size_t memberIndex, uint32_t objectDescriptionId, 
     for (uint32_t itemIndex = 0; itemIndex < quantity; ++itemIndex)
     {
         InventoryItem item = makeInventoryItem(m_pItemTable, objectDescriptionId);
+        const std::optional<ItemPouch> pouch = pouchFor(item);
 
-        if (!pMember->addInventoryItem(item, m_pItemTable))
+        if (!(pouch ? addToPouch(*pouch, item) : pMember->addInventoryItem(item, m_pItemTable)))
         {
             return false;
         }
@@ -6245,7 +6559,13 @@ bool Party::removeItemFromMember(size_t memberIndex, uint32_t objectDescriptionI
 
     for (uint32_t itemIndex = 0; itemIndex < quantity; ++itemIndex)
     {
-        if (removeFromAnyBag(*pMember, objectDescriptionId))
+        // The party's pouches are every member's.
+        if (removeFromAnyBag(*pMember, objectDescriptionId)
+            || std::any_of(m_pouches.begin(), m_pouches.end(),
+                [objectDescriptionId](std::vector<InventoryItem> &items)
+                {
+                    return removeOneFrom(items, objectDescriptionId);
+                }))
         {
             continue;
         }
@@ -6301,7 +6621,9 @@ bool Party::tryAutoPlaceItemInMemberInventory(size_t memberIndex, const Inventor
         return false;
     }
 
-    if (!addToAnyBag(*pMember, item, rules().items.bagCount(*this), m_pItemTable))
+    const std::optional<ItemPouch> pouch = pouchFor(item);
+
+    if (!(pouch ? addToPouch(*pouch, item) : addToAnyBag(*pMember, item, rules().items.bagCount(*this), m_pItemTable)))
     {
         m_lastStatus = "inventory full";
         return false;
@@ -6401,6 +6723,38 @@ bool Party::tryPlaceItemInMemberInventoryCell(
     if (pMember == nullptr)
     {
         replacedItem.reset();
+        return false;
+    }
+
+    const std::optional<ItemPouch> pouch = pouchFor(item);
+    const uint8_t openBag = pMember->rulesetState.currentBag;
+
+    // An item with a pouch goes there wherever it is dropped, into the first free place.
+    if (pouch && openBag != InventoryBags::pouchBag(*pouch))
+    {
+        replacedItem.reset();
+
+        if (!addToPouch(*pouch, item))
+        {
+            m_lastStatus = "inventory full";
+            return false;
+        }
+
+        recordEverOwnedItemIfRelevant(item);
+        m_lastStatus = *pouch == ItemPouch::Alchemy ? Engine::tr("Stored with the potions and reagents")
+            : *pouch == ItemPouch::Crafting         ? Engine::tr("Stored with the crafting materials")
+                                                    : Engine::tr("Stored with the quest items");
+        return true;
+    }
+
+    // And a pouch takes nothing else.
+    if (!pouch && InventoryBags::isPouchBag(openBag))
+    {
+        replacedItem.reset();
+        const ItemPouch openPouch = InventoryBags::pouchOfBag(openBag);
+        m_lastStatus = openPouch == ItemPouch::Alchemy ? Engine::tr("Only potions, bottles and reagents go here")
+            : openPouch == ItemPouch::Crafting         ? Engine::tr("Only crafting materials go here")
+                                                       : Engine::tr("Only quest items go here");
         return false;
     }
 
@@ -8000,7 +8354,7 @@ void Party::advanceTimedStates(float deltaSeconds)
                 while (buff.periodicAccumulatorSeconds >= OeFiveGameMinuteTickGameSeconds)
                 {
                     buff.periodicAccumulatorSeconds -= OeFiveGameMinuteTickGameSeconds;
-                    healMember(memberIndex, healPerTick);
+                    healMember(memberIndex, healPerTick, true);
                 }
             }
 
@@ -8638,7 +8992,7 @@ void Party::pushSelfTextEvent(const SelfTextEvent &event)
     m_selfTextEvents.push_back(event);
 }
 
-bool Party::healMember(size_t memberIndex, int amount)
+bool Party::healMember(size_t memberIndex, int amount, bool regeneration)
 {
     Character *pMember = combatant(memberIndex);
 
@@ -8669,7 +9023,8 @@ bool Party::healMember(size_t memberIndex, int amount)
         m_gameMinutes);
     if (pMember->health > previousHealth)
     {
-        pushSelfTextEvent({SelfTextEvent::Kind::Heal, memberIndex, pMember->health - previousHealth});
+        pushSelfTextEvent({regeneration ? SelfTextEvent::Kind::Regeneration : SelfTextEvent::Kind::Heal, memberIndex,
+            pMember->health - previousHealth});
     }
     return pMember->health > previousHealth;
 }
@@ -9527,9 +9882,11 @@ void Party::rebuildMagicalBonusesFromBuffs()
             applyImplants(member, *m_pItemTable);
         }
 
-        for (const Character &owner : m_members)
+        // An item the party carries with an effect on the whole party: in any bag of a member (the inventory shows
+        // them all) or in a pouch.
+        const auto applyCarriedEffects = [this](const std::vector<InventoryItem> &items)
         {
-            for (const InventoryItem &item : owner.inventory)
+            for (const InventoryItem &item : items)
             {
                 const ItemDefinition *pItem = m_pItemTable->get(item.objectDescriptionId);
 
@@ -9547,6 +9904,21 @@ void Party::rebuildMagicalBonusesFromBuffs()
                     ItemEnchantRuntime::applyContentEffect(pItem->contentEffect, partyMember);
                 }
             }
+        };
+
+        for (const Character &owner : m_members)
+        {
+            applyCarriedEffects(owner.inventory);
+
+            for (const auto &[bag, items] : owner.rulesetState.storedBags)
+            {
+                applyCarriedEffects(items);
+            }
+        }
+
+        for (const std::vector<InventoryItem> &items : m_pouches)
+        {
+            applyCarriedEffects(items);
         }
 
         const bool partyEndurancePenalty = std::any_of(
@@ -9829,6 +10201,14 @@ void Party::recordEverOwnedItemsFromCurrentState()
         }
     }
 
+    for (const std::vector<InventoryItem> &items : m_pouches)
+    {
+        for (const InventoryItem &item : items)
+        {
+            recordEverOwnedItemIfRelevant(item);
+        }
+    }
+
     m_statistics.pStatistics = pStatistics;
 }
 
@@ -9891,6 +10271,17 @@ void makeSoloRunParty(Party &party)
     if (Character *pMember = party.member(0))
     {
         prefillSoloActionBar(*pMember);
+    }
+}
+
+void giveSoloRunStartScrolls(Party &party)
+{
+    // Water Walk, Jump, Town Portal, Fly and Lloyd's Beacon.
+    constexpr std::array<uint32_t, 5> ScrollItemIds = {326, 315, 330, 320, 332};
+
+    for (uint32_t itemId : ScrollItemIds)
+    {
+        party.tryGrantItem(itemId);
     }
 }
 }

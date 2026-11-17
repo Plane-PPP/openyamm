@@ -7,6 +7,7 @@
 #include "game/tables/ItemTable.h"
 
 #include <algorithm>
+#include <array>
 #include <bitset>
 #include <cctype>
 #include <cmath>
@@ -23,8 +24,10 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 184;
-constexpr uint32_t UpstreamSaveVersion = 183;
+// The mod's own header (OYMINO1) numbers its versions apart from upstream's (OYSAVE1); saveSchemaVersion maps each mod
+// version to the upstream layout it was written with. 194 is upstream 193 (OpenYAMM 2.7).
+constexpr uint32_t SaveVersion = 194;
+constexpr uint32_t UpstreamSaveVersion = 193;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -315,6 +318,30 @@ constexpr uint32_t SaveVersionSoloRun = 181;
 constexpr uint32_t SaveVersionSoloTalents = 182;
 // A battle order's HP condition can read the member's own HP (BattleOrder::ownHealth); older orders read the allies'.
 constexpr uint32_t SaveVersionOwnHealthOrders = 183;
+// An outdoor actor's Aggressor bit (OutdoorWorldRuntime::MapActorState::aggressor), set by a party hit and its faction's
+// alert; older saves load it as false.
+constexpr uint32_t SaveVersionOutdoorAggressor = 184;
+// An indoor actor's first-fill position (MapDeltaActor::fillPosition, fillSectorId), where MAW's Nightmare revival
+// raises it; older saves have none and their slain rise where they fell until the map refills.
+constexpr uint32_t SaveVersionActorFillPosition = 185;
+// A Custom loot filter's rules (RulesetLootFilter::rules, otherwise); older saves have none.
+constexpr uint32_t SaveVersionLootFilterRules = 186;
+// A solo run character's talent state (Character::talentState: cooldowns, Onslaught's stacks and the timed effects);
+// older saves load every cooldown ready and every effect off.
+constexpr uint32_t SaveVersionSoloTalentState = 187;
+// A MAW solo run's scroll auras end after a game day (MawGameState::fixedAuraEndMinutes); older saves have none, so
+// their scroll auras keep ending with the map.
+constexpr uint32_t SaveVersionMawScrollAuraEnds = 188;
+// A battle order may name a solo talent (BattleOrder::talentId), and Power Shot replaced Pinning Shot: an older save's
+// Pinning Shot ranks and cooldown become Power Shot's (migratePinningShot).
+constexpr uint32_t SaveVersionTalentOrders = 189;
+// Talent ranks are two bytes (Character::talentRanks: Conditioning has no last rank), and Conditioning replaced Weapon
+// Training, Marksman and Attunement: an older save's ranks in those are dropped and their points come back
+// (migrateRemovedTalents).
+constexpr uint32_t SaveVersionWideTalentRanks = 190;
+// An upkeep order may be a potion (BattleOrder::potionItemId, bottleRule, stockDrinks, brewPower); older saves have
+// spells only.
+constexpr uint32_t SaveVersionPotionUpkeep = 191;
 constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
 constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
@@ -336,6 +363,7 @@ std::optional<uint32_t> saveSchemaVersion(bool modHeader, uint32_t version)
     case 143: return 142;
     case 155: return 154;
     case 180: return 179;
+    case 184: return 183;
     case SaveVersion: return UpstreamSaveVersion;
     default: return std::nullopt;
     }
@@ -491,6 +519,19 @@ public:
         return m_legacyMinotaurV85;
     }
 
+    // A mod save (OYMINO1) may hold a Roguelike run, whose talents share Character::talentRanks with MAW solo's but
+    // keep their own ids (attunement, pinning_shot): upstream's talent migrations wait until the save's ruleset is
+    // known (migrateModSaveTalents).
+    void setDeferTalentMigrations(bool enabled)
+    {
+        m_deferTalentMigrations = enabled;
+    }
+
+    bool deferTalentMigrations() const
+    {
+        return m_deferTalentMigrations;
+    }
+
 private:
     const std::vector<uint8_t> &m_bytes;
     size_t m_offset = 0;
@@ -498,6 +539,7 @@ private:
     uint32_t m_version = SaveVersion;
     bool m_legacyMinotaurV85 = false;
     bool m_modCombatLevel = false;
+    bool m_deferTalentMigrations = false;
 };
 
 void writeValue(BinaryWriter &writer, const HiredNpcFollower &value);
@@ -847,8 +889,42 @@ bool readValue(BinaryReader &reader, ActionBarSlot &value)
         return false;
     }
 
-    value.kind = kind <= uint8_t(ActionBarSlotKind::Talent) ? ActionBarSlotKind(kind) : ActionBarSlotKind::Empty;
+    value.kind = kind <= uint8_t(ActionBarSlotKind::Upkeep) ? ActionBarSlotKind(kind) : ActionBarSlotKind::Empty;
     return true;
+}
+
+void writeValue(BinaryWriter &writer, const SoloTalentState &value)
+{
+    writeValue(writer, value.cooldownSeconds);
+    writeValue(writer, value.shieldWallSeconds);
+    writeValue(writer, value.spellSurgeArmed);
+    writeValue(writer, value.surgeDamageSeconds);
+    writeValue(writer, value.onslaughtStacks);
+    writeValue(writer, value.onslaughtSeconds);
+    writeValue(writer, value.cheatDeathSeconds);
+    writeValue(writer, value.cheatDeathCooldown);
+    writeValue(writer, value.stillSeconds);
+    writeValue(writer, value.lastX);
+    writeValue(writer, value.lastY);
+    writeValue(writer, value.hasLastPosition);
+    writeValue(writer, value.steadyAimOn);
+}
+
+bool readValue(BinaryReader &reader, SoloTalentState &value)
+{
+    return readValue(reader, value.cooldownSeconds)
+        && readValue(reader, value.shieldWallSeconds)
+        && readValue(reader, value.spellSurgeArmed)
+        && readValue(reader, value.surgeDamageSeconds)
+        && readValue(reader, value.onslaughtStacks)
+        && readValue(reader, value.onslaughtSeconds)
+        && readValue(reader, value.cheatDeathSeconds)
+        && readValue(reader, value.cheatDeathCooldown)
+        && readValue(reader, value.stillSeconds)
+        && readValue(reader, value.lastX)
+        && readValue(reader, value.lastY)
+        && readValue(reader, value.hasLastPosition)
+        && readValue(reader, value.steadyAimOn);
 }
 
 void writeValue(BinaryWriter &writer, const CharacterSkill &value)
@@ -912,8 +988,6 @@ void writeValue(BinaryWriter &writer, const CharacterRulesetState &value)
 
         writeValue(writer, value.progressionStoredMasteries);
         writeValue(writer, value.soloStoredMasteries);
-        writeValue(writer, value.craftingBags);
-        writeValue(writer, value.alchemyBags);
     }
 }
 
@@ -965,29 +1039,24 @@ bool readValue(BinaryReader &reader, CharacterRulesetState &value)
             || (readValue(reader, value.poisonSeconds) && readValue(reader, value.divineProtectionReadyGameMinutes)
                 && readValue(reader, value.legendaryProtectionReadyGameMinutes));
     };
-    const auto readBagTags = [&reader, &value]()
+    // The bag tags of versions 123 to 191 (a crafting and an alchemy bit per bag): the party's pouches replaced them.
+    const auto readBagTags = [&reader]()
     {
-        if (reader.version() < SaveVersionMawBagTags)
+        if (reader.version() < SaveVersionMawBagTags || reader.version() >= SaveVersionMawPouches)
         {
             return true;
         }
 
         if (reader.version() >= SaveVersionWideBagTags)
         {
-            return readValue(reader, value.craftingBags) && readValue(reader, value.alchemyBags);
+            uint32_t crafting = 0;
+            uint32_t alchemy = 0;
+            return readValue(reader, crafting) && readValue(reader, alchemy);
         }
 
         uint8_t crafting = 0;
         uint8_t alchemy = 0;
-
-        if (!readValue(reader, crafting) || !readValue(reader, alchemy))
-        {
-            return false;
-        }
-
-        value.craftingBags = crafting;
-        value.alchemyBags = alchemy;
-        return true;
+        return readValue(reader, crafting) && readValue(reader, alchemy);
     };
     const auto readBags = [&reader, &value]()
     {
@@ -1181,6 +1250,7 @@ void writeValue(BinaryWriter &writer, const MawGameState &value)
     writeValue(writer, value.bountiesClaimed);
     writeValue(writer, value.usedStatDecorations);
     writeValue(writer, value.madnessDeaths);
+    writeValue(writer, value.fixedAuraEndMinutes);
 }
 
 void writeValue(BinaryWriter &writer, const MawMapVisit &value)
@@ -1237,7 +1307,8 @@ bool readValue(BinaryReader &reader, MawGameState &value)
                 && readValue(reader, value.dimensionRunsCleared)
                 && readValue(reader, value.bountiesClaimed)))
         && (reader.version() < SaveVersionMawUsedStatDecorations || readValue(reader, value.usedStatDecorations))
-        && (reader.version() < SaveVersionMawMadnessDeaths || readValue(reader, value.madnessDeaths));
+        && (reader.version() < SaveVersionMawMadnessDeaths || readValue(reader, value.madnessDeaths))
+        && (reader.version() < SaveVersionMawScrollAuraEnds || readValue(reader, value.fixedAuraEndMinutes));
 }
 
 // Before the tier was saved apart: a drop's rarity tells its tier (crafted changes before then cannot be told).
@@ -1588,6 +1659,26 @@ void writeValue(BinaryWriter &writer, const BattleOrder &value)
     writeValue(writer, value.place);
     writeValue(writer, value.renewBelowMinutes);
     writeValue(writer, value.ownHealth);
+    writeValue(writer, value.talentId);
+    writeValue(writer, value.potionItemId);
+    writeValue(writer, uint8_t(value.bottleRule));
+    writeValue(writer, value.stockDrinks);
+    writeValue(writer, value.brewPower);
+}
+
+bool readPotionUpkeep(BinaryReader &reader, BattleOrder &value)
+{
+    uint8_t bottleRule = 0;
+
+    if (!readValue(reader, value.potionItemId) || !readValue(reader, bottleRule)
+        || !readValue(reader, value.stockDrinks) || !readValue(reader, value.brewPower))
+    {
+        return false;
+    }
+
+    value.bottleRule = bottleRule == uint8_t(QuickItemBottleRule::Weakest) ? QuickItemBottleRule::Weakest
+                                                                           : QuickItemBottleRule::Strongest;
+    return true;
 }
 
 bool readValue(BinaryReader &reader, BattleOrder &value)
@@ -1600,7 +1691,9 @@ bool readValue(BinaryReader &reader, BattleOrder &value)
         && readValue(reader, value.keepSpellPointsPercent)
         && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.place))
         && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.renewBelowMinutes))
-        && (reader.version() < SaveVersionOwnHealthOrders || readValue(reader, value.ownHealth));
+        && (reader.version() < SaveVersionOwnHealthOrders || readValue(reader, value.ownHealth))
+        && (reader.version() < SaveVersionTalentOrders || readValue(reader, value.talentId))
+        && (reader.version() < SaveVersionPotionUpkeep || readPotionUpkeep(reader, value));
 }
 
 void writeValue(BinaryWriter &writer, const Character &value)
@@ -1676,6 +1769,7 @@ void writeValue(BinaryWriter &writer, const Character &value)
     writeValue(writer, value.battleOrderFallback);
     writeValue(writer, value.upkeepOrders);
     writeValue(writer, value.talentRanks);
+    writeValue(writer, value.talentState);
 }
 
 // Saves before SaveVersionWideExperience hold a character's experience in 32 bits.
@@ -1694,6 +1788,114 @@ bool readCharacterExperience(BinaryReader &reader, uint64_t &experience)
     }
 
     experience = narrowExperience;
+    return true;
+}
+
+// Power Shot replaced Pinning Shot in the archery tree (2026-11-16): the ranks spent on it, and its running cooldown,
+// carry over.
+void migratePinningShot(Character &value)
+{
+    if (const auto rank = value.talentRanks.find("pinning_shot"); rank != value.talentRanks.end())
+    {
+        value.talentRanks["power_shot"] = rank->second;
+        value.talentRanks.erase(rank);
+    }
+
+    if (const auto cooldown = value.talentState.cooldownSeconds.find("pinning_shot");
+        cooldown != value.talentState.cooldownSeconds.end())
+    {
+        value.talentState.cooldownSeconds["power_shot"] = cooldown->second;
+        value.talentState.cooldownSeconds.erase(cooldown);
+    }
+}
+
+// Conditioning replaced Weapon Training, Marksman and Attunement (2026-11-16): their ranks go, so their points are free
+// to spend again. The action bar keeps talents by their place in the table, and the three left the shipped table at
+// places 0, 6 and 12 (of 19): a talent key after them moves up by one for each of them before it. They were passives,
+// which the bar never holds, so a key on one of them is emptied.
+void migrateRemovedTalents(Character &value)
+{
+    for (const char *pId : {"weapon_training", "marksman", "attunement"})
+    {
+        value.talentRanks.erase(pId);
+    }
+
+    constexpr std::array<uint32_t, 3> RemovedPlaces = {0, 6, 12};
+
+    for (ActionBarSlot &slot : value.actionBar)
+    {
+        if (slot.kind != ActionBarSlotKind::Talent)
+        {
+            continue;
+        }
+
+        if (std::find(RemovedPlaces.begin(), RemovedPlaces.end(), slot.id) != RemovedPlaces.end())
+        {
+            slot = {};
+            continue;
+        }
+
+        slot.id -= uint32_t(std::count_if(RemovedPlaces.begin(), RemovedPlaces.end(),
+            [&slot](uint32_t place) { return place < slot.id; }));
+    }
+}
+
+// A mod save's upstream talent migrations (BinaryReader::deferTalentMigrations): MAW solo's ranks and cooldowns follow
+// upstream's renames; a Roguelike run's talents are the run's own (assets_dev/engine/rulesets/roguelike/run.yml) and
+// stay as saved.
+void migrateModSaveTalents(GameSaveData &data, uint32_t sourceSaveVersion)
+{
+    if (data.ruleset.id == "roguelike")
+    {
+        return;
+    }
+
+    const auto migrate = [sourceSaveVersion](Character &character)
+    {
+        if (sourceSaveVersion < SaveVersionTalentOrders)
+        {
+            migratePinningShot(character);
+        }
+
+        if (sourceSaveVersion < SaveVersionWideTalentRanks)
+        {
+            migrateRemovedTalents(character);
+        }
+    };
+
+    for (Character &member : data.party.members)
+    {
+        migrate(member);
+    }
+
+    for (AdventurersInnMember &member : data.party.adventurersInnMembers)
+    {
+        migrate(member.character);
+    }
+
+    for (Mm9PartyHireling &hireling : data.party.mm9Hirelings)
+    {
+        migrate(hireling.character);
+    }
+}
+
+// Talent ranks before SaveVersionWideTalentRanks: one byte each.
+bool readNarrowTalentRanks(BinaryReader &reader, std::unordered_map<std::string, uint16_t> &ranks)
+{
+    std::unordered_map<std::string, uint8_t> narrow;
+
+    if (!readValue(reader, narrow))
+    {
+        return false;
+    }
+
+    ranks.clear();
+
+    for (const auto &[id, rank] : narrow)
+    {
+        ranks[id] = rank;
+    }
+
     return true;
 }
 
@@ -1776,11 +1978,24 @@ bool readValue(BinaryReader &reader, Character &value)
         && (reader.version() < SaveVersionBattleOrders || readValue(reader, value.battleOrders))
         && (reader.version() < SaveVersionBattleOrders || readValue(reader, value.battleOrderFallback))
         && (reader.version() < SaveVersionUpkeepOrders || readValue(reader, value.upkeepOrders))
-        && (reader.version() < SaveVersionSoloTalents || readValue(reader, value.talentRanks));
+        && (reader.version() < SaveVersionSoloTalents
+            || (reader.version() < SaveVersionWideTalentRanks ? readNarrowTalentRanks(reader, value.talentRanks)
+                                                               : readValue(reader, value.talentRanks)))
+        && (reader.version() < SaveVersionSoloTalentState || readValue(reader, value.talentState));
 
     if (read && reader.version() < SaveVersionBattleOrders)
     {
         setAttackSpell(legacyAttackSpellName, value.battleOrders, value.battleOrderFallback);
+    }
+
+    if (read && reader.version() < SaveVersionTalentOrders && !reader.deferTalentMigrations())
+    {
+        migratePinningShot(value);
+    }
+
+    if (read && reader.version() < SaveVersionWideTalentRanks && !reader.deferTalentMigrations())
+    {
+        migrateRemovedTalents(value);
     }
 
     return read;
@@ -1917,6 +2132,28 @@ bool readValue(BinaryReader &reader, WorldCompletionRecord &value)
         && readValue(reader, value.score)
         && readValue(reader, value.completedAtUnixSeconds)
         && readValue(reader, value.timed);
+}
+
+// The party's pouches, in ItemPouch order: the crafting and alchemy pouches since version 192, the quest pouch since
+// 193.
+bool readPouches(BinaryReader &reader, Party::Snapshot &value)
+{
+    if (reader.version() < SaveVersionMawPouches)
+    {
+        return true;
+    }
+
+    const size_t count = reader.version() < SaveVersionMawQuestPouch ? 2 : value.pouches.size();
+
+    for (size_t pouch = 0; pouch < count; ++pouch)
+    {
+        if (!readValue(reader, value.pouches[pouch]))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool readWorldCompletions(BinaryReader &reader, Party::Snapshot &value)
@@ -2066,6 +2303,11 @@ void writeValue(BinaryWriter &writer, const Party::Snapshot &value)
     writeValue(writer, value.mm9Hirelings);
     writeValue(writer, value.memberFormationCells);
     writeValue(writer, value.lastOutdoorMapFileName);
+
+    for (const std::vector<InventoryItem> &items : value.pouches)
+    {
+        writeValue(writer, items);
+    }
 }
 
 bool readValue(BinaryReader &reader, Party::Snapshot &value)
@@ -2121,6 +2363,7 @@ bool readValue(BinaryReader &reader, Party::Snapshot &value)
         && (reader.version() < SaveVersionMm9Hirelings || readValue(reader, value.mm9Hirelings))
         && (reader.version() < SaveVersionMm9Formation || readValue(reader, value.memberFormationCells))
         && (reader.version() < SaveVersionLastOutdoorMap || readValue(reader, value.lastOutdoorMapFileName))
+        && readPouches(reader, value)
         && migrateMm9HirelingStats(reader, value);
 }
 
@@ -3716,6 +3959,8 @@ void writeValue(BinaryWriter &writer, const MapDeltaActor &value)
     writeValue(writer, value.drawScale);
     writeValue(writer, value.posed);
     writeValue(writer, value.heldItems);
+    writeValue(writer, value.fillPosition);
+    writeValue(writer, value.fillSectorId);
 }
 
 bool readHitPoints(BinaryReader &reader, int32_t &value)
@@ -3814,7 +4059,9 @@ bool readValue(BinaryReader &reader, MapDeltaActor &value)
         && (reader.version() < SaveVersionActorMm9AiPlacement || readValue(reader, value.mm9Ai))
         && (reader.version() < SaveVersionActorDrawScale || readValue(reader, value.drawScale))
         && (reader.version() < SaveVersionActorPosed || readValue(reader, value.posed))
-        && (reader.version() < SaveVersionActorHeldItems || readValue(reader, value.heldItems));
+        && (reader.version() < SaveVersionActorHeldItems || readValue(reader, value.heldItems))
+        && (reader.version() < SaveVersionActorFillPosition
+            || (readValue(reader, value.fillPosition) && readValue(reader, value.fillSectorId)));
 }
 
 void writeValue(BinaryWriter &writer, const MapDeltaSpriteObject &value)
@@ -4353,6 +4600,7 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.drawScale);
     writeValue(writer, value.patrolPoints);
     writeValue(writer, value.heldItems);
+    writeValue(writer, value.aggressor);
 }
 
 // Versions 133-168 saved the reach of a far hit after provokedByParty; it is read and dropped.
@@ -4528,7 +4776,8 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && (reader.version() < SaveVersionOutdoorSpawnMm9AiPlacement || readValue(reader, value.mm9Ai))
         && (reader.version() < SaveVersionActorDrawScale || readValue(reader, value.drawScale))
         && (reader.version() < SaveVersionOutdoorSpawnPatrol || readValue(reader, value.patrolPoints))
-        && (reader.version() < SaveVersionActorHeldItems || readValue(reader, value.heldItems));
+        && (reader.version() < SaveVersionActorHeldItems || readValue(reader, value.heldItems))
+        && (reader.version() < SaveVersionOutdoorAggressor || readValue(reader, value.aggressor));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)
@@ -5206,6 +5455,20 @@ bool readValue(BinaryReader &reader, IndoorSceneRuntime::Snapshot &value)
         && (reader.version() < SaveVersionMapLayoutIdentity || readValue(reader, value.mapLayoutIdentity));
 }
 
+void writeValue(BinaryWriter &writer, const RulesetLootFilterRule &value)
+{
+    writeValue(writer, value.types);
+    writeValue(writer, value.rarityAtMost);
+    writeValue(writer, value.levelsBelow);
+    writeValue(writer, value.action);
+}
+
+bool readValue(BinaryReader &reader, RulesetLootFilterRule &value)
+{
+    return readValue(reader, value.types) && readValue(reader, value.rarityAtMost)
+        && readValue(reader, value.levelsBelow) && readValue(reader, value.action);
+}
+
 void writeValue(BinaryWriter &writer, const RulesetSelection &value)
 {
     writeValue(writer, value.id);
@@ -5222,6 +5485,8 @@ void writeValue(BinaryWriter &writer, const RulesetSelection &value)
     writeValue(writer, value.options.preferences.trainerHints);
     writeValue(writer, value.options.preferences.bowDisabled);
     writeValue(writer, value.options.soloRun);
+    writeValue(writer, value.options.preferences.lootFilter.rules);
+    writeValue(writer, value.options.preferences.lootFilter.otherwise);
 }
 
 // The retired per-game loot choice of saves 172 to 177 (SaveVersionOtherWorldsLootRetired).
@@ -5273,6 +5538,9 @@ bool readValue(BinaryReader &reader, RulesetSelection &value)
             || readValue(reader, value.options.preferences.bowDisabled))
         && skipRetiredOtherWorldsLoot(reader)
         && (reader.version() < SaveVersionSoloRun || readValue(reader, value.options.soloRun))
+        && (reader.version() < SaveVersionLootFilterRules
+            || (readValue(reader, value.options.preferences.lootFilter.rules)
+                && readValue(reader, value.options.preferences.lootFilter.otherwise)))
         && !value.id.empty()
         && rulesetOptionsValid(value.options);
 }
@@ -5480,13 +5748,21 @@ std::vector<uint32_t> persistentSaveItemIds(const GameSaveData &data)
             appendInventoryItem(item.item);
         }
     };
-    const auto appendCharacterItems = [&itemIds](const Character &member)
+    const auto appendCharacterItems = [&itemIds, &appendInventoryItem](const Character &member)
     {
         for (const InventoryItem &item : member.inventory)
         {
             if (item.objectDescriptionId != 0)
             {
                 itemIds.push_back(item.objectDescriptionId);
+            }
+        }
+
+        for (const auto &[bag, items] : member.rulesetState.storedBags)
+        {
+            for (const InventoryItem &item : items)
+            {
+                appendInventoryItem(item);
             }
         }
 
@@ -5519,6 +5795,14 @@ std::vector<uint32_t> persistentSaveItemIds(const GameSaveData &data)
     for (const Character &member : data.party.members)
     {
         appendCharacterItems(member);
+    }
+
+    for (const std::vector<InventoryItem> &items : data.party.pouches)
+    {
+        for (const InventoryItem &item : items)
+        {
+            appendInventoryItem(item);
+        }
     }
 
     for (const AdventurersInnMember &member : data.party.adventurersInnMembers)
@@ -6265,6 +6549,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
         BinaryReader candidate(bytes);
         candidate.setVersion(sourceVersion);
         candidate.setModCombatLevel(modHeader);
+        candidate.setDeferTalentMigrations(modHeader);
         candidate.setLegacyMinotaurV85(layout == 1);
         char candidateMagic[sizeof(SaveMagic)] = {};
         uint32_t candidateVersion = 0;
@@ -6309,6 +6594,10 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     markLegacyCampFireDecorVars(data, sourceVersion);
     markLegacySmallBarrelDecorVars(data, sourceVersion);
     migrateLegacyLichImmunities(data, sourceVersion);
+    if (modHeader)
+    {
+        migrateModSaveTalents(data, sourceVersion);
+    }
     data.sourceSaveVersion = sourceVersion;
 
     return data;

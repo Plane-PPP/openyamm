@@ -7,6 +7,7 @@
 #include "game/party/QuickItemSlot.h"
 #include "game/rules/MonsterRules.h"
 #include "game/ui/GameplayUiController.h"
+#include "game/ui/HudReading.h"
 #include "game/ui/SoloBarSelectorModel.h"
 
 #include <bgfx/bgfx.h>
@@ -257,6 +258,8 @@ enum class GameplayMinimapMarkerType
     HostileActor,
     CorpseActor,
     WorldItem,
+    // A ground item the party has spotted (WorldItemSpotter): the gather key on a completed map takes it.
+    SpottedWorldItem,
     Projectile,
     Decoration
 };
@@ -434,10 +437,10 @@ enum class GameplayCharacterPointerTargetType
     InventorySortButton,
     InventoryDropButton,
     InventoryBagButton,
-    // The bag overview: its button, an item in a bag and a free cell under a held item.
+    // The bag overview and a pouch's tab: the overview's button, an item in a bag and a free cell under a held item.
     InventoryBagOverviewButton,
-    // A bag tag's toggle (bagButton: BagTag) for the open bag.
-    InventoryBagTagButton,
+    // A pouch's button (bagButton: ItemPouch): its tab in the bags' place.
+    InventoryPouchButton,
     // A party of one's tab button (bagButton: the tab, 0-based).
     InventoryTabButton,
     BagOverviewItem,
@@ -472,9 +475,9 @@ struct GameplayCharacterPointerTarget
     uint8_t gridY = 0;
     EquipmentSlot equipmentSlot = EquipmentSlot::MainHand;
     size_t innIndex = 0;
-    // The bag a multibag button zooms (0-3, in the open bag's tab), a tag button's BagTag or a tab button's tab.
+    // The bag a multibag button zooms (0-3, in the open bag's tab), a pouch button's ItemPouch or a tab button's tab.
     uint8_t bagButton = 0;
-    // The bag (0-based) of an overview target; gridX and gridY are its cell.
+    // The bag (0-based, or a pouch's: InventoryBags::pouchBag) of an overview target; gridX and gridY are its cell.
     uint8_t bag = 0;
     uint8_t implantSocket = 0;
 
@@ -498,6 +501,10 @@ enum class GameplayAlchemyBenchPointerTargetType
     RecipeRow,
     RecipeSearch,
     Ingredient,
+    // The button under a slot that opens its power list (its index: 1 target, 2 held, 3 result), and a row of
+    // the open list (its index; 0 is Automatic).
+    PowerButton,
+    PowerOption,
     // The Workbench's tab strip and its Crafting tab.
     AlchemyTab,
     CraftingTab,
@@ -827,14 +834,11 @@ struct GameplayOverlayInteractionState
     bool gameplayHudQuickCastRequested = false;
     bool gameplayHudAttackRequested = false;
     // Whether the party carries any scroll and any potion, for the HUD's two item buttons (GameplayQuickItems):
-    // listing the party's items walks every bag, so the buttons read it a few times a second.
-    std::array<bool, 2> quickItemButtonCarried = {};
-    uint64_t quickItemButtonCarriedTicks = 0;
-    // The map progress bar's last reading (GameplayMapProgressBar): the count walks every actor of the map, so the
-    // HUD reads it a few times a second, not on every frame and for every element that asks where the bar's tab is.
-    std::optional<RulesetMapProgress> mapProgressReading;
-    const IGameplayWorldRuntime *pMapProgressReadingWorld = nullptr;
-    uint64_t mapProgressReadingTicks = 0;
+    // listing the party's items walks every bag.
+    HudReading<std::array<bool, 2>, const Party *> quickItemButtonCarried;
+    // The map progress bar's numbers (GameplayMapProgressBar): the count walks every actor of the map, and the bar,
+    // its tab's bounds and the solo HUD's buff rows all ask for it in one frame.
+    HudReading<std::optional<RulesetMapProgress>, const IGameplayWorldRuntime *> mapProgress;
     // A solo run's action-bar swap slot (a weapon slot with id 1) was pressed: swap the melee weapon and the bow.
     bool soloWeaponSwapRequested = false;
     // A solo run's action bar asked for a talent (its index in the talent table), used by the world interaction frame.
@@ -856,6 +860,9 @@ struct GameplayOverlayInteractionState
         uint64_t startTicks = 0;
     };
     std::vector<SoloSelfTextLine> soloSelfText;
+    // Regeneration ticks waiting to show as one line: their sum and the SDL tick the first of them came at.
+    int soloRegenerationPending = 0;
+    uint64_t soloRegenerationStartTicks = 0;
     // The solo action bar's slot selector (GameplaySoloBarSelector), open over the paused game. Transient.
     SoloBarSelectorState soloBarSelector;
     std::optional<size_t> personalBuffPopupMember;
@@ -883,6 +890,9 @@ struct GameplayOverlayInteractionState
     size_t quickItemPopupScroll = 0;
     std::optional<size_t> quickItemPopupHovered;
     std::optional<size_t> quickItemPopupKeyEntry;
+    // The potion popup's Upkeep view: the chosen member's upkeep potions with their stock, in place of what the party
+    // carries.
+    bool quickItemPopupUpkeep = false;
     // The MM9 formation builder (GameplayFormationBuilder): open over the paused game while it edits.
     Mm9FormationBuilderState formationBuilder;
     bool formationToggleLatch = false;

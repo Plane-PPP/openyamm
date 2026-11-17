@@ -613,7 +613,7 @@ TEST_CASE("Minotaur frozen 2.4 v184 run keeps its perks under stable ids and pla
         CHECK_FALSE(migrateLegacyRunPerks(hero));
     }
 
-    const std::vector<std::unordered_map<std::string, uint8_t>> ranks = {
+    const std::vector<std::unordered_map<std::string, uint16_t>> ranks = {
         {{"endurance", 1}, {"health", 1}},
         {{"mana", 1}, {"personality", 1}},
         {{"speed", 2}},
@@ -747,11 +747,12 @@ TEST_CASE("Minotaur frozen 2.3 v180 preserves the Roguelike run when migrated to
     CHECK(summary->ruleset == original->ruleset);
     CHECK(summary->mapFileName == original->mapFileName);
 
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "minotaur-v180-to-v184.oysav";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "minotaur-v180-to-v194.oysav";
     REQUIRE_MESSAGE(saveGameDataToPath(path, *original, error), error);
     const std::optional<GameSaveData> restored = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(restored, error);
-    CHECK(restored->sourceSaveVersion == 183);
+    // This version writes OYMINO1/v194, upstream 2.7's schema 193.
+    CHECK(restored->sourceSaveVersion == 193);
     CHECK(restored->namedGlobalVars == original->namedGlobalVars);
     CHECK(restored->ruleset == original->ruleset);
     CHECK(restored->randomRootSeed == original->randomRootSeed);

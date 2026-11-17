@@ -3037,6 +3037,7 @@ bool IndoorRenderer::initialize(
     m_programHandle = loadProgram("vs_cubes", "fs_cubes");
     m_texturedProgramHandle = loadProgram("vs_shadowmaps_texture", "fs_shadowmaps_texture");
     m_hudTintedProgramHandle = loadProgram("vs_shadowmaps_texture", "fs_menu_tint");
+    m_hudDrawListProgramHandle = loadProgram("vs_hud", "fs_hud");
     m_indoorLitProgramHandle = loadProgram("vs_indoor_textured_lit", "fs_indoor_textured_lit");
     // Surface materials (devdocs/SURFACE_MATERIALS_PLAN.md), only for a map loaded with their maps.
     const bool surfaceMaterials = indoorTextureSet && hasSurfaceMaterialMaps(indoorTextureSet->textures);
@@ -4094,8 +4095,9 @@ void IndoorRenderer::render(
 
     if (allowWorldSimulation && m_pSceneRuntime != nullptr)
     {
-        // Turn-based mode and a held world (setWorldTimeHeld) freeze game time, but doors and lifts keep moving.
-        const bool gameTimeFrozen = gameSession.turnBasedCombatRuntime().active() || m_worldTimeHeld;
+        // Turn-based mode freezes game time, but the party's steps still fire floor events and doors and lifts keep
+        // moving; a held world (setWorldTimeHeld) runs only the doors and lifts.
+        const bool turnBased = gameSession.turnBasedCombatRuntime().active();
         const bool collectDiagnostics = m_logIndoorPerformanceDiagnostics;
         const uint64_t mechanismBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
         const uint64_t simulationBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
@@ -4104,9 +4106,9 @@ void IndoorRenderer::render(
             pPreviousEventRuntimeState != nullptr
                 ? pPreviousEventRuntimeState->mechanisms
                 : std::unordered_map<uint32_t, RuntimeMechanismState>();
-        const bool simulationAdvanced = gameTimeFrozen
+        const bool simulationAdvanced = m_worldTimeHeld
             ? m_pSceneRuntime->advanceMechanisms(deltaMilliseconds)
-            : m_pSceneRuntime->advanceSimulation(deltaMilliseconds);
+            : m_pSceneRuntime->advanceSimulation(deltaMilliseconds, !turnBased);
 
         if (collectDiagnostics)
         {
@@ -5117,6 +5119,11 @@ bgfx::UniformHandle IndoorRenderer::hudTextureSamplerHandle() const
 bgfx::ProgramHandle IndoorRenderer::hudTintedProgramHandle() const
 {
     return m_hudTintedProgramHandle;
+}
+
+bgfx::ProgramHandle IndoorRenderer::hudDrawListProgramHandle() const
+{
+    return m_hudDrawListProgramHandle;
 }
 
 bgfx::UniformHandle IndoorRenderer::hudTintUniformHandle() const
@@ -6377,7 +6384,9 @@ GameplayWorldHit IndoorRenderer::pickKeyboardGameplayWorldHit(const GameplayWorl
             eventTargetHit.targetIndex = doorIndex;
             eventTargetHit.secondaryIndex = mechanismFaceIndex;
             eventTargetHit.triggeredEventId = binding.linkedEventId;
-            eventTargetHit.name = binding.linkedEventSummary;
+            // The event's hint, as a face shows; the binding's summaries are for the debug inspector.
+            eventTargetHit.name =
+                resolveIndoorLocalEventHintText(m_pSceneRuntime, binding.linkedEventId).value_or("");
             eventTargetHit.hitPoint = center;
             eventTargetHit.distance = vecLength(vecSubtract(center, rayRequest.eye));
             eventTargetHit.contextActionMetadata =
@@ -7210,6 +7219,7 @@ void IndoorRenderer::shutdown()
         m_programHandle = BGFX_INVALID_HANDLE;
         m_texturedProgramHandle = BGFX_INVALID_HANDLE;
         m_hudTintedProgramHandle = BGFX_INVALID_HANDLE;
+        m_hudDrawListProgramHandle = BGFX_INVALID_HANDLE;
         m_indoorLitProgramHandle = BGFX_INVALID_HANDLE;
         m_billboardProgramHandle = BGFX_INVALID_HANDLE;
         m_bloodSplatVertexBufferHandle = BGFX_INVALID_HANDLE;
@@ -7302,6 +7312,12 @@ void IndoorRenderer::shutdown()
     {
         bgfx::destroy(m_hudTintedProgramHandle);
         m_hudTintedProgramHandle = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(m_hudDrawListProgramHandle))
+    {
+        bgfx::destroy(m_hudDrawListProgramHandle);
+        m_hudDrawListProgramHandle = BGFX_INVALID_HANDLE;
     }
 
     if (bgfx::isValid(m_indoorLitProgramHandle))

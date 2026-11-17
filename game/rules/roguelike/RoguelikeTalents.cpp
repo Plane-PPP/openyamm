@@ -51,10 +51,11 @@ CharacterAttackExtras attackExtras(const DungeonRunRules &rules, const Character
         extras.fanShare = fan.pTalent->share / 100.0f;
     }
 
-    if (const Learned pierce = learned(rules, attacker, PiercingArrows))
+    if (const Learned chain = learned(rules, attacker, PiercingArrows))
     {
-        extras.pierceCount = std::max(0, wholeNumber(pierce.value()));
-        extras.pierceShare = pierce.pTalent->share / 100.0f;
+        extras.chainCount = std::max(0, wholeNumber(chain.value()));
+        extras.chainShare = chain.pTalent->share / 100.0f;
+        extras.chainRadius = chain.pTalent->radius > 0.0f ? chain.pTalent->radius : 1024.0f;
     }
 
     return extras;

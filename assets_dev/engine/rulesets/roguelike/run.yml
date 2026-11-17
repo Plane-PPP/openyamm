@@ -164,15 +164,18 @@ rules:
       share: 50
       arc: 12
       text: "Every bow shot also looses {value} side arrows in a fan, at 50 % damage"
+    # OpenYAMM 2.7 turned MAW's Piercing Arrows into Chaining Arrows (same id) and took the piercing flight out of the
+    # engine: the run's talent leaps the same way.
     - id: piercing_arrows
-      name: Piercing Arrows
+      name: Chaining Arrows
       icon: talent_piercing_arrows
       needs: Bow
       mastery: expert
       maxRank: 3
       values: [1, 2, 3]
       share: 50
-      text: "An arrow flies on through {value} more monsters, at 50 % damage"
+      radius: 1024
+      text: "An arrow's hit leaps on to the nearest other monster within 10 m, up to {value} times, at 50 % damage"
     - id: pinning_shot
       name: Pinning Shot
       icon: talent_pinning_shot

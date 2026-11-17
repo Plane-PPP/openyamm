@@ -308,7 +308,8 @@ void addHalfLearnedSkillBonus(Character &member, const std::string &skillName)
 
 void addStandardEnchantBonus(Character &member, StandardItemEnchantKind kind, int amount)
 {
-    if (amount <= 0)
+    // A loss counts too: a MAW artifact's stat budget takes some stats down (Hell's Cleaver's Personality and Intellect).
+    if (amount == 0)
     {
         return;
     }
@@ -1686,9 +1687,14 @@ std::string ItemEnchantRuntime::displayName(
     const StandardItemEnchantTable *pStandardTable,
     const SpecialItemEnchantTable *pSpecialTable)
 {
-    // The name and its enchantment in the interface language, each from its own table.
+    // The name and its enchantment in the interface language, each from its own table, put together by a template
+    // so a language can order them its own way ("Long Sword of Fire" is not every language's order).
     const std::string baseName =
         itemDefinition.name.empty() ? Engine::tr("Unknown item") : Engine::localize(itemDefinition.name);
+    const auto withSuffix = [&baseName](const std::string &enchantment)
+    {
+        return Engine::tr("{item} {enchantment}", {{"item", baseName}, {"enchantment", enchantment}});
+    };
 
     if (item.standardEnchantId != 0 && pStandardTable != nullptr)
     {
@@ -1696,7 +1702,7 @@ std::string ItemEnchantRuntime::displayName(
         {
             if (!pEntry->suffix.empty())
             {
-                return baseName + " " + Engine::localize(pEntry->suffix);
+                return withSuffix(Engine::localize(pEntry->suffix));
             }
         }
     }
@@ -1708,7 +1714,9 @@ std::string ItemEnchantRuntime::displayName(
             if (!pEntry->suffix.empty())
             {
                 const std::string suffix = Engine::localize(pEntry->suffix);
-                return pEntry->displayAsPrefix ? (suffix + " " + baseName) : (baseName + " " + suffix);
+                return pEntry->displayAsPrefix
+                    ? Engine::tr("{enchantment} {item}", {{"enchantment", suffix}, {"item", baseName}})
+                    : withSuffix(suffix);
             }
         }
     }

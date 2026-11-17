@@ -18,6 +18,7 @@ class ItemTable;
 class StandardItemEnchantTable;
 class SpecialItemEnchantTable;
 struct SpellEntry;
+struct ItemDefinition;
 
 // A hit on a monster, before its resistances.
 struct MonsterDamageHit
@@ -132,6 +133,9 @@ struct CharacterAttackOnMonster
     bool targetHostile = true;
     int partyCount = 1;
     std::mt19937 *pRng = nullptr;
+    // A solo talent's extra blow (Cleave's other monsters, Sweeping Blows): no stun or paralysis, and Retaliation's
+    // stacks stay for the main blow.
+    bool extraBlow = false;
 };
 
 // A party member's hit that landed on a monster.
@@ -151,7 +155,8 @@ struct PartyHitOnMonster
     IGameplayWorldRuntime *pWorld = nullptr;
     std::optional<size_t> targetActorIndex;
     // A solo talent's extra blow (Cleave's other monsters, Sweeping Blows): its leech and the class's on-hit gains
-    // (a dragon's bite SP, a Death Knight's SP and Blood Leech, a Shaman's and a Seraph's) are a third as strong.
+    // (a dragon's bite SP, a Death Knight's SP and Blood Leech, a Shaman's and a Seraph's) are a third as strong, and
+    // the special on-hit effects (pushes, slows, artifact spells, Death Grasp) are the main blow's alone.
     bool extraBlow = false;
 };
 
@@ -273,9 +278,12 @@ struct CharacterAttackExtras
     int fanArrows = 0;
     float fanArcDegrees = 0.0f;
     float fanShare = 0.0f;
-    // Every arrow of the shot flies on through this many more monsters, each struck at the share of its damage.
-    int pierceCount = 0;
-    float pierceShare = 0.0f;
+    // Every arrow of the shot leaps on from the monster it strikes to this many more, each the nearest other monster
+    // within chainRadius (world units) of the one before, struck at chainShare of the arrow's damage (OpenYAMM 2.7's
+    // chaining arrows, which replaced the piercing flight).
+    int chainCount = 0;
+    float chainShare = 0.0f;
+    float chainRadius = 0.0f;
 };
 
 // How damage is resolved (devdocs/maw/HANDOFF.md §3.5-3.6). This class builds the Standard MMMerge stages; a ruleset
@@ -383,6 +391,9 @@ public:
     virtual bool piercesConditionSave(const Party &party) const;
     // Whether no special attack of a monster (conditions, drains, breaks) takes hold on this member. Standard: no.
     virtual bool immuneToMonsterSpecialAttacks(const Character &member) const;
+    // Whether the rules' own repair would mend this item if it broke now (MAW's auto-repair by the party's best Repair
+    // skill). Standard: never.
+    virtual bool autoRepairs(const Party &party, const ItemDefinition &item) const;
     // Whether the party's hits hurt monsters that are not hostile to it (MAW's friendly-fire preference). Standard:
     // always.
     virtual bool harmsFriendlyActors() const;

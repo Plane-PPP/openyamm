@@ -41,6 +41,7 @@
 #include "game/events/ISceneEventContext.h"
 #include "game/maps/MapIdentity.h"
 #include "game/maps/MapLayoutIdentity.h"
+#include "game/maps/SceneOverlayPaths.h"
 #include "game/tables/CharacterDollTable.h"
 #include "game/tables/ClassMultiplierTable.h"
 #include "game/tables/ClassSkillTable.h"
@@ -3078,6 +3079,8 @@ GameApplication::GameApplication(const Engine::ApplicationConfig &config)
           [this](int width, int height, float mouseWheelDelta, float deltaSeconds)
           {
               renderFrame(width, height, mouseWheelDelta, deltaSeconds);
+              // The frame's HUD is drawn here, once, in the order it was submitted (devdocs/HUD_RENDERING.md).
+              m_gameSession.gameplayUiRuntime().flushHudDrawList();
               drawLoadingOverlay();
               updateScreenshotCaptureFrame();
           },
@@ -3444,6 +3447,93 @@ void GameApplication::registerDebugConsoleCommands()
             const bool saved = quickSaveToPath(path, context.args[0]);
             return commandResult(saved, saved ? "Saved " + path.string() : "Not saved (see the status bar)");
         }});
+
+    m_debugConsole.registerCommand({
+        .name = "mods",
+        .description = "List the named mods (mods/<id>/mod.yml) or switch one on or off in mods/enabled.yml; a switch "
+            "takes effect at the next start.",
+        .usage = "mods [list] | mods enable <id> | mods disable <id>",
+        .callback = [this, commandResult](const DebugConsole::CommandContext &context)
+        {
+            const std::filesystem::path modsRoot = m_pAssetFileSystem != nullptr
+                ? m_pAssetFileSystem->installedContentOptions().modsRoot
+                : std::filesystem::path();
+
+            if (modsRoot.empty())
+            {
+                return commandResult(false, "This run has no mods folder (Android, or a tool run without one).");
+            }
+
+            if (context.args.size() == 2 && (context.args[0] == "enable" || context.args[0] == "disable"))
+            {
+                const bool enable = context.args[0] == "enable";
+                std::string error;
+
+                if (!setNamedModEnabled(modsRoot, context.args[1], enable, error))
+                {
+                    return commandResult(false, error);
+                }
+
+                // Mounts and tables are made once, at the start: a new game or a load keeps this start's mods.
+                return commandResult(true, context.args[1] + (enable ? " is on" : " is off") + " in "
+                    + (modsRoot / EnabledModListFileName).generic_string() + " from the next start of the game; "
+                    "until then the mods of this start stay mounted, also for a new game or a load.");
+            }
+
+            if (!context.args.empty() && !(context.args.size() == 1 && context.args[0] == "list"))
+            {
+                return commandResult(false, "Usage: mods [list] | mods enable <id> | mods disable <id>");
+            }
+
+            // The list as the next start will read it, beside this start's states.
+            const NamedModCatalog next = readNamedModCatalog(modsRoot);
+            const auto listedNext = [&next](const std::string &id)
+            {
+                return std::find(next.enabledIds.begin(), next.enabledIds.end(), id) != next.enabledIds.end();
+            };
+            std::string text = "Named mods in " + modsRoot.generic_string() + " (on: mounted at this start, in "
+                "this order):";
+
+            for (const std::string &id : m_namedModCatalog.mountOrder)
+            {
+                const NamedModEntry *pEntry = m_namedModCatalog.find(id);
+                text += "\n  " + id + " " + pEntry->manifest->version + ": on (" + pEntry->manifest->name + ")";
+                text += listedNext(id) ? "" : "; off from the next start";
+            }
+
+            for (const NamedModEntry &entry : next.mods)
+            {
+                const NamedModEntry *pNow = m_namedModCatalog.find(entry.id);
+                const NamedModState state = pNow != nullptr ? pNow->state : NamedModState::Off;
+
+                if (state == NamedModState::On)
+                {
+                    continue;
+                }
+
+                text += "\n  " + entry.id + ": " + (state == NamedModState::Refused ? "refused, " + pNow->reason
+                                                                                     : std::string("off"));
+                text += listedNext(entry.id) ? "; listed for the next start" : "";
+            }
+
+            for (const std::string &id : m_namedModCatalog.missingIds)
+            {
+                text += "\n  " + id + ": listed in " + EnabledModListFileName + " but not installed";
+            }
+
+            if (!next.enabledListError.empty())
+            {
+                text += "\n  " + std::string(EnabledModListFileName) + " is ignored: " + next.enabledListError;
+            }
+
+            if (m_namedModCatalog.mountOrder.empty() && next.mods.empty())
+            {
+                text += "\n  none installed";
+            }
+
+            return commandResult(true, text);
+        },
+        .readOnly = true});
 
     m_debugConsole.registerCommand({
         .name = "testparty",
@@ -5632,6 +5722,7 @@ void GameApplication::registerDebugConsoleCommands()
             if (selectedMap)
             {
                 out << " selected=" << selectedMap->map.fileName
+                    << " name=\"" << selectedMap->map.name << "\""
                     << " canonical=" << selectedMap->map.canonicalId
                     << " scene=" << (selectedMap->outdoorMapData ? "outdoor" : "indoor")
                     << " local_events=" << (selectedMap->localEventProgram
@@ -5662,6 +5753,9 @@ void GameApplication::registerDebugConsoleCommands()
             {
                 GameplayUiController::CharacterScreenState &screen =
                     m_gameSession.gameplayScreenRuntime().characterScreen();
+                screen.open = true;
+                screen.source = GameplayUiController::CharacterScreenSource::Party;
+                screen.sourceIndex = pParty->activeMemberIndex();
                 screen.page = GameplayUiController::CharacterPage::Skills;
                 screen.talentsView = true;
                 return commandResult(true, "talents page");
@@ -5674,7 +5768,10 @@ void GameApplication::registerDebugConsoleCommands()
             {
                 // Onslaught's stacks for review, lasting its 30 s.
                 pMember->talentState.onslaughtStacks = std::max(0, std::atoi(args[1].c_str()));
-                pMember->talentState.onslaughtSeconds = pMember->talentState.onslaughtStacks > 0 ? 30.0f : 0.0f;
+                const TalentDefinition *pOnslaught = soloTalentTable().find("onslaught");
+                pMember->talentState.onslaughtSeconds = pMember->talentState.onslaughtStacks > 0 && pOnslaught != nullptr
+                    ? pOnslaught->duration
+                    : 0.0f;
                 return commandResult(true, "onslaught stacks " + std::to_string(pMember->talentState.onslaughtStacks));
             }
             if (args.size() == 1 && args[0] == "reset")
@@ -5741,7 +5838,7 @@ void GameApplication::registerDebugConsoleCommands()
             pMember->talentRanks.erase(pTalent->id);
             if (rank > 0)
             {
-                pMember->talentRanks[pTalent->id] = uint8_t(rank);
+                pMember->talentRanks[pTalent->id] = uint16_t(rank);
                 const uint32_t index = uint32_t(pTalent - soloTalentTable().talents().data());
                 const bool placed = std::any_of(pMember->actionBar.begin(), pMember->actionBar.end(),
                     [index](const ActionBarSlot &slot)
@@ -10405,6 +10502,14 @@ bool GameApplication::loadGameData(Engine::AssetFileSystem &assetFileSystem)
     m_gameplayController.clearRuntime();
     m_screenManager.setActiveScreen(nullptr);
 
+    // The named mods, chosen once per start (devdocs/NAMED_MODS.md): mounted before anything is read from the assets.
+    if (!mountNamedMods(assetFileSystem, m_namedModCatalog))
+    {
+        return false;
+    }
+
+    m_gameDataLoader.setNamedMods(m_namedModCatalog.mountedManifests());
+
     std::string manifestError;
     m_activeWorldManifest = loadActiveWorldManifestOrDefault(
         assetFileSystem,
@@ -10863,25 +10968,63 @@ std::optional<CinematicLibrary> GameApplication::loadMapCinematics(const MapAsse
 
     const std::string directory = slash == std::string::npos ? "" : map.geometryPath.substr(0, slash + 1);
     const std::string stem = map.geometryPath.substr(directory.size(), dot - directory.size());
-    const std::optional<std::string> path = directory + toLowerCopy(stem) + ".cinematics.yml";
+    const std::string fileName = toLowerCopy(stem) + ".cinematics.yml";
+    const std::optional<std::string> path = directory + fileName;
     const std::optional<std::string> text =
         m_pAssetFileSystem->exists(*path) ? m_pAssetFileSystem->readTextFile(*path) : std::nullopt;
+    std::optional<CinematicLibrary> library;
+    std::string source;
 
-    if (!text)
+    if (text)
     {
-        return std::nullopt;
+        std::string error;
+        library = parseCinematicLibrary(*text, error);
+
+        if (!library)
+        {
+            std::cerr << "GameApplication: " << *path << " is not a valid cinematics file: " << error << '\n';
+            return std::nullopt;
+        }
+
+        source = *path;
     }
 
-    std::string error;
-    std::optional<CinematicLibrary> library = parseCinematicLibrary(*text, error);
+    // Its overlays (`<stem>_<name>.cinematics.yml`): merged by cinematic id, in the scene overlays' order. One that
+    // does not parse is left out.
+    for (const std::string &overlayPath : buildCinematicsOverlayPathCandidates(
+             *m_pAssetFileSystem, fileName, m_gameDataLoader.activeRulesetRoot()))
+    {
+        const std::optional<std::string> overlayText = m_pAssetFileSystem->readTextFile(overlayPath);
+
+        if (!overlayText)
+        {
+            continue;
+        }
+
+        std::string error;
+        std::optional<CinematicLibrary> overlay = parseCinematicLibrary(*overlayText, error);
+
+        if (!overlay)
+        {
+            std::cerr << "GameApplication: " << overlayPath << " is not a valid cinematics file: " << error << '\n';
+            continue;
+        }
+
+        if (!library)
+        {
+            library = CinematicLibrary{};
+        }
+
+        mergeCinematicLibrary(*library, std::move(*overlay));
+        source += source.empty() ? overlayPath : " + " + overlayPath;
+    }
 
     if (!library)
     {
-        std::cerr << "GameApplication: " << *path << " is not a valid cinematics file: " << error << '\n';
         return std::nullopt;
     }
 
-    std::cout << "GameApplication: " << library->cinematics.size() << " cinematics from " << *path << '\n';
+    std::cout << "GameApplication: " << library->cinematics.size() << " cinematics from " << source << '\n';
     return library;
 }
 
@@ -11003,7 +11146,10 @@ bool GameApplication::buildSelectedMapRuntime(bool initializeView)
                 && (boundGameRules().monsters.mapRefillForced(selectedMap->map.fileName)
                     || timedMapRespawnDue(selectedMap->map, pSavedOutdoorState->locationInfo, currentMapDay));
         boundGameRules().monsters.mapLoaded(selectedMap->map.fileName, outdoorTimedRespawn);
-        for (size_t index = 0; index < m_pOutdoorPartyRuntime->party().members().size(); ++index)
+        // Leaving a map ends Onslaught; a loaded save resumes the talent state it saved.
+        for (size_t index = 0;
+             !m_loadingSavedGameRuntime && index < m_pOutdoorPartyRuntime->party().members().size();
+             ++index)
         {
             endMapTalentEffects(*m_pOutdoorPartyRuntime->party().member(index));
         }
@@ -11266,7 +11412,8 @@ bool GameApplication::buildSelectedMapRuntime(bool initializeView)
                     pSavedIndoorState->mapDeltaData->locationInfo,
                     currentMapDay));
         boundGameRules().monsters.mapLoaded(selectedMap->map.fileName, indoorTimedRespawn);
-        for (size_t index = 0; index < party.members().size(); ++index)
+        // Leaving a map ends Onslaught; a loaded save resumes the talent state it saved.
+        for (size_t index = 0; !m_loadingSavedGameRuntime && index < party.members().size(); ++index)
         {
             endMapTalentEffects(*party.member(index));
         }
@@ -12086,6 +12233,7 @@ uint32_t GameApplication::renderLoadingOverlayProgress(int progressPercent)
 
     m_loadingOverlayCurrentProgressPercent = std::clamp(progressPercent, 0, 100);
     SDL_PumpEvents();
+    m_gameSession.gameplayUiRuntime().flushHudDrawList();
     drawLoadingOverlay();
     return bgfx::frame();
 }
@@ -12122,6 +12270,9 @@ bool GameApplication::logFramePerformanceDiagnostics(uint32_t currentTick)
             ? diagnostics.totalNanoseconds - measuredNanoseconds
             : 0;
 
+    // What the HUD drew per frame (devdocs/HUD_RENDERING.md): a HUD change that adds draws shows here.
+    const GameplayUiRuntime::HudDrawListStats hudStats = m_gameSession.gameplayUiRuntime().hudDrawListStats();
+    const uint64_t frames = std::max<uint64_t>(diagnostics.frames, 1);
     std::cout << "[GameFramePerf]"
               << " frames=" << diagnostics.frames
               << " active_screen_frames=" << diagnostics.activeScreenFrames
@@ -12171,8 +12322,11 @@ bool GameApplication::logFramePerformanceDiagnostics(uint32_t currentTick)
               << " avg_performance_trace_log_us=" << nanosecondsToMicroseconds(averageNanoseconds(
                   diagnostics.performanceTraceLogNanoseconds,
                   diagnostics.frames))
+              << " avg_hud_draws=" << (hudStats.draws - m_loggedHudDrawListStats.draws) / frames
+              << " avg_hud_primitives=" << (hudStats.primitives - m_loggedHudDrawListStats.primitives) / frames
               << '\n';
 
+    m_loggedHudDrawListStats = hudStats;
     m_framePerformanceDiagnostics = {};
     return true;
 }
@@ -12765,6 +12919,7 @@ void GameApplication::shutdownRenderer()
     {
         // bgfx defers freeing destroyed handles until the next frame. Map transitions reconstruct the renderer
         // immediately, so advance the resource lifecycle before the next map starts allocating handles.
+        m_gameSession.gameplayUiRuntime().flushHudDrawList();
         drawLoadingOverlay();
         bgfx::frame();
     }
@@ -12799,9 +12954,30 @@ void GameApplication::updateDoubleSpeedInput()
         return;
     }
 
-    m_doubleSpeedActive = !m_doubleSpeedActive;
-    m_gameSession.gameplayScreenRuntime().setStatusBarEvent(
-        m_doubleSpeedActive ? Engine::tr("Fast mode (2x)") : Engine::tr("Normal mode (1x)"));
+    // 1x, 2x, 3x, 4x and back to 1x.
+    m_gameSpeedFactor = m_gameSpeedFactor % 4 + 1;
+    std::string status;
+
+    switch (m_gameSpeedFactor)
+    {
+        case 2:
+            status = Engine::tr("Fast mode (2x)");
+            break;
+
+        case 3:
+            status = Engine::tr("Fast mode (3x)");
+            break;
+
+        case 4:
+            status = Engine::tr("Fast mode (4x)");
+            break;
+
+        default:
+            status = Engine::tr("Normal mode (1x)");
+            break;
+    }
+
+    m_gameSession.gameplayScreenRuntime().setStatusBarEvent(status);
 }
 
 float GameApplication::gameplaySpeed() const
@@ -12813,7 +12989,7 @@ float GameApplication::gameplaySpeed() const
         return 1.0f;
     }
 
-    float speed = m_doubleSpeedActive ? 2.0f : 1.0f;
+    float speed = static_cast<float>(m_gameSpeedFactor);
 
     switch (m_gameSession.turnBasedCombatRuntime().speedPhase())
     {
@@ -13366,6 +13542,15 @@ bool GameApplication::quickLoadFromPath(const std::filesystem::path &path, bool 
     if (!saveData)
     {
         return fail(error, false);
+    }
+
+    // The party's map must exist: a map a named mod brought is gone while the mod is off. Refused here, before the
+    // game in progress changes (devdocs/NAMED_MODS.md).
+    if (m_gameDataLoader.getMapStats().findByFileName(saveData->mapFileName) == nullptr)
+    {
+        std::cerr << "Load refused: the save's map " << saveData->mapFileName << " is not installed\n";
+        return fail(Engine::tr("this save was made on {map}, a map that is not installed (a mod that brought it may be "
+            "off)", {{"map", saveData->mapFileName}}), false);
     }
 
     // Loading a save of another ruleset reloads the tables and ends the game in progress, so the package checks that
@@ -14089,6 +14274,7 @@ bool GameApplication::startNewSession(std::optional<uint32_t> rosterId, bool ini
     if (ruleset.options.soloRun)
     {
         makeSoloRunParty(ensureSessionPartyState());
+        giveSoloRunStartScrolls(ensureSessionPartyState());
     }
 
     if (!loadCurrentSessionMap(initializeView))
@@ -14251,10 +14437,11 @@ bool GameApplication::startNewSessionFromCharacterCreation(
     sessionParty.setRules(m_gameSession.rulesetGameRules());
     sessionParty.rules().experience.prepareNewParty(sessionParty);
 
-    // A solo run starts with its action bar filled from what the character can do.
+    // A solo run starts with its action bar filled from what the character can do, and its travel scrolls.
     if (options.ruleset.options.soloRun)
     {
         makeSoloRunParty(sessionParty);
+        giveSoloRunStartScrolls(sessionParty);
     }
 
     setDebugTownPortalUnlocks(sessionParty, false);
@@ -15188,6 +15375,7 @@ void GameApplication::updateScreenshotCaptureFrame()
             >= static_cast<uint32_t>(m_settings.effectStatsDelaySeconds * 1000.0f))
     {
         m_debugLaunchEffectStatsLogged = true;
+        m_gameSession.gameplayUiRuntime().logNextHudDrawList();
         WorldFxSystem &worldFx = m_pMapSceneRuntime->kind() == SceneKind::Outdoor
             ? m_outdoorGameView.worldFxSystem() : m_indoorRenderer.worldFxSystem();
         const EffectRenderer::Diagnostics &diagnostics = m_pMapSceneRuntime->kind() == SceneKind::Outdoor

@@ -66,7 +66,7 @@ public:
             .displayName = "Target", .position = {targetDistance, 0, 0}, .currentHp = hp, .maxHp = maximum,
             .effectiveLevel = level, .isDead = hp <= 0, .hostileToParty = true};
     }
-    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier, const ShieldHitModifiers & = {}, bool = false) override
+    bool applyPartyAttackMeleeDamage(size_t, int value, const GameplayWorldPoint &, ShieldAttackTier, const ShieldHitModifiers & = {}, bool = false, bool = true) override
     {
         ++ordinaryApplications;
         damage = value;

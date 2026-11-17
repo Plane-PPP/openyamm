@@ -147,8 +147,8 @@ struct Character
     // special skills. Saved; party games keep it empty and never read it.
     std::array<ActionBarSlot, ActionBarSlotCount> actionBar = {};
     // The special skills (talents) learned in a MAW solo run, by talent id: their ranks (devdocs/solo_action/TALENTS.md).
-    // Saved; empty in every other game.
-    std::unordered_map<std::string, uint8_t> talentRanks;
+    // Saved; empty in every other game. Two bytes: Conditioning has no last rank.
+    std::unordered_map<std::string, uint16_t> talentRanks;
     // Their cooldowns and timed effects. Not saved.
     SoloTalentState talentState;
     // Battle orders (game/party/BattleOrders.h): what Attack does, tried in order, then the fallback. Saved; they
@@ -307,6 +307,9 @@ class Party;
 // A new solo run's party: the first member alone (with the first's character buffs), its action bar filled. Every new
 // game path with RulesetOptions::soloRun calls it once (New Game, the debug start, scenarios).
 void makeSoloRunParty(Party &party);
+// A new solo run's travel scrolls, one each of Water Walk, Jump, Town Portal, Fly and Lloyd's Beacon (user,
+// 2026-11-15). Every new game path that starts a solo run gives them once; turning an existing game solo does not.
+void giveSoloRunStartScrolls(Party &party);
 
 struct SpellEntry;
 
@@ -554,6 +557,9 @@ public:
         std::string lastOutdoorMapFileName;
         // Potion pairs (target << 32 | held) that exploded when mixed, so the alchemy bench can warn.
         std::unordered_set<uint64_t> explosiveMixes;
+        // The shared pouches' items (Party::pouchItems), by ItemPouch; older saves have none and gather theirs when
+        // loaded (Party::gatherPouchItems).
+        std::array<std::vector<InventoryItem>, ItemPouchCount> pouches;
     };
 
     struct PendingAudioRequest
@@ -681,6 +687,8 @@ public:
         {
             Damage,
             Heal,
+            // A regeneration tick (healMember's regeneration flag): the HUD shows these summed, not one by one.
+            Regeneration,
             ConditionGained,
             ConditionCleared,
         };
@@ -844,6 +852,19 @@ public:
         size_t *pRecipientMemberIndex = nullptr);
     // Whether tryGrantInventoryItem would find room for the item; changes nothing.
     bool canGrantInventoryItem(const InventoryItem &item) const;
+    // The shared pouch the party keeps the item in instead of a member's bag (ItemRules::pouch), or none. The grants
+    // above and the placements below put such an item into its pouch whatever bag they were asked for, and refuse
+    // anything else a place in a pouch.
+    std::optional<ItemPouch> pouchFor(const InventoryItem &item) const;
+    // A pouch's items, each at its cell of the pouch's grid (InventoryBags::PouchColumns). While a member has the
+    // pouch open for an operation (InventoryBags::withBagOpen) they are that member's inventory.
+    const std::vector<InventoryItem> &pouchItems(ItemPouch pouch) const;
+    std::vector<InventoryItem> &pouchItemsMutable(ItemPouch pouch);
+    // Into the pouch's first free place, row by row; false when it is full.
+    bool addToPouch(ItemPouch pouch, const InventoryItem &item);
+    // Moves every item with a pouch out of the members' bags into its pouch: a save from before the pouches, a party
+    // just made, a member who joined. Returns how many moved; what a full pouch cannot take stays where it lies.
+    size_t gatherPouchItems();
     void grantItem(uint32_t objectDescriptionId, uint32_t quantity = 1);
     bool removeItem(uint32_t objectDescriptionId, uint32_t quantity = 1);
     static int effectiveMaximumHealth(const Character &member);
@@ -1083,7 +1104,8 @@ public:
         size_t memberIndex, CharacterCondition condition, float gameMinutes, float expireGameMinutes);
     bool clearMemberCondition(size_t memberIndex, CharacterCondition condition);
     bool hasMemberConditionImmunity(size_t memberIndex, CharacterCondition condition) const;
-    bool healMember(size_t memberIndex, int amount);
+    // regeneration: a periodic tick rather than a heal, which the solo HUD's self combat text sums over time.
+    bool healMember(size_t memberIndex, int amount, bool regeneration = false);
     // Changes a member's HP outside combat (drains, shared life), up to full: no shields, no speech; conditions follow.
     void adjustMemberHealth(size_t memberIndex, int amount);
     bool reviveMember(size_t memberIndex, int health, bool applyWeak);
@@ -1236,6 +1258,7 @@ private:
     std::vector<WorldCompletionRecord> m_worldCompletions;
     bool m_worldCompletionsUntracked = false;
     std::unordered_set<uint32_t> m_everOwnedItemIds;
+    std::array<std::vector<InventoryItem>, ItemPouchCount> m_pouches;
     std::unordered_set<uint64_t> m_chosenMm9RudeRows;
     std::unordered_set<uint32_t> m_teacherLedgers;
     std::unordered_set<uint64_t> m_explosiveMixes;

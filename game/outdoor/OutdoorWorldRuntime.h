@@ -19,6 +19,7 @@
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/MonsterDeathExplosion.h"
 #include "game/gameplay/SearchableLootPropRuntime.h"
+#include "game/gameplay/WorldItemSpotter.h"
 #include "game/maps/ActorModelManifest.h"
 #include "game/maps/MapAssetLoader.h"
 #include "game/maps/MapDeltaData.h"
@@ -336,6 +337,10 @@ public:
         // A party hit woke it: it acts out to the engagement range until it comes within the full-AI range or loses
         // the party, so backing off after a shot does not leave it standing beyond the full-AI range as in MM8.
         bool provokedByParty = false;
+        // MM's Aggressor attribute (indoor actors keep it in their attributes): a party hit or its faction's alert set
+        // it (MM8 0x439278), and the map can author it. It notices the party at the engagement range, not only within
+        // its relation's (GameplayActorService::partyNoticeRange), until it is made friendly.
+        bool aggressor = false;
         ActorAiState aiState = ActorAiState::Standing;
         ActorAnimation animation = ActorAnimation::Standing;
         float animationTimeTicks = 0.0f;
@@ -834,9 +839,10 @@ public:
         float targetZ);
     bool debugSpawnEncounterFromSpawnPoint(size_t spawnIndex, uint32_t countOverride = 0);
     bool setMapActorDead(size_t actorIndex, bool isDead, bool emitAudio = true);
+    // hitReaction false: no flinch and no knockback (IGameplayWorldRuntime::applyPartyAttackMeleeDamage).
     bool applyPartyAttackToMapActor(size_t actorIndex, int damage, float partyX, float partyY, float partyZ,
         ShieldAttackTier shieldTier = ShieldAttackTier::Physical, const ShieldHitModifiers &shieldModifiers = {},
-        bool critical = false, bool lethalStrike = false);
+        bool critical = false, bool hitReaction = true, bool lethalStrike = false);
     bool debugSetActorHealth(size_t actorIndex, int health) override;
     bool killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source) override;
     bool applyPartyAttackMeleeDamage(
@@ -845,7 +851,8 @@ public:
         const GameplayWorldPoint &source,
         ShieldAttackTier shieldTier,
         const ShieldHitModifiers &shieldModifiers = {},
-        bool critical = false) override;
+        bool critical = false,
+        bool hitReaction = true) override;
     void applyPartyAttackMeleeEffects(
         size_t actorIndex,
         const CharacterAttackResult &attack,
@@ -913,6 +920,7 @@ public:
         float sourceX,
         float sourceY,
         float sourceZ) const override;
+    bool hasClearLineBetween(const GameplayWorldPoint &from, const GameplayWorldPoint &to) const override;
     std::vector<size_t> collectVisibleMapActorIndicesWithinRadius(
         float centerX,
         float centerY,
@@ -984,6 +992,9 @@ public:
     void onPlacedWorldItemTaken(const std::string &sourceId);
     // A scene's placed world item shown but not yet takeable (MapWorldItemSource::pickupQBits).
     bool placedWorldItemLocked(const WorldItemState &worldItem) const;
+    // Whether the gather key may take a ground item once spotted (worldItemCollectable for a placed one; never one the
+    // loot filter left on the ground).
+    bool spottableWorldItem(const WorldItemState &worldItem) const;
     bool activateSemanticLootContainer(size_t worldItemIndex);
     bool spawnWorldItem(
         const InventoryItem &item,
@@ -1085,7 +1096,8 @@ public:
     void scareNearbyPeasants(float radius, float seconds) override;
     bool turnBasedActorActionInProgress() const override;
     void stopTurnBasedActorMovement() override;
-    void advanceTurnBasedActorTimers(float seconds) override;
+    void advanceTurnBasedWorldTime(float seconds) override;
+    void setGameSpeed(float speed) override;
     void setTurnBasedActorMode(ActorTurnBasedMode mode) override;
     void grantTurnBasedActorAction(size_t actorIndex) override;
     bool turnBasedActorActionGrantPending() const override;
@@ -1228,6 +1240,9 @@ public:
     size_t gatherCorpsesToParty(size_t maxCount) override;
     size_t gatherWorldItemsToParty(size_t maxCount, const std::function<bool(const InventoryItem &)> &gathers) override;
     std::vector<size_t> lootableCorpseActorIndices() const override;
+    std::vector<size_t> collectableSpottedWorldItemIndices() const override;
+    bool hasSpottedWorldItems() const override;
+    void unspotWorldItem(size_t worldItemIndex) override;
     bool openActorCorpseView(size_t actorIndex) override;
     const GameplayProjectileService *projectileServiceView() const override
     {
@@ -1350,9 +1365,11 @@ public:
         bool turnBasedPendingAction = false;
         // Its damage was a critical hit (ProjectileState::critical).
         bool critical = false;
-        // ProjectileState::pierceLeft and pierceShare.
-        uint8_t pierceCount = 0;
-        float pierceShare = 0.0f;
+        // ProjectileState::chainLeft, chainShare, chainRadius and hitCredit.
+        uint8_t chainCount = 0;
+        float chainShare = 0.0f;
+        float chainRadius = 0.0f;
+        std::shared_ptr<bool> hitCredit;
     };
 
     struct MonsterVisualState
@@ -1616,6 +1633,8 @@ private:
         const bx::Vec3 &end,
         std::vector<size_t> &candidateFaceIndices) const;
     void updateImmolation(float deltaSeconds);
+    // Spots the ground items the party passes (ItemRules::worldItemSpotting, WorldItemSpotter).
+    void updateWorldItemSpotting(float deltaSeconds);
     void updateFireSpikeTraps(float deltaSeconds, float partyX, float partyY, float partyZ);
     void applyFireSpikeTrapTriggerResult(
         FireSpikeTrapState &trap,
@@ -1842,6 +1861,7 @@ private:
     mutable std::unordered_map<uint64_t, ActorSightCacheEntry> m_actorSightCache;
     size_t m_actorPathPlansThisStep = 0;
     float m_outdoorMechanismGeometryRefreshAccumulatorSeconds = 0.0f;
+    WorldItemSpotter m_worldItemSpotter;
     std::unordered_map<uint32_t, std::array<int32_t, 3>> m_outdoorMechanismOffsets;
     std::unordered_map<uint32_t, bool> m_outdoorNavigationMechanismMovingStates;
     std::unordered_map<uint32_t, size_t> m_outdoorDestructibleDefinitionBySourceObject;
@@ -1852,6 +1872,10 @@ private:
     float m_mm9FoundPlayerAccumulatorSeconds = 0.0f;
     float m_actorAiTraceAccumulatorSeconds = 0.0f;
     float m_projectileUpdateAccumulatorSeconds = 0.0f;
+    // The party's position at the previous projectile update, for homing between frames (partyPositionAtStep).
+    std::optional<GameplayWorldPoint> m_projectilePreviousFramePartyPosition;
+    // setGameSpeed: the catch-up limits above are this many times their real-time length.
+    float m_gameSpeed = 1.0f;
     float m_immolationTickAccumulatorGameMinutes = 0.0f;
     uint32_t m_immolationTickSequence = 0;
     bool m_actorAiUpdateQueued = false;

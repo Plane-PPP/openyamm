@@ -5,12 +5,15 @@
 #include "game/gameplay/GameplayWorldInteraction.h"
 #include "game/party/CharacterState.h"
 #include "game/events/EventDialogContent.h"
+#include "game/items/AlchemyBenchRuntime.h"
 #include "game/items/CraftingRuntime.h"
 #include "game/items/InventoryBags.h"
 #include "game/party/Party.h"
 #include "game/party/PartySpellSystem.h"
 #include "game/party/SkillData.h"
 #include "game/ui/HouseShopLedgerCategory.h"
+#include "game/ui/HudReading.h"
+#include "game/ui/InventoryPouchViewState.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -307,6 +310,10 @@ public:
         std::vector<LootedItemPlace> takenItemPlaces;
         // Items the bags had no room for: left in their satchels, which are gathered in front of the party.
         std::vector<InventoryItem> leftItems;
+        // Spotted ground items and gold piles taken (WorldItemSpotter), the ones the loot filter sold included.
+        size_t groundItemCount = 0;
+        // Spotted ground items the bags had no room for: left where they lie.
+        std::vector<InventoryItem> leftGroundItems;
         float scrollOffset = 0.0f;
     };
 
@@ -340,6 +347,8 @@ public:
         bool paletteSearchActive = false;
         // Escape acts once per press: it clears the search, then closes the window.
         bool escapeLatch = false;
+        // The potions the upkeep palette offers (carried, or with a known recipe), by name; read twice a second.
+        HudReading<std::vector<uint32_t>, const Party *> upkeepPotions;
     };
 
     // The short menu a right click on a spell in the spellbook opens: Quick Cast, the quick spells, the orders.
@@ -584,6 +593,17 @@ public:
         // The held item is poured into the target item, as when dropping one item onto another in a pack.
         uint32_t targetItemId = 0;
         uint32_t heldItemId = 0;
+        // The power of the copy each slot mixes, where the player chose one from the slot's power list; the bench
+        // picks the copy otherwise. Cleared with the slot.
+        std::optional<uint16_t> targetPower;
+        std::optional<uint16_t> heldPower;
+        // The power the selected recipe's brew chain aims at, chosen from the result slot's power list; the chain
+        // brews from the strongest ingredients otherwise.
+        std::optional<uint16_t> chainPower;
+        // The open power list: 0 none, 1 the target slot's, 2 the held slot's, 3 the result slot's (a chain); and
+        // its first shown row.
+        uint8_t powerListSlot = 0;
+        size_t powerListScroll = 0;
         uint32_t selectedResultItemId = 0;
         bool showAllRecipes = false;
         std::string recipeSearch;
@@ -605,6 +625,11 @@ public:
         // Potions per recipe brewable by chaining, recomputed only when ingredients or known recipes change.
         uint64_t chainCountsKey = 0;
         std::vector<std::pair<uint32_t, uint32_t>> chainCounts;
+        // The powers the selected recipe's chain can aim at and, at the chosen one, the potions Brew All makes;
+        // planned again only when the ingredients, the known recipes, the selection or the choice change.
+        uint64_t chainPowersKey = 0;
+        std::vector<AlchemyChainPowerOption> chainPowers;
+        uint32_t chainPowerBrewCount = 0;
 
         void clearBrewResult()
         {
@@ -613,6 +638,15 @@ public:
             brewedCount = 0;
             brewedDiscovery = false;
             brewedExploded = false;
+        }
+
+        void clearPowerChoices()
+        {
+            targetPower.reset();
+            heldPower.reset();
+            chainPower.reset();
+            powerListSlot = 0;
+            powerListScroll = 0;
         }
     };
 
@@ -624,6 +658,7 @@ public:
         // Several bags (MAW): the open bag fills the grid at full size instead of the four-bag overview (the 1-4
         // buttons and keys zoom, the overview button returns). Not saved.
         bool inventoryBagZoomed = false;
+        InventoryPouchViewState inventoryPouch;
         // The inventory's item search (ItemSearch): what is typed, kept over every bag and member until Escape or the
         // screen closes, and whether typing goes to it.
         std::string inventorySearch;
@@ -660,6 +695,10 @@ public:
         uint32_t houseId = 0;
         // A shop's party inventory shows one bag at full size rather than the bag overview (several bags, desktop).
         bool bagZoomed = false;
+        // The party's pouch a shop's or chest's party inventory shows, and the house it was chosen in (0: a chest):
+        // both outlive the overlay, so a shop's next service shows the same tab.
+        InventoryPouchViewState pouch;
+        uint32_t pouchHouseId = 0;
         // Sell trash (ShopSell, HouseServiceRuntime::findSellTrash): while picking, the picked items of the whole
         // party are highlighted, a click on an item adds or removes it instead of selling it, and the button sells
         // the pick.

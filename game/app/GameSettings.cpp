@@ -1108,6 +1108,14 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "craft_preview"))
+    {
+        if (validRarityGlowValue(*value))
+        {
+            settings.craftPreview = *value;
+        }
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "context_action_popup"))
     {
         bool parsed = settings.contextActionPopup;
@@ -1206,6 +1214,10 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "workbench_keep_mixed_potions"))
     {
         parseBoolValue(*value, settings.workbenchKeepMixedPotions);
+    }
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "upkeep_auto_brew"))
+    {
+        parseBoolValue(*value, settings.upkeepAutoBrew);
     }
 
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "save_list_order"))
@@ -1956,9 +1968,11 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
             continue;
         }
 
-        const InputBinding binding = parseInputBindingName(trimCopy(*value));
+        const std::string name = trimCopy(*value);
+        const InputBinding binding = parseInputBindingName(name);
 
-        if (binding.kind != InputBindingKind::None)
+        // "Unbound" (what an unbound action saves) loads back unbound; an unreadable name keeps the default.
+        if (binding.kind != InputBindingKind::None || name == inputBindingName(InputBinding{}))
         {
             settings.keyboard.setBinding(definition.action, binding);
         }
@@ -2662,6 +2676,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("enemy_health_bar_effects", boolValue(settings.enemyHealthBarEffects));
     serializer.add("potion_expiry_warnings", boolValue(settings.potionExpiryWarnings));
     serializer.add("workbench_keep_mixed_potions", boolValue(settings.workbenchKeepMixedPotions));
+    serializer.add("upkeep_auto_brew", boolValue(settings.upkeepAutoBrew));
     serializer.add("quest_markers", boolValue(settings.questMarkers));
     serializer.add("map_style", settings.paintedMaps ? "painted" : "lines");
     serializer.add("save_list_order", settings.saveListNewestFirst ? "newest" : "name");
@@ -2682,6 +2697,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("loot_sparkle", boolValue(settings.lootSparkle));
     serializer.add("context_action_popup", boolValue(settings.contextActionPopup));
     serializer.add("rarity_glow", settings.rarityGlow);
+    serializer.add("craft_preview", settings.craftPreview);
     serializer.add("follower_panel", boolValue(settings.followerPanel));
     serializer.add("minimap_zoom", std::clamp(settings.minimapZoom, 0, 2));
     serializer.section("startup");

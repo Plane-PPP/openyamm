@@ -9,10 +9,13 @@
 #include "game/gameplay/GameplayFxService.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
+#include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/GameplaySpellService.h"
 #include "game/gameplay/MeleeContactEffects.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
+#include "game/items/InventoryItemUseRuntime.h"
 #include "game/items/ItemEnchantRuntime.h"
+#include "game/items/PotionUpkeep.h"
 #include "game/mm9/Mm9HirelingCombat.h"
 #include "game/mm9/Mm9HirelingTable.h"
 #include "game/party/PartySpellSystem.h"
@@ -23,6 +26,7 @@
 #include "game/rules/SoloTalents.h"
 #include "game/StringUtils.h"
 #include "game/tables/ItemTable.h"
+#include "game/tables/MergedBaseTables.h"
 #include "game/tables/MonsterProjectileTable.h"
 #include "game/tables/MonsterTable.h"
 
@@ -1209,7 +1213,157 @@ GameplayActionController::PartyAttackExecutionResult executeHirelingAttack(
     result.attack = attack;
     return result;
 }
+
+// What an Attack made now meets and what its battle orders read there, as executeActiveCombatantAttack picks it: the
+// usable actor under the crosshair, else the nearest hostile the fallback finds (a standing destructible under the
+// crosshair wins over a fallback out of blow reach), and a world target a blow damages.
+struct AttackOrderFacts
+{
+    // A standing destructible BModel or face, or a destructible decoration (an entity), under the crosshair.
+    bool bModelTargetHit = false;
+    bool entityTargetHit = false;
+    std::optional<GameplayActionController::PartyAttackActorFacts> target;
+    float targetDistance = 0.0f;
+    bool targetInMeleeRange = false;
+    bool worldTargetInMeleeRange = false;
+    CharacterAttackProfile attackProfile = {};
+    bool eyeUnderWater = false;
+    BattleOrderSituation situation = {};
+};
+
+AttackOrderFacts attackOrderFacts(
+    const GameplayActionController::PartyAttackConfig &config,
+    const Party &party,
+    size_t memberIndex,
+    const Character &member)
+{
+    AttackOrderFacts facts;
+    facts.bModelTargetHit = config.pWorldRuntime != nullptr
+        && config.directTargetBModelIndex.has_value()
+        && config.pWorldRuntime->isPartyAttackMeleeBModelTarget(*config.directTargetBModelIndex);
+    facts.entityTargetHit = config.pWorldRuntime != nullptr
+        && config.directTargetEntityIndex.has_value()
+        && config.pWorldRuntime->isPartyAttackMeleeEntityTarget(*config.directTargetEntityIndex);
+    facts.target = resolveUsableActorTarget(config, config.directTargetActorIndex);
+
+    if (!facts.target)
+    {
+        facts.target = chooseFallbackRangedTarget(config);
+
+        // A standing destructible under the crosshair wins over a fallback hostile out of blow reach: the shot flies
+        // at the crosshair (devdocs/INDOOR_DESTRUCTIBLES.md "Aiming").
+        if (facts.target
+            && GameplayActionController::crosshairDestructibleOverridesFallback(
+                facts.bModelTargetHit || facts.entityTargetHit,
+                actorDistanceFromParty(*facts.target, config.partyPosition)))
+        {
+            facts.target.reset();
+        }
+    }
+
+    facts.targetDistance = facts.target ? actorDistanceFromParty(*facts.target, config.partyPosition) : 0.0f;
+    facts.targetInMeleeRange = facts.target.has_value() && facts.targetDistance <= CharacterMeleeAttackDistance;
+    facts.worldTargetInMeleeRange = (facts.bModelTargetHit || facts.entityTargetHit)
+        && config.directWorldTargetDistance <= CharacterMeleeAttackDistance;
+    const CharacterAttackTuning attackTuning = config.pRuntime != nullptr
+        ? characterAttackTuningFromSettings(config.pRuntime->settingsSnapshot())
+        : CharacterAttackTuning{};
+    facts.attackProfile =
+        GameMechanics::buildCharacterAttackProfile(member, config.pItemTable, config.pSpellTable, attackTuning);
+    facts.eyeUnderWater =
+        config.pWorldRuntime != nullptr && config.pWorldRuntime->partyBreathFraction().has_value();
+    facts.situation = battleOrderSituation(party, memberIndex,
+        facts.target ? std::optional<float>(facts.targetDistance) : std::nullopt, config.pWorldRuntime);
+    return facts;
+}
+
+// The battle orders (game/party/BattleOrders.h) are tried top to bottom: the index of the first from `first` on whose
+// conditions hold and that can be done now, or none (the fallback). A blow needs a target in reach, a shot a ranged
+// weapon, a talent order config.useTalentOrder (whether the talent acts is the caller's), a spell to be castable
+// (whether it finds a target is the cast's).
+std::optional<size_t> nextBattleOrder(
+    const GameplayActionController::PartyAttackConfig &config,
+    size_t memberIndex,
+    const Character &member,
+    const AttackOrderFacts &facts,
+    size_t first)
+{
+    for (size_t index = first; index < member.battleOrders.size(); ++index)
+    {
+        const BattleOrder &order = member.battleOrders[index];
+
+        if (!order.enabled)
+        {
+            continue;
+        }
+
+        bool applies = false;
+
+        switch (order.kind)
+        {
+        case BattleOrderKind::Melee:
+            applies = (facts.targetInMeleeRange || facts.worldTargetInMeleeRange)
+                && battleOrderConditionsHold(order, facts.situation);
+            break;
+        case BattleOrderKind::Shoot:
+            applies = shootingAttackMode(facts.attackProfile, facts.eyeUnderWater).has_value()
+                && battleOrderConditionsHold(order, facts.situation);
+            break;
+        case BattleOrderKind::Talent:
+            applies = config.useTalentOrder && battleOrderConditionsHold(order, facts.situation);
+            break;
+        case BattleOrderKind::Spell:
+            applies = castableOrderSpell(config, memberIndex, member, order, facts.situation);
+            break;
+        case BattleOrderKind::Potion:
+            break;
+        }
+
+        if (applies)
+        {
+            return index;
+        }
+    }
+
+    return std::nullopt;
+}
 } // namespace
+
+std::optional<std::string> GameplayActionController::attackOrderSpell(const PartyAttackConfig &config)
+{
+    const Party *pParty = config.pParty;
+    const Character *pMember = pParty != nullptr && pParty->activeHireling() == nullptr ? pParty->activeMember()
+                                                                                         : nullptr;
+
+    if (pMember == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    const size_t memberIndex = pParty->activeMemberIndex();
+    const AttackOrderFacts facts = attackOrderFacts(config, *pParty, memberIndex, *pMember);
+
+    for (std::optional<size_t> index = nextBattleOrder(config, memberIndex, *pMember, facts, 0); index;
+         index = nextBattleOrder(config, memberIndex, *pMember, facts, *index + 1))
+    {
+        const BattleOrder &order = pMember->battleOrders[*index];
+
+        // A talent the caller says is ready acts; one that is not passes to the next order, as at the release.
+        if (order.kind == BattleOrderKind::Talent)
+        {
+            if (config.useTalentOrder(order.talentId))
+            {
+                return std::nullopt;
+            }
+
+            continue;
+        }
+
+        return order.kind == BattleOrderKind::Spell ? std::optional<std::string>(order.spellName) : std::nullopt;
+    }
+
+    return std::nullopt;
+}
 
 bool GameplayActionController::partyAttackTargetInMeleeReach(IGameplayWorldRuntime &world,
     const GameplayPartyAttackFrameInput &input, std::optional<size_t> directActorIndex)
@@ -1449,91 +1603,52 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     const size_t actingMemberIndex = party.activeMemberIndex();
     result.actingMemberIndex = actingMemberIndex;
 
-    // A world target a blow or missile damages: a standing destructible BModel or face, or a destructible decoration
-    // (an entity).
-    const bool bModelTargetHit = config.pWorldRuntime != nullptr
-        && config.directTargetBModelIndex.has_value()
-        && config.pWorldRuntime->isPartyAttackMeleeBModelTarget(*config.directTargetBModelIndex);
-    const bool entityTargetHit = config.pWorldRuntime != nullptr
-        && config.directTargetEntityIndex.has_value()
-        && config.pWorldRuntime->isPartyAttackMeleeEntityTarget(*config.directTargetEntityIndex);
-    std::optional<PartyAttackActorFacts> target = resolveUsableActorTarget(config, config.directTargetActorIndex);
-
-    if (!target)
-    {
-        target = chooseFallbackRangedTarget(config);
-
-        // A standing destructible under the crosshair wins over a fallback hostile out of blow reach: the shot flies
-        // at the crosshair (devdocs/INDOOR_DESTRUCTIBLES.md "Aiming").
-        if (target
-            && crosshairDestructibleOverridesFallback(
-                bModelTargetHit || entityTargetHit,
-                actorDistanceFromParty(*target, config.partyPosition)))
-        {
-            target.reset();
-        }
-    }
-
+    const AttackOrderFacts facts = attackOrderFacts(config, party, actingMemberIndex, *pAttacker);
+    const bool bModelTargetHit = facts.bModelTargetHit;
+    const std::optional<PartyAttackActorFacts> &target = facts.target;
+    const float targetDistance = facts.targetDistance;
+    const bool targetInMeleeRange = facts.targetInMeleeRange;
+    const bool worldTargetInMeleeRange = facts.worldTargetInMeleeRange;
+    const CharacterAttackProfile &attackProfile = facts.attackProfile;
+    const bool eyeUnderWater = facts.eyeUnderWater;
     result.targetActorIndex = target ? std::optional<size_t>(target->actorIndex) : std::nullopt;
-
-    const float targetDistance = target ? actorDistanceFromParty(*target, config.partyPosition) : 0.0f;
-    const bool targetInMeleeRange = target.has_value() && targetDistance <= CharacterMeleeAttackDistance;
-    const bool worldTargetInMeleeRange = (bModelTargetHit || entityTargetHit)
-        && config.directWorldTargetDistance <= CharacterMeleeAttackDistance;
     const CharacterAttackTuning attackTuning = config.pRuntime != nullptr
         ? characterAttackTuningFromSettings(config.pRuntime->settingsSnapshot())
         : CharacterAttackTuning{};
-    const CharacterAttackProfile attackProfile =
-        GameMechanics::buildCharacterAttackProfile(*pAttacker, config.pItemTable, config.pSpellTable, attackTuning);
-    const bool eyeUnderWater =
-        config.pWorldRuntime != nullptr && config.pWorldRuntime->partyBreathFraction().has_value();
-    // The battle orders (game/party/BattleOrders.h): the first that holds and can be done now; a spell without a target
-    // passes to the next order.
-    const BattleOrderSituation situation =
-        battleOrderSituation(party, actingMemberIndex, target ? std::optional<float>(targetDistance) : std::nullopt,
-            config.pWorldRuntime);
+    // The battle orders (game/party/BattleOrders.h): the first that holds and can be done now; a talent that does not
+    // act and a spell without a target pass to the next order. A talent's own blow skips them.
     std::optional<CharacterAttackMode> orderedMode;
 
-    const bool talentBlow = config.talentExtraBlow || config.talentShot || config.talentShare != 1.0f;
+    const bool talentBlow = config.talentBlow;
 
-    for (const BattleOrder &order : pAttacker->battleOrders)
+    for (std::optional<size_t> orderIndex =
+             talentBlow ? std::nullopt : nextBattleOrder(config, actingMemberIndex, *pAttacker, facts, 0);
+         orderIndex; orderIndex = nextBattleOrder(config, actingMemberIndex, *pAttacker, facts, *orderIndex + 1))
     {
-        if (talentBlow)
-        {
-            break;
-        }
-
-        if (!order.enabled)
-        {
-            continue;
-        }
+        const BattleOrder &order = pAttacker->battleOrders[*orderIndex];
 
         if (order.kind == BattleOrderKind::Melee)
         {
-            if ((targetInMeleeRange || worldTargetInMeleeRange) && battleOrderConditionsHold(order, situation))
-            {
-                orderedMode = CharacterAttackMode::Melee;
-                break;
-            }
-
-            continue;
+            orderedMode = CharacterAttackMode::Melee;
+            break;
         }
 
         if (order.kind == BattleOrderKind::Shoot)
         {
-            const std::optional<CharacterAttackMode> shooting = shootingAttackMode(attackProfile, eyeUnderWater);
-
-            if (shooting && battleOrderConditionsHold(order, situation))
-            {
-                orderedMode = shooting;
-                break;
-            }
-
-            continue;
+            orderedMode = shootingAttackMode(attackProfile, eyeUnderWater);
+            break;
         }
 
-        if (!castableOrderSpell(config, actingMemberIndex, *pAttacker, order, situation))
+        if (order.kind == BattleOrderKind::Talent)
         {
+            if (config.useTalentOrder(order.talentId))
+            {
+                result.attempted = true;
+                result.talentUsed = true;
+                clearInvisibility(party);
+                return result;
+            }
+
             continue;
         }
 
@@ -1693,15 +1808,35 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     }
     attackContext.partyCount = config.pParty != nullptr ? int(std::max<size_t>(1, config.pParty->members().size())) : 1;
     attackContext.pRng = &rng;
-    gameRulesFor(config.pParty).combat.resolveCharacterAttack(attack, attackContext);
+    attackContext.extraBlow = config.talentExtraBlow;
 
-    if (config.talentShare != 1.0f && attack.damage > 0)
+    // The rules' damage and crit, a talent's share and Weak's halving of a missile: once for the attack, and again for
+    // each further arrow of a shot that looses several (a Master bow's second), which rolls its own.
+    const auto finishAttack = [&](CharacterAttackResult &shot)
     {
-        const auto scaled = [&config](int value) { return std::max(1, int(std::lround(value * config.talentShare))); };
-        attack.damage = scaled(attack.damage);
-        attack.minimumDamage = scaled(attack.minimumDamage);
-        attack.maximumDamage = scaled(attack.maximumDamage);
-    }
+        gameRulesFor(config.pParty).combat.resolveCharacterAttack(shot, attackContext);
+
+        if (config.talentShare != 1.0f && shot.damage > 0)
+        {
+            const auto scaled = [&config](int value)
+            {
+                return std::max(1, int(std::lround(value * config.talentShare)));
+            };
+            shot.damage = scaled(shot.damage);
+            shot.minimumDamage = scaled(shot.minimumDamage);
+            shot.maximumDamage = scaled(shot.maximumDamage);
+        }
+
+        if (shot.canAttack && shot.mode != CharacterAttackMode::Melee
+            && pAttacker->conditions.test(static_cast<size_t>(CharacterCondition::Weak))
+            && gameRulesFor(config.pParty).combat.callerHalvesWeakMissile(shot.mode))
+        {
+            shot.damage /= 2;
+            shot.minimumDamage /= 2;
+            shot.maximumDamage /= 2;
+        }
+    };
+    finishAttack(attack);
 
     // Multishot's fan: as many headings as its arrows, each shot as the bow shoots (a Master bow's two arrows).
     uint8_t arrowsPerHeading = 1;
@@ -1713,16 +1848,6 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     }
 
     result.attack = attack;
-
-    if (attack.canAttack && attack.mode != CharacterAttackMode::Melee
-        && pAttacker->conditions.test(static_cast<size_t>(CharacterCondition::Weak))
-        && gameRulesFor(config.pParty).combat.callerHalvesWeakMissile(attack.mode))
-    {
-        attack.damage /= 2;
-        attack.minimumDamage /= 2;
-        attack.maximumDamage /= 2;
-        result.attack = attack;
-    }
 
     bool actionPerformed = false;
     bool attacked = false;
@@ -1768,7 +1893,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     toRuntimeWorldPoint(config.partyPosition),
                     attack.shieldTier,
                     attack.shieldModifiers,
-                    attack.criticalDamage);
+                    attack.criticalDamage,
+                    !config.talentNoHitReaction);
 
             if (attacked)
             {
@@ -1792,6 +1918,18 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                 hit.targetActorIndex = target->actorIndex;
                 hit.extraBlow = config.talentExtraBlow;
                 gameRulesFor(config.pParty).combat.applyPartyHitEffects(party, hit);
+
+                // A solo run's ordinary blow that hits takes the talents' cooldown_per_hit off (Multishot), and
+                // cooldown_per_crit when it is critical (Power Shot).
+                if (!config.talentBlow && config.pRuntime != nullptr && config.pRuntime->soloTalents())
+                {
+                    shortenTalentCooldowns(soloTalentTable(), *pAttacker, true);
+
+                    if (attack.criticalDamage)
+                    {
+                        shortenTalentCooldownsOnCritical(soloTalentTable(), *pAttacker);
+                    }
+                }
 
                 // A kill may shorten the blow's recovery (MAW's Legendary 11), before it is applied below.
                 if (killed)
@@ -2069,11 +2207,12 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
             }
 
             const std::optional<PartyGunMissile> partyGun = resolvePartyGunMissile(config, *pAttacker, attack);
-            // Piercing Arrows: the config's (a MAW solo run) or the rules' (a dungeon run).
-            const uint8_t pierceCount = config.pierceCount > 0
-                ? config.pierceCount
-                : uint8_t(std::clamp(attackExtras.pierceCount, 0, 16));
-            const float pierceShare = config.pierceCount > 0 ? config.pierceShare : attackExtras.pierceShare;
+            // Chaining Arrows: the config's (a MAW solo run) or the rules' (a dungeon run's Piercing Arrows card).
+            const bool runChain = config.chainCount == 0 && attackExtras.chainCount > 0;
+            const uint8_t chainCount =
+                runChain ? uint8_t(std::clamp(attackExtras.chainCount, 0, 16)) : config.chainCount;
+            const float chainShare = runChain ? attackExtras.chainShare : config.chainShare;
+            const float chainRadius = runChain ? attackExtras.chainRadius : config.chainRadius;
             GameplayPartyAttackProjectileRequest projectileRequest = {
                 .sourcePartyMemberIndex = actingMemberIndex,
                 .objectId = partyGun ? uint32_t(partyGun->pMissile->objectId)
@@ -2107,8 +2246,14 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     attack.projectileSpreadArcRadians > 0.0f ? std::nullopt : result.targetActorIndex,
                 .homing = attack.homing,
                 .critical = attack.criticalDamage,
-                .pierceCount = attack.mode == CharacterAttackMode::Bow ? pierceCount : uint8_t(0),
-                .pierceShare = pierceShare,
+                .chainCount = attack.mode == CharacterAttackMode::Bow ? chainCount : uint8_t(0),
+                .chainShare = chainShare,
+                .chainRadius = chainRadius,
+                // A solo run's ordinary bow attack: all its arrows share one cooldown_per_hit credit.
+                .hitCredit = attack.mode == CharacterAttackMode::Bow && !config.talentBlow && config.pRuntime != nullptr
+                        && config.pRuntime->soloTalents()
+                    ? std::make_shared<bool>(true)
+                    : nullptr,
             };
             if (attack.projectileSpreadArcRadians > 0.0f)
             {
@@ -2165,6 +2310,12 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                         actingMemberIndex + projectileIndex,
                         party.members().size() + attack.projectileCount - 1);
                     projectileRequest.source = toRuntimeWorldPoint(secondSource);
+                    // Each further arrow rolls its own damage and crit, as a fanned volley's arrows do.
+                    CharacterAttackResult arrow = buildRangedReleaseAttack(attack.mode, attackProfile, rng);
+                    GameMechanics::applyExplosiveArrows(*pAttacker, arrow);
+                    finishAttack(arrow);
+                    projectileRequest.damage = arrow.damage;
+                    projectileRequest.critical = arrow.criticalDamage;
                     attacked = config.pWorldRuntime->spawnPartyAttackProjectile(projectileRequest) || attacked;
                 }
 
@@ -2190,8 +2341,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     sideRequest.targetActorIndex.reset();
                     sideRequest.homing = false;
                     sideRequest.critical = false;
-                    sideRequest.pierceCount = 0;
-                    sideRequest.pierceShare = 0.0f;
+                    sideRequest.chainCount = 0;
+                    sideRequest.chainShare = 0.0f;
                     sideRequest.source = toRuntimeWorldPoint(rangedSource);
 
                     if (attack.explosiveArrow)
@@ -2282,11 +2433,12 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
         {
             config.pRuntime->turnBasedCombatRuntime().storeMemberTurnRecovery(
                 actingMemberIndex,
-                attack.recoverySeconds);
+                attack.recoverySeconds * config.talentRecoveryScale);
         }
         else
         {
-            party.applyRecoveryToActiveMember(std::max(0.0f, attack.recoverySeconds - config.recoverySpentSeconds));
+            party.applyRecoveryToActiveMember(
+                std::max(0.0f, attack.recoverySeconds * config.talentRecoveryScale - config.recoverySpentSeconds));
             party.switchToNextReadyMember();
         }
     }
@@ -2453,6 +2605,17 @@ GameplayActionController::PartyUpkeepResult GameplayActionController::executePar
     Party &party = *config.pParty;
     const size_t memberCount = party.members().size();
     const bool turnBased = config.pRuntime->turnBasedCombatRuntime().active();
+
+    // Auto-brew: a fresh press first brews what the potion stock lacks, so a potion that ran out can be drunk now. What
+    // it brewed stays in the status line over the drink's.
+    std::string restockText;
+
+    if (config.pressedThisFrame && config.pRuntime->settingsSnapshot().upkeepAutoBrew
+        && !PotionUpkeep::stockTargets(party).empty())
+    {
+        restockText = config.pRuntime->itemService().restockUpkeepPotions(*config.pRuntime, true);
+    }
+
     // Who may cast: in turn-based mode the member whose turn it is; in real time the ready members, the active first.
     std::vector<size_t> casters;
 
@@ -2481,8 +2644,11 @@ GameplayActionController::PartyUpkeepResult GameplayActionController::executePar
     }
 
     bool anyOrder = false;
-    // A due spell its caster cannot pay for, for the message.
+    // A due spell its caster cannot pay for, and a due potion nobody carries, for the message.
     std::string unaffordable;
+    std::string missingPotion;
+    const MergedPotionSettingTable *pPotionSettings = config.pRuntime->mergedPotionSettingTable();
+    const ItemTable *pItemTable = config.pRuntime->itemTable();
 
     for (const Character &member : party.members())
     {
@@ -2498,6 +2664,62 @@ GameplayActionController::PartyUpkeepResult GameplayActionController::executePar
 
         for (const BattleOrder &order : member.upkeepOrders)
         {
+            // A potion (devdocs/BATTLE_ORDERS.md "Potions"): the bottle its rule picks from the member's bags first,
+            // drunk when one of its timed effects is due at that bottle's power.
+            if (order.enabled && order.kind == BattleOrderKind::Potion)
+            {
+                const PotionDefinition *pPotion =
+                    pPotionSettings != nullptr ? pPotionSettings->effects().find(order.potionItemId) : nullptr;
+
+                if (pPotion == nullptr || !battleOrderConditionsHold(order, situation))
+                {
+                    continue;
+                }
+
+                const PotionEffectTable &effects = pPotionSettings->effects();
+                const PotionUpkeep::OrderBottle bottle = PotionUpkeep::orderBottle(party, memberIndex, order, effects);
+
+                if (!PotionUpkeep::potionDue(party, memberIndex, *pPotion, bottle.power,
+                        InventoryItemUseRuntime::potionDurationSeconds(party, effects, bottle.power),
+                        order.renewBelowMinutes))
+                {
+                    continue;
+                }
+
+                if (!bottle.location)
+                {
+                    const ItemDefinition *pDefinition =
+                        pItemTable != nullptr ? pItemTable->get(order.potionItemId) : nullptr;
+
+                    if (missingPotion.empty() && pDefinition != nullptr)
+                    {
+                        missingPotion = Engine::localize(pDefinition->name);
+                    }
+
+                    continue;
+                }
+
+                // The drinker becomes the active member, as a caster does, and the selection moves on after the drink.
+                party.setActiveMemberIndex(memberIndex);
+                const bool drunk = config.pRuntime->itemService().useCarriedItem(*config.pRuntime, memberIndex,
+                    *bottle.location);
+                result.attempted = true;
+                result.castStarted = drunk;
+                result.actingMemberIndex = memberIndex;
+
+                if (drunk && !turnBased)
+                {
+                    party.switchToNextReadyMember();
+                }
+
+                if (!restockText.empty())
+                {
+                    config.pRuntime->setStatusBarEvent(restockText);
+                }
+
+                return result;
+            }
+
             const SpellEntry *pSpellEntry = order.enabled && order.kind == BattleOrderKind::Spell
                 ? config.pSpellTable->findByName(order.spellName, spellKnownBy(member))
                 : nullptr;
@@ -2555,11 +2777,12 @@ GameplayActionController::PartyUpkeepResult GameplayActionController::executePar
         }
     }
 
-    if (config.pressedThisFrame)
+    if (config.pressedThisFrame && restockText.empty())
     {
-        config.pRuntime->setStatusBarEvent(!anyOrder ? Engine::tr("No upkeep spells set (Battle Orders)")
+        config.pRuntime->setStatusBarEvent(!anyOrder ? Engine::tr("Nothing set to keep up (Battle Orders)")
             : !unaffordable.empty()
                 ? Engine::tr("Upkeep: not enough spell points for {spell}", {{"spell", unaffordable}})
+            : !missingPotion.empty() ? Engine::tr("Upkeep: no {potion} left", {{"potion", missingPotion}})
                 : casters.empty() ? Engine::tr("Upkeep: nobody is ready")
                                   : Engine::tr("Upkeep: nothing to cast"));
     }
@@ -2604,13 +2827,14 @@ GameplayActionController::GatherLootResult GameplayActionController::gatherLoot(
         return result;
     }
 
-    // A completed map has nothing left to fight for its loot: the satchels empty straight into the bags, and only
-    // what did not fit is gathered.
+    // A completed map has nothing left to fight for its loot: the satchels and the ground items the party spotted
+    // empty straight into the bags, and only what did not fit is gathered.
     const std::optional<RulesetMapProgress> progress = party.rules().monsters.mapProgress(worldRuntime);
 
     if (progress && progress->complete && progress->kind != RulesetMapProgress::Kind::Arena)
     {
         result.summary = lootAllCorpses(worldRuntime, party);
+        lootSpottedWorldItems(worldRuntime, party, result.summary);
     }
 
     const size_t corpses = worldRuntime.gatherCorpsesToParty(gathering->corpses);

@@ -216,9 +216,15 @@ std::vector<ItemInspectLine> ItemRules::inspectLines(
     const ItemDefinition &,
     const StandardItemEnchantTable *,
     const SpecialItemEnchantTable *,
-    const Character *) const
+    const Character *,
+    bool) const
 {
     return {};
+}
+
+bool ItemRules::previewsCrafting() const
+{
+    return false;
 }
 
 std::optional<int> ItemRules::merchantValue(const Character &) const
@@ -317,14 +323,24 @@ std::optional<LootGathering> ItemRules::lootGathering() const
     return std::nullopt;
 }
 
+std::optional<WorldItemSpotting> ItemRules::worldItemSpotting() const
+{
+    return std::nullopt;
+}
+
 bool ItemRules::gathersItem(const InventoryItem &) const
 {
     return false;
 }
 
-std::optional<BagTag> ItemRules::bagTag(const ItemDefinition &) const
+std::optional<ItemPouch> ItemRules::pouch(const ItemDefinition &) const
 {
     return std::nullopt;
+}
+
+bool ItemRules::hasPouches() const
+{
+    return false;
 }
 
 std::optional<std::string> ItemRules::chestOpenRefusal(const Party &, int) const

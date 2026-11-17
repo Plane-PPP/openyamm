@@ -419,7 +419,7 @@ std::vector<uint32_t> applyRunCard(
                 applyTalentStat(character, pTalent->stat, pTalent->amount);
             }
 
-            character.talentRanks[pTalent->id] = static_cast<uint8_t>(rank + 1);
+            character.talentRanks[pTalent->id] = static_cast<uint16_t>(rank + 1);
         }
     }
 
@@ -512,8 +512,8 @@ bool migrateLegacyRunPerks(Character &character)
 
         if (found->second > 0)
         {
-            uint8_t &rank = character.talentRanks[LegacyPerkIds[index]];
-            rank = static_cast<uint8_t>(std::max<int>(rank, std::min<int>(found->second, 255)));
+            uint16_t &rank = character.talentRanks[LegacyPerkIds[index]];
+            rank = static_cast<uint16_t>(std::max<int>(rank, std::min<int>(found->second, 255)));
         }
 
         character.eventVariables.erase(found);

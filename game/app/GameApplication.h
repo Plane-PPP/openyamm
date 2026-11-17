@@ -27,6 +27,7 @@
 #include "game/content/CompletionCertificates.h"
 #include "game/content/ContentManifest.h"
 #include "game/content/DungeonRun.h"
+#include "game/content/NamedMods.h"
 #include "game/debug/AiArena.h"
 #include "game/debug/DebugConsole.h"
 #include "game/debug/GameImGuiBgfxRenderer.h"
@@ -415,6 +416,8 @@ private:
     GameDataLoader m_gameDataLoader;
     GameDataRepository m_gameDataRepository;
     WorldManifest m_activeWorldManifest;
+    // The mods folder as read at the start and the named mods that are on (the `mods` console command).
+    NamedModCatalog m_namedModCatalog;
     std::string m_playthroughStatisticsMap;
     uint64_t m_playthroughStatisticsRoster = 0;
     uint64_t m_lastPlayerInputTicks = 0;
@@ -460,7 +463,8 @@ private:
     std::vector<uint64_t> m_portalDebugGpuSums;
     std::vector<std::string> m_portalDebugGpuNames;
     uint64_t m_portalDebugWindowStartTicks = 0;
-    bool m_doubleSpeedActive = false;
+    // Fast mode's factor, 1 (normal) to 4: the Double Speed key cycles it.
+    int m_gameSpeedFactor = 1;
     bool m_advanceTimeLatch = false;
     bool m_traceSnapshotStartLatch = false;
     bool m_traceSnapshotEndLatch = false;
@@ -523,6 +527,7 @@ private:
     // shown once its view is up: building the view clears the status bar.
     std::string m_mapStateResetNotice;
     FramePerformanceDiagnostics m_framePerformanceDiagnostics;
+    GameplayUiRuntime::HudDrawListStats m_loggedHudDrawListStats;
     uint32_t m_lastFramePerformanceLogTick = 0;
     DebugConsole m_debugConsole;
     GameImGuiBgfxRenderer m_debugConsoleRenderer;
