@@ -490,6 +490,7 @@ jobs:
             /tools/
             /packaging/minotaur/
             /tests/scenarios/
+            /tests/fixtures/minotaur-2.4-v184-roguelike-perks.oysav
             /assets_dev/engine/data_tables/npc.txt
             /assets_dev/engine/data_tables/npc_topic.txt
             /assets_dev/engine/ui/gameplay/character.yml
