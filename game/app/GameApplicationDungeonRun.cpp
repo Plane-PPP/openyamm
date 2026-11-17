@@ -45,6 +45,18 @@ namespace
 // enough to look at the heroes for a card screen closed with Esc.
 constexpr uint64_t DungeonRunChoiceRetryMilliseconds = 400;
 constexpr uint64_t DungeonRunCardRetryMilliseconds = 20000;
+
+// The camp's day: every camp shop is open from its morning to its evening (MM6's magic shops keep 8 to 16, the
+// others 6 to 18). The camp's rest is the game's Rest and Heal, eight hours at least.
+constexpr float DungeonRunCampMorningMinute = 9.0f * 60.0f;
+constexpr float DungeonRunCampEveningMinute = 16.0f * 60.0f;
+constexpr float DungeonRunCampRestMinutes = 8.0f * 60.0f;
+
+float minutesUntilDungeonRunCampMorning(float gameMinutes)
+{
+    const float minuteOfDay = std::fmod(std::max(0.0f, gameMinutes), 1440.0f);
+    return std::fmod(DungeonRunCampMorningMinute - minuteOfDay + 1440.0f, 1440.0f);
+}
 }
 
 std::optional<DungeonRunDefinition> GameApplication::loadSessionDungeonRun() const
@@ -565,6 +577,14 @@ void GameApplication::registerDungeonRunConsoleCommand()
                         out << " [" << ++number << "] " << answer;
                     }
                 }
+
+                // The rest screen and the food its counter shows (the camp's price during the camp's rest).
+                GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
+
+                if (screenRuntime.restScreenState().active)
+                {
+                    out << "; rest screen, food " << screenRuntime.restFoodRequired();
+                }
             }
 
             return commandResult(true, out.str());
@@ -672,29 +692,6 @@ void GameApplication::restDungeonRunPartyBetweenStops()
     m_dungeonRunCampNote.clear();
 }
 
-void GameApplication::restoreDungeonRunParty()
-{
-    IGameplayWorldRuntime *pWorldRuntime = m_gameSession.activeWorldRuntime();
-    Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr;
-
-    // Hit and spell points only: conditions, the dead and broken gear stay as they are.
-    for (size_t memberIndex = 0; pParty != nullptr && memberIndex < pParty->members().size(); ++memberIndex)
-    {
-        Character *pMember = pParty->member(memberIndex);
-        GameMechanics::refreshCharacterBaseResources(*pMember, false, pParty->classMultiplierTable());
-
-        if (pMember->health > 0)
-        {
-            pMember->health = std::max(
-                pMember->health,
-                GameMechanics::calculateEffectiveCharacterMaxHealth(*pMember, pParty->classMultiplierTable()));
-            pMember->spellPoints = std::max(
-                pMember->spellPoints,
-                GameMechanics::calculateEffectiveCharacterMaxSpellPoints(*pMember, pParty->classMultiplierTable()));
-        }
-    }
-}
-
 std::vector<DungeonRunShop> GameApplication::currentDungeonRunShops()
 {
     std::vector<DungeonRunShop> shops;
@@ -723,7 +720,7 @@ bool GameApplication::openDungeonRunCamp()
     // The camp's own price (run.yml), not the map's: the start's food must pay for a rest.
     const int foodRequired = pRules != nullptr ? pRules->rules().campRestFood : 0;
     std::string text = m_dungeonRunCampNote.empty()
-        ? "Camp: the shops. Rest: hit and spell points restored for " + std::to_string(foodRequired)
+        ? "Camp: the shops. Rest: a night's rest and heal for " + std::to_string(foodRequired)
             + " food. Next dungeon: the way on."
         : m_dungeonRunCampNote;
 
@@ -775,10 +772,39 @@ void GameApplication::restDungeonRunCamp()
         return;
     }
 
+    // The game's own Rest and Heal (the camp used to fill hit and spell points by hand: no rest screen, and the
+    // unconscious stayed out): the hourglass, then every hero not dead, petrified or eradicated wakes healed, the
+    // unconscious come round. No check for monsters near: the camp is not the dungeon. The rest lasts the night,
+    // so that the camp's shops are open after it.
+    GameplayScreenRuntime &screenRuntime = m_gameSession.gameplayScreenRuntime();
+    float restMinutes = minutesUntilDungeonRunCampMorning(pWorldRuntime->gameMinutes());
+
+    if (restMinutes < DungeonRunCampRestMinutes)
+    {
+        restMinutes += 1440.0f;
+    }
+
+    screenRuntime.openRestOverlay(false);
+    screenRuntime.beginRestAction(GameplayUiController::RestMode::Heal, restMinutes, false, false);
+    GameplayUiController::RestScreenState &restScreen = screenRuntime.restScreenState();
+
+    if (!restScreen.active || restScreen.mode != GameplayUiController::RestMode::Heal)
+    {
+        // Turn-based combat keeps the rest screen shut: no rest, no food spent.
+        if (restScreen.active)
+        {
+            screenRuntime.closeRestOverlay();
+        }
+
+        m_dungeonRunCampNote = "The party cannot rest now: " + screenRuntime.statusBarEventText();
+        return;
+    }
+
+    restScreen.foodCost = foodRequired;
     pParty->addFood(-foodRequired);
-    restoreDungeonRunParty();
-    m_dungeonRunCampNote = "The party rested (" + std::to_string(foodRequired)
-        + " food): hit and spell points are restored.";
+    m_dungeonRunCampNote = "The party rested until the morning (" + std::to_string(foodRequired) + " food).";
+    GAMEPLAY_DEBUG_TRACE(
+        "dungeon_run_camp_rest food=" + std::to_string(foodRequired) + " minutes=" + std::to_string(restMinutes));
 }
 
 bool GameApplication::holdMapMoveForDungeonRunCamp(const EventRuntimeState::PendingMapMove &pendingMapMove)
@@ -827,10 +853,9 @@ bool GameApplication::holdMapMoveForDungeonRunCamp(const EventRuntimeState::Pend
     {
         const float minuteOfDay = std::fmod(pWorldRuntime->gameMinutes(), 1440.0f);
 
-        if (minuteOfDay < 9.0f * 60.0f || minuteOfDay >= 16.0f * 60.0f)
+        if (minuteOfDay < DungeonRunCampMorningMinute || minuteOfDay >= DungeonRunCampEveningMinute)
         {
-            const float untilMorning = std::fmod(9.0f * 60.0f - minuteOfDay + 1440.0f, 1440.0f);
-            m_gameplayController.advanceGameMinutes(untilMorning);
+            m_gameplayController.advanceGameMinutes(minutesUntilDungeonRunCampMorning(pWorldRuntime->gameMinutes()));
         }
     }
 
@@ -1413,9 +1438,11 @@ void GameApplication::updateDungeonRunRules()
         grantDungeonRunGuardianReward();
     }
 
+    // The rest screen too: the camp's menu returns when the camp's rest is over.
     const bool dialogBusy = pRuntimeState->pendingInputPrompt.has_value()
         || pRuntimeState->pendingDialogueContext.has_value()
-        || m_gameSession.gameplayScreenRuntime().activeEventDialog().isActive;
+        || m_gameSession.gameplayScreenRuntime().activeEventDialog().isActive
+        || m_gameSession.gameplayScreenRuntime().restScreenState().active;
 
     if (m_dungeonRunChoice != DungeonRunChoice::None && !dialogBusy)
     {

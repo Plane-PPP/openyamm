@@ -373,6 +373,8 @@ public:
         float totalMinutes = 0.0f;
         float remainingMinutes = 0.0f;
         float hourglassElapsedSeconds = 0.0f;
+        // A rest paid at its own price (a dungeon run's camp): the food the screen shows instead of the map's.
+        std::optional<int> foodCost;
     };
 
     struct MenuScreenState

@@ -254,13 +254,13 @@ private:
     bool dungeonRunExitSealed(bool announce = false);
     // Between two dungeons of a run with rules: hit and spell points restored, the map's numbers reset.
     void restDungeonRunPartyBetweenStops();
-    void restoreDungeonRunParty();
     // The camp between two dungeons: holds the move out of the map and opens the camp's menu instead (the stop's
     // shops, then the way on). False when the stop has no camp or the party is leaving it.
     bool holdMapMoveForDungeonRunCamp(const EventRuntimeState::PendingMapMove &pendingMapMove);
     std::vector<DungeonRunShop> currentDungeonRunShops();
     bool openDungeonRunCamp();
     bool openDungeonRunCampShops();
+    // The camp's Rest: the game's own Rest and Heal on its rest screen, at the camp's price, until the morning.
     void restDungeonRunCamp();
     // The promotion after the guardian of the rules' stop: every hero takes the next class of their line.
     void promoteDungeonRunParty();

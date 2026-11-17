@@ -1,3 +1,12 @@
+# Roguelike run v1 hotfix: the camp's Rest rests (2026-11-17)
+
+The first Windows playtest of v1 (patch #50) found the camp's Rest taking its 2 food and doing nothing else: no rest
+screen, and the unconscious stayed out (it only filled the hit and spell points of heroes above zero). It is now the
+game's own Rest and Heal on the rest screen: the hourglass, then every hero not dead, petrified or eradicated wakes
+healed and the unconscious come round, at the camp's price (the screen shows it) and without the monsters-near check.
+It lasts until the next morning, 9:00, so that the camp's shops (MM6's magic shops close at 16:00) are open after it.
+The next patch is built on #50 (packaging/minotaur/bases).
+
 # Roguelike run v1: four cards, talents, the card screen, guardians' rewards (2026-11-17)
 
 A level-up now offers four cards (run.yml `levels.offers`), shown on a card screen of their own (the approved

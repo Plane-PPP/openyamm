@@ -14,7 +14,7 @@ test value.
 | Numeric perks | six stats, HP, SP, AC, resistances, melee and bow damage | removed; talents instead (below) |
 | Choice | text box with buttons | card screen (approved mockup); the text box stays for `run pick` and scenarios |
 | Level-up | levels and a card | also heals: a hero who is out comes round, HP = max(HP + 25 %, 25 %) of the maximum, capped |
-| Camp Rest | the map's rest price (3 in Goblinwatch) | `rules.camp.restFood: 2`; the start's 2 food pay for one rest |
+| Camp Rest | the map's rest price (3 in Goblinwatch); hit and spell points filled by hand | `rules.camp.restFood: 2`; the start's 2 food pay for one rest; the game's own Rest and Heal on the rest screen until the next morning (hotfix) |
 | Camp alchemy shop | the house's own stock | plus small stacks of MM6 herbs and bottles (`shops[].stock`) |
 | Guardians | open the way out | also a reward, once each: gold and an artifact (1-2) or a relic (3-4) |
 
@@ -83,7 +83,13 @@ have no effect of their own. An owed card of such a save is dealt in v1's form. 
 - Rewards: 1500 / 3000 / 5000 gold after guardians 1-3, none after the 4th (no camp follows it); its relic is the
   trophy. The artifact or relic is of the exact rarity (`ItemDefinition::rarity`, not `ItemRuntime::isArtifact`),
   MM6's world first, never one the party carries or the run gave before, fixed by the seed and the stop.
-- Rest at the camp: 2 food. The start gives 2, so the first camp's rest is paid; later rests need found food.
+- Rest at the camp: 2 food. The start gives 2, so the first camp's rest is paid; later rests need found food. It is
+  the game's Rest and Heal (`GameplayScreenRuntime::beginRestAction`, no food taken there and no monsters-near check;
+  the camp pays and sets `RestScreenState::foodCost` so the screen shows its price): the hourglass, then
+  `Party::restAndHealAll` (the unconscious come round; the dead, petrified and eradicated stay). It lasts until 9:00
+  the next morning, at least 8 hours, so the shops are open after it (MM6's magic shops keep 8-16). The camp's menu
+  waits while the rest screen is open. The first v1 version only filled hit and spell points of heroes above zero,
+  with no rest screen (Windows playtest of patch #50).
 - Herb stacks: 3 / 4 / 5 of each of MM6's three herbs and of empty bottles at camps 1-3, sold one at a time at the
   herb's own price (the scenario's three Widoweeps Berries and three bottles cost 13 gold in all).
 - Against the camp's prices (the test's complaint was too little gold for training): the camp has no mastery

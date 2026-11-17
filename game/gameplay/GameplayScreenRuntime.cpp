@@ -3594,6 +3594,13 @@ bool GameplayScreenRuntime::trySaveToSelectedGameSlot()
 
 int GameplayScreenRuntime::restFoodRequired() const
 {
+    const GameplayUiController::RestScreenState &restScreen = restScreenState();
+
+    if (restScreen.active && restScreen.foodCost.has_value())
+    {
+        return *restScreen.foodCost;
+    }
+
     IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
     const int baseFoodRequired = pWorldRuntime != nullptr ? pWorldRuntime->restFoodRequired() : 2;
     EventRuntimeState *pEventRuntimeState = pWorldRuntime != nullptr ? pWorldRuntime->eventRuntimeState() : nullptr;

@@ -156,14 +156,33 @@ steps:
   - console: {line: "run", expect_contains: "guardian slain"}
   - assert:
       dialog: {active: true, action_label_present: "Rest"}
-  # Rest: hit and spell points for the camp's price, 2 food: the start's two pay for it.
+  # Rest: the game's own Rest and Heal for the camp's price, 2 food (the start's two pay for it). The first Windows
+  # playtest of v1 saw the food go and nothing else: no rest screen, no heal, the unconscious left out.
+  - setup_shortcut: {kind: set_member_points, member_index: 0, health: 1, spell_points: 0}
+  - setup_shortcut: {kind: set_condition, member_index: 1, condition: unconscious, health: -5}
+  - setup_shortcut: {kind: set_member_points, member_index: 3, health: 1, spell_points: 0}
   - assert:
       dialog: {active: true, text_contains: "for 2 food"}
+      condition: {name: unconscious, present: true, member_index: 1}
   - select_topic: {kind: event_choice, action_id: 1, match_label: "Rest"}
+  # The rest screen runs its hourglass, its food counter at the camp's price; the camp's menu waits for it.
+  - console: {line: "run", expect_contains: "rest screen, food 2"}
+  - assert:
+      dialog: {active: false}
+      food: 0
+  - advance_runtime: {seconds: 3}
+  # Every hero wakes healed to the maximum, the unconscious one too (Roderick 1, Alexis out at 0, Zoltan 1 before),
+  # in the morning: the camp's shops are open again. The rest screen is gone; the camp's menu comes back on the run's
+  # next frame (the console line's).
+  - console: {line: "run", expect_contains: "hit points Roderick 105 Alexis 72 Serena 58 Zoltan 48"}
   - console: {line: "run", expect_contains: "asks: [1] Camp [2] Rest [3] Next dungeon"}
   - assert:
-      dialog: {active: true, text_contains: "The party rested"}
+      dialog: {active: true, text_contains: "The party rested until the morning (2 food)."}
       food: 0
+      game_hour: 9
+      condition: {name: unconscious, present: false, member_index: 1}
+      party_health: {full: true}
+      member_points: {member_index: 3, spell_points_min: 57, spell_points_max: 57}
   # The way on: the second stop is a dungeon of tier 2, with the map's own guardian.
   - select_topic: {kind: event_choice, action_id: 2, match_label: "Next dungeon"}
   - assert: {map: 6t3.blv}
