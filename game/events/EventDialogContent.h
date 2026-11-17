@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/events/RunCardDialog.h"
 #include "game/tables/ClassSkillTable.h"
 #include "game/events/EventRuntime.h"
 #include "game/events/ScriptedEventProgram.h"
@@ -163,6 +164,9 @@ struct EventDialogContent
     // The rules' offer to reset the cleared dungeon on the way in (MAW): a transition shows it in a popup over the
     // scene with its MapTransitionReset action and Cancel, before the ordinary OK and Close.
     std::string resetPrompt;
+    // A dungeon run's level-up cards (game/ui/GameplayRunCardPicker.h): the dialog is shown as the card screen, whose
+    // confirmation runs the EventChoice action of the card's answer.
+    std::optional<RunCardDialog> runCards;
 };
 
 bool transitionResetPopupOpen(const EventDialogContent &dialog);

@@ -20,6 +20,7 @@
 #include "game/party/SpellIds.h"
 #include "game/party/WorldSpells.h"
 #include "game/rules/GameRules.h"
+#include "game/rules/SoloTalents.h"
 #include "game/StringUtils.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MonsterProjectileTable.h"
@@ -567,6 +568,39 @@ CharacterAttackResult buildRangedReleaseAttack(
     }
 
     return attack;
+}
+
+std::optional<GameplayActionController::PartyAttackActorFacts> resolveUsableActorTarget(
+    const GameplayActionController::PartyAttackConfig &config,
+    std::optional<size_t> actorIndex);
+
+// The monsters a sweeping blow also strikes (CharacterAttackExtras::sweepTargets): the living hostiles in blow reach
+// within the arc in front of the party, nearest first, without the blow's own target.
+std::vector<size_t> collectSweepTargets(
+    const GameplayActionController::PartyAttackConfig &config,
+    size_t blowTarget,
+    const CharacterAttackExtras &extras)
+{
+    IGameplayWorldRuntime &world = *config.pWorldRuntime;
+    const GameplayActionController::WorldPoint &party = config.partyPosition;
+    std::vector<TalentTargetCandidate> candidates;
+
+    for (const size_t index : world.collectMapActorIndicesWithinRadius(
+             party.x, party.y, party.z, CharacterMeleeAttackDistance + 512.0f, true, party.x, party.y, party.z))
+    {
+        const std::optional<GameplayActionController::PartyAttackActorFacts> actor =
+            index != blowTarget ? resolveUsableActorTarget(config, index) : std::nullopt;
+
+        if (actor && actor->hostileToParty
+            && actorDistanceFromParty(*actor, party) <= CharacterMeleeAttackDistance)
+        {
+            candidates.push_back(
+                {index, actor->position.x, actor->position.y, actor->position.z, float(actor->radius), true});
+        }
+    }
+
+    return pickTalentTargets(candidates, party.x, party.y, party.z, world.gameplayCameraYawRadians(),
+        CharacterMeleeAttackDistance, extras.sweepArcDegrees, size_t(extras.sweepTargets));
 }
 
 std::optional<GameplayActionController::PartyAttackActorFacts> resolveUsableActorTarget(
@@ -1555,6 +1589,34 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
     {
         attackMode = CharacterAttackMode::Melee;
     }
+
+    // The rules' talents on an ordinary attack (a dungeon run's; a MAW solo run sets its own through the config).
+    // Sweeping Blows: the monsters beside the blow's target are struck first, as extra blows that play no sound and
+    // pay no recovery (a recovering member strikes no more); the arrows' talents ride on the shot below.
+    const CharacterAttackExtras attackExtras =
+        talentBlow ? CharacterAttackExtras{} : gameRulesFor(config.pParty).combat.characterAttackExtras(*pAttacker);
+
+    if (attackExtras.sweepTargets > 0 && attackMode == CharacterAttackMode::Melee && target && targetInMeleeRange
+        && config.pWorldRuntime != nullptr)
+    {
+        for (const size_t beside : collectSweepTargets(config, target->actorIndex, attackExtras))
+        {
+            PartyAttackConfig sweep = config;
+            sweep.directTargetActorIndex = beside;
+            sweep.directTargetHitPoint.reset();
+            sweep.directTargetBModelIndex.reset();
+            sweep.directTargetEntityIndex.reset();
+            sweep.directTargetName.clear();
+            sweep.blowScreenDirection.reset();
+            sweep.swingSoundPlayed = false;
+            sweep.recoverySpentSeconds = 0.0f;
+            sweep.talentShare = attackExtras.sweepShare;
+            sweep.talentExtraBlow = true;
+            sweep.preferMelee = true;
+            executeActiveCombatantAttack(sweep);
+        }
+    }
+
     std::mt19937 rng = buildPartyAttackRng(config, actingMemberIndex, result.targetActorIndex);
     CharacterAttackResult attack = {};
 
@@ -2007,6 +2069,11 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
             }
 
             const std::optional<PartyGunMissile> partyGun = resolvePartyGunMissile(config, *pAttacker, attack);
+            // Piercing Arrows: the config's (a MAW solo run) or the rules' (a dungeon run).
+            const uint8_t pierceCount = config.pierceCount > 0
+                ? config.pierceCount
+                : uint8_t(std::clamp(attackExtras.pierceCount, 0, 16));
+            const float pierceShare = config.pierceCount > 0 ? config.pierceShare : attackExtras.pierceShare;
             GameplayPartyAttackProjectileRequest projectileRequest = {
                 .sourcePartyMemberIndex = actingMemberIndex,
                 .objectId = partyGun ? uint32_t(partyGun->pMissile->objectId)
@@ -2040,8 +2107,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     attack.projectileSpreadArcRadians > 0.0f ? std::nullopt : result.targetActorIndex,
                 .homing = attack.homing,
                 .critical = attack.criticalDamage,
-                .pierceCount = attack.mode == CharacterAttackMode::Bow ? config.pierceCount : uint8_t(0),
-                .pierceShare = config.pierceShare,
+                .pierceCount = attack.mode == CharacterAttackMode::Bow ? pierceCount : uint8_t(0),
+                .pierceShare = pierceShare,
             };
             if (attack.projectileSpreadArcRadians > 0.0f)
             {
@@ -2099,6 +2166,60 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                         party.members().size() + attack.projectileCount - 1);
                     projectileRequest.source = toRuntimeWorldPoint(secondSource);
                     attacked = config.pWorldRuntime->spawnPartyAttackProjectile(projectileRequest) || attacked;
+                }
+
+                // Multishot of the rules (a dungeon run's talent): side arrows fanned either side of the shot, each
+                // on its own heading at a share of the shot's damage, hitting the first monster in its line. They do
+                // not home and do not pierce; a bursting arrow's blast is cut by the same share.
+                if (attacked && attack.mode == CharacterAttackMode::Bow && attackExtras.fanArrows > 0
+                    && attackExtras.fanShare > 0.0f)
+                {
+                    const uint32_t sideArrows = uint32_t(std::clamp(attackExtras.fanArrows, 1, 16));
+                    const float arcRadians = 2.0f * attackExtras.fanArcDegrees * 3.14159265f / 180.0f;
+                    const float deltaX = rangedTarget.x - rangedSource.x;
+                    const float deltaY = rangedTarget.y - rangedSource.y;
+                    const float aimYawRadians = std::atan2(deltaY, deltaX);
+                    const float fanDistance = std::max(512.0f, std::sqrt(deltaX * deltaX + deltaY * deltaY));
+                    const auto shared = [&attackExtras](int value)
+                    {
+                        return std::max(1, int(std::lround(float(value) * attackExtras.fanShare)));
+                    };
+                    std::uniform_int_distribution<int> damageDistribution(
+                        attack.minimumDamage, std::max(attack.minimumDamage, attack.maximumDamage));
+                    GameplayPartyAttackProjectileRequest sideRequest = projectileRequest;
+                    sideRequest.targetActorIndex.reset();
+                    sideRequest.homing = false;
+                    sideRequest.critical = false;
+                    sideRequest.pierceCount = 0;
+                    sideRequest.pierceShare = 0.0f;
+                    sideRequest.source = toRuntimeWorldPoint(rangedSource);
+
+                    if (attack.explosiveArrow)
+                    {
+                        sideRequest.blastMinimumDamage = shared(attack.minimumDamage);
+                        sideRequest.blastMaximumDamage = shared(attack.maximumDamage);
+                    }
+
+                    for (uint32_t sideIndex = 0; sideIndex < sideArrows; ++sideIndex)
+                    {
+                        // An odd count would put an arrow on the shot's own line: it takes the next heading out.
+                        float offsetRadians =
+                            GameMechanics::projectileFanYawOffsetRadians(sideArrows, sideIndex, arcRadians);
+
+                        if (sideArrows == 1 || std::abs(offsetRadians) < 1e-4f)
+                        {
+                            offsetRadians = arcRadians * 0.5f;
+                        }
+
+                        const float arrowYaw = aimYawRadians + offsetRadians;
+                        sideRequest.target = toRuntimeWorldPoint(WorldPoint{
+                            .x = rangedSource.x + std::cos(arrowYaw) * fanDistance,
+                            .y = rangedSource.y + std::sin(arrowYaw) * fanDistance,
+                            .z = rangedTarget.z,
+                        });
+                        sideRequest.damage = shared(damageDistribution(rng));
+                        config.pWorldRuntime->spawnPartyAttackProjectile(sideRequest);
+                    }
                 }
             }
         }

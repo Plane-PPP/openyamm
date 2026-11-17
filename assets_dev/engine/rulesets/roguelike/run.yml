@@ -19,10 +19,14 @@ rules:
   # map's strongest kind with its hit points times guardianHealthScale. Its death opens the way out.
   clear: {share: 0.5, guardianHealthScale: 4}
   # Level-ups per stop, spread evenly over the clearing up to the guardian (the stop's last comes with it): ten in a
-  # run. Each raises every hero by levelsEach levels and owes each hero one card of three.
-  levels: {perStop: [3, 3, 2, 2], levelsEach: 4}
-  # What the party starts with. Rest costs food as usual; food is rare.
+  # run. Each raises every hero by levelsEach levels and owes each hero one card out of `offers`. A level-up also
+  # brings a hero who is out round and gives back `heal` of the maximum hit points (at least up to that share); the
+  # dead, the petrified and the eradicated stay as they are.
+  levels: {perStop: [3, 3, 2, 2], levelsEach: 4, offers: 4, heal: 0.25}
+  # What the party starts with. Rest in a dungeon costs food as usual; food is rare.
   start: {food: 2, gold: 500}
+  # The camp's Rest costs this much food, whatever a rest costs on the map: the start's food pays for one.
+  camp: {restFood: 2}
   # The heroes are promoted after the guardian of this stop.
   promotionAfterStop: 2
   # Spell books a school's card gives: when it teaches the school, and when it raises it.
@@ -49,38 +53,215 @@ rules:
   # The camp between two dungeons: the party's hit and spell points are restored, and these shops stand open before
   # the next dungeon. They are houses of MM6 (house_data.txt), so the stock, the prices and the trade are the engine's
   # own: New Sorpigal's after the first dungeon, Free Haven's later. No camp follows the last dungeon.
+  # stock: stacks a shop always has besides its own goods; they take the last places of its standard shelf. The
+  # alchemy shops sell MM6's three herbs (1764 Widoweeps Berries, 1763 Phirna Root, 1762 Poppysnaps) and empty bottles
+  # (1765) to brew potions from. TEST VALUES: small stacks, larger at each camp.
   shops:
     - {afterStop: 1, name: "Weapons", house: 22}                 # The Knife Shoppe
     - {afterStop: 1, name: "Armor", house: 62}                   # The Common Defense
-    - {afterStop: 1, name: "Potions and magic", house: 97}       # The Seeing Eye
+    - afterStop: 1                                               # The Seeing Eye
+      name: "Potions and magic"
+      house: 97
+      stock: [{item: 1764, count: 3}, {item: 1763, count: 3}, {item: 1762, count: 3}, {item: 1765, count: 3}]
     - {afterStop: 1, name: "Spell books: elements", house: 1214} # Initiate Guild of the Elements
     - {afterStop: 1, name: "Spell books: self", house: 189}      # Initiate Guild of the Self
     - {afterStop: 2, name: "Weapons", house: 28}                 # The Sharpening Stone
     - {afterStop: 2, name: "Armor", house: 67}                   # The Foundry
-    - {afterStop: 2, name: "Potions and magic", house: 105}      # The Sorcerer's Shoppe
+    - afterStop: 2                                               # The Sorcerer's Shoppe
+      name: "Potions and magic"
+      house: 105
+      stock: [{item: 1764, count: 4}, {item: 1763, count: 4}, {item: 1762, count: 4}, {item: 1765, count: 4}]
     - {afterStop: 2, name: "Spell books: fire", house: 133}      # Adept Guild of Fire
     - {afterStop: 2, name: "Spell books: self", house: 190}      # Adept Guild of the Self
     - {afterStop: 3, name: "Weapons", house: 29}                 # Feathers and String
     - {afterStop: 3, name: "Armor", house: 72}                   # The Footman's Friend
-    - {afterStop: 3, name: "Potions and magic", house: 107}      # Alchemy and Incantations
+    - afterStop: 3                                               # Alchemy and Incantations
+      name: "Potions and magic"
+      house: 107
+      stock: [{item: 1764, count: 5}, {item: 1763, count: 5}, {item: 1762, count: 5}, {item: 1765, count: 5}]
     - {afterStop: 3, name: "Spell books: air", house: 139}       # Adept Guild of Air
     - {afterStop: 3, name: "Spell books: body", house: 169}      # Adept Guild of Body
-  # Perks: permanent numbers a card adds, one level a card.
-  perks:
-    - {id: might, name: "Might +15", stat: might, amount: 15, maxLevel: 3}
-    - {id: endurance, name: "Endurance +15", stat: endurance, amount: 15, maxLevel: 3}
-    - {id: accuracy, name: "Accuracy +15", stat: accuracy, amount: 15, maxLevel: 3}
-    - {id: speed, name: "Speed +15", stat: speed, amount: 15, maxLevel: 3}
-    - {id: intellect, name: "Intellect +15", stat: intellect, amount: 15, maxLevel: 3}
-    - {id: personality, name: "Personality +15", stat: personality, amount: 15, maxLevel: 3}
-    - {id: health, name: "Hit points +30", stat: health, amount: 30, maxLevel: 3}
-    - {id: mana, name: "Spell points +25", stat: mana, amount: 25, maxLevel: 3}
-    - {id: armor, name: "Armor class +8", stat: armor, amount: 8, maxLevel: 3}
-    - {id: resistances, name: "Elemental and mental resistances +10", stat: resistances, amount: 10, maxLevel: 3}
-    - {id: melee_damage, name: "Melee damage +4", stat: melee_damage, amount: 4, maxLevel: 3}
-    - {id: ranged_damage, name: "Bow damage +4", stat: ranged_damage, amount: 4, maxLevel: 3, requiresSkill: Bow}
+  # What each stop's guardian leaves, once: gold for the party and one rare item, an artifact or a relic no hero
+  # carries yet. An item that fits no pack waits until one has room. TEST VALUES. The last guardian leaves no gold:
+  # no camp follows it.
+  rewards:
+    guardians:
+      - {item: artifact, gold: 1500}
+      - {item: artifact, gold: 3000}
+      - {item: relic, gold: 5000}
+      - {item: relic}
+  # The cards' pictures by skill: an item icon (icons_x2) or, for a school of magic, its sign from the spell book.
+  icons:
+    Sword: item004
+    Axe: item033
+    Spear: item047
+    Bow: talent_marksman
+    Mace: item066
+    Dagger: item023
+    Staff: item081
+    LeatherArmor: item086
+    ChainArmor: item091
+    PlateArmor: item095
+    Shield: item100
+    Armsmaster: talent_weapon_training
+    Bodybuilding: item178
+    Meditation: item177
+    DisarmTraps: item023
+    IdentifyItem: item163
+    RepairItem: item071
+    FireMagic: stfu
+    AirMagic: stau
+    WaterMagic: stwu
+    EarthMagic: steu
+    SpiritMagic: stsu
+    MindMagic: stmu
+    BodyMagic: stbu
+  # Talents: what a card gives besides skills, one rank a card (adapted from the talents of a MAW solo run for a
+  # party of four: all passive, no buttons). A talent's id is stable: the hero's rank is saved under it
+  # (Character::talentRanks), so the order here is free. TEST VALUES, approved by the user on 2026-11-17.
+  #   needs, mastery: a skill the hero must have before the card is offered ("melee": a melee weapon skill or
+  #     Armsmaster; "magic": a school of magic), at that mastery or above.
+  #   values, values2: the rank's numbers ({value}, {value2} in the text); share: percent of a normal blow or shot;
+  #     seconds, cooldown; radius (world units); arc (degrees either side of the view); targets; spells.
+  #   stat, amount: a permanent number instead of an effect (only the arrows' talent now).
+  # The effects are in game/rules/roguelike/RoguelikeTalents.h.
+  talents:
+    # Melee.
+    - id: sweeping_blows
+      name: Sweeping Blows
+      icon: talent_sweeping_blows
+      needs: melee
+      mastery: expert
+      maxRank: 3
+      values: [1, 2, 3]
+      share: 50
+      arc: 60
+      text: "Each melee swing also strikes {value} more in the arc in front, at 50 % damage"
+    - id: onslaught
+      name: Onslaught
+      icon: talent_onslaught
+      maxRank: 3
+      values: [15, 25, 35]
+      seconds: 10
+      text: "After a kill the hero's weapon attacks are {value} % faster for 10 s"
+    - id: shield_wall
+      name: Shield Wall
+      icon: talent_shield_wall
+      needs: Shield
+      mastery: expert
+      maxRank: 3
+      values: [15, 25, 35]
+      values2: [15, 25, 35]
+      text: "With a shield: {value} % less damage taken, and a {value2} % chance to take a blow meant for an ally"
+    # Bow.
+    - id: multishot
+      name: Multishot
+      icon: talent_multishot
+      needs: Bow
+      mastery: expert
+      maxRank: 3
+      values: [2, 4, 6]
+      share: 50
+      arc: 12
+      text: "Every bow shot also looses {value} side arrows in a fan, at 50 % damage"
+    - id: piercing_arrows
+      name: Piercing Arrows
+      icon: talent_piercing_arrows
+      needs: Bow
+      mastery: expert
+      maxRank: 3
+      values: [1, 2, 3]
+      share: 50
+      text: "An arrow flies on through {value} more monsters, at 50 % damage"
+    - id: pinning_shot
+      name: Pinning Shot
+      icon: talent_pinning_shot
+      needs: Bow
+      mastery: expert
+      maxRank: 3
+      values: [2, 3, 4]
+      text: "An arrow's hit slows its target by half for {value} s"
     # The arrows burst like those of a bow of Carnage: the engine's own explosive arrow, no second spell.
-    - {id: explosive_arrows, name: "Explosive arrows", stat: explosive_arrows, maxLevel: 1, requiresSkill: Bow}
+    - id: explosive_arrows
+      name: Explosive Arrows
+      icon: talent_steady_aim
+      needs: Bow
+      maxRank: 1
+      stat: explosive_arrows
+      text: "The hero's arrows burst on impact and hurt everything near"
+    # Magic.
+    - id: attunement
+      name: Attunement
+      icon: talent_attunement
+      needs: magic
+      maxRank: 3
+      values: [10, 20, 30]
+      values2: [10, 20, 30]
+      text: "The hero's spells deal {value} % more damage and cost {value2} % less"
+    # Area spells (spells.txt): Fireball, Fire Spike, Immolation, Meteor Shower, Inferno, Sparks, Starburst, Poison
+    # Spray, Ice Blast, Rock Blast, Death Blossom, Prismatic Light, Shrapmetal, Dragon Breath.
+    - id: overload
+      name: Overload
+      icon: talent_overload
+      needs: magic
+      mastery: expert
+      maxRank: 3
+      values: [10, 20, 30]
+      targets: 3
+      spells: [6, 7, 8, 9, 10, 15, 22, 24, 32, 41, 43, 84, 93, 97]
+      text: "Area spells: {value} % more damage for each monster near the target beyond the first, at most 3"
+    - id: spell_surge
+      name: Spell Surge
+      icon: talent_spell_surge
+      needs: magic
+      mastery: master
+      maxRank: 3
+      values: [5, 4, 3]
+      share: 50
+      seconds: 3
+      text: "Every spell number {value} of the hero is free and 50 % stronger"
+    - id: binding_circle
+      name: Binding Circle
+      icon: talent_binding_circle
+      needs: magic
+      mastery: expert
+      maxRank: 3
+      values: [2, 2.5, 3]
+      radius: 500
+      cooldown: 20
+      text: "When the hero is struck from close by, every monster within 5 m is held for {value} s (once in 20 s)"
+    # Anyone.
+    # values2: 1 at the ranks whose hero no monster's special attack takes hold on.
+    - id: resolve
+      name: Resolve
+      icon: talent_resolve
+      maxRank: 3
+      values: [10, 20, 30]
+      values2: [0, 0, 1]
+      text: "+{value} to every resistance; at rank 3 monsters' special attacks do not take hold"
+    - id: bloodthirst
+      name: Bloodthirst
+      icon: talent_bloodthirst
+      maxRank: 3
+      values: [5, 10, 15]
+      text: "The hero heals for {value} % of the damage they deal with weapons and spells"
+    # values: the share of the maximum hit points above which a hit is cut; share: what is left of that part.
+    - id: unbroken
+      name: Unbroken
+      icon: talent_unbroken
+      maxRank: 1
+      values: [30]
+      share: 50
+      text: "The part of one hit above 30 % of the hero's maximum hit points is halved"
+    # values: percent of the maximum hit points the fatal hit leaves; share: percent of damage taken for `seconds`.
+    - id: cheat_death
+      name: Cheat Death
+      icon: talent_cheat_death
+      maxRank: 1
+      values: [10]
+      share: 5
+      seconds: 3
+      text: "Once in a dungeon a hit that would fell the hero leaves 10 % hit points, then 3 s of 95 % less damage"
 dungeons:
   # Goblinwatch: rats 2-6, goblins 4-10, blood suckers 2-8. oute3.lua, exit event 51.
   - map: 6d01.blv

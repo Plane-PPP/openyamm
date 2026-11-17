@@ -60,6 +60,8 @@ struct ScenarioExecutionContext
     std::unique_ptr<ScenarioRuntimeDriver> runtimeDriver;
     std::string currentMapFileName;
     std::filesystem::path basePath;
+    // The folder of the scenario's own file (empty when unknown).
+    std::filesystem::path documentDirectory;
     std::filesystem::path saveGameRootPath;
     Engine::ApplicationConfig config;
     ScenarioMode mode = ScenarioMode::Hybrid;
@@ -8683,6 +8685,18 @@ std::filesystem::path resolveScenarioExternalPath(
             return workingPath;
         }
 
+        // Beside the scenario's file: the game works in its user data folder, so a path into the repository's tests
+        // is given from the scenario ("../../fixtures/save.oysav").
+        if (!context.documentDirectory.empty())
+        {
+            const std::filesystem::path documentPath = (context.documentDirectory / path).lexically_normal();
+
+            if (std::filesystem::exists(documentPath, errorCode))
+            {
+                return documentPath;
+            }
+        }
+
         path = context.basePath / path;
     }
 
@@ -12122,6 +12136,7 @@ ScenarioRunResult ScenarioRunner::run(
 
     ScenarioExecutionContext context = {};
     context.basePath = basePath;
+    context.documentDirectory = document.sourcePath.parent_path();
     context.config = scenarioConfig;
     context.mode = document.mode;
     // One folder per run, removed at the end, so the same scenario can run in parallel builds without sharing saves;

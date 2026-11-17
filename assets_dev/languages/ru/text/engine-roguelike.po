@@ -1,0 +1,210 @@
+# Roguelike run (assets_dev/engine/rulesets/roguelike, game/ui/GameplayRunCardPicker): talents, the card screen,
+# guardian rewards. Written by Claude for the next run version, 2026-11-17; to be reviewed by a Russian speaker.
+msgid ""
+msgstr ""
+"Language: ru\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+# machine translation
+msgid "Sweeping Blows"
+msgstr "Размашистые удары"
+
+# machine translation
+msgid "Each melee swing also strikes {value} more in the arc in front, at 50 % damage"
+msgstr "Каждый удар в ближнем бою задевает ещё {value} врагов в дуге перед героем, с 50 % урона"
+
+# machine translation
+msgid "Onslaught"
+msgstr "Натиск"
+
+# machine translation
+msgid "After a kill the hero's weapon attacks are {value} % faster for 10 s"
+msgstr "После убийства атаки оружием героя быстрее на {value} % в течение 10 с"
+
+# machine translation
+msgid "Shield Wall"
+msgstr "Стена щитов"
+
+# machine translation
+msgid "With a shield: {value} % less damage taken, and a {value2} % chance to take a blow meant for an ally"
+msgstr "Со щитом: на {value} % меньше получаемого урона и шанс {value2} % принять удар, нацеленный в союзника"
+
+# machine translation
+msgid "Multishot"
+msgstr "Веер стрел"
+
+# machine translation
+msgid "Every bow shot also looses {value} side arrows in a fan, at 50 % damage"
+msgstr "Каждый выстрел из лука добавляет {value} боковых стрел веером, с 50 % урона"
+
+# machine translation
+msgid "Piercing Arrows"
+msgstr "Пробивающие стрелы"
+
+# machine translation
+msgid "An arrow flies on through {value} more monsters, at 50 % damage"
+msgstr "Стрела пролетает сквозь ещё {value} врагов, с 50 % урона"
+
+# machine translation
+msgid "Pinning Shot"
+msgstr "Сковывающий выстрел"
+
+# machine translation
+msgid "An arrow's hit slows its target by half for {value} s"
+msgstr "Попадание стрелы замедляет цель вдвое на {value} с"
+
+# machine translation
+msgid "Explosive Arrows"
+msgstr "Взрывные стрелы"
+
+# machine translation
+msgid "The hero's arrows burst on impact and hurt everything near"
+msgstr "Стрелы героя взрываются при попадании и ранят всех рядом"
+
+# machine translation
+msgid "Attunement"
+msgstr "Магическая настройка"
+
+# machine translation
+msgid "The hero's spells deal {value} % more damage and cost {value2} % less"
+msgstr "Заклинания героя наносят на {value} % больше урона и стоят на {value2} % меньше"
+
+# machine translation
+msgid "Overload"
+msgstr "Перегрузка"
+
+# machine translation
+msgid "Area spells: {value} % more damage for each monster near the target beyond the first, at most 3"
+msgstr "Заклинания по площади: +{value} % урона за каждого врага рядом с целью сверх первого, не больше 3"
+
+# machine translation
+msgid "Spell Surge"
+msgstr "Всплеск магии"
+
+# machine translation
+msgid "Every spell number {value} of the hero is free and 50 % stronger"
+msgstr "Каждое {value}-е заклинание героя бесплатно и на 50 % сильнее"
+
+# machine translation
+msgid "Binding Circle"
+msgstr "Сковывающий круг"
+
+# machine translation
+msgid "When the hero is struck from close by, every monster within 5 m is held for {value} s (once in 20 s)"
+msgstr "Когда героя бьют вблизи, все враги в 5 м замирают на {value} с (не чаще раза в 20 с)"
+
+# machine translation
+msgid "Resolve"
+msgstr "Стойкость"
+
+# machine translation
+msgid "+{value} to every resistance; at rank 3 monsters' special attacks do not take hold"
+msgstr "+{value} ко всем сопротивлениям; на 3-м ранге особые атаки монстров не действуют"
+
+# machine translation
+msgid "Bloodthirst"
+msgstr "Жажда крови"
+
+# machine translation
+msgid "The hero heals for {value} % of the damage they deal with weapons and spells"
+msgstr "Герой лечится на {value} % урона, нанесённого оружием и заклинаниями"
+
+# machine translation
+msgid "Unbroken"
+msgstr "Несломленный"
+
+# machine translation
+msgid "The part of one hit above 30 % of the hero's maximum hit points is halved"
+msgstr "Часть одного удара сверх 30 % максимума здоровья героя уменьшается вдвое"
+
+# machine translation
+msgid "Cheat Death"
+msgstr "Обман смерти"
+
+# machine translation
+msgid "Once in a dungeon a hit that would fell the hero leaves 10 % hit points, then 3 s of 95 % less damage"
+msgstr "Раз в подземелье смертельный удар оставляет герою 10 % здоровья, затем 3 с урон меньше на 95 %"
+
+# machine translation
+msgctxt "run card"
+msgid "SKILL"
+msgstr "НАВЫК"
+
+# machine translation
+msgctxt "run card"
+msgid "BOOKS"
+msgstr "КНИГИ"
+
+# machine translation
+msgctxt "run card"
+msgid "TALENT"
+msgstr "ТАЛАНТ"
+
+# machine translation
+msgid "Not learned"
+msgstr "Не изучен"
+
+# machine translation
+msgid "Skill level {level}"
+msgstr "Уровень навыка {level}"
+
+# machine translation
+msgid "Up to {count} spell books"
+msgstr "До {count} книг заклинаний"
+
+# machine translation
+msgid "{hero} learns {skill}: skill level {level}."
+msgstr "{hero} изучает навык «{skill}»: уровень {level}."
+
+# machine translation
+msgid "{skill} rises to {mastery}: skill level {level}."
+msgstr "{skill}: мастерство «{mastery}», уровень навыка {level}."
+
+# machine translation
+msgid "Up to {count} books of spells the hero does not have come with it."
+msgstr "В придачу до {count} книг заклинаний, которых у героя ещё нет."
+
+# machine translation
+msgid "Rank {rank}"
+msgstr "Ранг {rank}"
+
+# machine translation
+msgid "Level up"
+msgstr "Повышение уровня"
+
+# machine translation
+msgid "{class} · Level {level}"
+msgstr "{class} · Уровень {level}"
+
+# machine translation
+msgid "Dungeon {stop} / {stops}"
+msgstr "ПОДЗЕМЕЛЬЕ {stop} / {stops}"
+
+# machine translation
+msgid "Card {number} of {total}"
+msgstr "Карточка {number} из {total}"
+
+# machine translation
+msgid "Choose one reward for the hero"
+msgstr "Выберите одну награду для героя"
+
+# machine translation
+msgid "Confirm choice"
+msgstr "Подтвердить выбор"
+
+# machine translation
+msgid "1-{count} or arrows: choose  ·  Enter: confirm  ·  Esc: close"
+msgstr "1-{count} или стрелки: выбор  ·  Enter: подтвердить  ·  Esc: закрыть"
+
+# machine translation
+msgid "The guardian's hoard: {gold} gold."
+msgstr "Сокровища стража: {gold} золотых."
+
+# machine translation
+msgid "The guardian's hoard: {item} and {gold} gold."
+msgstr "Сокровища стража: {item} и {gold} золотых."
+
+# machine translation
+msgid "The guardian's hoard: {item}."
+msgstr "Сокровища стража: {item}."

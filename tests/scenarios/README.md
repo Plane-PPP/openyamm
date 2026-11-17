@@ -109,6 +109,9 @@ the step passes only then; `assert: {food: N}` checks the party's food (`maw_sav
 saved states record another layout identity), so loading it resets them (`release/rebuilt_map_save.yml`,
 [saved map states](../../devdocs/SAVED_MAP_STATE_IDENTITY.md)).
 `assert: {game_hour: N}` checks the clock's hour of the day, 0-23 (`mm7/stone_city_inn_rest.yml`).
+`load_game: {path}` loads a save file: a relative path is looked up in the working folder (the game works in its
+user data folder), then beside the scenario's own file, so a frozen save among the tests' fixtures is
+`../../fixtures/<file>.oysav` from `tests/scenarios/<group>/` (`rulesets/roguelike_v184_save.yml`).
 `quick_load: {save, expect: loaded | warned, expect_status}` presses the quick load key (F10) once with a scenario save
 as the quicksave, from a scratch working folder so the real `saves/quicksave.oysav` is never read
 (`maw_quick_load_warning.yml`).

@@ -362,6 +362,11 @@ void CombatRules::applyPartyHitEffects(Party &, const PartyHitOnMonster &) const
 {
 }
 
+CharacterAttackExtras CombatRules::characterAttackExtras(const Character &) const
+{
+    return {};
+}
+
 std::optional<int> CombatRules::characterAttackRecoveryTicks(
     const Character &,
     CharacterAttackMode,

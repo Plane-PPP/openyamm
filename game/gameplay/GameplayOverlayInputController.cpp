@@ -3,6 +3,7 @@
 #include "engine/Utf8Text.h"
 #include "engine/Localization.h"
 #include "game/gameplay/GameplayOverlayInputController.h"
+#include "game/ui/GameplayRunCardPicker.h"
 
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayInputFrame.h"
@@ -3587,6 +3588,32 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
     bool isResidentSelectionMode)
 {
     const bool *pKeyboardState = input.keyboardState();
+
+    // A dungeon run's card screen takes the dialog's input: its own keys and clicks, and Esc, which closes it and
+    // leaves the card owed (the run offers it again later).
+    if (view.activeEventDialog().runCards)
+    {
+        if (pKeyboardState[SDL_SCANCODE_ESCAPE])
+        {
+            if (!view.interactionState().closeOverlayLatch)
+            {
+                view.handleDialogueCloseRequest();
+                latchGameplayMenuEscape(view);
+                view.interactionState().closeOverlayLatch = true;
+            }
+        }
+        else
+        {
+            view.interactionState().closeOverlayLatch = false;
+            GameplayRunCardPicker::handleInput(view, input);
+        }
+
+        view.interactionState().eventDialogAcceptLatch = true;
+        view.interactionState().dialogueClickLatch = false;
+        view.interactionState().dialoguePressedTarget = {};
+        return;
+    }
+
     const int screenWidth = input.screenWidth;
     const int screenHeight = input.screenHeight;
     // The MM9 conversation bar takes the number keys for its choices; a talk hides the party, and a trainer lists its

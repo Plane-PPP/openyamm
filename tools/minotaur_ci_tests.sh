@@ -55,7 +55,7 @@ for group in "${groups[@]}"; do
         upstream-indoor)
             run upstream-indoor-tests "$runtime" --source-file='*IndoorActorFlyingRuntimeTests.cpp,*IndoorActorDetectionRuntimeTests.cpp,*IndoorActorFactionRuntimeTests.cpp' ;;
         roguelike)
-            run roguelike-tests "$unit" --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp' ;;
+            run roguelike-tests "$unit" --source-file='*DungeonRunTests.cpp,*RoguelikeRulesTests.cpp,*RoguelikeTalentTests.cpp' ;;
         upstream24)
             run upstream-24-tests "$unit" --source-file='*RulesetTests.cpp,*SoloRunTests.cpp,*SoloTalentTests.cpp,*HeldWeaponTests.cpp,*BattleOrdersTests.cpp,*GameInputSystemTests.cpp,*InventoryEquipRegressionTests.cpp,*AlchemyBenchRegressionTests.cpp,*QuickItemSlotTests.cpp,*HouseDialogueRegressionTests.cpp,*HouseShopLedgerTests.cpp,*AudioRegressionTests.cpp' ;;
         native-ui)

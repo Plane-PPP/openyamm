@@ -1,5 +1,5 @@
 id: rulesets.roguelike_run
-title: Roguelike - a run of four dungeons with a sealed exit, level-ups, cards, a guardian and a camp
+title: Roguelike - four dungeons, a sealed exit, level-ups, cards and talents, guardians' rewards and a camp
 world: mm6
 mode: faithful
 tags: [rulesets, roguelike]
@@ -20,6 +20,10 @@ steps:
   - console: {line: "loc", expect_contains: "position=(601.000, 6871.000,"}
   - console: {line: "run", expect_contains: "level-ups 0 of 10, guardian not called"}
   - console: {line: "run", expect_contains: "Roderick L1 Knight cards owed 0 Alexis L1 Archer cards owed 0"}
+  - console: {line: "run", expect_contains: "rewards 0, items owed 0; gold 500 food 2;"}
+  # A level-up heals (v1): a hero who is out comes round and every living hero gets back a quarter of the maximum.
+  - setup_shortcut: {kind: set_member_points, member_index: 0, health: 1}
+  - setup_shortcut: {kind: set_condition, member_index: 1, condition: unconscious, health: -5}
   # The way out is sealed until the guardian is slain: `run leave` walks out as the exit door does.
   - console: {line: "run leave", expect_contains: "The way out is sealed."}
   - assert: {map: 6d01.blv}
@@ -28,6 +32,9 @@ steps:
   # first offers the way there.
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
   - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian alive"}
+  # Roderick from 1 and Alexis from -5 (out) heal by a quarter of each new maximum: 1 + 17 + 22 + 27 and
+  # 0 + 12 + 15 + 18.
+  - console: {line: "run", expect_contains: "hit points Roderick 67 Alexis 45 Serena 58 Zoltan 48"}
   - console: {line: "run", expect_contains: "toward the guardian 100%"}
   - console: {line: "run", expect_contains: "Roderick L13 Knight cards owed 3 Alexis L13 Archer cards owed 3"}
   - console: {line: "run", expect_contains: "asks: [1] Go to the entrance [2] Stay here"}
@@ -37,26 +44,36 @@ steps:
   - select_topic: {kind: event_choice, source_id: 0, action_id: 1, selection_index: 1, label: "Stay here"}
   # The run takes the answer on its next frame; a scenario's console line stands for that frame.
   - console: {line: "run", expect_contains: "guardian alive"}
-  # The cards, hero by hero: twelve choices. The exit stays sealed while the guardian lives.
-  - console: {line: "run", expect_contains: "asks: [1] "}
+  # The cards, hero by hero: twelve choices of four cards each (run.yml levels.offers), shown on the card screen. A
+  # card is a skill step (a school's with its books) or a talent's next rank; the same seed deals the same cards.
+  - console:
+      line: run
+      expect_contains: "card screen; asks: [1] Leather Armor: Expert [2] Onslaught (1/3) [3] Resolve (1/3) [4] Learn"
   - assert:
       dialog: {active: true, text_contains: "Roderick, level 13 Knight: choose one."}
-  - console: {line: "run pick 1", expect_contains: "Picked: "}
-  - console: {line: "run pick 1", expect_contains: "Picked: "}
-  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run pick 1", expect_contains: "Picked: Leather Armor: Expert"}
+  - console: {line: "run pick 1", expect_contains: "Picked: Sword: Expert"}
+  # Sword at Expert opens the melee talents.
+  - console:
+      line: run
+      expect_contains: "asks: [1] Leather Armor: Master [2] Bloodthirst (1/3) [3] Sweeping Blows (1/3) [4] Learn Bow"
+  - console: {line: "run pick 3", expect_contains: "Picked: Sweeping Blows (1/3)"}
   - console: {line: "run", expect_contains: "Roderick L13 Knight cards owed 0 Alexis L13 Archer cards owed 3"}
-  - console: {line: "run pick 2", expect_contains: "Picked: "}
-  - console: {line: "run pick 2", expect_contains: "Picked: "}
-  - console: {line: "run pick 2", expect_contains: "Picked: "}
-  - console: {line: "run pick 3", expect_contains: "Picked: "}
-  - console: {line: "run pick 3", expect_contains: "Picked: "}
-  - console: {line: "run pick 3", expect_contains: "Picked: "}
-  - console: {line: "run pick 1", expect_contains: "Picked: "}
-  - console: {line: "run pick 2", expect_contains: "Picked: "}
-  - console: {line: "run pick 3", expect_contains: "Picked: "}
+  - console: {line: "run pick 2", expect_contains: "Picked: Cheat Death"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Resolve (1/3)"}
+  - console: {line: "run pick 3", expect_contains: "Picked: Learn Earth Magic (+3 spell books)"}
+  - console: {line: "run pick 3", expect_contains: "Picked: Attunement (1/3)"}
+  - console: {line: "run pick 3", expect_contains: "Picked: Cheat Death"}
+  - console: {line: "run pick 3", expect_contains: "Picked: Attunement (2/3)"}
+  - console: {line: "run pick 1", expect_contains: "Picked: Staff: Expert"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Attunement (1/3)"}
+  - console: {line: "run pick 3", expect_contains: "Picked: Learn Dagger"}
   - console: {line: "run", expect_contains: "Serena L13 Cleric cards owed 0 Zoltan L13 Sorcerer cards owed 0"}
-  # The sorcerer's last card taught Earth Magic and gave real books: Deadly Swarm (MM6's book 1945), the school's
-  # weakest attack spell, is among them.
+  # The talents are kept by their ids.
+  - console: {line: "run", expect_contains: "Roderick talents: sweeping_blows=1; Alexis talents: cheat_death=1"}
+  - console: {line: "run", expect_contains: "Serena talents: attunement=2 cheat_death=1; Zoltan talents: attunement=1"}
+  # The archer's card taught Earth Magic and gave real books: Deadly Swarm (MM6's book 1945), the school's weakest
+  # attack spell, is among them.
   - assert:
       inventory_any_member: [{item_id: 1945, count: 1}]
   - console: {line: "run leave", expect_contains: "The way out is sealed."}
@@ -73,6 +90,17 @@ steps:
   # The guardian's death opens the way out. Between two dungeons stands the camp: its shops, then the way on.
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
   - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian slain"}
+  # Its hoard, once: 1500 gold and an artifact (run.yml rewards.guardians).
+  - console: {line: "run", expect_contains: "rewards 1 (items 2029), items owed 0; gold 2000 food 2;"}
+  - assert:
+      inventory_any_member: [{item_id: 2029, count: 1}]
+  # Once: a save and a load give nothing more.
+  - save_game: roguelike_rewarded
+  - new_game_flow: {start_map: hive.blv}
+  - load_game: roguelike_rewarded
+  - console: {line: "run", expect_contains: "rewards 1 (items 2029), items owed 0; gold 2000 food 2;"}
+  - assert:
+      inventory_any_member: [{item_id: 2029, count: 1}]
   # The real Goblinwatch door and its OK action, including the deferred departure-dialog close. A debug `run leave`
   # skips that dialog and missed the first Windows playtest's blocker.
   - execute_event: {id: 51}
@@ -113,11 +141,29 @@ steps:
   - console: {line: "run", expect_contains: "guardian slain"}
   - assert:
       dialog: {active: true, action_label_present: "Rest"}
-  # Rest: hit and spell points for food.
+  # The camp's alchemy shop sells small stacks of herbs and bottles besides its own goods (run.yml shops[].stock).
+  - select_topic: {kind: event_choice, action_id: 0, match_label: "Camp"}
+  - select_topic: {kind: event_choice, action_id: 2, match_label: "Potions and magic"}
+  - assert:
+      dialog: {active: true, house_dialog: true, source_id: 97}
+  - console: {line: "run buy 1764", expect_contains: "Bought 3 of item 1764 for "}
+  - console: {line: "run buy 1765", expect_contains: "Bought 3 of item 1765 for "}
+  - assert:
+      inventory_any_member: [{item_id: 1764, min_count: 1}, {item_id: 1765, min_count: 1}]
+  - press_action: {action: cancel_dialog}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - press_action: {action: cancel_dialog}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - assert:
+      dialog: {active: true, action_label_present: "Rest"}
+  # Rest: hit and spell points for the camp's price, 2 food: the start's two pay for it.
+  - assert:
+      dialog: {active: true, text_contains: "for 2 food"}
   - select_topic: {kind: event_choice, action_id: 1, match_label: "Rest"}
   - console: {line: "run", expect_contains: "asks: [1] Camp [2] Rest [3] Next dungeon"}
   - assert:
       dialog: {active: true, text_contains: "The party rested"}
+      food: 0
   # The way on: the second stop is a dungeon of tier 2, with the map's own guardian.
   - select_topic: {kind: event_choice, action_id: 2, match_label: "Next dungeon"}
   - assert: {map: 6t3.blv}
@@ -147,6 +193,7 @@ steps:
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
   - console: {line: "run", expect_contains: "guardian slain"}
   - console: {line: "run", expect_contains: "Roderick L25 Cavalier cards owed 0 Alexis L25 WarriorMage"}
+  - console: {line: "run", expect_contains: "rewards 2 (items 2029 2026), items owed 0; gold 4987 food 0;"}
   - console: {line: "run leave", expect_contains: "The camp."}
   - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6d12.blv"}
   - advance_runtime: {seconds: 0.1}
@@ -163,6 +210,7 @@ steps:
   - console: {line: "run pick 1", expect_contains: "Picked: "}
   - console: {line: "run pick 1", expect_contains: "Picked: "}
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run", expect_contains: "rewards 3 (items 2029 2026 2046), items owed 0; gold 9987 food 0;"}
   - console: {line: "run leave", expect_contains: "The camp."}
   - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6d07.blv"}
   - advance_runtime: {seconds: 0.1}
@@ -183,5 +231,11 @@ steps:
   - console: {line: "run leave", expect_contains: "The way out is sealed."}
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
   - console: {line: "run", expect_contains: "level-ups 10 of 10, guardian slain"}
+  # The last guardian leaves a relic and no gold: no camp follows it.
+  - console: {line: "run", expect_contains: "rewards 4 (items 2029 2026 2046 2037), items owed 0; gold 9987 food 0;"}
+  # Two artifacts (Arthur, Galahad) and two relics (Hermes, Poseidon), each in a hero's pack once.
+  - assert:
+      inventory_any_member: [{item_id: 2029, count: 1}, {item_id: 2026, count: 1}, {item_id: 2046, count: 1},
+        {item_id: 2037, count: 1}]
   # No camp follows the last dungeon: leaving it wins the run.
   - console: {line: "run leave", expect_contains: "Victory! Run complete! Dungeons cleared: 4. Level-ups: 10."}

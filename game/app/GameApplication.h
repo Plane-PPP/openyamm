@@ -238,6 +238,11 @@ private:
     void storeDungeonRunState();
     void placeDungeonRunGuardian();
     void deliverDungeonRunBooks();
+    // The slain guardian's reward, once a stop: gold at once and a rare item, which waits for room in a pack.
+    void grantDungeonRunGuardianReward();
+    void deliverDungeonRunItems();
+    // Shows the open card choice as the card screen (game/ui/GameplayRunCardPicker.h).
+    void attachDungeonRunCardScreen();
     // A choice box of the run: the title, the text and one button per answer. False when a dialog is in the way.
     bool openDungeonRunChoice(
         const std::string &title, const std::string &text, const std::vector<std::string> &answers);

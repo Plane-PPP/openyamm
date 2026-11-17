@@ -1,3 +1,20 @@
+# Roguelike run v1: four cards, talents, the card screen, guardians' rewards (2026-11-17)
+
+A level-up now offers four cards (run.yml `levels.offers`), shown on a card screen of their own (the approved
+Obsidian mockup; the text choice remains for the debug console and headless scenarios). Cards have stable ids
+(`skill:<Skill>`, `talent:<id>`) and talent ranks live in `Character::talentRanks`; a run saved by the first 2.4
+version moves its perk levels (kept by run.yml index) to those ids once on load, its added numbers untouched. The
+numeric perks (stats, HP, SP, AC, resistances, damage) gave way to fifteen passive talents adapted from MAW's solo
+talents for a party of four: Sweeping Blows, Onslaught, Shield Wall, Multishot, Piercing Arrows, Pinning Shot,
+Explosive Arrows, Attunement, Overload, Spell Surge, Binding Circle, Resolve, Bloodthirst, Unbroken, Cheat Death
+(docs/research/roguelike-rules-v1.md). They act through the run's own rules over Standard's and one new shared hook
+(`CombatRules::characterAttackExtras`); MAW and its solo run are unchanged. A level-up brings an unconscious hero
+round and heals a quarter of the maximum; the camp's Rest costs 2 food (run.yml), which the start pays; the camp's
+alchemy shop sells small stacks of MM6 herbs and bottles; each guardian leaves gold (1500/3000/5000, none after the
+last) and an artifact (1-2) or a relic (3-4) once, queued while every pack is full. Scenario paths may be given from
+the scenario's own folder (a frozen save among the fixtures). Russian texts: languages/ru/text/engine-roguelike.po
+(machine translation, to review). Linux: 40 run unit cases and 17 scenarios pass; the screen is not yet seen.
+
 # OpenYAMM 2.4 integration (2026-11-15)
 
 Merged official v2.4/f052579 on the complete tested Roguelike v0/da1bb162 base, retaining Minotaur,

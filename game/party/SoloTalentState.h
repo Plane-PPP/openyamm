@@ -30,5 +30,7 @@ struct SoloTalentState
     float lastY = 0.0f;
     bool hasLastPosition = false;
     bool steadyAimOn = false;
+    // A dungeon run's Spell Surge (game/rules/roguelike): spells cast since the last free one.
+    int spellCasts = 0;
 };
 }

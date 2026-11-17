@@ -44,6 +44,17 @@ bool readEntranceCoordinate(const YAML::Node &entranceNode, const char *pKey, in
     return true;
 }
 
+// "normal", "expert", "master" or "grandmaster"; None for anything else.
+SkillMastery masteryByName(const std::string &name)
+{
+    const std::string key = lowerCaseCopy(name);
+    return key == "normal"       ? SkillMastery::Normal
+        : key == "expert"        ? SkillMastery::Expert
+        : key == "master"        ? SkillMastery::Master
+        : key == "grandmaster"   ? SkillMastery::Grandmaster
+                                 : SkillMastery::None;
+}
+
 bool parseRunRules(const YAML::Node &rulesNode, DungeonRunDefinition &definition, std::string &errorMessage)
 {
     DungeonRunRules rules = {};
@@ -69,6 +80,13 @@ bool parseRunRules(const YAML::Node &rulesNode, DungeonRunDefinition &definition
     {
         rules.levelUps = node["perStop"].as<std::vector<int>>(std::vector<int>());
         rules.levelsPerLevelUp = std::max(1, node["levelsEach"].as<int>(rules.levelsPerLevelUp));
+        rules.cardOffers = std::clamp(node["offers"].as<int>(rules.cardOffers), 1, 5);
+        rules.levelUpHealShare = std::clamp(node["heal"].as<double>(rules.levelUpHealShare), 0.0, 1.0);
+    }
+
+    if (const YAML::Node node = rulesNode["camp"])
+    {
+        rules.campRestFood = std::max(0, node["restFood"].as<int>(rules.campRestFood));
     }
 
     rules.levelUps.resize(rules.route.size(), 0);
@@ -124,7 +142,48 @@ bool parseRunRules(const YAML::Node &rulesNode, DungeonRunDefinition &definition
             return false;
         }
 
+        for (const YAML::Node &stackNode : node["stock"])
+        {
+            DungeonRunShopStack stack = {};
+            stack.itemId = stackNode["item"].as<uint32_t>(0);
+            stack.count = std::max<uint32_t>(1, stackNode["count"].as<uint32_t>(1));
+
+            if (stack.itemId == 0)
+            {
+                errorMessage = "run.yml shop '" + shop.name + "': every stock line needs an item";
+                return false;
+            }
+
+            shop.stock.push_back(stack);
+        }
+
         rules.shops.push_back(std::move(shop));
+    }
+
+    if (const YAML::Node rewardsNode = rulesNode["rewards"])
+    {
+        for (const YAML::Node &node : rewardsNode["guardians"])
+        {
+            DungeonRunGuardianReward reward = {};
+            reward.gold = std::max(0, node["gold"].as<int>(0));
+            reward.item = lowerCaseCopy(node["item"].as<std::string>(""));
+
+            if (!reward.item.empty() && reward.item != "artifact" && reward.item != "relic")
+            {
+                errorMessage = "run.yml guardian reward item must be artifact or relic";
+                return false;
+            }
+
+            rules.guardianRewards.push_back(std::move(reward));
+        }
+    }
+
+    if (const YAML::Node iconsNode = rulesNode["icons"])
+    {
+        for (const auto &entry : iconsNode)
+        {
+            rules.skillIcons[canonicalSkillName(entry.first.as<std::string>())] = entry.second.as<std::string>();
+        }
     }
 
     if (const YAML::Node node = rulesNode["unrestrictedCharacters"])
@@ -132,25 +191,48 @@ bool parseRunRules(const YAML::Node &rulesNode, DungeonRunDefinition &definition
         rules.unrestrictedCharacters = node.as<std::vector<uint32_t>>();
     }
 
-    std::unordered_set<std::string> seenPerks;
+    std::unordered_set<std::string> seenTalents;
 
-    for (const YAML::Node &node : rulesNode["perks"])
+    for (const YAML::Node &node : rulesNode["talents"])
     {
-        DungeonRunPerk perk = {};
-        perk.id = node["id"].as<std::string>();
-        perk.name = node["name"].as<std::string>(perk.id);
-        perk.stat = node["stat"].as<std::string>();
-        perk.amount = node["amount"].as<int>(0);
-        perk.maxLevel = std::max(1, node["maxLevel"].as<int>(1));
-        perk.requiresSkill = canonicalSkillName(node["requiresSkill"].as<std::string>(""));
+        DungeonRunTalent talent = {};
+        talent.id = node["id"].as<std::string>("");
+        talent.name = node["name"].as<std::string>(talent.id);
+        talent.text = node["text"].as<std::string>("");
+        talent.icon = node["icon"].as<std::string>("");
+        talent.stat = node["stat"].as<std::string>("");
+        talent.amount = node["amount"].as<int>(0);
+        talent.maxRank = std::max(1, node["maxRank"].as<int>(1));
+        const std::string needs = node["needs"].as<std::string>("");
+        const std::string group = lowerCaseCopy(needs);
+        talent.needsSkill = group == "melee" || group == "magic" ? group : canonicalSkillName(needs);
+        talent.needsMastery = masteryByName(node["mastery"].as<std::string>("normal"));
+        talent.values = node["values"].as<std::vector<float>>(std::vector<float>());
+        talent.values2 = node["values2"].as<std::vector<float>>(std::vector<float>());
+        talent.share = node["share"].as<float>(0.0f);
+        talent.seconds = node["seconds"].as<float>(0.0f);
+        talent.cooldown = node["cooldown"].as<float>(0.0f);
+        talent.radius = node["radius"].as<float>(0.0f);
+        talent.arc = node["arc"].as<float>(0.0f);
+        talent.targets = std::max(0, node["targets"].as<int>(0));
+        talent.spells = node["spells"].as<std::vector<uint32_t>>(std::vector<uint32_t>());
 
-        if (perk.id.empty() || perk.stat.empty() || !seenPerks.insert(perk.id).second)
+        if (talent.id.empty() || !seenTalents.insert(talent.id).second)
         {
-            errorMessage = "run.yml perk '" + perk.id + "' needs an id of its own and a stat";
+            errorMessage = "run.yml talent '" + talent.id + "' needs an id of its own";
             return false;
         }
 
-        rules.perks.push_back(std::move(perk));
+        const bool knownNeed = needs.empty() || group == "melee" || group == "magic"
+            || skillIdForSkillName(talent.needsSkill).has_value();
+
+        if (talent.needsMastery == SkillMastery::None || !knownNeed)
+        {
+            errorMessage = "run.yml talent '" + talent.id + "' needs a known skill and mastery";
+            return false;
+        }
+
+        rules.talents.push_back(std::move(talent));
     }
 
     definition.rules = std::move(rules);
@@ -166,6 +248,29 @@ int DungeonRunRules::totalLevelUps() const
 int DungeonRunRules::levelUpsBefore(size_t stop) const
 {
     return std::accumulate(levelUps.begin(), levelUps.begin() + std::min(stop, levelUps.size()), 0);
+}
+
+float DungeonRunTalent::value(int rank) const
+{
+    return rank <= 0 || values.empty() ? 0.0f : values[std::min(static_cast<size_t>(rank), values.size()) - 1];
+}
+
+float DungeonRunTalent::value2(int rank) const
+{
+    return rank <= 0 || values2.empty() ? 0.0f : values2[std::min(static_cast<size_t>(rank), values2.size()) - 1];
+}
+
+const DungeonRunTalent *DungeonRunRules::talent(std::string_view id) const
+{
+    for (const DungeonRunTalent &candidate : talents)
+    {
+        if (candidate.id == id)
+        {
+            return &candidate;
+        }
+    }
+
+    return nullptr;
 }
 
 const DungeonRunSchool *DungeonRunRules::school(const std::string &skill) const

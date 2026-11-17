@@ -96,6 +96,9 @@ struct ScenarioDocument
     ScenarioMode mode = ScenarioMode::Hybrid;
     std::vector<std::string> tags;
     std::vector<ScenarioStep> steps;
+    // The file the scenario was read from (absolute; empty for one built in code): a step's relative path that is
+    // not under the working folder is looked up beside it (a frozen save among the tests' fixtures).
+    std::filesystem::path sourcePath;
 };
 
 struct ScenarioLoadResult

@@ -1609,8 +1609,10 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
         options.push_back(std::move(train));
 
-        // A solo run's talents can be forgotten here for free (only MAW solo runs ever learn any).
-        if (pParty != nullptr && pParty->activeMember() != nullptr && !pParty->activeMember()->talentRanks.empty())
+        // A solo run's talents can be forgotten here for free. A dungeon run's heroes have talents too (cards of the
+        // run, game/rules/roguelike), which no training hall takes back.
+        if (pParty != nullptr && pParty->soloRun() && pParty->activeMember() != nullptr
+            && !pParty->activeMember()->talentRanks.empty())
         {
             options.push_back(makeOption(
                 HouseActionId::TrainingResetTalents, Engine::tr("Forget talents (free)"), isHouseOpenNow,

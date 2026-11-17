@@ -2470,6 +2470,15 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
     if (m_pRoguelikeRules)
     {
         readRunState(m_namedGlobalVars, m_pRoguelikeRules->state());
+
+        // A run saved before stable card ids: its heroes' perk levels move to their ids, once.
+        for (size_t memberIndex = 0; m_partyState && memberIndex < m_partyState->members().size(); ++memberIndex)
+        {
+            if (Character *pMember = m_partyState->member(memberIndex))
+            {
+                migrateLegacyRunPerks(*pMember);
+            }
+        }
     }
     const bool collectLegacyNamedGlobalVars = m_namedGlobalVars.empty();
 

@@ -1,0 +1,46 @@
+# A run saved by the first 2.4 version (473788e4: perks kept by their place in run.yml, three cards a level-up) plays
+# on in the next: its perks move to their stable ids on load, the owed card comes as four, and the run goes on to its
+# next level-up. The save is the frozen fixture tests/fixtures/minotaur-2.4-v184-roguelike-perks.oysav (see its .txt);
+# the numbers it holds are checked in tests/RoguelikeRulesTests.cpp.
+#   ./build/game/openyamm --asset-root "$PWD/assets_dev" \
+#       --headless-run-scenario "$PWD/tests/scenarios/rulesets/roguelike_v184_save.yml"
+id: rulesets.roguelike_v184_save
+title: Roguelike - a run saved by the first 2.4 version plays on with stable ids and four cards
+world: mm6
+mode: faithful
+tags: [rulesets, roguelike, saves]
+steps:
+  - new_game_flow: {start_map: hive.blv}
+  # The path is the scenario file's own (the game works in its user data folder).
+  - load_game: {path: ../../fixtures/minotaur-2.4-v184-roguelike-perks.oysav}
+  - assert:
+      map: 6d01.blv
+      ruleset: {id: roguelike}
+  - console: {line: "run", expect_contains: "dungeon 1 of 4, map 6d01.blv (on course), seed 4"}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian alive"}
+  # The perks by their ids, at the levels the old cards gave; nothing else learned, nothing doubled.
+  - console: {line: "run", expect_contains: "Roderick talents: endurance=1 health=1; Alexis talents: mana=1 personality=1"}
+  - console: {line: "run", expect_contains: "Serena talents: speed=2; Zoltan talents: armor=1"}
+  # The card Zoltan was still owed comes on the card screen, as four cards of the new rules.
+  - console: {line: "run", expect_contains: "Serena L13 Cleric cards owed 0 Zoltan L13 Sorcerer cards owed 1"}
+  - console: {line: "run", expect_contains: "card screen; asks: [1] "}
+  - console: {line: "run", expect_contains: " [4] "}
+  - assert:
+      dialog: {active: true, text_contains: "Zoltan, level 13 Sorcerer: choose one."}
+  - console: {line: "run pick 4", expect_contains: "Picked: "}
+  - console: {line: "run", expect_contains: "Zoltan L13 Sorcerer cards owed 0"}
+  # The guardian, its reward, the camp and the next dungeon's first level-up.
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - console: {line: "run", expect_contains: "rewards 1 (items "}
+  - console: {line: "run leave", expect_contains: "The camp."}
+  - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6t3.blv"}
+  - advance_runtime: {seconds: 0.1}
+  - console: {line: "run", expect_contains: "dungeon 2 of 4, map 6t3.blv (on course)"}
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - console: {line: "run", expect_contains: "level-ups 6 of 10, guardian alive"}
+  - console: {line: "run", expect_contains: "Roderick L25 Knight cards owed 3"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Stay here"}
+  - console: {line: "run", expect_contains: "card screen; asks: [1] "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  - console: {line: "run", expect_contains: "Roderick L25 Knight cards owed 2"}

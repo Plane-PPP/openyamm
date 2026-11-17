@@ -1,6 +1,7 @@
 #include "doctest/doctest.h"
 
 #include "game/content/DungeonRun.h"
+#include "game/gameplay/GameMechanics.h"
 #include "game/party/Party.h"
 #include "game/maps/SaveGame.h"
 #include "game/rules/roguelike/RoguelikeRules.h"
@@ -60,6 +61,17 @@ Character testHero(const std::string &className)
     return hero;
 }
 
+// Every number of a hero's permanent bonuses, in one row to compare.
+std::vector<int> bonusNumbers(const OpenYAMM::Game::CharacterStatBonuses &bonuses)
+{
+    const OpenYAMM::Game::CharacterResistanceSet &resistances = bonuses.resistances;
+    return {bonuses.might, bonuses.intellect, bonuses.personality, bonuses.endurance, bonuses.speed,
+        bonuses.accuracy, bonuses.luck, bonuses.maxHealth, bonuses.maxSpellPoints, bonuses.armorClass,
+        bonuses.meleeAttack, bonuses.rangedAttack, bonuses.meleeDamage, bonuses.rangedDamage, resistances.fire,
+        resistances.air, resistances.water, resistances.earth, resistances.mind, resistances.body,
+        resistances.spirit, resistances.light, resistances.dark};
+}
+
 MapKillProgress progressOf(double slain, double counted)
 {
     MapKillProgress progress;
@@ -81,7 +93,44 @@ TEST_CASE("the installed run's rules: a route of four by tier, ten level-ups and
     CHECK_EQ(rules.clearShare, doctest::Approx(0.5));
     CHECK_EQ(rules.guardianHealthScale, doctest::Approx(4.0));
     CHECK(rules.skills.size() >= 10);
-    CHECK(rules.perks.size() >= 6);
+    CHECK_EQ(rules.cardOffers, 4);
+    CHECK_EQ(rules.levelUpHealShare, doctest::Approx(0.25));
+    // The start's food pays for one rest in the camp.
+    CHECK(rules.campRestFood > 0);
+    CHECK(rules.startFood >= rules.campRestFood);
+    CHECK(rules.talents.size() >= 6);
+    // Every card of a skill has a picture.
+    for (const std::string &skill : rules.skills)
+    {
+        CHECK_MESSAGE(rules.skillIcons.contains(skill), skill);
+    }
+    // The alchemy shop of every camp sells small stacks of herbs and bottles.
+    size_t alchemyShops = 0;
+    for (const OpenYAMM::Game::DungeonRunShop &shop : rules.shops)
+    {
+        if (shop.stock.empty())
+        {
+            continue;
+        }
+        ++alchemyShops;
+        CHECK_EQ(shop.name, "Potions and magic");
+        for (const OpenYAMM::Game::DungeonRunShopStack &stack : shop.stock)
+        {
+            CHECK(stack.itemId >= 1762);
+            CHECK(stack.itemId <= 1765);
+            CHECK(stack.count >= 1);
+            CHECK(stack.count <= 10);
+        }
+    }
+    CHECK_EQ(alchemyShops, rules.route.size() - 1);
+    // A reward for each guardian: artifacts first, relics later, and no gold after the last (no camp follows it).
+    REQUIRE_EQ(rules.guardianRewards.size(), rules.route.size());
+    CHECK_EQ(rules.guardianRewards[0].item, "artifact");
+    CHECK_EQ(rules.guardianRewards[1].item, "artifact");
+    CHECK_EQ(rules.guardianRewards[2].item, "relic");
+    CHECK_EQ(rules.guardianRewards[3].item, "relic");
+    CHECK(rules.guardianRewards[0].gold > 0);
+    CHECK_EQ(rules.guardianRewards[3].gold, 0);
     REQUIRE(rules.school("FireMagic") != nullptr);
     CHECK_EQ(rules.school("FireMagic")->combatSpell, 2u);
     CHECK(rules.school("Sword") == nullptr);
@@ -137,7 +186,7 @@ TEST_CASE("a run's level-ups follow the slain share of hit points and the last c
     CHECK_EQ(OpenYAMM::Game::runClearFraction(rules, progressOf(250, 1000)), doctest::Approx(0.5));
 }
 
-TEST_CASE("a run's cards are three different ones, fixed by the seed, within the class caps")
+TEST_CASE("a run's cards are four different ones, fixed by the seed, within the class caps")
 {
     DungeonRunRules rules = *installedRulesRun().rules;
     const ClassSkillTable classSkills = testClassSkills();
@@ -147,26 +196,44 @@ TEST_CASE("a run's cards are three different ones, fixed by the seed, within the
     for (uint64_t seed = 0; seed < 40; ++seed)
     {
         const std::vector<RunCard> cards = OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, seed, 0);
-        REQUIRE_EQ(cards.size(), 3u);
+        REQUIRE_EQ(cards.size(), 4u);
         CHECK(cards == OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, seed, 0));
-        CHECK(std::set<std::string>{cards[0].label, cards[1].label, cards[2].label}.size() == 3);
-        // The first is a step of the one skill the knight knows, the second a perk.
+        std::set<std::string> ids;
+        std::set<std::string> labels;
+
+        // The first is a step of the one skill the knight knows, the second a talent.
         CHECK(cards[0].kind == RunCard::Kind::Skill);
         CHECK_EQ(cards[0].skill, "Sword");
+        CHECK_EQ(cards[0].id, "skill:Sword");
         CHECK(cards[0].mastery == SkillMastery::Expert);
-        CHECK(cards[1].kind == RunCard::Kind::Perk);
+        CHECK(cards[1].kind == RunCard::Kind::Talent);
 
         for (const RunCard &card : cards)
         {
-            // No magic for a knight, no explosive arrows without a bow.
+            ids.insert(card.id);
+            labels.insert(card.label);
+            // No magic for a knight.
             CHECK(card.skill != "FireMagic");
             CHECK(card.skill != "AirMagic");
 
-            if (card.kind == RunCard::Kind::Perk)
+            if (card.kind == RunCard::Kind::Talent)
             {
-                CHECK(rules.perks[card.perkIndex].requiresSkill.empty());
+                // A stable id of a talent of the rules, whose need the knight meets (no bow: no arrows' talents).
+                REQUIRE(rules.talent(card.talent) != nullptr);
+                CHECK_EQ(card.id, "talent:" + card.talent);
+                CHECK(OpenYAMM::Game::runTalentAvailable(*rules.talent(card.talent), knight));
+                CHECK(rules.talent(card.talent)->needsSkill != "Bow");
+                CHECK_EQ(card.rank, 1);
+                CHECK_EQ(card.maxRank, rules.talent(card.talent)->maxRank);
+            }
+            else
+            {
+                CHECK_EQ(card.id, "skill:" + card.skill);
             }
         }
+
+        CHECK_EQ(ids.size(), 4u);
+        CHECK_EQ(labels.size(), 4u);
     }
 
     // Another hero's place and another count of cards taken draw differently somewhere.
@@ -179,12 +246,22 @@ TEST_CASE("a run's cards are three different ones, fixed by the seed, within the
     }
 
     CHECK(different > 20);
+
+    // The number of offers is the rules' own; a pool smaller than it gives what there is, never a card twice.
+    rules.cardOffers = 5;
+    CHECK_EQ(OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, 7, 0).size(), 5u);
+    rules.cardOffers = 4;
+    rules.skills = {"Sword", "Bow"};
+    rules.talents = {{.id = "one"}};
+    const std::vector<RunCard> few = OpenYAMM::Game::dealRunCards(rules, knight, &classSkills, 7, 0);
+    REQUIRE_EQ(few.size(), 3u);
+    CHECK_EQ(std::set<std::string>{few[0].id, few[1].id, few[2].id}.size(), 3u);
 }
 
 TEST_CASE("a run's skill card raises one step with its level, and stops at the class cap")
 {
     DungeonRunRules rules = *installedRulesRun().rules;
-    rules.perks.clear();
+    rules.talents.clear();
     rules.skills = {"Bow"};
     const ClassSkillTable classSkills = testClassSkills();
     Character knight = testHero("Knight");
@@ -221,32 +298,373 @@ TEST_CASE("a run's skill card raises one step with its level, and stops at the c
     CHECK_EQ(OpenYAMM::Game::runSkillLevelForMastery(SkillMastery::Grandmaster), 10u);
 }
 
-TEST_CASE("a run's perk card adds its number, counts its level and ends at the top level")
+TEST_CASE("a run's talent card adds its rank under the talent's id and ends at the last rank")
 {
     DungeonRunRules rules;
-    rules.perks = {
-        {.id = "might", .name = "Might +15", .stat = "might", .amount = 15, .maxLevel = 2},
-        {.id = "boom", .name = "Explosive arrows", .stat = "explosive_arrows", .maxLevel = 1, .requiresSkill = "Bow"},
+    rules.talents = {
+        {.id = "might", .name = "Might +15", .stat = "might", .amount = 15, .maxRank = 2},
+        {.id = "boom", .name = "Explosive arrows", .stat = "explosive_arrows", .maxRank = 1, .needsSkill = "Bow"},
     };
     Character hero = testHero("Knight");
 
-    for (int level = 1; level <= 2; ++level)
+    for (int rank = 1; rank <= 2; ++rank)
     {
         const std::vector<RunCard> cards = OpenYAMM::Game::dealRunCards(rules, hero, nullptr, 3, 0);
         REQUIRE_EQ(cards.size(), 1u);
-        CHECK_EQ(cards[0].perkLevel, level);
+        CHECK_EQ(cards[0].id, "talent:might");
+        CHECK_EQ(cards[0].rank, rank);
+        CHECK_EQ(cards[0].maxRank, 2);
         OpenYAMM::Game::applyRunCard(rules, hero, cards[0], nullptr, 3, 0, {});
-        CHECK_EQ(hero.permanentBonuses.might, 15 * level);
+        CHECK_EQ(hero.permanentBonuses.might, 15 * rank);
+        CHECK_EQ(OpenYAMM::Game::runTalentRank(hero, "might"), rank);
     }
 
     CHECK(OpenYAMM::Game::dealRunCards(rules, hero, nullptr, 3, 0).empty());
-    // With a bow the arrows' perk is offered, and taking it sets the hero's bit.
+    // The rank is kept by the id, not by the talent's place in run.yml: another order changes nothing.
+    std::swap(rules.talents[0], rules.talents[1]);
+    CHECK(OpenYAMM::Game::dealRunCards(rules, hero, nullptr, 3, 0).empty());
+    CHECK_EQ(OpenYAMM::Game::runTalentRank(hero, "might"), 2);
+    // A card of a rank the hero already has adds nothing.
+    RunCard again = {};
+    again.kind = RunCard::Kind::Talent;
+    again.talent = "might";
+    again.rank = 2;
+    OpenYAMM::Game::applyRunCard(rules, hero, again, nullptr, 3, 0, {});
+    CHECK_EQ(hero.permanentBonuses.might, 30);
+    CHECK_EQ(OpenYAMM::Game::runTalentRank(hero, "might"), 2);
+    // With a bow the arrows' talent is offered, and taking it sets the hero's bit.
     hero.skills["Bow"] = {"Bow", 1, SkillMastery::Normal};
     const std::vector<RunCard> cards = OpenYAMM::Game::dealRunCards(rules, hero, nullptr, 3, 0);
     REQUIRE_EQ(cards.size(), 1u);
     CHECK_EQ(cards[0].label, "Explosive arrows");
     OpenYAMM::Game::applyRunCard(rules, hero, cards[0], nullptr, 3, 0, {});
     CHECK(hero.playerBits.contains(OpenYAMM::Game::RunExplosiveArrowsPlayerBit));
+    CHECK_EQ(OpenYAMM::Game::runTalentRank(hero, "boom"), 1);
+}
+
+TEST_CASE("a run's talent is offered only to a hero with the skill it needs at its mastery")
+{
+    using OpenYAMM::Game::DungeonRunTalent;
+    Character hero = testHero("Knight");
+    const DungeonRunTalent free = {.id = "free"};
+    const DungeonRunTalent bow = {.id = "bow", .needsSkill = "Bow", .needsMastery = SkillMastery::Expert};
+    const DungeonRunTalent melee = {.id = "melee", .needsSkill = "melee", .needsMastery = SkillMastery::Expert};
+    const DungeonRunTalent magic = {.id = "magic", .needsSkill = "magic", .needsMastery = SkillMastery::Master};
+
+    CHECK(OpenYAMM::Game::runTalentAvailable(free, hero));
+    CHECK_FALSE(OpenYAMM::Game::runTalentAvailable(bow, hero));
+    CHECK_FALSE(OpenYAMM::Game::runTalentAvailable(melee, hero));
+    CHECK_FALSE(OpenYAMM::Game::runTalentAvailable(magic, hero));
+    hero.skills["Bow"] = {"Bow", 1, SkillMastery::Normal};
+    CHECK_FALSE(OpenYAMM::Game::runTalentAvailable(bow, hero));
+    hero.skills["Bow"] = {"Bow", 4, SkillMastery::Expert};
+    CHECK(OpenYAMM::Game::runTalentAvailable(bow, hero));
+    // Any melee weapon skill or Armsmaster stands for "melee", any school for "magic": the best of them counts.
+    hero.skills["Sword"] = {"Sword", 1, SkillMastery::Normal};
+    hero.skills["Armsmaster"] = {"Armsmaster", 4, SkillMastery::Expert};
+    CHECK(OpenYAMM::Game::runTalentAvailable(melee, hero));
+    hero.skills["FireMagic"] = {"FireMagic", 4, SkillMastery::Expert};
+    CHECK_FALSE(OpenYAMM::Game::runTalentAvailable(magic, hero));
+    hero.skills["BodyMagic"] = {"BodyMagic", 7, SkillMastery::Master};
+    CHECK(OpenYAMM::Game::runTalentAvailable(magic, hero));
+    CHECK(OpenYAMM::Game::runSkillGroupMastery(hero, "magic") == SkillMastery::Master);
+    CHECK(OpenYAMM::Game::runSkillGroupMastery(hero, "Mace") == SkillMastery::None);
+}
+
+TEST_CASE("run.yml talents: numbers by rank, needs and the errors of a broken table")
+{
+    const std::string head = "dungeons:\n  - {map: a.blv, entrance: {x: 0, y: 0, z: 0}}\nrules:\n  route: [0]\n";
+    std::string error;
+    const std::optional<DungeonRunDefinition> run = OpenYAMM::Game::parseDungeonRunDefinition(
+        head
+            + "  levels: {perStop: [2], offers: 5, heal: 0.5}\n"
+            + "  camp: {restFood: 1}\n"
+            + "  talents:\n"
+            + "    - {id: fan, name: Fan, needs: Bow, mastery: expert, maxRank: 3, values: [2, 4, 6], share: 50,\n"
+            + "       arc: 12, icon: talent_multishot, text: \"{value} more arrows\"}\n"
+            + "    - {id: guard, needs: melee, values: [15], values2: [1, 2], seconds: 3, cooldown: 20, radius: 500}\n",
+        error);
+    REQUIRE_MESSAGE(run.has_value(), error);
+    const DungeonRunRules &rules = *run->rules;
+    CHECK_EQ(rules.cardOffers, 5);
+    CHECK_EQ(rules.levelUpHealShare, doctest::Approx(0.5));
+    CHECK_EQ(rules.campRestFood, 1);
+    REQUIRE(rules.talent("fan") != nullptr);
+    const OpenYAMM::Game::DungeonRunTalent &fan = *rules.talent("fan");
+    CHECK_EQ(fan.needsSkill, "Bow");
+    CHECK(fan.needsMastery == SkillMastery::Expert);
+    CHECK_EQ(fan.maxRank, 3);
+    CHECK_EQ(fan.value(0), doctest::Approx(0));
+    CHECK_EQ(fan.value(1), doctest::Approx(2));
+    CHECK_EQ(fan.value(3), doctest::Approx(6));
+    // A rank past the list reads the last number.
+    CHECK_EQ(fan.value(7), doctest::Approx(6));
+    CHECK_EQ(fan.share, doctest::Approx(50));
+    CHECK_EQ(fan.arc, doctest::Approx(12));
+    CHECK_EQ(fan.icon, "talent_multishot");
+    const OpenYAMM::Game::DungeonRunTalent &guard = *rules.talent("guard");
+    CHECK_EQ(guard.needsSkill, "melee");
+    CHECK(guard.needsMastery == SkillMastery::Normal);
+    CHECK_EQ(guard.name, "guard");
+    CHECK_EQ(guard.value2(2), doctest::Approx(2));
+    CHECK_EQ(guard.seconds, doctest::Approx(3));
+    CHECK_EQ(guard.cooldown, doctest::Approx(20));
+    CHECK_EQ(guard.radius, doctest::Approx(500));
+    CHECK(rules.talent("none") == nullptr);
+
+    // Without the keys the defaults stand: four offers, a quarter of the hit points, two food.
+    const std::optional<DungeonRunDefinition> bare =
+        OpenYAMM::Game::parseDungeonRunDefinition(head + "  levels: {perStop: [2]}\n", error);
+    REQUIRE_MESSAGE(bare.has_value(), error);
+    CHECK_EQ(bare->rules->cardOffers, 4);
+    CHECK_EQ(bare->rules->levelUpHealShare, doctest::Approx(0.25));
+    CHECK_EQ(bare->rules->campRestFood, 2);
+
+    for (const char *pBroken : {
+             "  talents:\n    - {id: a}\n    - {id: a}\n",
+             "  talents:\n    - {name: Nameless}\n",
+             "  talents:\n    - {id: a, needs: NoSuchSkill}\n",
+             "  talents:\n    - {id: a, needs: Bow, mastery: supreme}\n",
+             "  shops:\n    - {afterStop: 1, name: Shop, house: 5, stock: [{count: 3}]}\n",
+             "  rewards:\n    guardians:\n      - {item: sword}\n"})
+    {
+        CHECK_FALSE(OpenYAMM::Game::parseDungeonRunDefinition(head + pBroken, error).has_value());
+        CHECK_FALSE(error.empty());
+    }
+}
+
+TEST_CASE("a run's level-up heals: a quarter of the maximum, a hero who is out comes round, the dead stay dead")
+{
+    using OpenYAMM::Game::CharacterCondition;
+    using OpenYAMM::Game::Party;
+    DungeonRunRules rules;
+    rules.levelsPerLevelUp = 4;
+    rules.levelUpHealShare = 0.25;
+    Party party;
+    Party::Snapshot snapshot = {};
+
+    for (int index = 0; index < 5; ++index)
+    {
+        // The maximum as the game works it out (without a class table: the engine's fallback by level).
+        Character hero = testHero("Knight");
+        OpenYAMM::Game::GameMechanics::refreshCharacterBaseResources(hero, true, nullptr);
+        snapshot.members.push_back(hero);
+    }
+
+    party.restoreSnapshot(snapshot);
+    REQUIRE_EQ(party.members().size(), 5u);
+    const auto set = [&party](size_t index, int health, std::initializer_list<CharacterCondition> conditions)
+    {
+        Character &hero = *party.member(index);
+        hero.health = health;
+
+        for (CharacterCondition condition : conditions)
+        {
+            hero.conditions.set(static_cast<size_t>(condition));
+        }
+    };
+    const int maximum = Party::effectiveMaximumHealth(*party.member(0));
+    REQUIRE(maximum >= 8);
+    const int quarter = (maximum + 3) / 4;
+    // Hurt, out below zero, nearly whole, dead, petrified.
+    set(0, 10, {});
+    set(1, -30, {CharacterCondition::Unconscious});
+    set(2, maximum - 1, {});
+    set(3, 0, {CharacterCondition::Dead});
+    set(4, 40, {CharacterCondition::Petrified});
+
+    OpenYAMM::Game::grantRunLevelUp(rules, party);
+    // The levels raise the maximum; the share is of the new one.
+    const int raised = Party::effectiveMaximumHealth(*party.member(0));
+    const int share = (raised * 25 + 99) / 100;
+    CHECK(raised > maximum);
+    CHECK(share >= quarter);
+    CHECK_EQ(party.member(0)->health, 10 + share);
+    // Below zero: up to the share, awake.
+    CHECK_EQ(party.member(1)->health, share);
+    CHECK_FALSE(party.member(1)->conditions.test(static_cast<size_t>(CharacterCondition::Unconscious)));
+    // Never above the maximum.
+    CHECK_EQ(party.member(2)->health, std::min(raised, maximum - 1 + share));
+    CHECK(party.member(2)->health <= raised);
+    // The dead and the petrified are left as they are, but level up and are owed their card like everyone.
+    CHECK_EQ(party.member(3)->health, 0);
+    CHECK(party.member(3)->conditions.test(static_cast<size_t>(CharacterCondition::Dead)));
+    CHECK_EQ(party.member(4)->health, 40);
+    CHECK(party.member(4)->conditions.test(static_cast<size_t>(CharacterCondition::Petrified)));
+
+    for (size_t index = 0; index < 5; ++index)
+    {
+        CHECK_EQ(party.member(index)->level, 5u);
+        CHECK_EQ(party.member(index)->eventVariables[OpenYAMM::Game::RunPendingCardsVariable], 1);
+    }
+
+    // A share of nothing heals nothing.
+    rules.levelUpHealShare = 0.0;
+    set(0, 5, {});
+    OpenYAMM::Game::grantRunLevelUp(rules, party);
+    CHECK_EQ(party.member(0)->health, 5);
+}
+
+TEST_CASE("a run saved before stable ids: perk levels move to the perks' ids once, and nothing is added twice")
+{
+    using OpenYAMM::Game::migrateLegacyRunPerks;
+    using OpenYAMM::Game::RunLegacyPerkLevelVariableBase;
+    using OpenYAMM::Game::runTalentRank;
+    // By hand: every perk of the first version's run.yml, by its index there.
+    Character hero = testHero("Archer");
+    const std::vector<std::string> ids = {"might", "endurance", "accuracy", "speed", "intellect", "personality",
+        "health", "mana", "armor", "resistances", "melee_damage", "ranged_damage", "explosive_arrows"};
+
+    for (size_t index = 0; index < ids.size(); ++index)
+    {
+        hero.eventVariables[static_cast<uint16_t>(RunLegacyPerkLevelVariableBase + index)] =
+            static_cast<int32_t>(index % 3 + 1);
+    }
+
+    hero.eventVariables[OpenYAMM::Game::RunCardsTakenVariable] = 7;
+    hero.eventVariables[OpenYAMM::Game::RunPendingCardsVariable] = 2;
+    hero.permanentBonuses.might = 15;
+    hero.playerBits.insert(OpenYAMM::Game::RunExplosiveArrowsPlayerBit);
+    CHECK(migrateLegacyRunPerks(hero));
+
+    for (size_t index = 0; index < ids.size(); ++index)
+    {
+        CHECK_EQ(runTalentRank(hero, ids[index]), static_cast<int>(index % 3 + 1));
+        CHECK_FALSE(hero.eventVariables.contains(static_cast<uint16_t>(RunLegacyPerkLevelVariableBase + index)));
+    }
+
+    // The amounts were in the hero already; the counts of cards are kept.
+    CHECK_EQ(hero.permanentBonuses.might, 15);
+    CHECK_EQ(hero.eventVariables[OpenYAMM::Game::RunCardsTakenVariable], 7);
+    CHECK_EQ(hero.eventVariables[OpenYAMM::Game::RunPendingCardsVariable], 2);
+    // Once: a second pass finds nothing, and a hero of a new run has nothing to move.
+    CHECK_FALSE(migrateLegacyRunPerks(hero));
+    Character fresh = testHero("Knight");
+    CHECK_FALSE(migrateLegacyRunPerks(fresh));
+    CHECK(fresh.talentRanks.empty());
+    // A perk at its last level is not offered again; the arrows neither.
+    DungeonRunRules rules = *installedRulesRun().rules;
+    hero.skills["Bow"] = {"Bow", 1, SkillMastery::Normal};
+
+    for (uint64_t seed = 0; seed < 30; ++seed)
+    {
+        for (const RunCard &card : OpenYAMM::Game::dealRunCards(rules, hero, nullptr, seed, 0))
+        {
+            CHECK(card.talent != "accuracy");
+            CHECK(card.talent != "explosive_arrows");
+
+            if (card.talent == "might")
+            {
+                CHECK_EQ(card.rank, 2);
+            }
+        }
+    }
+}
+
+TEST_CASE("Minotaur frozen 2.4 v184 run keeps its perks under stable ids and plays on")
+{
+    using namespace OpenYAMM::Game;
+    const std::filesystem::path fixture = std::filesystem::path(OPENYAMM_SOURCE_DIR)
+        / "tests/fixtures/minotaur-2.4-v184-roguelike-perks.oysav";
+    std::string error;
+    std::optional<GameSaveData> save = loadGameDataFromPath(fixture, error);
+    REQUIRE_MESSAGE(save, error);
+    CHECK(save->sourceSaveVersion == 183);
+    CHECK(save->mapFileName == "6d01.blv");
+    CHECK(save->ruleset.id == "roguelike");
+    REQUIRE(save->party.members.size() == 4);
+    RoguelikeRunState state;
+    readRunState(save->namedGlobalVars, state);
+    CHECK(state.entered == 1);
+    CHECK(state.levelUps == 3);
+    CHECK(state.guardian == RoguelikeRunState::GuardianAlive);
+    // No guardian was slain yet in that save, and the old version gave no rewards.
+    CHECK(state.rewarded == 0);
+
+    std::vector<Character> &heroes = save->party.members;
+    // As the old writer left it: levels by index (1 endurance, 6 health, 7 mana, 5 personality, 3 speed, 8 armor).
+    const std::vector<std::vector<std::pair<int, int>>> oldLevels = {
+        {{1, 1}, {6, 1}}, {{7, 1}, {5, 1}}, {{3, 2}}, {{8, 1}}};
+
+    for (size_t index = 0; index < heroes.size(); ++index)
+    {
+        CHECK(heroes[index].talentRanks.empty());
+
+        for (const auto &[perk, level] : oldLevels[index])
+        {
+            CHECK_EQ(heroes[index].eventVariables[static_cast<uint16_t>(RunLegacyPerkLevelVariableBase + perk)],
+                level);
+        }
+    }
+
+    const std::vector<CharacterStatBonuses> before = {heroes[0].permanentBonuses, heroes[1].permanentBonuses,
+        heroes[2].permanentBonuses, heroes[3].permanentBonuses};
+    // The amounts the old cards added, once each.
+    CHECK_EQ(before[0].endurance, 15);
+    CHECK_EQ(before[0].maxHealth, 30);
+    CHECK_EQ(before[1].maxSpellPoints, 25);
+    CHECK_EQ(before[1].personality, 15);
+    CHECK_EQ(before[2].speed, 30);
+    CHECK_EQ(before[3].armorClass, 8);
+
+    for (Character &hero : heroes)
+    {
+        CHECK(migrateLegacyRunPerks(hero));
+        CHECK_FALSE(migrateLegacyRunPerks(hero));
+    }
+
+    const std::vector<std::unordered_map<std::string, uint8_t>> ranks = {
+        {{"endurance", 1}, {"health", 1}},
+        {{"mana", 1}, {"personality", 1}},
+        {{"speed", 2}},
+        {{"armor", 1}}};
+
+    for (size_t index = 0; index < heroes.size(); ++index)
+    {
+        const Character &hero = heroes[index];
+        CHECK(hero.talentRanks == ranks[index]);
+        // Nothing doubled, nothing lost.
+        CHECK(bonusNumbers(hero.permanentBonuses) == bonusNumbers(before[index]));
+        CHECK_EQ(hero.level, 13u);
+
+        for (const auto &[key, value] : hero.eventVariables)
+        {
+            CHECK_FALSE((key >= RunLegacyPerkLevelVariableBase && key < RunLegacyPerkLevelVariableBase + 64));
+        }
+    }
+
+    // The skill cards and the counts of cards are as they were: Zoltan is still owed his third.
+    CHECK(heroes[0].findSkillByCanonicalName("LeatherArmor")->mastery == SkillMastery::Expert);
+    CHECK(heroes[1].findSkillByCanonicalName("Bow")->mastery == SkillMastery::Expert);
+    CHECK(heroes[2].findSkillByCanonicalName("BodyMagic")->mastery == SkillMastery::Expert);
+    CHECK(heroes[3].findSkillByCanonicalName("Bow")->mastery == SkillMastery::Normal);
+
+    for (size_t index = 0; index < heroes.size(); ++index)
+    {
+        CHECK_EQ(heroes[index].eventVariables[RunCardsTakenVariable], index == 3 ? 2 : 3);
+        CHECK_EQ(heroes[index].eventVariables[RunPendingCardsVariable], index == 3 ? 1 : 0);
+    }
+
+    // The owed card comes in the new form: four different cards, the same after another load.
+    const DungeonRunRules rules = *installedRulesRun().rules;
+    const std::vector<RunCard> offer = dealRunCards(rules, heroes[3], nullptr, save->randomRootSeed, 3);
+    CHECK(offer == dealRunCards(rules, heroes[3], nullptr, save->randomRootSeed, 3));
+
+    // The migrated run is written and read back as it is.
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "minotaur-v184-run-ids.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
+    const std::optional<GameSaveData> restored = loadGameDataFromPath(path, error);
+    REQUIRE_MESSAGE(restored, error);
+    REQUIRE(restored->party.members.size() == 4);
+
+    for (size_t index = 0; index < heroes.size(); ++index)
+    {
+        CHECK(restored->party.members[index].talentRanks == ranks[index]);
+        CHECK(restored->party.members[index].eventVariables == heroes[index].eventVariables);
+        CHECK(bonusNumbers(restored->party.members[index].permanentBonuses) == bonusNumbers(before[index]));
+    }
+
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("a run's school card owes real books: the weakest attack spell first, none known or already carried")

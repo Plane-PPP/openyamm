@@ -5,13 +5,20 @@
 #include "game/StringUtils.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/items/ItemGenerator.h"
 #include "game/party/Party.h"
 #include "game/rules/RandomStreams.h"
+#include "game/rules/roguelike/RoguelikeTalents.h"
 #include "game/tables/ClassSkillTable.h"
+#include "game/tables/HouseTable.h"
+#include "game/tables/ItemTable.h"
 #include "game/tables/MapStats.h"
+#include "game/tables/SpellTable.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <random>
 #include <utility>
 
 namespace OpenYAMM::Game
@@ -23,6 +30,19 @@ constexpr const char *GuardianVariable = "run.guardian";
 constexpr const char *GuardianActorVariable = "run.guardian_actor";
 constexpr const char *DoorOfferedVariable = "run.door_offered";
 constexpr const char *PromotedVariable = "run.promoted";
+constexpr const char *RewardedVariable = "run.rewarded";
+
+// The perks of the run's first version (OpenYAMM 2.4, 473788e4) in the order of its run.yml, by which their levels were
+// kept. Never reorder or shorten: saves of that version are read by it.
+constexpr std::array<const char *, 13> LegacyPerkIds = {
+    "might", "endurance", "accuracy", "speed", "intellect", "personality", "health", "mana", "armor", "resistances",
+    "melee_damage", "ranged_damage", "explosive_arrows"};
+
+// The skills behind a talent's group.
+constexpr std::array<const char *, 8> MeleeSkills = {
+    "Sword", "Axe", "Mace", "Dagger", "Spear", "Staff", "Unarmed", "Armsmaster"};
+constexpr std::array<const char *, 9> MagicSkills = {"FireMagic", "AirMagic", "WaterMagic", "EarthMagic",
+    "SpiritMagic", "MindMagic", "BodyMagic", "LightMagic", "DarkMagic"};
 
 int variableOr(const std::unordered_map<std::string, int32_t> &variables, const char *pName, int fallback)
 {
@@ -77,8 +97,8 @@ uint32_t spellRanksForMastery(SkillMastery mastery)
     }
 }
 
-// Adds `amount` of the perk's stat to the hero's permanent bonuses; false for a stat the rules do not know.
-bool applyPerkStat(Character &character, const std::string &stat, int amount)
+// Adds `amount` of the talent's stat to the hero's permanent bonuses; false for a stat the rules do not know.
+bool applyTalentStat(Character &character, const std::string &stat, int amount)
 {
     CharacterStatBonuses &bonuses = character.permanentBonuses;
 
@@ -146,6 +166,7 @@ void readRunState(const std::unordered_map<std::string, int32_t> &variables, Rog
     state.guardianActor = variableOr(variables, GuardianActorVariable, -1);
     state.doorOffered = variableOr(variables, DoorOfferedVariable, 0);
     state.promoted = variableOr(variables, PromotedVariable, 0);
+    state.rewarded = std::max(variableOr(variables, RewardedVariable, 0), 0);
 }
 
 void writeRunState(const RoguelikeRunState &state, std::unordered_map<std::string, int32_t> &variables)
@@ -156,6 +177,7 @@ void writeRunState(const RoguelikeRunState &state, std::unordered_map<std::strin
     variables[GuardianActorVariable] = state.guardianActor;
     variables[DoorOfferedVariable] = state.doorOffered;
     variables[PromotedVariable] = state.promoted;
+    variables[RewardedVariable] = state.rewarded;
 }
 
 uint32_t runSkillLevelForMastery(SkillMastery mastery)
@@ -175,6 +197,44 @@ uint32_t runSkillLevelForMastery(SkillMastery mastery)
     }
 }
 
+int runTalentRank(const Character &character, std::string_view id)
+{
+    const auto found = character.talentRanks.find(std::string(id));
+    return found != character.talentRanks.end() ? static_cast<int>(found->second) : 0;
+}
+
+SkillMastery runSkillGroupMastery(const Character &character, const std::string &skillOrGroup)
+{
+    const auto best = [&character](const auto &skills)
+    {
+        SkillMastery mastery = SkillMastery::None;
+
+        for (const char *pSkill : skills)
+        {
+            mastery = std::max(mastery, characterMastery(character, pSkill));
+        }
+
+        return mastery;
+    };
+
+    if (skillOrGroup == "melee")
+    {
+        return best(MeleeSkills);
+    }
+
+    if (skillOrGroup == "magic")
+    {
+        return best(MagicSkills);
+    }
+
+    return characterMastery(character, skillOrGroup);
+}
+
+bool runTalentAvailable(const DungeonRunTalent &talent, const Character &character)
+{
+    return talent.needsSkill.empty() || runSkillGroupMastery(character, talent.needsSkill) >= talent.needsMastery;
+}
+
 std::vector<RunCard> dealRunCards(
     const DungeonRunRules &rules,
     const Character &character,
@@ -182,10 +242,10 @@ std::vector<RunCard> dealRunCards(
     uint64_t rootSeed,
     size_t memberIndex)
 {
-    // Steps of skills the hero knows, skills the hero could learn, and perks.
+    // Steps of skills the hero knows, skills the hero could learn, and talents.
     std::vector<RunCard> known;
     std::vector<RunCard> fresh;
-    std::vector<RunCard> perks;
+    std::vector<RunCard> talents;
 
     const bool unrestricted = std::find(
         rules.unrestrictedCharacters.begin(), rules.unrestrictedCharacters.end(), character.characterDataId)
@@ -206,57 +266,59 @@ std::vector<RunCard> dealRunCards(
 
         RunCard card = {};
         card.kind = RunCard::Kind::Skill;
+        card.id = "skill:" + skill;
         card.skill = skill;
         card.mastery = static_cast<SkillMastery>(static_cast<int>(current) + 1);
         const std::string name = displaySkillName(skill);
-        const int books = rules.school(skill) == nullptr
+        card.books = rules.school(skill) == nullptr
             ? 0
             : (current == SkillMastery::None ? rules.booksNewSchool : rules.booksRaisedSchool);
         card.label = current == SkillMastery::None
             ? "Learn " + name
             : name + ": " + masteryName(card.mastery);
 
-        if (books > 0)
+        if (card.books > 0)
         {
-            card.label += " (+" + std::to_string(books) + " spell books)";
+            card.label += " (+" + std::to_string(card.books) + " spell books)";
         }
 
         (current == SkillMastery::None ? fresh : known).push_back(std::move(card));
     }
 
-    for (size_t perkIndex = 0; perkIndex < rules.perks.size(); ++perkIndex)
+    for (const DungeonRunTalent &talent : rules.talents)
     {
-        const DungeonRunPerk &perk = rules.perks[perkIndex];
-        const int level = eventVariable(character, static_cast<uint16_t>(RunPerkLevelVariableBase + perkIndex));
+        const int rank = runTalentRank(character, talent.id);
 
-        if (level >= perk.maxLevel
-            || (!perk.requiresSkill.empty() && characterMastery(character, perk.requiresSkill) == SkillMastery::None))
+        if (rank >= talent.maxRank || !runTalentAvailable(talent, character))
         {
             continue;
         }
 
         RunCard card = {};
-        card.kind = RunCard::Kind::Perk;
-        card.perkIndex = perkIndex;
-        card.perkLevel = level + 1;
-        card.label = perk.name;
+        card.kind = RunCard::Kind::Talent;
+        card.id = "talent:" + talent.id;
+        card.talent = talent.id;
+        card.rank = rank + 1;
+        card.maxRank = talent.maxRank;
+        card.label = talent.name;
 
-        if (perk.maxLevel > 1)
+        if (talent.maxRank > 1)
         {
-            card.label += " (" + std::to_string(card.perkLevel) + "/" + std::to_string(perk.maxLevel) + ")";
+            card.label += " (" + std::to_string(card.rank) + "/" + std::to_string(talent.maxRank) + ")";
         }
 
-        perks.push_back(std::move(card));
+        talents.push_back(std::move(card));
     }
 
     const uint64_t taken = static_cast<uint64_t>(std::max(eventVariable(character, RunCardsTakenVariable), 0));
     RandomStream stream(rootSeed ^ randomNameKey("dungeon_run.cards") ^ (uint64_t(memberIndex + 1) << 32) ^ taken);
     std::vector<RunCard> cards;
+    const size_t offers = static_cast<size_t>(std::max(rules.cardOffers, 1));
 
-    // One step of a known skill and one perk where there are any, then anything left.
-    for (std::vector<RunCard> *pPool : {&known, &perks})
+    // One step of a known skill and one talent where there are any, then anything left.
+    for (std::vector<RunCard> *pPool : {&known, &talents})
     {
-        if (!pPool->empty())
+        if (!pPool->empty() && cards.size() < offers)
         {
             cards.push_back(takeRandom(*pPool, stream));
         }
@@ -264,9 +326,9 @@ std::vector<RunCard> dealRunCards(
 
     std::vector<RunCard> rest = std::move(known);
     rest.insert(rest.end(), std::make_move_iterator(fresh.begin()), std::make_move_iterator(fresh.end()));
-    rest.insert(rest.end(), std::make_move_iterator(perks.begin()), std::make_move_iterator(perks.end()));
+    rest.insert(rest.end(), std::make_move_iterator(talents.begin()), std::make_move_iterator(talents.end()));
 
-    while (cards.size() < 3 && !rest.empty())
+    while (cards.size() < offers && !rest.empty())
     {
         cards.push_back(takeRandom(rest, stream));
     }
@@ -345,11 +407,20 @@ std::vector<uint32_t> applyRunCard(
             }
         }
     }
-    else if (card.perkIndex < rules.perks.size())
+    else if (const DungeonRunTalent *pTalent = rules.talent(card.talent))
     {
-        const DungeonRunPerk &perk = rules.perks[card.perkIndex];
-        applyPerkStat(character, perk.stat, perk.amount);
-        character.eventVariables[static_cast<uint16_t>(RunPerkLevelVariableBase + card.perkIndex)] = card.perkLevel;
+        const int rank = runTalentRank(character, pTalent->id);
+
+        // One rank a card, and its permanent number with it; a card of a rank the hero has adds nothing.
+        if (rank < pTalent->maxRank)
+        {
+            if (!pTalent->stat.empty())
+            {
+                applyTalentStat(character, pTalent->stat, pTalent->amount);
+            }
+
+            character.talentRanks[pTalent->id] = static_cast<uint8_t>(rank + 1);
+        }
     }
 
     character.eventVariables[RunCardsTakenVariable] = taken + 1;
@@ -358,6 +429,98 @@ std::vector<uint32_t> applyRunCard(
     // Endurance, Bodybuilding and the like move the maximums; what the hero has left stays.
     GameMechanics::refreshCharacterBaseResources(character, false, pClassMultiplierTable);
     return bookSpells;
+}
+
+std::vector<uint32_t> grantRunItems(Party &party, const ItemTable &itemTable, const std::vector<uint32_t> &owed)
+{
+    std::vector<uint32_t> waiting;
+
+    for (const uint32_t itemId : owed)
+    {
+        if (itemId == 0 || itemTable.get(itemId) == nullptr)
+        {
+            continue;
+        }
+
+        // The guardian's own piece, known for what it is.
+        InventoryItem item = ItemGenerator::makeInventoryItem(itemId, itemTable, ItemGenerationMode::Generic);
+        item.identified = true;
+
+        if (!party.tryGrantInventoryItem(item))
+        {
+            waiting.push_back(itemId);
+        }
+    }
+
+    return waiting;
+}
+
+std::optional<uint32_t> pickRunGuardianItem(
+    const ItemTable &itemTable,
+    ItemRarity rarity,
+    const std::string &worldId,
+    uint64_t rootSeed,
+    int stop,
+    const std::function<bool(uint32_t)> &taken)
+{
+    std::vector<uint32_t> pool;
+    std::vector<uint32_t> fallback;
+
+    for (const ItemDefinition &entry : itemTable.entries())
+    {
+        if (entry.itemId == 0 || entry.rarity != rarity || entry.value <= 0)
+        {
+            continue;
+        }
+
+        if (taken && taken(entry.itemId))
+        {
+            continue;
+        }
+
+        (entry.availableInWorld(worldId) ? pool : fallback).push_back(entry.itemId);
+    }
+
+    if (pool.empty())
+    {
+        pool = std::move(fallback);
+    }
+
+    if (pool.empty())
+    {
+        return std::nullopt;
+    }
+
+    std::sort(pool.begin(), pool.end());
+    RandomStream stream(rootSeed ^ randomNameKey("dungeon_run.guardian_reward") ^ (uint64_t(std::max(stop, 0)) << 24));
+    return pool[stream.uniform(0, static_cast<uint32_t>(pool.size() - 1))];
+}
+
+bool migrateLegacyRunPerks(Character &character)
+{
+    bool moved = false;
+
+    for (size_t index = 0; index < LegacyPerkIds.size(); ++index)
+    {
+        const auto found =
+            character.eventVariables.find(static_cast<uint16_t>(RunLegacyPerkLevelVariableBase + index));
+
+        if (found == character.eventVariables.end())
+        {
+            continue;
+        }
+
+        if (found->second > 0)
+        {
+            uint8_t &rank = character.talentRanks[LegacyPerkIds[index]];
+            rank = static_cast<uint8_t>(std::max<int>(rank, std::min<int>(found->second, 255)));
+        }
+
+        character.eventVariables.erase(found);
+        moved = true;
+    }
+
+    return moved;
 }
 
 void grantRunLevelUp(const DungeonRunRules &rules, Party &party)
@@ -374,6 +537,25 @@ void grantRunLevelUp(const DungeonRunRules &rules, Party &party)
         pMember->level += static_cast<uint32_t>(rules.levelsPerLevelUp);
         pMember->eventVariables[RunPendingCardsVariable] = eventVariable(*pMember, RunPendingCardsVariable) + 1;
         GameMechanics::refreshCharacterBaseResources(*pMember, false, party.classMultiplierTable());
+
+        const auto has = [pMember](CharacterCondition condition)
+        {
+            return pMember->conditions.test(static_cast<size_t>(condition));
+        };
+
+        if (rules.levelUpHealShare <= 0.0 || has(CharacterCondition::Dead) || has(CharacterCondition::Petrified)
+            || has(CharacterCondition::Eradicated))
+        {
+            continue;
+        }
+
+        // The level-up's breath: a share of the new maximum, and at least up to that share for a hero below zero.
+        const int maximum = std::max(
+            1, GameMechanics::calculateEffectiveCharacterMaxHealth(*pMember, party.classMultiplierTable()));
+        const int share = std::max(1, static_cast<int>(std::ceil(maximum * rules.levelUpHealShare)));
+        pMember->health = std::max(pMember->health, std::min(maximum, std::max(pMember->health + share, share)));
+        pMember->conditions.reset(static_cast<size_t>(CharacterCondition::Unconscious));
+        pMember->conditionStartGameMinutes[static_cast<size_t>(CharacterCondition::Unconscious)] = 0.0f;
     }
 }
 
@@ -533,20 +715,380 @@ private:
     const RoguelikeRules &m_rules;
 };
 
+// The run's part of combat, spells and classes: its talents' effects (RoguelikeTalents.h); everything else is
+// Standard's.
+namespace
+{
+// Whether the hero carries a shield (Shield Wall).
+bool shieldInHand(const Party &party, const Character &member)
+{
+    const ItemDefinition *pItem =
+        party.itemTable() != nullptr && member.equipment.offHand != 0
+            ? party.itemTable()->get(member.equipment.offHand)
+            : nullptr;
+    return pItem != nullptr && pItem->equipStat == "Shield";
+}
+}
+
+class RoguelikeRules::Combat : public CombatRules
+{
+public:
+    explicit Combat(const RoguelikeRules &rules)
+        : m_rules(rules)
+    {
+    }
+
+    // Sweeping Blows, Multishot and Piercing Arrows.
+    CharacterAttackExtras characterAttackExtras(const Character &attacker) const override
+    {
+        return RunTalents::attackExtras(m_rules.rules(), attacker);
+    }
+
+    // Onslaught: the hero's weapon attacks recover faster while its haste lasts.
+    void resolveCharacterAttack(CharacterAttackResult &attack, const CharacterAttackOnMonster &context) const override
+    {
+        CombatRules::resolveCharacterAttack(attack, context);
+
+        if (context.pCharacter != nullptr)
+        {
+            attack.recoverySeconds *= RunTalents::attackRecoveryScale(m_rules.rules(), *context.pCharacter);
+        }
+    }
+
+    bool usesPartyHitEffects() const override
+    {
+        return true;
+    }
+
+    // A hero's hit landed: Onslaught counts a kill, Bloodthirst heals, an arrow of Pinning Shot slows its target.
+    void applyPartyHitEffects(Party &party, const PartyHitOnMonster &hit) const override
+    {
+        CombatRules::applyPartyHitEffects(party, hit);
+        Character *pMember = party.member(hit.memberIndex);
+
+        if (pMember == nullptr || pMember->talentRanks.empty())
+        {
+            return;
+        }
+
+        const DungeonRunRules &rules = m_rules.rules();
+
+        if (hit.killed)
+        {
+            RunTalents::noteKill(rules, *pMember);
+        }
+
+        if (const int heal = RunTalents::leech(rules, *pMember, hit.damage); heal > 0)
+        {
+            party.healMember(hit.memberIndex, heal);
+        }
+
+        if (!hit.melee && hit.spellId == 0 && !hit.killed && hit.pWorld != nullptr && hit.targetActorIndex)
+        {
+            if (const float seconds = RunTalents::pinSeconds(rules, *pMember); seconds > 0.0f)
+            {
+                hit.pWorld->debuffActor(*hit.targetActorIndex, GameplayActorHitDebuff::Slow, seconds, PinnedSlow);
+            }
+        }
+    }
+
+    // Shield Wall, Unbroken and Cheat Death take their share of a hit before it reaches the hero's hit points.
+    int absorbCharacterDamage(Party &party, size_t memberIndex, int damage) const override
+    {
+        damage = CombatRules::absorbCharacterDamage(party, memberIndex, damage);
+        Character *pMember = party.member(memberIndex);
+
+        if (pMember == nullptr || damage <= 0 || pMember->talentRanks.empty())
+        {
+            return damage;
+        }
+
+        const DungeonRunRules &rules = m_rules.rules();
+        const int maximum = Party::effectiveMaximumHealth(*pMember);
+        damage = RunTalents::absorbDamage(rules, *pMember, shieldInHand(party, *pMember), damage, maximum);
+        const int left =
+            RunTalents::cheatDeath(rules, *pMember, damage, pMember->health, maximum, m_rules.state().entered);
+
+        if (left < damage)
+        {
+            party.requestSpeech(memberIndex, SpeechId::CheatedDeath);
+        }
+
+        return left;
+    }
+
+    // Shield Wall: a hero with a shield may step into a blow or an arrow meant for another; spells are not caught.
+    std::optional<CoverOutcome> coverMonsterAttack(Party &party, const MonsterAttackCover &attack) const override
+    {
+        if (const std::optional<CoverOutcome> cover = CombatRules::coverMonsterAttack(party, attack))
+        {
+            return cover;
+        }
+
+        if (attack.spell || attack.pRng == nullptr)
+        {
+            return std::nullopt;
+        }
+
+        for (size_t memberIndex = 0; memberIndex < party.members().size(); ++memberIndex)
+        {
+            const Character *pMember = party.member(memberIndex);
+
+            if (memberIndex == attack.targetIndex || pMember == nullptr || !GameMechanics::canAct(*pMember))
+            {
+                continue;
+            }
+
+            const float chance =
+                RunTalents::coverChance(m_rules.rules(), *pMember, shieldInHand(party, *pMember));
+
+            if (chance > 0.0f && std::uniform_real_distribution<float>(0.0f, 100.0f)(*attack.pRng) < chance)
+            {
+                return CoverOutcome{memberIndex, false};
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    // Attunement, Overload and a surging spell.
+    int rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical) const override
+    {
+        const int damage = CombatRules::rollSpellDamage(cast, pCritical);
+
+        if (cast.pCaster == nullptr || damage <= 0 || cast.fromScroll)
+        {
+            return damage;
+        }
+
+        const uint32_t spellId = cast.pSpell != nullptr ? static_cast<uint32_t>(std::max(cast.pSpell->id, 0)) : 0;
+        return static_cast<int>(std::lround(
+            damage * RunTalents::spellDamageScale(m_rules.rules(), *cast.pCaster, spellId, cast.monstersNearTarget)));
+    }
+
+    // Resolve at its last rank.
+    bool immuneToMonsterSpecialAttacks(const Character &member) const override
+    {
+        return CombatRules::immuneToMonsterSpecialAttacks(member)
+            || RunTalents::immuneToSpecialAttacks(m_rules.rules(), member);
+    }
+
+    // Binding Circle: a monster standing within the circle struck the hero, and every hostile within it is held.
+    void applyMonsterHitEffects(
+        Party &party,
+        IGameplayWorldRuntime *pWorld,
+        size_t memberIndex,
+        const ActorRulesetFacts &attacker,
+        uint32_t attackerActorId,
+        int appliedDamage,
+        CombatDamageType type) const override
+    {
+        CombatRules::applyMonsterHitEffects(party, pWorld, memberIndex, attacker, attackerActorId, appliedDamage, type);
+        Character *pMember = party.member(memberIndex);
+        const DungeonRunRules &rules = m_rules.rules();
+        const RunTalents::Learned circle = pMember != nullptr
+            ? RunTalents::learned(rules, *pMember, RunTalents::BindingCircle)
+            : RunTalents::Learned{};
+
+        if (!circle || pWorld == nullptr || appliedDamage <= 0)
+        {
+            return;
+        }
+
+        const auto cooldown = pMember->talentState.cooldownSeconds.find(std::string(RunTalents::BindingCircle));
+
+        if (cooldown != pMember->talentState.cooldownSeconds.end() && cooldown->second > 0.0f)
+        {
+            return;
+        }
+
+        const float radius = circle.pTalent->radius;
+        std::vector<size_t> held;
+        bool attackerNear = false;
+
+        for (size_t actorIndex = 0; actorIndex < pWorld->mapActorCount(); ++actorIndex)
+        {
+            GameplayRuntimeActorState actor = {};
+
+            if (!pWorld->actorRuntimeState(actorIndex, actor) || actor.isDead || actor.currentHp <= 0)
+            {
+                continue;
+            }
+
+            const float distance =
+                std::hypot(actor.preciseX - pWorld->partyX(), actor.preciseY - pWorld->partyY()) - float(actor.radius);
+
+            if (distance > radius || std::abs(actor.preciseZ - pWorld->partyFootZ()) > radius)
+            {
+                continue;
+            }
+
+            attackerNear = attackerNear || actor.actorId == attackerActorId;
+
+            if (actor.hostileToParty)
+            {
+                held.push_back(actorIndex);
+            }
+        }
+
+        if (!attackerNear || held.empty())
+        {
+            return;
+        }
+
+        const float seconds = RunTalents::springBindingCircle(rules, *pMember);
+
+        for (size_t actorIndex : held)
+        {
+            pWorld->debuffActor(actorIndex, GameplayActorHitDebuff::Slow, seconds, HeldSlow);
+        }
+    }
+
+    // The talents' timers.
+    void updateCombat(Party &party, IGameplayWorldRuntime &world, float deltaSeconds) const override
+    {
+        CombatRules::updateCombat(party, world, deltaSeconds);
+        RunTalents::update(party, deltaSeconds);
+    }
+
+private:
+    // The actor slow's power: Pinning Shot halves the monster's speed; Binding Circle holds it almost still (a
+    // tenth, as the circle of a MAW solo run does).
+    static constexpr float PinnedSlow = 2.0f;
+    static constexpr float HeldSlow = 10.0f;
+
+    const RoguelikeRules &m_rules;
+};
+
+class RoguelikeRules::Spells : public SpellRules
+{
+public:
+    explicit Spells(const RoguelikeRules &rules)
+        : m_rules(rules)
+    {
+    }
+
+    // Attunement's cheaper spells and Spell Surge's free one; a scroll costs nothing anyway.
+    int manaCost(const CharacterSpellCast &cast, int tableCost) const override
+    {
+        const int cost = SpellRules::manaCost(cast, tableCost);
+        return cast.pCaster != nullptr && !cast.fromScroll
+            ? RunTalents::manaCost(m_rules.rules(), *cast.pCaster, cost)
+            : cost;
+    }
+
+    // Spell Surge counts the hero's casts (a scroll, which spends no spell points, is not one).
+    void afterCast(
+        Party &party,
+        size_t casterIndex,
+        uint32_t spellId,
+        const SpellTable &spellTable,
+        bool indoor,
+        bool fromSpellbook) const override
+    {
+        SpellRules::afterCast(party, casterIndex, spellId, spellTable, indoor, fromSpellbook);
+
+        if (Character *pCaster = party.member(casterIndex))
+        {
+            RunTalents::noteCast(m_rules.rules(), *pCaster);
+        }
+    }
+
+private:
+    const RoguelikeRules &m_rules;
+};
+
+class RoguelikeRules::Classes : public ClassRules
+{
+public:
+    explicit Classes(const RoguelikeRules &rules)
+        : m_rules(rules)
+    {
+    }
+
+    // Resolve's resistances, after the class's own bonuses.
+    void applyClassBonuses(Character &member) const override
+    {
+        ClassRules::applyClassBonuses(member);
+        RunTalents::applyPassives(m_rules.rules(), member);
+    }
+
+private:
+    const RoguelikeRules &m_rules;
+};
+
+class RoguelikeRules::Items : public ItemRules
+{
+public:
+    explicit Items(const RoguelikeRules &rules)
+        : m_rules(rules)
+    {
+    }
+
+    // A camp shop's own stacks (the alchemy reagents) take the last places of its standard shelf.
+    void adjustShopStock(
+        std::vector<InventoryItem> &stock,
+        const HouseEntry &house,
+        const Party &party,
+        const ItemTable &itemTable,
+        std::mt19937 &rng) const override
+    {
+        ItemRules::adjustShopStock(stock, house, party, itemTable, rng);
+        const Party::HouseStockState *pState = party.houseStockState(house.id);
+
+        if (pState == nullptr || &stock != &pState->standardStock)
+        {
+            return;
+        }
+
+        for (const DungeonRunShop &shop : m_rules.rules().shops)
+        {
+            if (shop.houseId != house.id || shop.stock.empty())
+            {
+                continue;
+            }
+
+            size_t slot = stock.size();
+
+            for (auto stack = shop.stock.rbegin(); stack != shop.stock.rend() && slot > 0; ++stack)
+            {
+                if (itemTable.get(stack->itemId) == nullptr)
+                {
+                    continue;
+                }
+
+                InventoryItem item =
+                    ItemGenerator::makeInventoryItem(stack->itemId, itemTable, ItemGenerationMode::Shop);
+                item.quantity = stack->count;
+                stock[--slot] = std::move(item);
+            }
+
+            return;
+        }
+    }
+
+private:
+    const RoguelikeRules &m_rules;
+};
+
 RoguelikeRules::RoguelikeRules(DungeonRunDefinition run)
     : m_run(std::move(run))
     , m_pExperience(std::make_unique<Experience>(*this))
     , m_pMonsters(std::make_unique<Monsters>(*this))
+    , m_pCombat(std::make_unique<Combat>(*this))
+    , m_pSpells(std::make_unique<Spells>(*this))
+    , m_pClasses(std::make_unique<Classes>(*this))
+    , m_pItems(std::make_unique<Items>(*this))
 {
     const GameRules &standard = standardGameRules();
     m_pGameRules = std::make_unique<GameRules>(GameRules{
         *m_pExperience,
-        standard.combat,
+        *m_pCombat,
         *m_pMonsters,
-        standard.items,
+        *m_pItems,
         standard.skills,
-        standard.spells,
-        standard.classes,
+        *m_pSpells,
+        *m_pClasses,
         standard.potions,
         standard.crafting});
 }

@@ -259,6 +259,25 @@ struct PartyHitStatus
     int monstersHit = 1;
 };
 
+// What a party member's ordinary weapon attack does besides its own blow or shot, by the rules' talents (a dungeon
+// run's Sweeping Blows, Multishot and Piercing Arrows; a MAW solo run reads its own talent table instead).
+struct CharacterAttackExtras
+{
+    // A melee swing also strikes this many more monsters within the arc (degrees either side of the view), each at
+    // the share of a normal blow.
+    int sweepTargets = 0;
+    float sweepArcDegrees = 0.0f;
+    float sweepShare = 0.0f;
+    // A bow shot also looses this many arrows fanned over the arc (degrees either side of the aim), each at the share
+    // of a normal shot.
+    int fanArrows = 0;
+    float fanArcDegrees = 0.0f;
+    float fanShare = 0.0f;
+    // Every arrow of the shot flies on through this many more monsters, each struck at the share of its damage.
+    int pierceCount = 0;
+    float pierceShare = 0.0f;
+};
+
 // How damage is resolved (devdocs/maw/HANDOFF.md §3.5-3.6). This class builds the Standard MMMerge stages; a ruleset
 // that changes combat derives from it and builds its own lists. Each hit is written stage by stage to the combat
 // trace when that is enabled.
@@ -401,6 +420,8 @@ public:
     // The status line of a party member's hit (MAW: the spell named as the attacker, "(CRIT!)", an area spell's
     // total). Standard: none, the engine's own line.
     virtual std::optional<std::string> partyHitStatusText(const PartyHitStatus &status) const;
+    // The extra blows and arrows of the member's ordinary attacks (a dungeon run's talents). Standard: none.
+    virtual CharacterAttackExtras characterAttackExtras(const Character &attacker) const;
     const DamagePipeline<MonsterDamageHit> &damageToMonsterStages() const;
     const DamagePipeline<CharacterDamageHit> &damageToCharacterStages() const;
 

@@ -609,7 +609,7 @@ jobs:
           failed=()
           number=0
           for scenario in $scenarios mm9/shop_after_world_switch.yml rulesets/medusa_start.yml \
-              rulesets/roguelike_run.yml rulesets/standard_exit_dialog.yml \
+              rulesets/roguelike_run.yml rulesets/roguelike_v184_save.yml rulesets/standard_exit_dialog.yml \
               mm8/plane_gateway_keeps_buffs.yml turn_based/maw_potion_spends_turn.yml; do
             number=$((number + 1))
             echo "::group::$scenario"

@@ -10,12 +10,15 @@
 #include "game/events/EventRuntime.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayMonsterSpawn.h"
+#include "game/gameplay/HouseServiceRuntime.h"
+#include "game/items/ItemGenerator.h"
 #include "game/party/Party.h"
 #include "game/rules/roguelike/RoguelikeRules.h"
 #include "game/scene/IndoorSceneRuntime.h"
 #include "game/scene/OutdoorSceneRuntime.h"
 #include "game/tables/ClassSkillTable.h"
 #include "game/tables/ItemTable.h"
+#include "game/ui/RunCardPresentation.h"
 
 #include <SDL3/SDL.h>
 
@@ -36,6 +39,14 @@
 
 namespace OpenYAMM::Game
 {
+namespace
+{
+// How long a closed choice stays away before the run offers it again: a moment for the door's and the camp's, long
+// enough to look at the heroes for a card screen closed with Esc.
+constexpr uint64_t DungeonRunChoiceRetryMilliseconds = 400;
+constexpr uint64_t DungeonRunCardRetryMilliseconds = 20000;
+}
+
 std::optional<DungeonRunDefinition> GameApplication::loadSessionDungeonRun() const
 {
     if (m_pAssetFileSystem == nullptr || m_gameSession.ruleset().isStandard())
@@ -260,7 +271,7 @@ void GameApplication::registerDungeonRunConsoleCommand()
     m_debugConsole.registerCommand({
         .name = "run",
         .description = "Dungeon runs: this run's progress, a new run with a test party, or an answer to its choice.",
-        .usage = "run | run new [seed] | run pick <n> | run leave | run close",
+        .usage = "run | run new [seed] | run pick <n> | run leave | run close | run buy <item>",
         .callback = [this, commandResult](const DebugConsole::CommandContext &context)
         {
             const std::string action = context.args.empty() ? std::string("status") : toLowerCopy(context.args[0]);
@@ -361,6 +372,53 @@ void GameApplication::registerDungeonRunConsoleCommand()
                 return commandResult(true, m_dungeonRunCampOpen ? "The camp." : "Closed.");
             }
 
+            if (action == "buy")
+            {
+                // Buys one of the open camp shop's standard goods by item id, as a click on its shelf does.
+                IGameplayWorldRuntime *pWorldRuntime = m_gameSession.activeWorldRuntime();
+                Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr;
+                const EventDialogContent &dialog = m_gameSession.gameplayScreenRuntime().activeEventDialog();
+                const HouseEntry *pHouse = dialog.isActive && dialog.isHouseDialog
+                    ? m_gameDataLoader.getHouseTable().get(dialog.sourceId)
+                    : nullptr;
+                uint32_t itemId = 0;
+
+                if (context.args.size() >= 2)
+                {
+                    const std::string &text = context.args[1];
+                    std::from_chars(text.data(), text.data() + text.size(), itemId);
+                }
+
+                if (pParty == nullptr || pHouse == nullptr || itemId == 0)
+                {
+                    return commandResult(false, "Usage: run buy <item id>, in a shop");
+                }
+
+                const std::vector<InventoryItem> &stock = HouseServiceRuntime::ensureStock(*pParty,
+                    m_gameDataLoader.getItemTable(), m_gameDataLoader.getStandardItemEnchantTable(),
+                    m_gameDataLoader.getSpecialItemEnchantTable(), *pHouse, pWorldRuntime->gameMinutes(),
+                    HouseStockMode::ShopStandard);
+                const auto found = std::find_if(stock.begin(), stock.end(),
+                    [itemId](const InventoryItem &item) { return item.objectDescriptionId == itemId; });
+
+                if (found == stock.end())
+                {
+                    return commandResult(false, "The shop has no item " + std::to_string(itemId) + ".");
+                }
+
+                const uint32_t quantity = found->quantity;
+                const int goldBefore = pParty->gold();
+                std::string status;
+                const bool bought = HouseServiceRuntime::tryBuyStockItem(*pParty, m_gameDataLoader.getItemTable(),
+                    m_gameDataLoader.getStandardItemEnchantTable(), m_gameDataLoader.getSpecialItemEnchantTable(),
+                    *pHouse, pWorldRuntime->gameMinutes(), HouseStockMode::ShopStandard,
+                    static_cast<size_t>(found - stock.begin()), status);
+                return commandResult(bought,
+                    bought ? "Bought " + std::to_string(quantity) + " of item " + std::to_string(itemId) + " for "
+                            + std::to_string(goldBefore - pParty->gold()) + " gold."
+                           : status);
+            }
+
             if (action == "leave")
             {
                 // Walks out of the dungeon as its exit does, without the exit's own event and dialog.
@@ -401,7 +459,8 @@ void GameApplication::registerDungeonRunConsoleCommand()
 
             if (action != "status")
             {
-                return commandResult(false, "Usage: run | run new [seed] | run pick <n> | run leave | run close");
+                return commandResult(
+                    false, "Usage: run | run new [seed] | run pick <n> | run leave | run close | run buy <item>");
             }
 
             const std::optional<DungeonRunDefinition> dungeonRun = loadSessionDungeonRun();
@@ -445,9 +504,21 @@ void GameApplication::registerDungeonRunConsoleCommand()
                         << static_cast<int>(runClearFraction(pRules->rules(), progress) * 100.0) << "%";
                 }
 
+                out << ", rewards " << state.rewarded;
+
+                // The guardians' items, by stop.
+                for (int stop = 1; stop <= state.rewarded; ++stop)
+                {
+                    out << (stop == 1 ? " (items" : "") << ' '
+                        << m_gameSession.namedGlobalVar("run.reward." + std::to_string(stop), 0)
+                        << (stop == state.rewarded ? ")" : "");
+                }
+
+                out << ", items owed " << m_gameSession.namedGlobalVar("run.items", 0);
+
                 if (const Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr)
                 {
-                    out << "; party";
+                    out << "; gold " << pParty->gold() << " food " << pParty->food() << "; party";
 
                     for (const Character &member : pParty->members())
                     {
@@ -456,13 +527,35 @@ void GameApplication::registerDungeonRunConsoleCommand()
                             << " cards owed "
                             << (pending != member.eventVariables.end() ? pending->second : 0);
                     }
+
+                    out << "; hit points";
+
+                    for (const Character &member : pParty->members())
+                    {
+                        out << ' ' << member.name << ' ' << member.health;
+                    }
+
+                    // Each hero's talents, by id and rank, in a fixed order.
+                    for (const Character &member : pParty->members())
+                    {
+                        std::vector<std::pair<std::string, int>> ranks(
+                            member.talentRanks.begin(), member.talentRanks.end());
+                        std::sort(ranks.begin(), ranks.end());
+                        out << "; " << member.name << " talents:";
+
+                        for (const auto &[id, rank] : ranks)
+                        {
+                            out << ' ' << id << '=' << rank;
+                        }
+                    }
                 }
 
                 if (pWorldRuntime != nullptr && pWorldRuntime->eventRuntimeState() != nullptr
                     && pWorldRuntime->eventRuntimeState()->pendingInputPrompt
                     && m_dungeonRunChoice != DungeonRunChoice::None)
                 {
-                    out << "; asks:";
+                    out << (m_gameSession.gameplayScreenRuntime().activeEventDialog().runCards ? "; card screen" : "")
+                        << "; asks:";
                     int number = 0;
 
                     for (const std::string &answer : pWorldRuntime->eventRuntimeState()->pendingInputPrompt->answers)
@@ -624,8 +717,9 @@ bool GameApplication::openDungeonRunCamp()
 {
     // Three answers only: the dialog's answer panel holds about five lines, and the shops' list (five shops and
     // the way on) did not fit - the way on was cut off below the panel.
-    int foodRequired = m_gameSession.gameplayScreenRuntime().restFoodRequired();
-    foodRequired = std::max(foodRequired, 1);
+    const RoguelikeRules *pRules = m_gameSession.roguelikeRules();
+    // The camp's own price (run.yml), not the map's: the start's food must pay for a rest.
+    const int foodRequired = pRules != nullptr ? pRules->rules().campRestFood : 0;
     std::string text = m_dungeonRunCampNote.empty()
         ? "Camp: the shops. Rest: hit and spell points restored for " + std::to_string(foodRequired)
             + " food. Next dungeon: the way on."
@@ -669,7 +763,8 @@ void GameApplication::restDungeonRunCamp()
         return;
     }
 
-    const int foodRequired = std::max(m_gameSession.gameplayScreenRuntime().restFoodRequired(), 1);
+    const RoguelikeRules *pRules = m_gameSession.roguelikeRules();
+    const int foodRequired = pRules != nullptr ? pRules->rules().campRestFood : 0;
 
     if (pParty->food() < foodRequired)
     {
@@ -921,6 +1016,169 @@ void GameApplication::deliverDungeonRunBooks()
     setVariable("run.books", static_cast<int32_t>(waiting.size()));
 }
 
+void GameApplication::grantDungeonRunGuardianReward()
+{
+    RoguelikeRules *pRules = m_gameSession.roguelikeRules();
+    IGameplayWorldRuntime *pWorldRuntime = m_gameSession.activeWorldRuntime();
+    Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr;
+
+    if (pRules == nullptr || pParty == nullptr)
+    {
+        return;
+    }
+
+    RoguelikeRunState &state = pRules->state();
+    const int stop = state.entered;
+    // Marked first: whatever happens below, this stop's reward is not given twice.
+    state.rewarded = stop;
+    const std::vector<DungeonRunGuardianReward> &rewards = pRules->rules().guardianRewards;
+
+    if (stop <= 0 || static_cast<size_t>(stop) > rewards.size())
+    {
+        return;
+    }
+
+    const DungeonRunGuardianReward &reward = rewards[static_cast<size_t>(stop - 1)];
+    EventRuntimeState *pRuntimeState = pWorldRuntime->eventRuntimeState();
+    const auto setVariable = [this, pRuntimeState](const std::string &name, int32_t value)
+    {
+        m_gameSession.setNamedGlobalVar(name, value);
+
+        if (pRuntimeState != nullptr)
+        {
+            pRuntimeState->namedGlobalVars[name] = value;
+        }
+    };
+
+    if (reward.gold > 0)
+    {
+        pParty->addGold(reward.gold);
+    }
+
+    std::string itemName;
+
+    if (!reward.item.empty())
+    {
+        // No item the run gave before, the party carries or is still owed.
+        std::vector<uint32_t> given;
+
+        for (int earlier = 1; earlier < stop; ++earlier)
+        {
+            given.push_back(
+                static_cast<uint32_t>(m_gameSession.namedGlobalVar("run.reward." + std::to_string(earlier), 0)));
+        }
+
+        const ItemTable &itemTable = m_gameDataLoader.getItemTable();
+        const std::optional<uint32_t> itemId = pickRunGuardianItem(
+            itemTable,
+            reward.item == "relic" ? ItemRarity::Relic : ItemRarity::Artifact,
+            worldIdOfMap(m_gameSession.currentMapFileName()),
+            m_gameSession.randomRootSeed(),
+            stop,
+            [&](uint32_t candidate)
+            {
+                return pParty->hasItemAnywhere(candidate)
+                    || std::find(given.begin(), given.end(), candidate) != given.end();
+            });
+
+        if (itemId.has_value())
+        {
+            const int32_t owed = m_gameSession.namedGlobalVar("run.items", 0);
+            setVariable("run.reward." + std::to_string(stop), static_cast<int32_t>(*itemId));
+            setVariable("run.item." + std::to_string(owed), static_cast<int32_t>(*itemId));
+            setVariable("run.items", owed + 1);
+
+            if (const ItemDefinition *pDefinition = itemTable.get(*itemId))
+            {
+                itemName = Engine::localize(pDefinition->name);
+            }
+        }
+    }
+
+    GAMEPLAY_DEBUG_TRACE(
+        "dungeon_run_reward stop=" + std::to_string(stop) + " gold=" + std::to_string(reward.gold)
+        + " item=\"" + itemName + "\"");
+
+    if (pRuntimeState != nullptr && (reward.gold > 0 || !itemName.empty()))
+    {
+        pRuntimeState->statusMessages.push_back(
+            itemName.empty()
+                ? Engine::tr("The guardian's hoard: {gold} gold.", {{"gold", int64_t(reward.gold)}})
+                : reward.gold > 0
+                    ? Engine::tr("The guardian's hoard: {item} and {gold} gold.",
+                        {{"item", itemName}, {"gold", int64_t(reward.gold)}})
+                    : Engine::tr("The guardian's hoard: {item}.", {{"item", itemName}}));
+    }
+
+    deliverDungeonRunItems();
+}
+
+void GameApplication::deliverDungeonRunItems()
+{
+    IGameplayWorldRuntime *pWorldRuntime = m_gameSession.activeWorldRuntime();
+    Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr;
+    const int32_t owed = m_gameSession.namedGlobalVar("run.items", 0);
+
+    if (pParty == nullptr || owed <= 0)
+    {
+        return;
+    }
+
+    // Owed items wait in the save's variables (run.item.<n>: the item) until a pack, anyone's, has room.
+    std::vector<uint32_t> owedItems;
+
+    for (int32_t index = 0; index < owed; ++index)
+    {
+        owedItems.push_back(
+            static_cast<uint32_t>(std::max(m_gameSession.namedGlobalVar("run.item." + std::to_string(index), 0), 0)));
+    }
+
+    const std::vector<uint32_t> waiting = grantRunItems(*pParty, m_gameDataLoader.getItemTable(), owedItems);
+
+    if (static_cast<int32_t>(waiting.size()) == owed)
+    {
+        return;
+    }
+
+    EventRuntimeState *pRuntimeState = pWorldRuntime->eventRuntimeState();
+    const auto setVariable = [this, pRuntimeState](const std::string &name, int32_t value)
+    {
+        m_gameSession.setNamedGlobalVar(name, value);
+
+        if (pRuntimeState != nullptr)
+        {
+            pRuntimeState->namedGlobalVars[name] = value;
+        }
+    };
+
+    for (int32_t index = 0; index < owed; ++index)
+    {
+        setVariable(
+            "run.item." + std::to_string(index),
+            index < static_cast<int32_t>(waiting.size()) ? static_cast<int32_t>(waiting[static_cast<size_t>(index)])
+                                                          : 0);
+    }
+
+    setVariable("run.items", static_cast<int32_t>(waiting.size()));
+}
+
+void GameApplication::attachDungeonRunCardScreen()
+{
+    const RoguelikeRules *pRules = m_gameSession.roguelikeRules();
+    IGameplayWorldRuntime *pWorldRuntime = m_gameSession.activeWorldRuntime();
+    const Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr;
+    EventDialogContent &dialog = m_gameSession.gameplayScreenRuntime().activeEventDialog();
+
+    if (pRules == nullptr || pParty == nullptr || m_dungeonRunChoice != DungeonRunChoice::Card || !dialog.isActive
+        || dialog.runCards.has_value() || m_dungeonRunChoiceCards.empty())
+    {
+        return;
+    }
+
+    dialog.runCards = buildRunCardDialog(
+        pRules->rules(), *pParty, m_dungeonRunChoiceMember, m_dungeonRunChoiceCards, pRules->state().entered);
+}
+
 bool GameApplication::openDungeonRunChoice(
     const std::string &title, const std::string &text, const std::vector<std::string> &answers)
 {
@@ -1087,6 +1345,8 @@ void GameApplication::answerDungeonRunChoice(int answer)
         m_gameSession.randomRootSeed(),
         m_dungeonRunChoiceMember,
         spellTaken);
+    // A talent's passive numbers (resistances and the like) come with the party's derived state.
+    pParty->refreshDerivedState();
     EventRuntimeState *pRuntimeState = pWorldRuntime->eventRuntimeState();
 
     for (uint32_t spellId : bookSpells)
@@ -1146,6 +1406,11 @@ void GameApplication::updateDungeonRunRules()
         promoteDungeonRunParty();
     }
 
+    if (state.guardian == RoguelikeRunState::GuardianSlain && state.rewarded < state.entered)
+    {
+        grantDungeonRunGuardianReward();
+    }
+
     const bool dialogBusy = pRuntimeState->pendingInputPrompt.has_value()
         || pRuntimeState->pendingDialogueContext.has_value()
         || m_gameSession.gameplayScreenRuntime().activeEventDialog().isActive;
@@ -1169,11 +1434,14 @@ void GameApplication::updateDungeonRunRules()
             m_dungeonRunCampInShops = false;
         }
 
+        // A card screen the player closed (Esc) stays away for a while: the card is owed, not forced.
+        const bool cardClosed = m_dungeonRunChoice == DungeonRunChoice::Card;
         m_dungeonRunChoice = DungeonRunChoice::None;
 
         if (!shopsListClosed)
         {
-            m_dungeonRunChoiceRetryTicks = SDL_GetTicks() + 400;
+            m_dungeonRunChoiceRetryTicks =
+                SDL_GetTicks() + (cardClosed ? DungeonRunCardRetryMilliseconds : DungeonRunChoiceRetryMilliseconds);
         }
     }
 
@@ -1188,6 +1456,7 @@ void GameApplication::updateDungeonRunRules()
         }
 
         deliverDungeonRunBooks();
+        deliverDungeonRunItems();
         storeDungeonRunState();
         return;
     }
@@ -1256,7 +1525,10 @@ void GameApplication::updateDungeonRunRules()
         }
     }
 
+    // The card choice is shown as the card screen (also after the dialog was presented anew).
+    attachDungeonRunCardScreen();
     deliverDungeonRunBooks();
+    deliverDungeonRunItems();
     storeDungeonRunState();
 }
 }

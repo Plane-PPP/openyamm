@@ -28,6 +28,7 @@ add_executable(openyamm_unit_tests
     ProjectMedusaTests.cpp
     DungeonRunTests.cpp
     RoguelikeRulesTests.cpp
+    RoguelikeTalentTests.cpp
     QuickItemSlotTests.cpp
     EffectSystemTests.cpp
     EnergyShieldTests.cpp
@@ -458,6 +459,8 @@ add_executable(openyamm_unit_tests
     ../game/rules/maw/MawNpcPresence.cpp
     ../game/rules/maw/MawRules.cpp
     ../game/rules/roguelike/RoguelikeRules.cpp
+    ../game/rules/roguelike/RoguelikeTalents.cpp
+    ../game/ui/RunCardPresentation.cpp
     ../game/rules/maw/MawSkillFormulas.cpp
     ../game/rules/maw/MawClassRules.cpp
     ../game/rules/maw/MawClassSpells.cpp

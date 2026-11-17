@@ -723,6 +723,8 @@ bool ScenarioYamlLoader::parseStepKind(const std::string &value, ScenarioStepKin
 ScenarioLoadResult ScenarioYamlLoader::load(const std::filesystem::path &path) const
 {
     ScenarioLoadResult result = {};
+    std::error_code absoluteError;
+    result.document.sourcePath = std::filesystem::absolute(path, absoluteError);
     YAML::Node root;
 
     try

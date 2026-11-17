@@ -1,11 +1,14 @@
 #pragma once
 
 #include "engine/AssetFileSystem.h"
+#include "game/party/SkillData.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace OpenYAMM::Game
@@ -30,18 +33,44 @@ struct DungeonRunStop
     float groupScale = 1.0f;
 };
 
-// A numeric perk a level-up card may give: `amount` more of `stat` per level, up to maxLevel levels. The stats are
-// the character's permanent bonuses (might ... luck, health, mana, armor, melee_attack, ranged_attack, melee_damage,
-// ranged_damage, resistances) and "explosive_arrows", which makes the hero's arrows burst as a bow of Carnage's do.
-struct DungeonRunPerk
+// A talent a level-up card may give, one rank a card, up to maxRank. Its id is stable: it names the hero's rank in
+// Character::talentRanks and in saves, whatever the order of run.yml. A talent with a `stat` adds `amount` of it to the
+// hero's permanent bonuses with every rank (might ... luck, health, mana, armor, melee_attack, ranged_attack,
+// melee_damage, ranged_damage, resistances) or, for "explosive_arrows", makes the hero's arrows burst as a bow of
+// Carnage's do. Every other talent is an effect of the run's rules (game/rules/roguelike/RoguelikeTalents.h), which
+// read the rank's numbers here.
+struct DungeonRunTalent
 {
     std::string id;
+    // English name and effect line (keys of the translations); {value} and {value2} are the rank's numbers.
     std::string name;
+    std::string text;
+    // An item icon (icons_x2) for the card.
+    std::string icon;
     std::string stat;
     int amount = 0;
-    int maxLevel = 1;
-    // A skill the hero must have (canonical name), empty for none.
-    std::string requiresSkill;
+    int maxRank = 1;
+    // What the hero must have before the card is offered: a skill (canonical name), or a group of skills, any of
+    // which will do ("melee": a melee weapon skill or Armsmaster; "magic": a school of magic), at this mastery or
+    // above. Empty: nothing.
+    std::string needsSkill;
+    SkillMastery needsMastery = SkillMastery::Normal;
+    // The rank's numbers, values[rank - 1] (the last repeats for a rank beyond the list).
+    std::vector<float> values;
+    std::vector<float> values2;
+    // Percent of a normal blow or shot, seconds an effect lasts, seconds before it may come again, world units,
+    // degrees either side of the view, and a count of monsters.
+    float share = 0.0f;
+    float seconds = 0.0f;
+    float cooldown = 0.0f;
+    float radius = 0.0f;
+    float arc = 0.0f;
+    int targets = 0;
+    // The spells the talent reads (Overload's area spells).
+    std::vector<uint32_t> spells;
+
+    float value(int rank) const;
+    float value2(int rank) const;
 };
 
 // A school of magic whose skill card also gives spell books: the school's spells are firstSpell ... firstSpell + 10
@@ -53,6 +82,13 @@ struct DungeonRunSchool
     uint32_t combatSpell = 0;
 };
 
+// Goods a camp shop always has on its shelf besides its own stock: `count` of an item in one stack.
+struct DungeonRunShopStack
+{
+    uint32_t itemId = 0;
+    uint32_t count = 1;
+};
+
 // A shop of the camp between two dungeons: a house of the game, whose stock, prices and trade are the engine's own.
 struct DungeonRunShop
 {
@@ -61,6 +97,15 @@ struct DungeonRunShop
     // The camp menu's line.
     std::string name;
     uint32_t houseId = 0;
+    // Stacks that take the last places of the shop's standard shelf (the camp's alchemy reagents).
+    std::vector<DungeonRunShopStack> stock;
+};
+
+// What the guardian of a stop leaves the party: gold and one rare item of a rarity ("artifact", "relic"; empty: none).
+struct DungeonRunGuardianReward
+{
+    int gold = 0;
+    std::string item;
 };
 
 // The rules of a run (run.yml `rules`). Every number is a starting value for testing, kept in data to be tuned
@@ -76,6 +121,13 @@ struct DungeonRunRules
     // Level-ups each stop gives, spread evenly up to its guardian, and the levels each raises every hero by.
     std::vector<int> levelUps;
     int levelsPerLevelUp = 4;
+    // Cards a level-up offers each hero, one of which is taken.
+    int cardOffers = 4;
+    // A level-up brings a hero who is out round and gives back this share of the maximum hit points (at least up to
+    // it); the dead, the petrified and the eradicated stay as they are.
+    double levelUpHealShare = 0.25;
+    // Food a rest in the camp costs (the rest of the game elsewhere keeps its own price).
+    int campRestFood = 2;
     int startFood = 0;
     int startGold = 0;
     // After the guardian of this stop (1-based) the party is promoted; 0: never.
@@ -85,9 +137,13 @@ struct DungeonRunRules
     int booksRaisedSchool = 2;
     // The skills cards may teach and raise (canonical names).
     std::vector<std::string> skills;
-    std::vector<DungeonRunPerk> perks;
+    std::vector<DungeonRunTalent> talents;
     std::vector<DungeonRunSchool> schools;
     std::vector<DungeonRunShop> shops;
+    // The guardians' rewards, one per stop (none for a stop beyond the list).
+    std::vector<DungeonRunGuardianReward> guardianRewards;
+    // The cards' pictures by skill (canonical name): an item icon or a HUD texture.
+    std::unordered_map<std::string, std::string> skillIcons;
     // Heroes (character_data.txt ids) whose cards know no class caps: any skill of the pool up to Grandmaster.
     std::vector<uint32_t> unrestrictedCharacters;
 
@@ -95,6 +151,7 @@ struct DungeonRunRules
     // Level-ups the stops before this one (0-based) gave in full.
     int levelUpsBefore(size_t stop) const;
     const DungeonRunSchool *school(const std::string &skill) const;
+    const DungeonRunTalent *talent(std::string_view id) const;
 };
 
 struct DungeonRunDefinition

@@ -263,6 +263,7 @@ add_library(openyamm_game STATIC
     rules/maw/MawNpcPresence.cpp
     rules/maw/MawRules.cpp
     rules/roguelike/RoguelikeRules.cpp
+    rules/roguelike/RoguelikeTalents.cpp
     rules/maw/MawRulesFactory.cpp
     rules/maw/MawSkillFormulas.cpp
     rules/maw/MawClassRules.cpp
@@ -380,6 +381,8 @@ add_library(openyamm_game STATIC
     ui/GameplayBuffHud.cpp
     ui/GameplaySoloHud.cpp
     ui/GameplaySoloTalentsPage.cpp
+    ui/GameplayRunCardPicker.cpp
+    ui/RunCardPresentation.cpp
     ui/GameplaySoloBarSelector.cpp
     ui/GameplayCombatLogPanel.cpp
     ui/CalendarText.cpp

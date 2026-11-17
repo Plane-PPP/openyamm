@@ -1,6 +1,7 @@
 #include "game/ui/GameplayUiSkin.h"
 #include "engine/Localization.h"
 #include "game/ui/GameplayDialogueRenderer.h"
+#include "game/ui/GameplayRunCardPicker.h"
 #include "game/ui/GameplayBenchPainter.h"
 #include "game/ui/GameplayMm9TalkBar.h"
 #include "game/ui/GameplayHudCommon.h"
@@ -514,6 +515,18 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
     }
 
     view.clearHudLayoutRuntimeHeightOverrides();
+
+    // A dungeon run's level-up cards have a screen of their own in place of the choice box.
+    if (view.activeEventDialog().runCards)
+    {
+        if (renderAboveHud)
+        {
+            GameplayRunCardPicker::render(view, width, height);
+        }
+
+        return;
+    }
+
     const PointerRenderInput pointerInput = pointerRenderInput(view);
     const float dialogMouseX = pointerInput.mouseX;
     const float dialogMouseY = pointerInput.mouseY;
