@@ -1,0 +1,18 @@
+Genuine production writer output of the 2.4 Roguelike run, frozen 2026-11-16 before the next version's changes
+(stable card ids, talents instead of numeric perks).
+Source 473788e41681 (integration/minotaur-v2.4-20261115), unmodified tree; OYMINO1/v184, upstream schema 183.
+Linux binary rebuilt from that tree: SHA256 61592dd201c81e0c5745d8e0818b7cfa6b3e7463bac382fe5afe6f1ab11bf44a.
+Scenario: `run new 4` (seed 4, Goblinwatch, Knight / Archer / Cleric / Sorcerer), every monster slain, three
+level-ups, the way to the entrance declined, guardian alive. Eleven of the twelve cards taken through `run pick`:
+  Roderick: Endurance +15 (1/3), Hit points +30 (1/3), Leather Armor: Expert
+  Alexis:   Bow: Expert, Spell points +25 (1/3), Personality +15 (1/3)
+  Serena:   Body Magic: Expert (+2 spell books), Speed +15 (1/3), Speed +15 (2/3)
+  Zoltan:   Learn Bow, Armor class +8 (1/3); his third card is still owed
+            (offered then: Staff: Expert / Armor class +8 (2/3) / Melee damage +4 (1/3))
+Perk levels are stored by the perk's index in that version's run.yml (Character::eventVariables 0xF100 + index:
+0 might, 1 endurance, 2 accuracy, 3 speed, 4 intellect, 5 personality, 6 health, 7 mana, 8 armor, 9 resistances,
+10 melee_damage, 11 ranged_damage, 12 explosive_arrows) and their amounts are already in permanentBonuses.
+Captured using OPENYAMM_SCENARIO_SAVE_DIR with that binary and this checkout's assets_dev.
+Protected run 20261116T160156Z-c1bfe8c44d: all steps passed (the save was loaded back by the same binary), exit 0.
+407411 bytes; SHA256 c658fc95ce016ada8df5c2a398efc9ad5d17ad9611c6049679ea5c2a4fb92f46.
+No private player save used or changed. Never regenerate with a newer writer.
