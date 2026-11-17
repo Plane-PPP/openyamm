@@ -14,7 +14,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <map>
 #include <random>
 #include <set>
 #include <string>
@@ -922,26 +921,31 @@ TEST_CASE("the camp's alchemy shop sells the run's stacks of herbs and bottles, 
         return HouseServiceRuntime::ensureStock(party, data().itemTable, data().standardItemEnchantTable,
             data().specialItemEnchantTable, *pShop, 9.0f * 60.0f, HouseStockMode::ShopStandard);
     };
-    const std::vector<InventoryItem> stock = stockOf(&run.gameRules());
-    std::map<uint32_t, uint32_t> stacks;
-
-    for (const InventoryItem &item : stock)
+    // The shop's own goods are random (each party has its own stock seed) and may hold a single herb too; the run's
+    // stacks take the last places of the shelf, in run.yml's order: three of each herb and three bottles.
+    for (int attempt = 0; attempt < 20; ++attempt)
     {
-        if (item.objectDescriptionId >= 1762 && item.objectDescriptionId <= 1765)
+        const std::vector<InventoryItem> stock = stockOf(&run.gameRules());
+        REQUIRE(stock.size() >= 4);
+        std::vector<std::pair<uint32_t, uint32_t>> last;
+
+        for (size_t slot = stock.size() - 4; slot < stock.size(); ++slot)
         {
-            stacks[item.objectDescriptionId] += item.quantity;
+            last.emplace_back(stock[slot].objectDescriptionId, stock[slot].quantity);
         }
+
+        CHECK(last == std::vector<std::pair<uint32_t, uint32_t>>{{1764, 3}, {1763, 3}, {1762, 3}, {1765, 3}});
     }
 
-    // The first camp's: three of each herb and three bottles, in single stacks.
-    CHECK(stacks == std::map<uint32_t, uint32_t>{{1762, 3}, {1763, 3}, {1764, 3}, {1765, 3}});
+    const std::vector<InventoryItem> stock = stockOf(&run.gameRules());
     // Bought one at a time at the herb's own price, as the engine's stacks are.
     Party buyer;
     buyer.setItemTable(&data().itemTable);
     buyer.setRules(&run.gameRules());
-    const auto herb = std::find_if(stock.begin(), stock.end(),
+    const auto herb = std::find_if(stock.rbegin(), stock.rend(),
         [](const InventoryItem &item) { return item.objectDescriptionId == 1764; });
-    REQUIRE(herb != stock.end());
+    REQUIRE(herb != stock.rend());
+    CHECK_EQ(herb->quantity, 3u);
     const int price = HouseServiceRuntime::buyPrice(buyer, data().itemTable, data().standardItemEnchantTable,
         data().specialItemEnchantTable, *pShop, *herb);
     CHECK(price > 0);

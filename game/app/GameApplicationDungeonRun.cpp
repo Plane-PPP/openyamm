@@ -398,10 +398,12 @@ void GameApplication::registerDungeonRunConsoleCommand()
                     m_gameDataLoader.getItemTable(), m_gameDataLoader.getStandardItemEnchantTable(),
                     m_gameDataLoader.getSpecialItemEnchantTable(), *pHouse, pWorldRuntime->gameMinutes(),
                     HouseStockMode::ShopStandard);
-                const auto found = std::find_if(stock.begin(), stock.end(),
+                // From the end: the run's own stacks take the shelf's last places (its random goods may hold the
+                // same item singly).
+                const auto found = std::find_if(stock.rbegin(), stock.rend(),
                     [itemId](const InventoryItem &item) { return item.objectDescriptionId == itemId; });
 
-                if (found == stock.end())
+                if (found == stock.rend())
                 {
                     return commandResult(false, "The shop has no item " + std::to_string(itemId) + ".");
                 }
@@ -412,7 +414,7 @@ void GameApplication::registerDungeonRunConsoleCommand()
                 const bool bought = HouseServiceRuntime::tryBuyStockItem(*pParty, m_gameDataLoader.getItemTable(),
                     m_gameDataLoader.getStandardItemEnchantTable(), m_gameDataLoader.getSpecialItemEnchantTable(),
                     *pHouse, pWorldRuntime->gameMinutes(), HouseStockMode::ShopStandard,
-                    static_cast<size_t>(found - stock.begin()), status);
+                    static_cast<size_t>(stock.rend() - found - 1), status);
                 return commandResult(bought,
                     bought ? "Bought " + std::to_string(quantity) + " of item " + std::to_string(itemId) + " for "
                             + std::to_string(goldBefore - pParty->gold()) + " gold."
