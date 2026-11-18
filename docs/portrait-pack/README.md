@@ -68,7 +68,10 @@ $PACKS/
 5. Не получается шаг (ошибка инструмента, пустая маска, регистрация не сходится) — остановиться и написать, что и
    почему. Обходов не изобретать.
 6. Старые попытки не перезаписывать: новые продолжают нумерацию. Исправление — одна правка за раунд по таблицам
-   `faces.md` (раздел 6) и `doll.md` (раздел 6), запись в `changes.md`.
+   `faces.md` (раздел 6) и `doll.md` (раздел 6), запись в `changes.md`. Прежде чем генерировать заново, проверить
+   сырую генерацию: если дефекта в ней нет, виновата сборка, и чинится скрипт. Правка, которая помогла, переносится в
+   значения по умолчанию инструмента и в справочник (`faces.md`, `doll.md`, `dolls.md`), а не остаётся в настройках
+   одного прогона.
 7. Скрипты — через `safe-heavy-run run --profile light -- $PACKS/_venv/bin/python …`; для `qa` всего набора, если
    light (512 МиБ) не хватит, — без `--profile`. Лимиты не повышать (`/home/plane/AGENTS.md`).
 
@@ -83,7 +86,8 @@ $PACKS/
    ×4 LANCZOS в `x4/`).
 3. `tools/portrait_pack/doll_graft.py` — по `upstream-reference/mm9_pc_dolls-dolls.py` и `medusa-case/doll_graft.py`
    (там всё жёстко под Медузу), по `doll.md`. Команды: `fetch-row <строка>` (тело, шесть рук и фон строки в
-   `_cache/dolls/`), `catalog-sheet --rows …` (лист тел для остановки 2), `prepare`, `extract gN`, `qa`, `recolor`,
+   `_cache/dolls/`), `catalog-sheet --rows …` (лист тел для остановки 2), `init --row <строка>` (`graft.json` из
+   значений по умолчанию и каталога), `prepare`, `extract gN`, `qa`, `recolor`,
    `package gN sXXX` (выбранное тело → `package-doll/body.png` → упаковщик с `--base-character` строки). Все пути —
    из `--work $PACKS/<id>/doll` и `graft.json`, промпт — из шаблона `doll.md` с подстановками из `card.yml`.
 4. Откуда брать графику игры: `GIT_NO_LAZY_FETCH=1 git cat-file -p HEAD:assets_dev/engine/icons_x2/<имя>.png`, если
