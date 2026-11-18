@@ -2487,12 +2487,25 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
     {
         readRunState(m_namedGlobalVars, m_pRoguelikeRules->state());
 
-        // A run saved before stable card ids: its heroes' perk levels move to their ids, once.
+        // A run saved before its route was kept (OpenYAMM 2.4) keeps the route 2.4 drew for its seed; it is kept in
+        // the save from now on. New runs draw from this version's pool.
+        if (ensureRunRoute(m_pRoguelikeRules->run(), randomRootSeed(), m_pRoguelikeRules->state()))
+        {
+            writeRunState(m_pRoguelikeRules->state(), m_namedGlobalVars);
+        }
+
+        // A run saved before stable card ids: its heroes' perk levels move to their ids, once. The 2.4 camp's bottles
+        // become alchemy bottles.
         for (size_t memberIndex = 0; m_partyState && memberIndex < m_partyState->members().size(); ++memberIndex)
         {
             if (Character *pMember = m_partyState->member(memberIndex))
             {
                 migrateLegacyRunPerks(*pMember);
+
+                if (m_partyState->itemTable() != nullptr)
+                {
+                    migrateRunBottles(*pMember, *m_partyState->itemTable());
+                }
             }
         }
     }

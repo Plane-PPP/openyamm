@@ -4,6 +4,7 @@
 #include "game/gameplay/HouseServiceRuntime.h"
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
+#include "game/maps/SaveGame.h"
 #include "game/party/Party.h"
 #include "game/rules/roguelike/RoguelikeRules.h"
 #include "game/rules/roguelike/RoguelikeTalents.h"
@@ -936,7 +937,21 @@ TEST_CASE("the camp's alchemy shop sells the run's stacks of herbs and bottles, 
             last.emplace_back(stock[slot].objectDescriptionId, stock[slot].quantity);
         }
 
-        CHECK(last == std::vector<std::pair<uint32_t, uint32_t>>{{1764, 3}, {1763, 3}, {1762, 3}, {1765, 3}});
+        CHECK(last == std::vector<std::pair<uint32_t, uint32_t>>{{1764, 3}, {1763, 3}, {1762, 3}, {220, 3}});
+    }
+
+    // Everything the camps stock brews: a reagent (MM6's herbs) or the table's empty alchemy bottle. 2.4's camp sold
+    // MM6's own bottle row (1765), which no recipe takes (the user's report of patch #51).
+    for (const DungeonRunShop &camp : run.rules().shops)
+    {
+        for (const DungeonRunShopStack &stack : camp.stock)
+        {
+            const ItemDefinition *pItem = data().itemTable.get(stack.itemId);
+            REQUIRE(pItem != nullptr);
+            const bool brews =
+                pItem->isEmptyAlchemyBottle || pItem->equipStat == "Herb" || pItem->equipStat == "Reagent";
+            CHECK_MESSAGE(brews, "camp stock item ", stack.itemId, " brews nothing");
+        }
     }
 
     const std::vector<InventoryItem> stock = stockOf(&run.gameRules());
@@ -958,8 +973,102 @@ TEST_CASE("the camp's alchemy shop sells the run's stacks of herbs and bottles, 
 
     for (const InventoryItem &item : stockOf(nullptr))
     {
-        ordinary += item.objectDescriptionId >= 1762 && item.objectDescriptionId <= 1765 && item.quantity > 1;
+        ordinary += ((item.objectDescriptionId >= 1762 && item.objectDescriptionId <= 1764)
+                        || item.objectDescriptionId == 220)
+            && item.quantity > 1;
     }
 
     CHECK_EQ(ordinary, 0u);
+}
+
+TEST_CASE("Minotaur frozen 2.4 v1 run (patch #51): talents by id survive 2.7, the bottles brew, the route stays")
+{
+    const std::filesystem::path fixture =
+        std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-2.4-v184-roguelike-v1.oysav";
+    std::string error;
+    std::optional<GameSaveData> save = loadGameDataFromPath(fixture, error);
+    REQUIRE_MESSAGE(save, error);
+    CHECK_EQ(save->sourceSaveVersion, 183u);
+    CHECK_EQ(save->mapFileName, "6t3.blv");
+    CHECK_EQ(save->ruleset.id, "roguelike");
+    REQUIRE_EQ(save->party.members.size(), 4u);
+
+    // The run's own talents, by id: 2.7's MAW solo migrations (Attunement dropped, Pinning Shot renamed) leave a
+    // Roguelike save alone.
+    const std::vector<std::unordered_map<std::string, uint16_t>> ranks = {
+        {{"sweeping_blows", 1}},
+        {{"cheat_death", 1}, {"resolve", 1}},
+        {{"attunement", 2}, {"cheat_death", 1}},
+        {{"attunement", 1}}};
+
+    for (size_t index = 0; index < ranks.size(); ++index)
+    {
+        CAPTURE(index);
+        CHECK(save->party.members[index].talentRanks == ranks[index]);
+    }
+
+    // The route 2.4 drew for seed 4, kept from now on.
+    RoguelikeRunState state;
+    readRunState(save->namedGlobalVars, state);
+    CHECK_EQ(state.entered, 2);
+    CHECK(state.route.empty());
+    const DungeonRunDefinition run = installedRun();
+    REQUIRE(ensureRunRoute(run, save->randomRootSeed, state));
+    REQUIRE(runRouteStop(run, state, 1) != nullptr);
+    CHECK_EQ(runRouteStop(run, state, 0)->mapFileName, "6d01.blv");
+    CHECK_EQ(runRouteStop(run, state, 1)->mapFileName, "6t3.blv");
+    CHECK_EQ(runRouteStop(run, state, 2)->mapFileName, "6d12.blv");
+    CHECK_EQ(runRouteStop(run, state, 3)->mapFileName, "6d07.blv");
+
+    // The bottle the 2.4 camp sold (one of its stack of three) was MM6's row 1765; it becomes the table's alchemy
+    // bottle.
+    const auto count = [](const std::vector<Character> &members, uint32_t itemId)
+    {
+        uint32_t total = 0;
+
+        for (const Character &member : members)
+        {
+            for (const InventoryItem &item : member.inventory)
+            {
+                total += item.objectDescriptionId == itemId ? std::max<uint32_t>(1, item.quantity) : 0;
+            }
+
+            for (const auto &[bag, items] : member.rulesetState.storedBags)
+            {
+                for (const InventoryItem &item : items)
+                {
+                    total += item.objectDescriptionId == itemId ? std::max<uint32_t>(1, item.quantity) : 0;
+                }
+            }
+        }
+
+        return total;
+    };
+    const uint32_t oldBottles = count(save->party.members, 1765);
+    const uint32_t bottlesBefore = count(save->party.members, 220);
+    CHECK_EQ(oldBottles, 1u);
+
+    for (Character &member : save->party.members)
+    {
+        migrateRunBottles(member, data().itemTable);
+    }
+
+    CHECK_EQ(count(save->party.members, 1765), 0u);
+    CHECK_EQ(count(save->party.members, 220), bottlesBefore + oldBottles);
+    REQUIRE(data().itemTable.get(220) != nullptr);
+    CHECK(data().itemTable.get(220)->isEmptyAlchemyBottle);
+
+    // Written by this version (OYMINO1/v194, upstream 193) and read back: the same talents.
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "openyamm-roguelike-v1-roundtrip.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
+    std::optional<GameSaveData> restored = loadGameDataFromPath(path, error);
+    std::filesystem::remove(path);
+    REQUIRE_MESSAGE(restored, error);
+    CHECK_EQ(restored->sourceSaveVersion, 193u);
+
+    for (size_t index = 0; index < ranks.size(); ++index)
+    {
+        CHECK(restored->party.members[index].talentRanks == ranks[index]);
+    }
 }

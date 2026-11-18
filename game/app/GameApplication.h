@@ -251,6 +251,9 @@ private:
     void answerDungeonRunChoice(int answer);
     // The run's stop the party is in, or nullptr.
     const DungeonRunStop *currentDungeonRunStop();
+    // The run's dungeon at a stop (0-based): the route kept in the run's state (drawn or completed on first need), or
+    // the shuffle of a run without rules.
+    const DungeonRunStop *dungeonRunRouteStop(const DungeonRunDefinition &run, size_t stop);
     // Whether the run's rules keep the party on the map (the guardian is not slain), with the status line saying so.
     bool dungeonRunExitSealed(bool announce = false);
     // Between two dungeons of a run with rules: hit and spell points restored, the map's numbers reset.
@@ -542,7 +545,13 @@ private:
     {
         std::string rulesetId;
         std::optional<uint64_t> rootSeed;
+        // `run new <seed> <map> ...` (tests): the first stops' dungeons, the rest drawn as usual.
+        std::vector<std::string> routeMaps;
     };
+    // The pinned stops of the run being started (PendingDungeonRunStart::routeMaps), until beginDungeonRun takes them.
+    std::vector<std::string> m_dungeonRunPinnedRoute;
+    // Since when (SDL ticks, 0: not) the run's map has shown no hostile monster to clear (updateDungeonRunRules).
+    uint64_t m_dungeonRunEmptyMapSinceTicks = 0;
     std::optional<PendingDungeonRunStart> m_pendingDungeonRunStart;
     // A line the next main menu shows once (how a dungeon run ended).
     std::string m_mainMenuStatus;

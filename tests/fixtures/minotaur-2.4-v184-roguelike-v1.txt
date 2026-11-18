@@ -1,0 +1,17 @@
+Genuine production writer output of the last 2.4 Roguelike version (rules v1: stable card ids, talents, camp Rest,
+guardian rewards), frozen 2026-11-17 before the OpenYAMM 2.7 integration and the random dungeon pool.
+Source 51ec30f41533 (integration/minotaur-v2.4-20261115), unmodified tree: the user's installed patch #51
+(Minotaur-Update-minotaur-2.4-51ec30f41533-51-1); OYMINO1/v184, upstream schema 183.
+Linux binary of that tree (built before the merge, incremental build found nothing to do):
+SHA256 366b5766052cab544d141e2f3c4aa8314a12d37d22e40c30fb24722e2e736bd8.
+Scenario: steps 1-191 of that tree's tests/scenarios/rulesets/roguelike_run.yml (`run new 4`: Goblinwatch cleared,
+twelve cards, the guardian slain, its hoard of 1500 gold and item 2029, the camp: one Widoweeps Berries (1764) and one
+of MM6's bottle row 1765 bought from stacks of three (the console line then named the stack), Rest for 2 food), then on into the second dungeon, then `save_game`, a new game
+and `load_game` of it. The save holds the run in 6t3.blv (dungeon 2 of 4), no route kept (2.4 drew it from the seed:
+order 6d01.blv 6t3.blv 6d12.blv 6d07.blv), level-ups 3 of 10, guardian not called, rewards 1 (items 2029), gold 1987,
+food 0. Talents by id: Roderick sweeping_blows=1; Alexis cheat_death=1 resolve=1; Serena attunement=2 cheat_death=1;
+Zoltan attunement=1 (attunement and its neighbours are ids upstream 2.7 migrates for MAW solo saves).
+Captured with OPENYAMM_SCENARIO_SAVE_DIR; protected run 20261117T162827Z-325c964cae: 113 steps passed, exit 0
+(the save was loaded back by the same binary).
+594808 bytes; SHA256 0a981f21685c915a46909cd9adecd9cc289aca7baa8c0dfd466dce159ad0f94f.
+No private player save used or changed. Never regenerate with a newer writer.

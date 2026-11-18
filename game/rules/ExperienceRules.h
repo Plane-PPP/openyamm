@@ -56,6 +56,9 @@ struct MapKillProgress
     // The counted monster kind of the first fill with the most hit points (its stats id; 0: none).
     int16_t strongestMonsterId = 0;
     int strongestMonsterHealth = 0;
+    // How many of the first fill's counted monsters are of that kind: 1 for a boss of its own (a dungeon run's
+    // guardian is then less fortified).
+    int strongestMonsterCount = 0;
     // Slain actors that joined after the first fill (summons, script spawns).
     std::vector<size_t> slainLateActors;
 };

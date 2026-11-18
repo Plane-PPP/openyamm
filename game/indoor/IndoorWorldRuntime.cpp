@@ -19831,6 +19831,8 @@ bool IndoorWorldRuntime::mapKillProgress(MapKillProgress &progress) const
     progress.indoor = !isOpenAirMap();
 
     const MonsterRules &monsterRules = gameRulesFor(m_pParty).monsters;
+    // The first fill's counted monsters by kind: how many of the strongest kind there are.
+    std::unordered_map<int16_t, int> firstFillKinds;
 
     for (size_t actorIndex = 0; actorIndex < pMapDeltaData->actors.size(); ++actorIndex)
     {
@@ -19877,6 +19879,8 @@ bool IndoorWorldRuntime::mapKillProgress(MapKillProgress &progress) const
             progress.countedHealth += fullHealth;
             progress.slainHealth += slain ? fullHealth : 0;
 
+            ++firstFillKinds[resolveIndoorActorStatsId(actor)];
+
             if (pStats->hitPoints > progress.strongestMonsterHealth)
             {
                 progress.strongestMonsterHealth = pStats->hitPoints;
@@ -19886,6 +19890,11 @@ bool IndoorWorldRuntime::mapKillProgress(MapKillProgress &progress) const
 
         progress.monsterLevelSum += actor.rulesetFacts.level > 0 ? actor.rulesetFacts.level : pStats->level;
         ++progress.levelledMonsters;
+    }
+
+    if (const auto found = firstFillKinds.find(progress.strongestMonsterId); found != firstFillKinds.end())
+    {
+        progress.strongestMonsterCount = found->second;
     }
 
     return true;

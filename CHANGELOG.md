@@ -1,3 +1,25 @@
+# Roguelike run v2: random dungeons of MM6-MM9, camp bottles that brew (2026-11-18)
+
+Every stop of a run is now random (route `[1, 2, 3, 4]`): 94 indoor maps of MM6, MM7, MM8 and MM9 stand at the stages
+their monsters' levels fit (docs/research/roguelike-dungeon-pool-mm6-mm9.md); the first stop is no longer always
+Goblinwatch and the last has its own pool. The route is drawn when the run starts and kept in the save; a run saved by
+2.4 keeps the route 2.4 drew for its seed. A guardian whose kind stood alone on its map (a boss of its own) has x2 hit
+points instead of x4. Monsters already dead when the party arrives are no longer counted as the party's kills, and a
+map with nothing hostile opens its way out instead of sealing the party in. Group sizes stay halved on the large maps
+for testing. The camp's alchemy shop sold MM6's bottle row 1765, which no recipe takes (patch #51): it sells the
+table's empty alchemy bottle (220) now, and a save's 1765 bottles become 220 on load. The Piercing Arrows card leaps
+like 2.7's Chaining Arrows (OpenYAMM 2.7 took the piercing flight out). Details: docs/research/roguelike-rules-v2.md.
+
+# OpenYAMM 2.7 integration (2026-11-18)
+
+Merged official v2.7/71235186 onto patch #51 (51ec30f4), keeping Minotaur, Medusa, the custom portrait/doll import and
+the Roguelike run. The save writer is OYMINO1/194 (upstream schema 193); mod 184 reads as 183 and the older mod rows as
+before. Upstream's MAW solo talent migrations are deferred for mod saves and skipped for a Roguelike run. Reagent
+stacks keep stacking in MAW's new pouches, and a stack dropped on a stack of its kind merges again (2.7's new bag-bounds
+check had refused a 1x2 bottle stack dropped on the last row). A frozen save of the patch #51 writer joins the
+fixtures; the Minotaur CI gains an `upstream27` group with the tests 2.5-2.7 added. Details and checks:
+docs/research/openyamm-2.7-integration.md.
+
 # Roguelike run v1 hotfix: the camp's Rest rests (2026-11-17)
 
 The first Windows playtest of v1 (patch #50) found the camp's Rest taking its 2 food and doing nothing else: no rest

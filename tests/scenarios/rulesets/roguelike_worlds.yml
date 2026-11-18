@@ -1,0 +1,78 @@
+# A run through three worlds (rules v2, OpenYAMM 2.7): an MM7 dungeon, the camp, an MM9 dungeon, the camp opened on
+# MM9's map with its MM6 shops, and on into MM6. The route is pinned (`run new <seed> <map> ...`); the dungeons' own
+# fights are not played: `actor kill` clears them, as in roguelike_run.yml.
+#   ./build/game/openyamm --asset-root "$PWD/assets_dev" \
+#       --headless-run-scenario "$PWD/tests/scenarios/rulesets/roguelike_worlds.yml"
+id: rulesets.roguelike_worlds
+title: Roguelike - a run from MM7 through MM9 into MM6, with the camp between
+world: mm6
+mode: faithful
+tags: [rulesets, roguelike]
+steps:
+  - new_game_flow: {start_map: hive.blv}
+  - console: {line: "run new 4 7d06.blv anskramkeep.blv 6d07.blv d11.blv", expect_contains: "Run started in 7d06.blv, seed 4."}
+  - assert:
+      map: 7d06.blv
+      ruleset: {id: roguelike}
+  - advance_runtime: {seconds: 0.5}
+  - console: {line: "run", expect_contains: "dungeon 1 of 4, map 7d06.blv (on course), seed 4, order: 7d06.blv anskramkeep.blv 6d07.blv d11.blv"}
+  - console: {line: "run", expect_contains: "toward the guardian 0%"}
+  # MM7's Temple of the Moon: cleared, the guardian comes and falls, its hoard is given.
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - advance_runtime: {seconds: 0.2}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian alive"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Stay here"}
+  - console: {line: "run close", expect_contains: ""}
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - console: {line: "run", expect_contains: "rewards 1 (items "}
+  # The camp, then the way on into MM9.
+  - console: {line: "run leave", expect_contains: "The camp."}
+  - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map anskramkeep.blv"}
+  - assert:
+      map: anskramkeep.blv
+      ruleset: {id: roguelike}
+  - advance_runtime: {seconds: 0.5}
+  - console: {line: "run", expect_contains: "dungeon 2 of 4, map anskramkeep.blv (on course)"}
+  - console: {line: "run", expect_contains: "toward the guardian 0%"}
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - advance_runtime: {seconds: 0.2}
+  - console: {line: "run", expect_contains: "level-ups 6 of 10, guardian alive"}
+  # (The card screen closed at the first stop keeps the run's offers away for a while: no door offer here.)
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - console: {line: "run", expect_contains: "rewards 2 (items "}
+  # The camp on MM9's map: its shops are MM6's houses all the same (the second camp's: Free Haven's).
+  - console: {line: "run leave", expect_contains: "The camp."}
+  - console: {line: "run", expect_contains: "asks: [1] Camp [2] Rest [3] Next dungeon"}
+  - select_topic: {kind: event_choice, action_id: 0, match_label: "Camp"}
+  - console: {line: "run", expect_contains: "asks: [1] Weapons [2] Armor [3] Potions and magic"}
+  - select_topic: {kind: event_choice, action_id: 2, match_label: "Potions and magic"}
+  - assert:
+      dialog: {active: true, house_dialog: true, source_id: 105}
+  - console: {line: "run buy 220", expect_contains: "Bought 1 of item 220 (4 on the shelf) for "}
+  - assert:
+      inventory_any_member: [{item_id: 220, min_count: 1}]
+  # Closing the shop returns to the shops' list, closing that to the camp's menu (each on the run's next frame, which a
+  # console line stands for).
+  - press_action: {action: cancel_dialog}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - assert:
+      dialog: {active: true, action_label_present: "Potions and magic"}
+  - press_action: {action: cancel_dialog}
+  - console: {line: "run", expect_contains: "guardian slain"}
+  - assert:
+      dialog: {active: true, action_label_present: "Next dungeon"}
+  # On into MM6: the third stop.
+  - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6d07.blv"}
+  - assert:
+      map: 6d07.blv
+      ruleset: {id: roguelike}
+  - advance_runtime: {seconds: 0.5}
+  - console: {line: "run", expect_contains: "dungeon 3 of 4, map 6d07.blv (on course)"}
+  - console: {line: "run", expect_contains: "toward the guardian 0%"}
+  # The route is kept in the save.
+  - save_game: roguelike_worlds
+  - new_game_flow: {start_map: hive.blv}
+  - load_game: roguelike_worlds
+  - console: {line: "run", expect_contains: "dungeon 3 of 4, map 6d07.blv (on course), seed 4, order: 7d06.blv anskramkeep.blv 6d07.blv d11.blv"}

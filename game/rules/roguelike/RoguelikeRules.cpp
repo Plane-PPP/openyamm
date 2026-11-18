@@ -31,6 +31,11 @@ constexpr const char *GuardianActorVariable = "run.guardian_actor";
 constexpr const char *DoorOfferedVariable = "run.door_offered";
 constexpr const char *PromotedVariable = "run.promoted";
 constexpr const char *RewardedVariable = "run.rewarded";
+constexpr const char *RouteCountVariable = "run.route.count";
+constexpr const char *ArrivalStopVariable = "run.arrival_stop";
+constexpr const char *ArrivalSlainMonstersVariable = "run.arrival_slain";
+constexpr const char *ArrivalSlainHealthVariable = "run.arrival_slain_health";
+const std::string RouteVariablePrefix = "run.route.";
 
 // The perks of the run's first version (OpenYAMM 2.4, 473788e4) in the order of its run.yml, by which their levels were
 // kept. Never reorder or shorten: saves of that version are read by it.
@@ -167,6 +172,18 @@ void readRunState(const std::unordered_map<std::string, int32_t> &variables, Rog
     state.doorOffered = variableOr(variables, DoorOfferedVariable, 0);
     state.promoted = variableOr(variables, PromotedVariable, 0);
     state.rewarded = std::max(variableOr(variables, RewardedVariable, 0), 0);
+    // A save from before arrivals were taken: its stop under way counts as it always did.
+    state.arrivalStop = variableOr(variables, ArrivalStopVariable, state.entered);
+    state.arrivalSlainMonsters = std::max(variableOr(variables, ArrivalSlainMonstersVariable, 0), 0);
+    state.arrivalSlainHealth = std::max(variableOr(variables, ArrivalSlainHealthVariable, 0), 0);
+    state.route.clear();
+    const int routeLength = std::clamp(variableOr(variables, RouteCountVariable, 0), 0, 64);
+
+    for (int stop = 0; stop < routeLength; ++stop)
+    {
+        const std::string name = RouteVariablePrefix + std::to_string(stop);
+        state.route.push_back(variableOr(variables, name.c_str(), 0));
+    }
 }
 
 void writeRunState(const RoguelikeRunState &state, std::unordered_map<std::string, int32_t> &variables)
@@ -178,6 +195,119 @@ void writeRunState(const RoguelikeRunState &state, std::unordered_map<std::strin
     variables[DoorOfferedVariable] = state.doorOffered;
     variables[PromotedVariable] = state.promoted;
     variables[RewardedVariable] = state.rewarded;
+    variables[ArrivalStopVariable] = state.arrivalStop;
+    variables[ArrivalSlainMonstersVariable] = state.arrivalSlainMonsters;
+    variables[ArrivalSlainHealthVariable] = state.arrivalSlainHealth;
+
+    if (!state.route.empty())
+    {
+        variables[RouteCountVariable] = static_cast<int32_t>(state.route.size());
+
+        for (size_t stop = 0; stop < state.route.size(); ++stop)
+        {
+            variables[RouteVariablePrefix + std::to_string(stop)] = state.route[stop];
+        }
+    }
+}
+
+MapKillProgress runStopProgress(const RoguelikeRunState &state, MapKillProgress progress)
+{
+    if (state.entered > 0 && state.arrivalStop == state.entered)
+    {
+        progress.countedHealth = std::max(0.0, progress.countedHealth - state.arrivalSlainHealth);
+        progress.slainHealth = std::max(0.0, progress.slainHealth - state.arrivalSlainHealth);
+        progress.countedMonsters = std::max(0, progress.countedMonsters - state.arrivalSlainMonsters);
+        progress.slainMonsters = std::max(0, progress.slainMonsters - state.arrivalSlainMonsters);
+    }
+
+    return progress;
+}
+
+std::vector<int32_t> drawRunRoute(const DungeonRunDefinition &run, uint64_t rootSeed)
+{
+    std::vector<int32_t> route;
+
+    for (size_t index : drawDungeonRunRoute(run, rootSeed))
+    {
+        route.push_back(dungeonRunMapKey(run.dungeons[index].mapFileName));
+    }
+
+    return route;
+}
+
+bool ensureRunRoute(const DungeonRunDefinition &run, uint64_t rootSeed, RoguelikeRunState &state)
+{
+    if (state.entered <= 0 || !run.rules.has_value())
+    {
+        return false;
+    }
+
+    std::vector<std::optional<size_t>> fixed(run.rules->route.size());
+
+    if (state.route.empty())
+    {
+        // The whole route the run had: a run under way ends as it began.
+        const std::vector<std::string> legacyMaps = legacyDungeonRunMaps(rootSeed);
+
+        for (size_t stop = 0; stop < fixed.size() && stop < legacyMaps.size(); ++stop)
+        {
+            fixed[stop] = dungeonRunIndexOfKey(run, dungeonRunMapKey(legacyMaps[stop]));
+        }
+    }
+    else
+    {
+        // A kept route whose dungeons the run still has stays as it is.
+        bool complete = true;
+
+        for (size_t stop = 0; stop < state.route.size(); ++stop)
+        {
+            const std::optional<size_t> index = dungeonRunIndexOfKey(run, state.route[stop]);
+            complete = complete && index.has_value();
+
+            if (stop < fixed.size())
+            {
+                fixed[stop] = index;
+            }
+        }
+
+        if (complete)
+        {
+            return false;
+        }
+    }
+
+    // A map a later version's pool no longer has: that stop is drawn anew, the others keep theirs.
+    std::vector<int32_t> route;
+
+    for (size_t index : drawDungeonRunRoute(run, rootSeed, fixed))
+    {
+        route.push_back(dungeonRunMapKey(run.dungeons[index].mapFileName));
+    }
+
+    if (route.empty() || route == state.route)
+    {
+        return false;
+    }
+
+    state.route = std::move(route);
+    return true;
+}
+
+const DungeonRunStop *runRouteStop(const DungeonRunDefinition &run, const RoguelikeRunState &state, size_t stop)
+{
+    if (stop >= state.route.size())
+    {
+        return nullptr;
+    }
+
+    const std::optional<size_t> index = dungeonRunIndexOfKey(run, state.route[stop]);
+    return index.has_value() ? &run.dungeons[*index] : nullptr;
+}
+
+float runGuardianHealthScale(const DungeonRunRules &rules, int strongestCount)
+{
+    return strongestCount == 1 && rules.uniqueGuardianHealthScale > 0.0f ? rules.uniqueGuardianHealthScale
+                                                                          : rules.guardianHealthScale;
 }
 
 uint32_t runSkillLevelForMastery(SkillMastery mastery)
@@ -496,6 +626,51 @@ std::optional<uint32_t> pickRunGuardianItem(
     return pool[stream.uniform(0, static_cast<uint32_t>(pool.size() - 1))];
 }
 
+size_t migrateRunBottles(Character &character, const ItemTable &itemTable)
+{
+    // MM6's "Potion Bottle" row that run.yml's camp stock named in OpenYAMM 2.4 (patch #51).
+    constexpr uint32_t LegacyRunBottleItemId = 1765;
+    const ItemDefinition *pBottle = nullptr;
+
+    for (const ItemDefinition &entry : itemTable.entries())
+    {
+        if (entry.isEmptyAlchemyBottle)
+        {
+            pBottle = &entry;
+            break;
+        }
+    }
+
+    if (pBottle == nullptr || pBottle->itemId == LegacyRunBottleItemId)
+    {
+        return 0;
+    }
+
+    size_t changed = 0;
+    const auto convert = [pBottle, &changed](std::vector<InventoryItem> &items)
+    {
+        for (InventoryItem &item : items)
+        {
+            if (item.objectDescriptionId == LegacyRunBottleItemId)
+            {
+                item.objectDescriptionId = pBottle->itemId;
+                item.width = std::max<uint8_t>(1, pBottle->inventoryWidth);
+                item.height = std::max<uint8_t>(1, pBottle->inventoryHeight);
+                ++changed;
+            }
+        }
+    };
+
+    convert(character.inventory);
+
+    for (auto &[bag, items] : character.rulesetState.storedBags)
+    {
+        convert(items);
+    }
+
+    return changed;
+}
+
 bool migrateLegacyRunPerks(Character &character)
 {
     bool moved = false;
@@ -594,7 +769,7 @@ public:
     }
 
     // After every kill: the level-ups the clearing has earned, the guardian's call and the guardian's death.
-    std::string rewardMapProgress(Party &party, const MapKillProgress &progress) const override
+    std::string rewardMapProgress(Party &party, const MapKillProgress &mapKill) const override
     {
         const DungeonRunRules &rules = m_rules.rules();
         RoguelikeRunState &state = m_rules.state();
@@ -604,6 +779,9 @@ public:
         {
             return message;
         }
+
+        // The stop's own clearing: the monsters dead before the party came are not the party's.
+        const MapKillProgress progress = runStopProgress(state, mapKill);
 
         const int due = runLevelUpsDue(rules, static_cast<size_t>(state.entered - 1), progress);
 
@@ -685,9 +863,16 @@ public:
     // The bar: the slain hit points against the guardian's threshold; full and gold once the guardian is slain.
     std::optional<RulesetMapProgress> mapProgress(const IGameplayWorldRuntime &world) const override
     {
-        MapKillProgress progress;
+        MapKillProgress mapKill;
 
-        if (m_rules.state().entered <= 0 || !world.mapKillProgress(progress) || progress.countedHealth <= 0)
+        if (m_rules.state().entered <= 0 || !world.mapKillProgress(mapKill))
+        {
+            return std::nullopt;
+        }
+
+        const MapKillProgress progress = runStopProgress(m_rules.state(), mapKill);
+
+        if (progress.countedHealth <= 0)
         {
             return std::nullopt;
         }

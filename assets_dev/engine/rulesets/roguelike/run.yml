@@ -1,23 +1,29 @@
 # The dungeons of a run (game/content/DungeonRun.h) and the rules of the run (game/rules/roguelike/RoguelikeRules.h).
 #
 # entrance: where the party arrives. The original BLV maps have no party start, so these are the destinations of the
-# outdoor events that lead into each dungeon (evt.MoveToMap in worlds/mm6/events/maps/out*.lua): x, y, z and the yaw
-# in the same units (2048 to a turn). The map's guardian appears there too.
+# outdoor events that lead into each dungeon (evt.MoveToMap in worlds/mm{6,7,8}/events/maps/*.lua) or, for MM9, the
+# arrival of the transition into it (worlds/mm9/data_tables/map_transitions.txt): x, y, z and the yaw in the same units
+# (2048 to a turn). The map's guardian appears there too.
 #
-# The pool: MM6 dungeons of one map each, whose exit is a single unconditional event and whose events need no key or
-# quest from outside. Monster levels are the A/B/C ranks of the map's three encounter slots (map_stats.txt).
+# The pool (2026-11-17, docs/research/roguelike-dungeon-pool-mm6-mm9.md): the indoor maps of MM6-MM9 of classes A and B
+# there, by the levels of their monsters against the heroes' levels at each stop. Left out: class C (a part of the map
+# needs a key or a quest from another map) and D (a town, a castle of quests, no hostile monster at the start), maps
+# past stop 4, and maps of fewer than about 15 monsters. Monster counts and levels are the original game's.
 #
-# tier: the dungeon's difficulty by the levels of its monsters in the original game; rules.route picks by it.
-# groupScale: TEST VALUE. The map's encounter group sizes times this. The five large maps (about 150-220 monsters in
-# the original) are halved so that a dungeon takes minutes, not the whole run; 1 leaves a map as the original has it.
+# stages: the stops (rules.route) the dungeon may stand at; tier: one stop, as before.
+# groupScale: TEST VALUE. The map's encounter group sizes times this: halved on the maps of about 145 monsters and
+# more (the user, 2026-11-17: levels come quicker for testing); 1 leaves a map as the original has it.
 #
 # rules: every number below is a TEST VALUE for the first playthroughs, not a decided balance.
 rules:
-  # The tier of each stop; the run's length. A stop takes a random dungeon of its tier, none twice.
-  route: [1, 2, 3, 3]
+  # The stage of each stop; the run's length. A stop takes a random dungeon of its stage, none twice. The route is
+  # drawn when the run starts and kept in the save (run.route.<n>).
+  route: [1, 2, 3, 4]
   # The guardian comes when the slain monsters hold more than this share of the map's monster hit points; it is the
-  # map's strongest kind with its hit points times guardianHealthScale. Its death opens the way out.
-  clear: {share: 0.5, guardianHealthScale: 4}
+  # map's strongest kind with its hit points times guardianHealthScale, or times uniqueGuardianHealthScale when that
+  # kind stood alone on the map at its first fill (a boss of its own: the user, 2026-11-17). Its death opens the way
+  # out.
+  clear: {share: 0.5, guardianHealthScale: 4, uniqueGuardianHealthScale: 2}
   # Level-ups per stop, spread evenly over the clearing up to the guardian (the stop's last comes with it): ten in a
   # run. Each raises every hero by levelsEach levels and owes each hero one card out of `offers`. A level-up also
   # brings a hero who is out round and gives back `heal` of the maximum hit points (at least up to that share); the
@@ -55,14 +61,15 @@ rules:
   # own: New Sorpigal's after the first dungeon, Free Haven's later. No camp follows the last dungeon.
   # stock: stacks a shop always has besides its own goods; they take the last places of its standard shelf. The
   # alchemy shops sell MM6's three herbs (1764 Widoweeps Berries, 1763 Phirna Root, 1762 Poppysnaps) and empty bottles
-  # (1765) to brew potions from. TEST VALUES: small stacks, larger at each camp.
+  # (220, the table's empty alchemy bottle, potion_settings.txt; MM6's own bottle row 1765 is no alchemy bottle) to
+  # brew potions from. TEST VALUES: small stacks, larger at each camp.
   shops:
     - {afterStop: 1, name: "Weapons", house: 22}                 # The Knife Shoppe
     - {afterStop: 1, name: "Armor", house: 62}                   # The Common Defense
     - afterStop: 1                                               # The Seeing Eye
       name: "Potions and magic"
       house: 97
-      stock: [{item: 1764, count: 3}, {item: 1763, count: 3}, {item: 1762, count: 3}, {item: 1765, count: 3}]
+      stock: [{item: 1764, count: 3}, {item: 1763, count: 3}, {item: 1762, count: 3}, {item: 220, count: 3}]
     - {afterStop: 1, name: "Spell books: elements", house: 1214} # Initiate Guild of the Elements
     - {afterStop: 1, name: "Spell books: self", house: 189}      # Initiate Guild of the Self
     - {afterStop: 2, name: "Weapons", house: 28}                 # The Sharpening Stone
@@ -70,7 +77,7 @@ rules:
     - afterStop: 2                                               # The Sorcerer's Shoppe
       name: "Potions and magic"
       house: 105
-      stock: [{item: 1764, count: 4}, {item: 1763, count: 4}, {item: 1762, count: 4}, {item: 1765, count: 4}]
+      stock: [{item: 1764, count: 4}, {item: 1763, count: 4}, {item: 1762, count: 4}, {item: 220, count: 4}]
     - {afterStop: 2, name: "Spell books: fire", house: 133}      # Adept Guild of Fire
     - {afterStop: 2, name: "Spell books: self", house: 190}      # Adept Guild of the Self
     - {afterStop: 3, name: "Weapons", house: 29}                 # Feathers and String
@@ -78,7 +85,7 @@ rules:
     - afterStop: 3                                               # Alchemy and Incantations
       name: "Potions and magic"
       house: 107
-      stock: [{item: 1764, count: 5}, {item: 1763, count: 5}, {item: 1762, count: 5}, {item: 1765, count: 5}]
+      stock: [{item: 1764, count: 5}, {item: 1763, count: 5}, {item: 1762, count: 5}, {item: 220, count: 5}]
     - {afterStop: 3, name: "Spell books: air", house: 139}       # Adept Guild of Air
     - {afterStop: 3, name: "Spell books: body", house: 169}      # Adept Guild of Body
   # What each stop's guardian leaves, once: gold for the party and one rare item, an artifact or a relic no hero
@@ -266,40 +273,191 @@ rules:
       seconds: 3
       text: "Once in a dungeon a hit that would fell the hero leaves 10 % hit points, then 3 s of 95 % less damage"
 dungeons:
-  # Goblinwatch: rats 2-6, goblins 4-10, blood suckers 2-8. oute3.lua, exit event 51.
-  - map: 6d01.blv
-    tier: 1
-    groupScale: 0.5
-    entrance: {x: 601, y: 6871, z: 177, yaw: 1400}
-  # Abandoned Temple: bats 3-9, cobras 5-14, spiders 5-12. oute3.lua, exit event 50.
-  - map: 6d02.blv
-    tier: 2
-    groupScale: 0.5
-    entrance: {x: 16406, y: -19669, z: 865, yaw: 500}
-  # Temple of Tsantsa: cannibals 6-10, cobras 5-14. outd2.lua, exit event 50.
-  - map: 6t3.blv
-    tier: 2
-    groupScale: 0.5
-    entrance: {x: 2817, y: -4748, z: -639, yaw: 512}
-  # Temple of the Fist: monks 8-27, rats 2-6. outd2.lua, exit event 50.
-  - map: 6t2.blv
-    tier: 2
-    entrance: {x: 0, y: -2231, z: 513, yaw: 512}
-  # Silver Helm Outpost: swordsmen 10-24, monks 8-27, guards 11-33. oute2.lua, exit event 20.
-  - map: 6d07.blv
-    tier: 3
-    entrance: {x: 4427, y: 3061, z: 769, yaw: 1024}
-  # Icewind Keep: ogres 15-28, guards 11-33. outc1.lua, exit event 50.
-  - map: 6d15.blv
-    tier: 3
-    groupScale: 0.5
-    entrance: {x: -495, y: -219, z: 1, yaw: 512}
-  # The Monolith: druids 10-28, earth elementals 25-40, water elementals 14-36. outd1.lua, exit event 50.
-  - map: 6d13.blv
-    tier: 3
-    entrance: {x: -128, y: -3968, z: 1, yaw: 512}
-  # Silver Helm Stronghold: swordsmen 10-24, fighters 14-35, sorcerers 25-50. outd1.lua, exit event 21.
-  - map: 6d12.blv
-    tier: 3
-    groupScale: 0.5
-    entrance: {x: -127, y: 4190, z: 1, yaw: 1536}
+  # Goblinwatch (MM6, E~218, class A). Entrance: oute3.lua.
+  - {map: 6d01.blv, stages: [1], groupScale: 0.5, entrance: {x: 601, y: 6871, z: 177, yaw: 1400}}
+  # Abandoned Temple (MM6, E~220, class A). Entrance: oute3.lua.
+  - {map: 6d02.blv, stages: [1, 2], groupScale: 0.5, entrance: {x: 16406, y: -19669, z: 865, yaw: 500}}
+  # The Temple of the Moon (MM7, E~62, class A). Entrance: 7out01.lua.
+  - {map: 7d06.blv, stages: [1], entrance: {x: -1208, y: -4225, z: 366, yaw: 320}}
+  # The Hall under the Hill (MM7, E~17, class B). Entrance: out14.lua.
+  - {map: 7d22.blv, stages: [1, 2], entrance: {x: -1114, y: 2778, z: 1, yaw: 1280}}
+  # Barrow VII (MM7, E~26, class B). Entrance: out11.lua.
+  - {map: mdk01.blv, stages: [1, 2], entrance: {x: -384, y: -983, z: 1, yaw: 256}}
+  # Barrow IV (MM7, E~52, class B). Entrance: mdr02.lua.
+  - {map: mdk02.blv, stages: [1, 2], entrance: {x: -493, y: -1049, z: 1, yaw: 256}}
+  # Barrow XII (MM7, E~30, class B). Entrance: mdk04.lua.
+  - {map: mdr02.blv, stages: [1, 2], entrance: {x: 1114, y: 1881, z: 129, yaw: 1792}}
+  # Abandoned Temple (MM8, E~116, class A). Entrance: out01.lua.
+  - {map: d05.blv, stages: [1], entrance: {x: -3008, y: -1696, z: 2464, yaw: 512}}
+  # Anskram Keep (MM9, E~86, class A). Entrance: map_transitions:sturmford.blv.
+  - {map: anskramkeep.blv, stages: [1, 2], entrance: {x: 0, y: 15647, z: -491, yaw: 1536}}
+  # Shadow Guild Hideout (MM6, E~61, class A). Entrance: outd3.lua.
+  - {map: 6d03.blv, stages: [2, 3], entrance: {x: -130, y: -1408, z: 1, yaw: 512}}
+  # Hall of the Fire Lord (MM6, E~266, class A). Entrance: outd2.lua.
+  - {map: 6d04.blv, stages: [2], groupScale: 0.5, entrance: {x: -1792, y: -19, z: 1, yaw: 0}}
+  # Temple of Baa (MM6, E~212, class A). Entrance: outd3.lua.
+  - {map: 6t1.blv, stages: [2], groupScale: 0.5, entrance: {x: -15592, y: 120, z: -191, yaw: 0}}
+  # Temple of the Fist (MM6, E~43, class A). Entrance: outd2.lua.
+  - {map: 6t2.blv, stages: [2], entrance: {x: 0, y: -2231, z: 513, yaw: 512}}
+  # Temple of Tsantsa (MM6, E~208, class A). Entrance: outd2.lua.
+  - {map: 6t3.blv, stages: [2], groupScale: 0.5, entrance: {x: 2817, y: -4748, z: -639, yaw: 512}}
+  # Free Haven Sewer (MM6, E~163, class B). Entrance: 6t6.lua.
+  - {map: sewer.blv, stages: [2], groupScale: 0.5, entrance: {x: -9110, y: -5381, z: 17, yaw: 1536}}
+  # The Tidewater Caverns (MM7, E~48, class B). Entrance: 7out13.lua.
+  - {map: 7d17.blv, stages: [2, 3], entrance: {x: -1944, y: -2052, z: 1, yaw: 0}}
+  # White Cliff Cave (MM7, E~34, class A). Entrance: 7out02.lua.
+  - {map: 7d21.blv, stages: [2], entrance: {x: 1344, y: -256, z: -107, yaw: 1024}}
+  # Stone City (MM7, E~86, class B). Entrance: out11_mmmerge.lua.
+  - {map: 7d24.blv, stages: [2, 3], entrance: {x: 179, y: -5386, z: 33, yaw: 240}}
+  # The Haunted Mansion (MM7, E~52, class A). Entrance: out11.lua.
+  - {map: 7d37.blv, stages: [2, 3], entrance: {x: 2, y: -1096, z: -31, yaw: 512}}
+  # The Erathian Sewers (MM7, E~46, class A). Entrance: 7out03.lua.
+  - {map: d01.blv, stages: [2], entrance: {x: 28, y: -217, z: 1, yaw: 512}}
+  # Barrow II (MM7, E~60, class B). Entrance: mdk04.lua.
+  - {map: mdk03.blv, stages: [2], entrance: {x: -416, y: -1056, z: 1, yaw: 256}}
+  # Barrow XIV (MM7, E~32, class B). Entrance: mdr02.lua.
+  - {map: mdk04.blv, stages: [2], entrance: {x: -416, y: -1056, z: 1, yaw: 384}}
+  # Barrow III (MM7, E~28, class B). Entrance: mdr02.lua.
+  - {map: mdk05.blv, stages: [2], entrance: {x: 423, y: -1059, z: 1, yaw: 640}}
+  # Barrow V (MM7, E~44, class B). Entrance: mdr02.lua.
+  - {map: mdr03.blv, stages: [2], entrance: {x: 2899, y: 1448, z: 695, yaw: 260}}
+  # Barrow XI (MM7, E~34, class B). Entrance: mdt02.lua.
+  - {map: mdr04.blv, stages: [2], entrance: {x: 2826, y: 2025, z: -15, yaw: 896}}
+  # Smuggler's Cove (MM8, E~72, class B). Entrance: out02.lua.
+  - {map: d07.blv, stages: [2], entrance: {x: -3800, y: 623, z: 1, yaw: 2000}}
+  # Dire Wolf Den (MM8, E~28, class A). Entrance: out02.lua.
+  - {map: d08.blv, stages: [2], entrance: {x: 2157, y: 1003, z: 1, yaw: 1024}}
+  # Troll Tomb (MM8, E~42, class B). Entrance: out04.lua.
+  - {map: d13.blv, stages: [2, 3], entrance: {x: -672, y: 768, z: -28, yaw: 256}}
+  # Chapel of Eep (MM8, E~28, class A). Entrance: out02.lua.
+  - {map: d45.blv, stages: [2], entrance: {x: -481, y: -2824, z: 321, yaw: 512}}
+  # Church of Eep (MM8, E~16, class A). Entrance: out08.lua.
+  - {map: d46.blv, stages: [2, 3], entrance: {x: -21, y: 5, z: 1, yaw: 0}}
+  # Beet Hoven (MM9, E~156, class B). Entrance: map_transitions:sturmfordcity.blv.
+  - {map: beethoven.blv, stages: [2], groupScale: 0.5, entrance: {x: -9830, y: 543, z: 533, yaw: 0}}
+  # Drangheim Prison (MM9, E~50, class B). Entrance: map_transitions:drangheim.blv.
+  - {map: drangheimprison.blv, stages: [2], entrance: {x: 532, y: -614, z: -4525, yaw: 1877}}
+  # Thjorad Mine (MM9, E~108, class B). Entrance: map_transitions:thjorgard.blv.
+  - {map: thjoradmine.blv, stages: [2, 3], entrance: {x: 2785, y: -2785, z: -900, yaw: 512}}
+  # Dragoons' Caverns (MM6, E~156, class A). Entrance: outd3.lua.
+  - {map: 6d06.blv, stages: [3], groupScale: 0.5, entrance: {x: 2716, y: -256, z: 1, yaw: 1024}}
+  # Silver Helm Outpost (MM6, E~70, class A). Entrance: oute2.lua.
+  - {map: 6d07.blv, stages: [3], entrance: {x: 4427, y: 3061, z: 769, yaw: 1024}}
+  # Snergle's Iron Mines (MM6, E~104, class B). Entrance: outc3.lua.
+  - {map: 6d09.blv, stages: [3, 4], entrance: {x: -3714, y: 1250, z: 1, yaw: 0}}
+  # Dragoons' Keep (MM6, E~164, class A). Entrance: outc2.lua.
+  - {map: 6d10.blv, stages: [3], groupScale: 0.5, entrance: {x: -2, y: -128, z: 1, yaw: 512}}
+  # Corlagon's Estate (MM6, E~211, class A). Entrance: outd3.lua.
+  - {map: 6d11.blv, stages: [3], groupScale: 0.5, entrance: {x: 128, y: -151, z: 1, yaw: 512}}
+  # Silver Helm Stronghold (MM6, E~210, class A). Entrance: outd1.lua.
+  - {map: 6d12.blv, stages: [3, 4], groupScale: 0.5, entrance: {x: -127, y: 4190, z: 1, yaw: 1536}}
+  # The Monolith (MM6, E~62, class A). Entrance: outd1.lua.
+  - {map: 6d13.blv, stages: [3, 4], entrance: {x: -128, y: -3968, z: 1, yaw: 512}}
+  # Tomb of Ethric the Mad (MM6, E~86, class A). Entrance: outc2.lua.
+  - {map: 6d14.blv, stages: [3], entrance: {x: -118, y: -1640, z: 1, yaw: 512}}
+  # Icewind Keep (MM6, E~148, class A). Entrance: outc1.lua.
+  - {map: 6d15.blv, stages: [3, 4], groupScale: 0.5, entrance: {x: -495, y: -219, z: 1, yaw: 512}}
+  # Temple of the Moon (MM6, E~118, class B). Entrance: outc2.lua.
+  - {map: 6t5.blv, stages: [3, 4], entrance: {x: 0, y: -2135, z: 125, yaw: 512}}
+  # Superior Temple of Baa (MM6, E~340, class A). Entrance: outb1.lua.
+  - {map: 6t7.blv, stages: [3, 4], groupScale: 0.5, entrance: {x: 2094, y: -19, z: 177, yaw: 337}}
+  # The Tularean Caves (MM7, E~56, class B). Entrance: 7out04.lua.
+  - {map: 7d08.blv, stages: [3], entrance: {x: 2071, y: 448, z: 1, yaw: 1024}}
+  # The Wine Cellar (MM7, E~23, class A). Entrance: 7out13.lua.
+  - {map: 7d16.blv, stages: [3, 4], entrance: {x: 601, y: -512, z: 1, yaw: 1024}}
+  # Grand Temple of the Moon (MM7, E~27, class B). Entrance: out09.lua.
+  - {map: 7d19.blv, stages: [3], entrance: {x: 3136, y: 2053, z: 1, yaw: 512}}
+  # Fort Riverstride (MM7, E~22, class B). Entrance: 7out03.lua.
+  - {map: 7d31.blv, stages: [3], entrance: {x: 64, y: -448, z: 1, yaw: 512}}
+  # Castle Navan (MM7, E~70, class B). Entrance: 7out04.lua.
+  - {map: 7d32.blv, stages: [3], entrance: {x: 0, y: -1589, z: 225, yaw: 512}}
+  # Nighon Tunnels (MM7, E~184, class B). Entrance: 7d24.lua.
+  - {map: 7d35.blv, stages: [3], groupScale: 0.5, entrance: {x: 522, y: -808, z: 1, yaw: 1024}}
+  # Grand Temple of the Sun (MM7, E~32, class B). Entrance: out09.lua.
+  - {map: t03.blv, stages: [3], entrance: {x: 0, y: -3179, z: 161, yaw: 512}}
+  # The Hall of the Pit (MM7, E~28, class B). Entrance: 7out05.lua.
+  - {map: t04.blv, stages: [3], entrance: {x: 512, y: -3156, z: 1, yaw: 545}}
+  # Wasp Nest (MM8, E~142, class A). Entrance: out03.lua.
+  - {map: d11.blv, stages: [3], entrance: {x: -2192, y: -1840, z: -127, yaw: 33}}
+  # Ogre Fortress (MM8, E~68, class A). Entrance: out03.lua.
+  - {map: d12.blv, stages: [3, 4], entrance: {x: -3424, y: 32, z: 0, yaw: 1024}}
+  # Naga Vault (MM8, E~22, class A). Entrance: out05.lua.
+  - {map: d18.blv, stages: [3], entrance: {x: -500, y: -1567, z: -63, yaw: 512}}
+  # Temple of the Sun (MM8, E~38, class B). Entrance: out07.lua.
+  - {map: d22.blv, stages: [3], entrance: {x: -768, y: -768, z: 96, yaw: 280}}
+  # Barbarian Fortress (MM8, E~53, class A). Entrance: out08.lua.
+  - {map: d25.blv, stages: [3, 4], entrance: {x: -2284, y: 1847, z: 1, yaw: 1024}}
+  # Dark Dwarf Compound (MM8, E~42, class A). Entrance: out03.lua.
+  - {map: d41.blv, stages: [3, 4], entrance: {x: -10528, y: -352, z: -896, yaw: 512}}
+  # Grand Temple of Eep (MM8, E~48, class A). Entrance: out05.lua.
+  - {map: d44.blv, stages: [3], entrance: {x: -2812, y: 726, z: 1, yaw: 1536}}
+  # Ta'Sar Academy (MM9, E~20, class B). Entrance: map_transitions:lindisfarne.blv.
+  - {map: tasaracademy.blv, stages: [3], entrance: {x: 2621, y: 655, z: 1, yaw: 1536}}
+  # Warlord's Fortress (MM6, E~129, class A). Entrance: outd1.lua.
+  - {map: 6d16.blv, stages: [4], entrance: {x: -4724, y: 1494, z: 127, yaw: 1920}}
+  # Lair of the Wolf (MM6, E~340, class A). Entrance: outb2.lua.
+  - {map: 6d17.blv, stages: [4], groupScale: 0.5, entrance: {x: -9600, y: 22127, z: 1, yaw: 512}}
+  # Agar's Laboratory (MM6, E~88, class A). Entrance: outb1.lua.
+  - {map: 6d19.blv, stages: [4], entrance: {x: 2702, y: -2926, z: 1, yaw: 1024}}
+  # Temple of the Sun (MM6, E~17, class A). Entrance: outd2.lua.
+  - {map: 6t4.blv, stages: [4], entrance: {x: -3258, y: 483, z: 49, yaw: 0}}
+  # Supreme Temple of Baa (MM6, E~290, class B). Entrance: outa3.lua.
+  - {map: 6t6.blv, stages: [4], groupScale: 0.5, entrance: {x: -2048, y: 3453, z: 2049, yaw: 1536}}
+  # Castle Alamos (MM6, E~492, class B). Entrance: oute1.lua.
+  - {map: cd1.blv, stages: [4], groupScale: 0.5, entrance: {x: -2921, y: 13139, z: 225, yaw: 1536}}
+  # Castle Darkmoor (MM6, E~397, class A). Entrance: outc3.lua.
+  - {map: cd2.blv, stages: [4], groupScale: 0.5, entrance: {x: 21169, y: 1920, z: -689, yaw: 1024}}
+  # Devil Outpost (MM6, E~16, class A). Entrance: outb1.lua.
+  - {map: zdwj02.blv, stages: [4], entrance: {x: 1893, y: 122, z: 1, yaw: 1024}}
+  # The Walls of Mist (MM7, E~65, class B). Entrance: 7d25.lua.
+  - {map: 7d11.blv, stages: [4], entrance: {x: -896, y: -4717, z: 161, yaw: 512}}
+  # Clanker's Laboratory (MM7, E~33, class B). Entrance: 7out04.lua.
+  - {map: 7d12.blv, stages: [4], entrance: {x: 0, y: -709, z: 1, yaw: 512}}
+  # The School of Sorcery (MM7, E~39, class B). Entrance: 7out06.lua.
+  - {map: 7d14.blv, stages: [4], entrance: {x: 2, y: -1341, z: -159, yaw: 512}}
+  # Watchtower 6 (MM7, E~71, class B). Entrance: 7out05.lua.
+  - {map: 7d15.blv, stages: [4], entrance: {x: -416, y: -1033, z: 1, yaw: 512}}
+  # The Mercenary Guild (MM7, E~22, class A). Entrance: 7out13.lua.
+  - {map: 7d20.blv, stages: [4], entrance: {x: 886, y: 2601, z: 1, yaw: 474}}
+  # Castle Gryphonheart (MM7, E~42, class B). Entrance: 7out03.lua.
+  - {map: 7d33.blv, stages: [4], entrance: {x: 768, y: 0, z: 1, yaw: 1024}}
+  # Castle Gloaming (MM7, E~53, class B). Entrance: 7d26.lua.
+  - {map: d03.blv, stages: [4], entrance: {x: 96, y: 3424, z: 1, yaw: 1088}}
+  # The Temple of Baa (MM7, E~57, class A). Entrance: out14.lua.
+  - {map: d04.blv, stages: [4], entrance: {x: 1, y: -2772, z: 1, yaw: 512}}
+  # Dragon Hunter's Camp (MM8, E~30, class B). Entrance: out05.lua.
+  - {map: d16.blv, stages: [4], entrance: {x: -1216, y: 1888, z: 1, yaw: 1536}}
+  # Mad Necromancer's Lab (MM8, E~52, class B). Entrance: out06.lua.
+  - {map: d20.blv, stages: [4], entrance: {x: -900, y: -127, z: 1, yaw: 520}}
+  # Vampire Crypt (MM8, E~18, class A). Entrance: out06.lua.
+  - {map: d21.blv, stages: [4], entrance: {x: -457, y: -1749, z: 1, yaw: 512}}
+  # Balthazar Lair (MM8, E~58, class B). Entrance: out08.lua.
+  - {map: d24.blv, stages: [4], entrance: {x: 1, y: -100, z: -85, yaw: 1540}}
+  # War Camp (MM8, E~26, class A). Entrance: elemf.lua.
+  - {map: d30.blv, stages: [4], entrance: {x: 4, y: -1050, z: 1, yaw: 512}}
+  # Pirate Stronghold (MM8, E~36, class B). Entrance: out13.lua.
+  - {map: d31.blv, stages: [4], entrance: {x: -554, y: 3682, z: 1, yaw: 520}}
+  # Passage Under Regna (MM8, E~80, class B). Entrance: out13.lua.
+  - {map: d33.blv, stages: [4], entrance: {x: 5892, y: 4632, z: 1853, yaw: 1536}}
+  # Uplifted Library (MM8, E~18, class A). Entrance: out01.lua.
+  - {map: d40.blv, stages: [4], entrance: {x: -592, y: 624, z: 0, yaw: 0}}
+  # Ancient Troll Home (MM8, E~28, class A). Entrance: out07.lua.
+  - {map: d43.blv, stages: [4], entrance: {x: 448, y: -224, z: 0, yaw: 512}}
+  # Chasm of the Dead (MM9, E~239, class B). Entrance: map_transitions:drangheim.blv.
+  - {map: chasmofthedead.blv, stages: [4], groupScale: 0.5, entrance: {x: -13189, y: 28303, z: 1578, yaw: 1536}}
+  # Dook's Castle (MM9, E~56, class A). Entrance: map_transitions:guberland.blv.
+  - {map: dookscastle.blv, stages: [4], entrance: {x: 0, y: 1393, z: 1, yaw: 512}}
+  # Inventa Storca (MM9, E~22, class A). Entrance: map_transitions:thronheim.blv.
+  - {map: inventastorca.blv, stages: [4], entrance: {x: 369, y: -82, z: -890, yaw: 512}}
+  # Kluso's House (MM9, E~20, class A). Entrance: map_transitions:drangheimcity.blv.
+  - {map: klusoshouse.blv, stages: [4], entrance: {x: -1597, y: -758, z: 452, yaw: 228}}
+  # Ruined Temple (MM9, E~20, class B). Entrance: map_transitions:frosgard.blv.
+  - {map: ruinedtemple.blv, stages: [4], entrance: {x: 0, y: -858, z: -1719, yaw: 1536}}
+  # Training Hall (MM9, E~31, class A). Entrance: map_transitions:thjorgard.blv.
+  - {map: traininghall.blv, stages: [4], entrance: {x: 0, y: -3359, z: 1, yaw: 512}}
+  # Verhoffin Ruins (MM9, E~42, class B). Entrance: map_transitions:isleofashes.blv.
+  - {map: verhoffinruins.blv, stages: [4], entrance: {x: -1230, y: -5969, z: -327, yaw: 586}}
+  # Wizard's Lab (MM9, E~131, class A). Entrance: map_transitions:yorwick.blv.
+  - {map: wizardslab.blv, stages: [4], entrance: {x: 3154, y: 7165, z: 1, yaw: 1024}}
+  # Yanmir's Fort (MM9, E~65, class B). Entrance: map_transitions:frosgard.blv.
+  - {map: yanmirsfort.blv, stages: [4], entrance: {x: -8197, y: -2458, z: 1, yaw: 0}}

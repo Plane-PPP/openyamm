@@ -1,0 +1,39 @@
+# A run saved by the last 2.4 version (patch #51, 51ec30f4: rules v1) plays on in OpenYAMM 2.7's build: its talents
+# keep their ids (2.7's MAW solo migrations leave a Roguelike save alone), the route 2.4 drew for its seed stays (the
+# random pool is for new runs), and the bottle its camp sold becomes the alchemy bottle. The save is the frozen fixture
+# tests/fixtures/minotaur-2.4-v184-roguelike-v1.oysav (see its .txt); its numbers are checked in
+# tests/RoguelikeTalentTests.cpp.
+#   ./build/game/openyamm --asset-root "$PWD/assets_dev" \
+#       --headless-run-scenario "$PWD/tests/scenarios/rulesets/roguelike_v1_save.yml"
+id: rulesets.roguelike_v1_save
+title: Roguelike - a run saved by patch 51 plays on in 2.7 with its talents, route and a working bottle
+world: mm6
+mode: faithful
+tags: [rulesets, roguelike, saves]
+steps:
+  - new_game_flow: {start_map: hive.blv}
+  # The path is the scenario file's own (the game works in its user data folder).
+  - load_game: {path: ../../fixtures/minotaur-2.4-v184-roguelike-v1.oysav}
+  - assert:
+      map: 6t3.blv
+      ruleset: {id: roguelike}
+  - advance_runtime: {seconds: 0.1}
+  - console: {line: "run", expect_contains: "dungeon 2 of 4, map 6t3.blv (on course), seed 4, order: 6d01.blv 6t3.blv 6d12.blv 6d07.blv"}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian not called"}
+  - console: {line: "run", expect_contains: "Roderick talents: sweeping_blows=1; Alexis talents: cheat_death=1 resolve=1"}
+  - console: {line: "run", expect_contains: "Serena talents: attunement=2 cheat_death=1; Zoltan talents: attunement=1"}
+  # 2.4's camp bottle (MM6's row 1765) is the alchemy bottle now.
+  - assert:
+      inventory_any_member: [{item_id: 220, min_count: 1}]
+  # The run goes on: the clearing calls the guardian and gives the stop's level-ups.
+  - console: {line: "actor kill 100000", expect_contains: "Actors killed: "}
+  - console: {line: "run", expect_contains: "level-ups 6 of 10, guardian alive"}
+  - console: {line: "run pick 2", expect_contains: "Picked: Stay here"}
+  - console: {line: "run", expect_contains: "card screen; asks: [1] "}
+  - console: {line: "run pick 1", expect_contains: "Picked: "}
+  # A save of this version keeps the route.
+  - save_game: roguelike_v1_resaved
+  - new_game_flow: {start_map: hive.blv}
+  - load_game: roguelike_v1_resaved
+  - console: {line: "run", expect_contains: "order: 6d01.blv 6t3.blv 6d12.blv 6d07.blv"}
+  - console: {line: "run", expect_contains: "Serena talents: attunement=2 cheat_death=1"}

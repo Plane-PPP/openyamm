@@ -6,10 +6,11 @@ tags: [rulesets, roguelike]
 steps:
   # Any game brings the runtime up (the Hive, a map no run visits). `run new` then starts the run through the code a
   # new game from party creation uses (GameApplication::startNewSessionFromCharacterCreation), with four heroes of
-  # level 1 and seed 4, so the route is the same on every run. The route takes one dungeon per tier of run.yml's
-  # `route` (1, 2, 3, 3): Goblinwatch is the one dungeon of tier 1.
+  # level 1 and seed 4. The route takes one dungeon per stage of run.yml's `route` (1, 2, 3, 4) from a pool of MM6-MM9
+  # maps; the scenario pins the four dungeons of the 2.4 runs (`run new <seed> <map> ...`) so that its steps stay the
+  # same whatever the pool.
   - new_game_flow: {start_map: hive.blv}
-  - console: {line: "run new 4", expect_contains: "Run started in 6d01.blv, seed 4."}
+  - console: {line: "run new 4 6d01.blv 6t3.blv 6d12.blv 6d07.blv", expect_contains: "Run started in 6d01.blv, seed 4."}
   - assert:
       map: 6d01.blv
       ruleset: {id: roguelike}
@@ -141,15 +142,16 @@ steps:
   - console: {line: "run", expect_contains: "guardian slain"}
   - assert:
       dialog: {active: true, action_label_present: "Rest"}
-  # The camp's alchemy shop sells small stacks of herbs and bottles besides its own goods (run.yml shops[].stock).
+  # The camp's alchemy shop sells small stacks of herbs and bottles besides its own goods (run.yml shops[].stock): the
+  # table's empty alchemy bottle (220), which brews; patch #51 sold MM6's bottle row 1765, which did not.
   - select_topic: {kind: event_choice, action_id: 0, match_label: "Camp"}
   - select_topic: {kind: event_choice, action_id: 2, match_label: "Potions and magic"}
   - assert:
       dialog: {active: true, house_dialog: true, source_id: 97}
-  - console: {line: "run buy 1764", expect_contains: "Bought 3 of item 1764 for "}
-  - console: {line: "run buy 1765", expect_contains: "Bought 3 of item 1765 for "}
+  - console: {line: "run buy 1764", expect_contains: "Bought 1 of item 1764 (3 on the shelf) for "}
+  - console: {line: "run buy 220", expect_contains: "Bought 1 of item 220 (3 on the shelf) for "}
   - assert:
-      inventory_any_member: [{item_id: 1764, min_count: 1}, {item_id: 1765, min_count: 1}]
+      inventory_any_member: [{item_id: 1764, min_count: 1}, {item_id: 220, min_count: 1}]
   - press_action: {action: cancel_dialog}
   - console: {line: "run", expect_contains: "guardian slain"}
   - press_action: {action: cancel_dialog}
@@ -212,7 +214,7 @@ steps:
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
   - console: {line: "run", expect_contains: "guardian slain"}
   - console: {line: "run", expect_contains: "Roderick L25 Cavalier cards owed 0 Alexis L25 WarriorMage"}
-  - console: {line: "run", expect_contains: "rewards 2 (items 2029 2026), items owed 0; gold 4987 food 0;"}
+  - console: {line: "run", expect_contains: "rewards 2 (items 2029 2026), items owed 0; gold 4993 food 0;"}
   - console: {line: "run leave", expect_contains: "The camp."}
   - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6d12.blv"}
   - advance_runtime: {seconds: 0.1}
@@ -229,7 +231,7 @@ steps:
   - console: {line: "run pick 1", expect_contains: "Picked: "}
   - console: {line: "run pick 1", expect_contains: "Picked: "}
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
-  - console: {line: "run", expect_contains: "rewards 3 (items 2029 2026 2046), items owed 0; gold 9987 food 0;"}
+  - console: {line: "run", expect_contains: "rewards 3 (items 2029 2026 2046), items owed 0; gold 9993 food 0;"}
   - console: {line: "run leave", expect_contains: "The camp."}
   - console: {line: "run pick 3", expect_contains: "Picked: Next dungeon; map 6d07.blv"}
   - advance_runtime: {seconds: 0.1}
@@ -251,7 +253,7 @@ steps:
   - console: {line: "actor kill 100000", expect_contains: "Actors killed: 1"}
   - console: {line: "run", expect_contains: "level-ups 10 of 10, guardian slain"}
   # The last guardian leaves a relic and no gold: no camp follows it.
-  - console: {line: "run", expect_contains: "rewards 4 (items 2029 2026 2046 2037), items owed 0; gold 9987 food 0;"}
+  - console: {line: "run", expect_contains: "rewards 4 (items 2029 2026 2046 2037), items owed 0; gold 9993 food 0;"}
   # Two artifacts (Arthur, Galahad) and two relics (Hermes, Poseidon), each in a hero's pack once.
   - assert:
       inventory_any_member: [{item_id: 2029, count: 1}, {item_id: 2026, count: 1}, {item_id: 2046, count: 1},

@@ -27,8 +27,11 @@ struct DungeonRunStop
     int32_t y = 0;
     int32_t z = 0;
     int32_t yawUnits = 0;
-    // The dungeon's difficulty tier (1 the easiest), which a rules route picks by; 0 without rules.
+    // The dungeon's difficulty tier (1 the easiest), which a rules route picks by; 0 without rules. With `stages` in
+    // run.yml: the first of them.
     int tier = 0;
+    // The stops of a rules route (their stages) the dungeon may stand at: run.yml's `stages`, or its `tier` alone.
+    std::vector<int> stages;
     // The map's encounter group sizes times this (run rules: fewer monsters on the large maps).
     float groupScale = 1.0f;
 };
@@ -118,6 +121,9 @@ struct DungeonRunRules
     // hit points against its kind's.
     double clearShare = 0.5;
     float guardianHealthScale = 4.0f;
+    // The guardian's hit points times this instead when its kind stood alone on the map at the first fill (a boss of
+    // its own); 0: guardianHealthScale.
+    float uniqueGuardianHealthScale = 0.0f;
     // Level-ups each stop gives, spread evenly up to its guardian, and the levels each raises every hero by.
     std::vector<int> levelUps;
     int levelsPerLevelUp = 4;
@@ -181,6 +187,19 @@ std::vector<size_t> dungeonRunOrder(size_t dungeonCount, uint64_t rootSeed);
 std::vector<size_t> dungeonRunOrder(const DungeonRunDefinition &run, uint64_t rootSeed);
 // The dungeon that follows `entered` others, or nullptr when the run has none left.
 const DungeonRunStop *dungeonRunStop(const DungeonRunDefinition &run, uint64_t rootSeed, size_t entered);
+// Whether the dungeon may stand at this stage of a rules route.
+bool dungeonRunStopAtStage(const DungeonRunStop &stop, int stage);
+// A dungeon's key in a save (the route a run keeps, run.route.<n>): its map file name's hash, lower case, 31 bits.
+int32_t dungeonRunMapKey(std::string_view mapFileName);
+// The dungeon of the run with this key, if the run still has it.
+std::optional<size_t> dungeonRunIndexOfKey(const DungeonRunDefinition &run, int32_t key);
+// The route of a run with rules: one dungeon per stop of rules.route, standing at the stop's stage, none twice, drawn
+// from the seed's shuffle. A stop of `fixed` that holds a dungeon keeps it (and no other stop takes that one).
+std::vector<size_t> drawDungeonRunRoute(
+    const DungeonRunDefinition &run, uint64_t rootSeed, const std::vector<std::optional<size_t>> &fixed = {});
+// The maps an OpenYAMM 2.3-2.4 run (rules v0 and v1: eight MM6 dungeons by tier, route 1 2 3 3, nothing kept in the
+// save) went through with this seed, in order: a run saved then keeps its dungeons when loaded.
+std::vector<std::string> legacyDungeonRunMaps(uint64_t rootSeed);
 // The main menu's line after a run: the party's defeat, or the last dungeon left behind.
 std::string dungeonRunEndText(bool defeated, size_t completedDungeons);
 }

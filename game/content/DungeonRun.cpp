@@ -70,10 +70,27 @@ bool parseRunRules(const YAML::Node &rulesNode, DungeonRunDefinition &definition
         return false;
     }
 
+    // Every stage of the route has a dungeon of its own: a route drawn without repeats never runs dry.
+    for (size_t stop = 0; stop < rules.route.size(); ++stop)
+    {
+        const int stage = rules.route[stop];
+        const size_t stops = size_t(std::count(rules.route.begin(), rules.route.end(), stage));
+        const size_t dungeons = size_t(std::count_if(definition.dungeons.begin(), definition.dungeons.end(),
+            [stage](const DungeonRunStop &dungeon) { return dungeonRunStopAtStage(dungeon, stage); }));
+
+        if (dungeons < stops)
+        {
+            errorMessage = "run.yml route stage " + std::to_string(stage) + " has too few dungeons";
+            return false;
+        }
+    }
+
     if (const YAML::Node node = rulesNode["clear"])
     {
         rules.clearShare = std::clamp(node["share"].as<double>(rules.clearShare), 0.01, 1.0);
         rules.guardianHealthScale = std::max(0.1f, node["guardianHealthScale"].as<float>(rules.guardianHealthScale));
+        rules.uniqueGuardianHealthScale =
+            std::max(0.0f, node["uniqueGuardianHealthScale"].as<float>(rules.uniqueGuardianHealthScale));
     }
 
     if (const YAML::Node node = rulesNode["levels"])
@@ -353,6 +370,20 @@ std::optional<DungeonRunDefinition> parseDungeonRunDefinition(const std::string 
             if (dungeonNode["tier"])
             {
                 stop.tier = dungeonNode["tier"].as<int>();
+                stop.stages = {stop.tier};
+            }
+
+            if (const YAML::Node stagesNode = dungeonNode["stages"])
+            {
+                stop.stages = stagesNode.as<std::vector<int>>();
+
+                if (stop.stages.empty())
+                {
+                    errorMessage = "run.yml dungeon '" + stop.mapFileName + "' needs at least one stage";
+                    return std::nullopt;
+                }
+
+                stop.tier = stop.stages.front();
             }
 
             if (dungeonNode["groupScale"])
@@ -459,34 +490,147 @@ std::vector<size_t> dungeonRunOrder(size_t dungeonCount, uint64_t rootSeed)
     return order;
 }
 
+bool dungeonRunStopAtStage(const DungeonRunStop &stop, int stage)
+{
+    return stop.stages.empty() ? stop.tier == stage
+                               : std::find(stop.stages.begin(), stop.stages.end(), stage) != stop.stages.end();
+}
+
+int32_t dungeonRunMapKey(std::string_view mapFileName)
+{
+    // FNV-1a over the lower-case name: the same on every platform and build.
+    uint32_t hash = 2166136261u;
+
+    for (const char character : mapFileName)
+    {
+        hash ^= static_cast<uint8_t>(std::tolower(static_cast<unsigned char>(character)));
+        hash *= 16777619u;
+    }
+
+    return static_cast<int32_t>(hash & 0x7fffffffu);
+}
+
+std::optional<size_t> dungeonRunIndexOfKey(const DungeonRunDefinition &run, int32_t key)
+{
+    for (size_t index = 0; index < run.dungeons.size(); ++index)
+    {
+        if (dungeonRunMapKey(run.dungeons[index].mapFileName) == key)
+        {
+            return index;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::vector<size_t> drawDungeonRunRoute(
+    const DungeonRunDefinition &run, uint64_t rootSeed, const std::vector<std::optional<size_t>> &fixed)
+{
+    if (!run.rules.has_value())
+    {
+        return {};
+    }
+
+    std::vector<size_t> order = dungeonRunOrder(run.dungeons.size(), rootSeed);
+    const std::vector<int> &stages = run.rules->route;
+    std::vector<std::optional<size_t>> route(stages.size());
+
+    // The fixed stops first, so that no drawn stop takes their dungeons.
+    for (size_t stop = 0; stop < route.size() && stop < fixed.size(); ++stop)
+    {
+        if (fixed[stop].has_value() && *fixed[stop] < run.dungeons.size())
+        {
+            route[stop] = fixed[stop];
+            std::erase(order, *fixed[stop]);
+        }
+    }
+
+    for (size_t stop = 0; stop < route.size(); ++stop)
+    {
+        if (route[stop].has_value())
+        {
+            continue;
+        }
+
+        const int stage = stages[stop];
+        auto pick = std::find_if(
+            order.begin(),
+            order.end(),
+            [&run, stage](size_t index)
+            {
+                return dungeonRunStopAtStage(run.dungeons[index], stage);
+            });
+
+        // A stage with no dungeon left (a run.yml the loader let through): any dungeon, as the first runs did.
+        if (pick == order.end())
+        {
+            pick = order.begin();
+        }
+
+        if (pick == order.end())
+        {
+            break;
+        }
+
+        route[stop] = *pick;
+        order.erase(pick);
+    }
+
+    std::vector<size_t> drawn;
+
+    for (const std::optional<size_t> &index : route)
+    {
+        if (index.has_value())
+        {
+            drawn.push_back(*index);
+        }
+    }
+
+    return drawn;
+}
+
+std::vector<std::string> legacyDungeonRunMaps(uint64_t rootSeed)
+{
+    // run.yml of OpenYAMM 2.3 and 2.4 (rules v0, v1): its dungeons in their order and tiers.
+    struct LegacyStop
+    {
+        const char *pMap;
+        int tier;
+    };
+
+    static constexpr LegacyStop LegacyPool[] = {
+        {"6d01.blv", 1}, {"6d02.blv", 2}, {"6t3.blv", 2}, {"6t2.blv", 2},
+        {"6d07.blv", 3}, {"6d15.blv", 3}, {"6d13.blv", 3}, {"6d12.blv", 3},
+    };
+    static constexpr int LegacyRoute[] = {1, 2, 3, 3};
+
+    std::vector<size_t> order = dungeonRunOrder(std::size(LegacyPool), rootSeed);
+    std::vector<std::string> maps;
+
+    for (int tier : LegacyRoute)
+    {
+        auto pick = std::find_if(
+            order.begin(), order.end(), [tier](size_t index) { return LegacyPool[index].tier == tier; });
+
+        if (pick == order.end())
+        {
+            pick = order.begin();
+        }
+
+        maps.emplace_back(LegacyPool[*pick].pMap);
+        order.erase(pick);
+    }
+
+    return maps;
+}
+
 std::vector<size_t> dungeonRunOrder(const DungeonRunDefinition &run, uint64_t rootSeed)
 {
     std::vector<size_t> order = dungeonRunOrder(run.dungeons.size(), rootSeed);
 
     if (run.rules.has_value())
     {
-        std::vector<size_t> route;
-
-        for (int tier : run.rules->route)
-        {
-            auto pick = std::find_if(
-                order.begin(),
-                order.end(),
-                [&run, tier](size_t index)
-                {
-                    return run.dungeons[index].tier == tier;
-                });
-
-            if (pick == order.end())
-            {
-                pick = order.begin();
-            }
-
-            route.push_back(*pick);
-            order.erase(pick);
-        }
-
-        return route;
+        return drawDungeonRunRoute(run, rootSeed);
     }
 
     if (run.firstDungeon.has_value() && *run.firstDungeon < order.size())

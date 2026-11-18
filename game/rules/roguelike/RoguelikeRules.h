@@ -66,12 +66,35 @@ struct RoguelikeRunState
     int promoted = 0;
     // The last stop (1-based) whose guardian's reward the party was given; each stop's comes once.
     int rewarded = 0;
+    // The run's dungeons, stop by stop (dungeonRunMapKey of each map), drawn when the run starts: a loaded save keeps
+    // its route whatever the run.yml pool of a later version (run.route.count, run.route.<n>).
+    std::vector<int32_t> route;
+    // The stop whose arrival was taken (1-based), and the monsters already dead then and their hit points: corpses a
+    // map shows from its first fill (MM9's Inventa Storca), which the stop's clearing does not count
+    // (runStopProgress). A save from before reads as taken, with none.
+    int arrivalStop = 0;
+    int arrivalSlainMonsters = 0;
+    int arrivalSlainHealth = 0;
 
     bool operator==(const RoguelikeRunState &) const = default;
 };
 
 void readRunState(const std::unordered_map<std::string, int32_t> &variables, RoguelikeRunState &state);
 void writeRunState(const RoguelikeRunState &state, std::unordered_map<std::string, int32_t> &variables);
+// The map's clearing as the stop counts it: without the monsters that were already dead when the party arrived.
+MapKillProgress runStopProgress(const RoguelikeRunState &state, MapKillProgress progress);
+// A new run's route: drawn from the run's pool by its seed (drawDungeonRunRoute).
+std::vector<int32_t> drawRunRoute(const DungeonRunDefinition &run, uint64_t rootSeed);
+// Gives a run that has entered dungeons but keeps no route (saved by OpenYAMM 2.3-2.4) one: the route that version drew
+// for its seed (legacyDungeonRunMaps), so that a run under way ends as it began. A stop of the kept route whose map the
+// run no longer has (a later run.yml) is drawn anew from the pool, the others stay. Returns whether it changed the
+// state.
+bool ensureRunRoute(const DungeonRunDefinition &run, uint64_t rootSeed, RoguelikeRunState &state);
+// The run's dungeon at a stop (0-based) of the state's route; nullptr past its end or for a dungeon the run no
+// longer has.
+const DungeonRunStop *runRouteStop(const DungeonRunDefinition &run, const RoguelikeRunState &state, size_t stop);
+// The guardian's hit points multiplier for a strongest kind that stood `strongestCount` times at the first fill.
+float runGuardianHealthScale(const DungeonRunRules &rules, int strongestCount);
 
 // A level-up card: one step of a skill (none, Normal 1, Expert 4, Master 7, Grandmaster 10) or one rank of a talent.
 struct RunCard
@@ -132,6 +155,10 @@ std::vector<uint32_t> applyRunCard(
 // in Character::talentRanks and the old variable goes, so it happens once. The amounts those perks added are already
 // in the hero's permanent bonuses and are not added again. Returns whether anything was moved.
 bool migrateLegacyRunPerks(Character &character);
+// The camp of OpenYAMM 2.4's runs sold MM6's own bottle row (1765), which no recipe takes: a hero's such bottles, in
+// the pack and the stored bags, become the table's empty alchemy bottle (ItemDefinition::isEmptyAlchemyBottle).
+// Returns how many stacks changed.
+size_t migrateRunBottles(Character &character, const ItemTable &itemTable);
 // Gives the owed items (item ids) to the party, each to the first hero with room, identified; returns those that
 // fit no pack and must wait.
 std::vector<uint32_t> grantRunItems(Party &party, const ItemTable &itemTable, const std::vector<uint32_t> &owed);

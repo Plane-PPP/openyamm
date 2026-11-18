@@ -19,6 +19,7 @@ using OpenYAMM::Game::Character;
 using OpenYAMM::Game::ClassSkillTable;
 using OpenYAMM::Game::DungeonRunDefinition;
 using OpenYAMM::Game::DungeonRunRules;
+using OpenYAMM::Game::DungeonRunStop;
 using OpenYAMM::Game::MapKillProgress;
 using OpenYAMM::Game::RoguelikeRunState;
 using OpenYAMM::Game::RunCard;
@@ -81,17 +82,23 @@ MapKillProgress progressOf(double slain, double counted)
 }
 }
 
-TEST_CASE("the installed run's rules: a route of four by tier, ten level-ups and cards to deal")
+TEST_CASE("the installed run's rules: a route of four by stage, ten level-ups and cards to deal")
 {
     const DungeonRunDefinition run = installedRulesRun();
     const DungeonRunRules &rules = *run.rules;
 
-    CHECK_EQ(rules.route, std::vector<int>{1, 2, 3, 3});
+    CHECK_EQ(rules.route, std::vector<int>{1, 2, 3, 4});
     CHECK_EQ(rules.levelUps.size(), rules.route.size());
     CHECK_EQ(rules.totalLevelUps(), 10);
     CHECK_EQ(rules.levelsPerLevelUp, 4);
     CHECK_EQ(rules.clearShare, doctest::Approx(0.5));
     CHECK_EQ(rules.guardianHealthScale, doctest::Approx(4.0));
+    // A boss of its own (its kind alone on the map) is fortified twice, a kind of many four times (the user,
+    // 2026-11-17).
+    CHECK_EQ(rules.uniqueGuardianHealthScale, doctest::Approx(2.0));
+    CHECK_EQ(OpenYAMM::Game::runGuardianHealthScale(rules, 1), doctest::Approx(2.0));
+    CHECK_EQ(OpenYAMM::Game::runGuardianHealthScale(rules, 2), doctest::Approx(4.0));
+    CHECK_EQ(OpenYAMM::Game::runGuardianHealthScale(rules, 11), doctest::Approx(4.0));
     CHECK(rules.skills.size() >= 10);
     CHECK_EQ(rules.cardOffers, 4);
     CHECK_EQ(rules.levelUpHealShare, doctest::Approx(0.25));
@@ -116,8 +123,8 @@ TEST_CASE("the installed run's rules: a route of four by tier, ten level-ups and
         CHECK_EQ(shop.name, "Potions and magic");
         for (const OpenYAMM::Game::DungeonRunShopStack &stack : shop.stock)
         {
-            CHECK(stack.itemId >= 1762);
-            CHECK(stack.itemId <= 1765);
+            // MM6's herbs and the table's empty alchemy bottle (220), never MM6's own bottle row 1765.
+            CHECK(((stack.itemId >= 1762 && stack.itemId <= 1764) || stack.itemId == 220));
             CHECK(stack.count >= 1);
             CHECK(stack.count <= 10);
         }
@@ -137,6 +144,7 @@ TEST_CASE("the installed run's rules: a route of four by tier, ten level-ups and
     // The Medusa heroine (character_data.txt row 79 of the package) has no class caps.
     CHECK_EQ(rules.unrestrictedCharacters, std::vector<uint32_t>{79});
 
+    std::set<std::string> firstStops;
     std::set<std::string> lastStops;
 
     for (uint64_t seed = 0; seed < 60; ++seed)
@@ -147,14 +155,16 @@ TEST_CASE("the installed run's rules: a route of four by tier, ten level-ups and
 
         for (size_t stop = 0; stop < order.size(); ++stop)
         {
-            CHECK_EQ(run.dungeons[order[stop]].tier, rules.route[stop]);
+            CHECK(OpenYAMM::Game::dungeonRunStopAtStage(run.dungeons[order[stop]], rules.route[stop]));
         }
 
-        CHECK_EQ(OpenYAMM::Game::dungeonRunStop(run, seed, 0)->mapFileName, "6d01.blv");
         CHECK(OpenYAMM::Game::dungeonRunStop(run, seed, 4) == nullptr);
+        firstStops.insert(run.dungeons[order[0]].mapFileName);
         lastStops.insert(run.dungeons[order[3]].mapFileName);
     }
 
+    // Every stop random, the first too (2.4 always started in Goblinwatch).
+    CHECK(firstStops.size() >= 3);
     CHECK(lastStops.size() >= 3);
 }
 
@@ -714,14 +724,122 @@ TEST_CASE("a run's numbers go to the save's variables and back")
     state.guardianActor = 212;
     state.doorOffered = 1;
     state.promoted = 1;
+    state.route = {OpenYAMM::Game::dungeonRunMapKey("7d06.blv"), OpenYAMM::Game::dungeonRunMapKey("6t1.blv"),
+        OpenYAMM::Game::dungeonRunMapKey("d11.blv"), OpenYAMM::Game::dungeonRunMapKey("6d17.blv")};
     std::unordered_map<std::string, int32_t> variables;
     OpenYAMM::Game::writeRunState(state, variables);
     CHECK_EQ(variables.at(OpenYAMM::Game::DungeonRunEnteredVariable), 3);
+    CHECK_EQ(variables.at("run.route.count"), 4);
     RoguelikeRunState restored;
     OpenYAMM::Game::readRunState(variables, restored);
     CHECK(restored == state);
     OpenYAMM::Game::readRunState({}, restored);
     CHECK(restored == RoguelikeRunState{});
+
+    // The route names the run's dungeons whatever the order of run.yml.
+    const DungeonRunDefinition run = installedRulesRun();
+    REQUIRE(OpenYAMM::Game::runRouteStop(run, state, 3) != nullptr);
+    CHECK_EQ(OpenYAMM::Game::runRouteStop(run, state, 0)->mapFileName, "7d06.blv");
+    CHECK_EQ(OpenYAMM::Game::runRouteStop(run, state, 3)->mapFileName, "6d17.blv");
+    CHECK(OpenYAMM::Game::runRouteStop(run, state, 4) == nullptr);
+}
+
+TEST_CASE("a run's stop counts its own clearing: monsters dead when the party arrived are not the party's")
+{
+    MapKillProgress map;
+    map.countedMonsters = 40;
+    map.slainMonsters = 9;
+    map.countedHealth = 7601;
+    map.slainHealth = 1145;
+    RoguelikeRunState state;
+    state.entered = 1;
+    // Not taken yet: the map as it is.
+    state.arrivalStop = 0;
+    CHECK_EQ(OpenYAMM::Game::runStopProgress(state, map).slainHealth, doctest::Approx(1145));
+    // Taken on arrival (MM9's Inventa Storca: nine corpses of its first fill): the stop starts at nothing slain.
+    state.arrivalStop = 1;
+    state.arrivalSlainMonsters = 9;
+    state.arrivalSlainHealth = 1145;
+    const MapKillProgress stop = OpenYAMM::Game::runStopProgress(state, map);
+    CHECK_EQ(stop.slainHealth, doctest::Approx(0));
+    CHECK_EQ(stop.countedHealth, doctest::Approx(6456));
+    CHECK_EQ(stop.slainMonsters, 0);
+    CHECK_EQ(stop.countedMonsters, 31);
+    const DungeonRunRules rules = *installedRulesRun().rules;
+    CHECK_EQ(OpenYAMM::Game::runClearFraction(rules, stop), doctest::Approx(0));
+    CHECK_EQ(OpenYAMM::Game::runLevelUpsDue(rules, 0, stop), 0);
+    // The next stop's arrival is its own: an old stop's numbers never apply to it.
+    state.entered = 2;
+    CHECK_EQ(OpenYAMM::Game::runStopProgress(state, map).slainHealth, doctest::Approx(1145));
+
+    // Saved and read back; a save from before arrivals were taken reads its stop under way as taken, with none.
+    std::unordered_map<std::string, int32_t> variables;
+    state.entered = 1;
+    OpenYAMM::Game::writeRunState(state, variables);
+    RoguelikeRunState restored;
+    OpenYAMM::Game::readRunState(variables, restored);
+    CHECK(restored == state);
+    variables.erase("run.arrival_stop");
+    variables.erase("run.arrival_slain");
+    variables.erase("run.arrival_slain_health");
+    OpenYAMM::Game::readRunState(variables, restored);
+    CHECK_EQ(restored.arrivalStop, 1);
+    CHECK_EQ(restored.arrivalSlainHealth, 0);
+    CHECK_EQ(OpenYAMM::Game::runStopProgress(restored, map).slainHealth, doctest::Approx(1145));
+}
+
+TEST_CASE("a kept route whose map a later pool lost draws that stop anew and keeps the others")
+{
+    const DungeonRunDefinition run = installedRulesRun();
+    RoguelikeRunState state;
+    state.entered = 2;
+    state.route = {OpenYAMM::Game::dungeonRunMapKey("6d01.blv"), OpenYAMM::Game::dungeonRunMapKey("6t3.blv"),
+        OpenYAMM::Game::dungeonRunMapKey("no_such_map.blv"), OpenYAMM::Game::dungeonRunMapKey("6d17.blv")};
+    REQUIRE(OpenYAMM::Game::ensureRunRoute(run, 4, state));
+    REQUIRE_EQ(state.route.size(), 4u);
+    CHECK_EQ(OpenYAMM::Game::runRouteStop(run, state, 0)->mapFileName, "6d01.blv");
+    CHECK_EQ(OpenYAMM::Game::runRouteStop(run, state, 1)->mapFileName, "6t3.blv");
+    REQUIRE(OpenYAMM::Game::runRouteStop(run, state, 2) != nullptr);
+    CHECK(OpenYAMM::Game::dungeonRunStopAtStage(*OpenYAMM::Game::runRouteStop(run, state, 2), 3));
+    CHECK_EQ(OpenYAMM::Game::runRouteStop(run, state, 3)->mapFileName, "6d17.blv");
+    // Whole now: nothing more to change.
+    CHECK_FALSE(OpenYAMM::Game::ensureRunRoute(run, 4, state));
+}
+
+TEST_CASE("a run saved by 2.4 keeps the route that version drew; a new run draws its own")
+{
+    const DungeonRunDefinition run = installedRulesRun();
+    // A 2.4 save: in its second dungeon, no route kept.
+    RoguelikeRunState state;
+    state.entered = 2;
+    REQUIRE(OpenYAMM::Game::ensureRunRoute(run, 4, state));
+    REQUIRE_EQ(state.route.size(), 4u);
+    const std::vector<std::string> expected = {"6d01.blv", "6t3.blv", "6d12.blv", "6d07.blv"};
+
+    for (size_t stop = 0; stop < expected.size(); ++stop)
+    {
+        REQUIRE(OpenYAMM::Game::runRouteStop(run, state, stop) != nullptr);
+        CHECK_EQ(OpenYAMM::Game::runRouteStop(run, state, stop)->mapFileName, expected[stop]);
+    }
+
+    // Once kept, it stays; a game that is no run under way gets none.
+    CHECK_FALSE(OpenYAMM::Game::ensureRunRoute(run, 4, state));
+    RoguelikeRunState notStarted;
+    CHECK_FALSE(OpenYAMM::Game::ensureRunRoute(run, 4, notStarted));
+    CHECK(notStarted.route.empty());
+
+    // A new run: the seed's draw, a stage per stop.
+    const std::vector<int32_t> drawn = OpenYAMM::Game::drawRunRoute(run, 4);
+    REQUIRE_EQ(drawn.size(), 4u);
+    RoguelikeRunState fresh;
+    fresh.route = drawn;
+
+    for (size_t stop = 0; stop < drawn.size(); ++stop)
+    {
+        REQUIRE(OpenYAMM::Game::runRouteStop(run, fresh, stop) != nullptr);
+        const DungeonRunStop &dungeon = *OpenYAMM::Game::runRouteStop(run, fresh, stop);
+        CHECK(OpenYAMM::Game::dungeonRunStopAtStage(dungeon, run.rules->route[stop]));
+    }
 }
 
 TEST_CASE("Minotaur frozen 2.3 v180 preserves the Roguelike run when migrated to 2.4")

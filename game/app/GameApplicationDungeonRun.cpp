@@ -45,6 +45,8 @@ namespace
 // enough to look at the heroes for a card screen closed with Esc.
 constexpr uint64_t DungeonRunChoiceRetryMilliseconds = 400;
 constexpr uint64_t DungeonRunCardRetryMilliseconds = 20000;
+// How long a run's map must show no hostile monster before its way out opens (updateDungeonRunRules).
+constexpr uint64_t DungeonRunEmptyMapMilliseconds = 3000;
 
 // The camp's day: every camp shop is open from its morning to its evening (MM6's magic shops keep 8 to 16, the
 // others 6 to 18). The camp's rest is the game's Rest and Heal, eight hours at least.
@@ -113,8 +115,39 @@ void GameApplication::setDungeonRunEntered(int32_t entered)
 std::optional<GameApplication::MapStartDestination> GameApplication::beginDungeonRun()
 {
     const std::optional<DungeonRunDefinition> dungeonRun = loadSessionDungeonRun();
-    const DungeonRunStop *pStop =
-        dungeonRun.has_value() ? dungeonRunStop(*dungeonRun, m_gameSession.randomRootSeed(), 0) : nullptr;
+    const std::vector<std::string> pinnedRoute = std::move(m_dungeonRunPinnedRoute);
+    m_dungeonRunPinnedRoute.clear();
+
+    if (!dungeonRun.has_value())
+    {
+        return std::nullopt;
+    }
+
+    RoguelikeRules *pRules = m_gameSession.roguelikeRules();
+    RoguelikeRunState fresh{.entered = 1};
+    const DungeonRunStop *pStop = nullptr;
+
+    if (pRules != nullptr && dungeonRun->rules.has_value())
+    {
+        // The route is drawn now and kept with the save: a later version's pool never changes a run under way.
+        std::vector<std::optional<size_t>> fixed;
+
+        for (const std::string &map : pinnedRoute)
+        {
+            fixed.push_back(dungeonRunIndexOfKey(*dungeonRun, dungeonRunMapKey(map)));
+        }
+
+        for (size_t index : drawDungeonRunRoute(*dungeonRun, m_gameSession.randomRootSeed(), fixed))
+        {
+            fresh.route.push_back(dungeonRunMapKey(dungeonRun->dungeons[index].mapFileName));
+        }
+
+        pStop = runRouteStop(*dungeonRun, fresh, 0);
+    }
+    else
+    {
+        pStop = dungeonRunStop(*dungeonRun, m_gameSession.randomRootSeed(), 0);
+    }
 
     if (pStop == nullptr)
     {
@@ -124,9 +157,16 @@ std::optional<GameApplication::MapStartDestination> GameApplication::beginDungeo
     // The session is new and has no map yet: the first map's runtime takes the variable from the session.
     m_gameSession.setNamedGlobalVar(DungeonRunEnteredVariable, 1);
 
-    if (RoguelikeRules *pRules = m_gameSession.roguelikeRules())
+    if (pRules != nullptr)
     {
-        pRules->state() = RoguelikeRunState{.entered = 1};
+        pRules->state() = fresh;
+        std::unordered_map<std::string, int32_t> variables;
+        writeRunState(fresh, variables);
+
+        for (const auto &[name, value] : variables)
+        {
+            m_gameSession.setNamedGlobalVar(name, value);
+        }
     }
 
     resetDungeonRunChoices();
@@ -152,8 +192,7 @@ bool GameApplication::redirectMapMoveForDungeonRun(EventRuntimeState::PendingMap
     }
 
     const int32_t entered = dungeonRunEntered();
-    const DungeonRunStop *pStop =
-        dungeonRunStop(*dungeonRun, m_gameSession.randomRootSeed(), static_cast<size_t>(entered));
+    const DungeonRunStop *pStop = dungeonRunRouteStop(*dungeonRun, static_cast<size_t>(entered));
 
     if (pStop == nullptr)
     {
@@ -203,6 +242,7 @@ bool GameApplication::processPendingDungeonRunStart()
 
     const PendingDungeonRunStart pendingStart = *m_pendingDungeonRunStart;
     m_pendingDungeonRunStart.reset();
+    m_dungeonRunPinnedRoute.clear();
     std::string error;
 
     if (!activateRuleset(pendingStart.rulesetId, error))
@@ -210,6 +250,9 @@ bool GameApplication::processPendingDungeonRunStart()
         m_debugConsole.addMessage(DebugConsole::MessageKind::Error, error);
         return true;
     }
+
+    // Taken by beginDungeonRun when the new game starts.
+    m_dungeonRunPinnedRoute = pendingStart.routeMaps;
 
     NewGameOptions options;
     options.ruleset.id = pendingStart.rulesetId;
@@ -283,7 +326,7 @@ void GameApplication::registerDungeonRunConsoleCommand()
     m_debugConsole.registerCommand({
         .name = "run",
         .description = "Dungeon runs: this run's progress, a new run with a test party, or an answer to its choice.",
-        .usage = "run | run new [seed] | run pick <n> | run leave | run close | run buy <item>",
+        .usage = "run | run new [seed] [map...] | run pick <n> | run leave | run close | run buy <item>",
         .callback = [this, commandResult](const DebugConsole::CommandContext &context)
         {
             const std::string action = context.args.empty() ? std::string("status") : toLowerCopy(context.args[0]);
@@ -324,8 +367,12 @@ void GameApplication::registerDungeonRunConsoleCommand()
                 {
                     if (loadDungeonRunDefinition(*m_pAssetFileSystem, ruleset.id, error).has_value())
                     {
-                        m_pendingDungeonRunStart =
-                            PendingDungeonRunStart{.rulesetId = ruleset.id, .rootSeed = rootSeed};
+                        // Maps after the seed pin the first stops (tests): the rest of the route is drawn.
+                        std::vector<std::string> routeMaps(
+                            context.args.size() > 2 ? context.args.begin() + 2 : context.args.end(),
+                            context.args.end());
+                        m_pendingDungeonRunStart = PendingDungeonRunStart{
+                            .rulesetId = ruleset.id, .rootSeed = rootSeed, .routeMaps = std::move(routeMaps)};
                         return commandResult(true, "Starting a new " + ruleset.name + " run.");
                     }
 
@@ -427,9 +474,10 @@ void GameApplication::registerDungeonRunConsoleCommand()
                     m_gameDataLoader.getStandardItemEnchantTable(), m_gameDataLoader.getSpecialItemEnchantTable(),
                     *pHouse, pWorldRuntime->gameMinutes(), HouseStockMode::ShopStandard,
                     static_cast<size_t>(stock.rend() - found - 1), status);
+                // A shop sells one of a stack at a time (HouseServiceRuntime::oneFromStockSlot).
                 return commandResult(bought,
-                    bought ? "Bought " + std::to_string(quantity) + " of item " + std::to_string(itemId) + " for "
-                            + std::to_string(goldBefore - pParty->gold()) + " gold."
+                    bought ? "Bought 1 of item " + std::to_string(itemId) + " (" + std::to_string(quantity)
+                            + " on the shelf) for " + std::to_string(goldBefore - pParty->gold()) + " gold."
                            : status);
             }
 
@@ -474,7 +522,8 @@ void GameApplication::registerDungeonRunConsoleCommand()
             if (action != "status")
             {
                 return commandResult(
-                    false, "Usage: run | run new [seed] | run pick <n> | run leave | run close | run buy <item>");
+                    false,
+                    "Usage: run | run new [seed] [map...] | run pick <n> | run leave | run close | run buy <item>");
             }
 
             const std::optional<DungeonRunDefinition> dungeonRun = loadSessionDungeonRun();
@@ -487,19 +536,32 @@ void GameApplication::registerDungeonRunConsoleCommand()
             const int32_t entered = dungeonRunEntered();
             const uint64_t rootSeed = m_gameSession.randomRootSeed();
             const std::string &currentMap = m_gameSession.currentMapFileName();
-            const DungeonRunStop *pCurrent = entered > 0
-                ? dungeonRunStop(*dungeonRun, rootSeed, static_cast<size_t>(entered - 1))
-                : nullptr;
+            const DungeonRunStop *pCurrent =
+                entered > 0 ? dungeonRunRouteStop(*dungeonRun, static_cast<size_t>(entered - 1)) : nullptr;
             const bool onCourse =
                 pCurrent != nullptr && toLowerCopy(pCurrent->mapFileName) == toLowerCopy(currentMap);
+            std::vector<std::string> routeMaps;
+
+            for (size_t stop = 0;; ++stop)
+            {
+                const DungeonRunStop *pStop = dungeonRunRouteStop(*dungeonRun, stop);
+
+                if (pStop == nullptr)
+                {
+                    break;
+                }
+
+                routeMaps.push_back(pStop->mapFileName);
+            }
+
             std::ostringstream out;
-            out << "Run: dungeon " << entered << " of " << dungeonRunOrder(*dungeonRun, rootSeed).size()
+            out << "Run: dungeon " << entered << " of " << routeMaps.size()
                 << ", map " << currentMap << (onCourse ? " (on course)" : " (off course)")
                 << ", seed " << rootSeed << ", order:";
 
-            for (size_t index : dungeonRunOrder(*dungeonRun, rootSeed))
+            for (const std::string &map : routeMaps)
             {
-                out << ' ' << dungeonRun->dungeons[index].mapFileName;
+                out << ' ' << map;
             }
 
             if (const RoguelikeRules *pRules = m_gameSession.roguelikeRules())
@@ -513,6 +575,7 @@ void GameApplication::registerDungeonRunConsoleCommand()
 
                 if (pWorldRuntime != nullptr && pWorldRuntime->mapKillProgress(progress))
                 {
+                    progress = runStopProgress(state, progress);
                     out << ", slain " << static_cast<long long>(progress.slainHealth) << " of "
                         << static_cast<long long>(progress.countedHealth) << " hit points, toward the guardian "
                         << static_cast<int>(runClearFraction(pRules->rules(), progress) * 100.0) << "%";
@@ -617,8 +680,32 @@ const DungeonRunStop *GameApplication::currentDungeonRunStop()
         return nullptr;
     }
 
-    return dungeonRunStop(
-        pRules->run(), m_gameSession.randomRootSeed(), static_cast<size_t>(pRules->state().entered - 1));
+    return dungeonRunRouteStop(pRules->run(), static_cast<size_t>(pRules->state().entered - 1));
+}
+
+const DungeonRunStop *GameApplication::dungeonRunRouteStop(const DungeonRunDefinition &run, size_t stop)
+{
+    RoguelikeRules *pRules = m_gameSession.roguelikeRules();
+
+    if (pRules == nullptr || !run.rules.has_value())
+    {
+        return dungeonRunStop(run, m_gameSession.randomRootSeed(), stop);
+    }
+
+    RoguelikeRunState &state = pRules->state();
+
+    // A run of OpenYAMM 2.4 keeps the route 2.4 drew; a kept route's lost map is drawn anew; a run without one draws.
+    if (ensureRunRoute(run, m_gameSession.randomRootSeed(), state))
+    {
+        storeDungeonRunState();
+    }
+    else if (state.route.empty())
+    {
+        state.route = drawRunRoute(run, m_gameSession.randomRootSeed());
+        storeDungeonRunState();
+    }
+
+    return runRouteStop(run, state, stop);
 }
 
 void GameApplication::storeDungeonRunState()
@@ -937,7 +1024,8 @@ void GameApplication::placeDungeonRunGuardian()
         request.z = static_cast<float>(pStop->z);
         request.radius = 96.0f;
         request.hostile = true;
-        request.healthMultiplier = pRules->rules().guardianHealthScale;
+        // A boss of its own (its kind alone on the map) is fortified less than a kind of many.
+        request.healthMultiplier = runGuardianHealthScale(pRules->rules(), progress.strongestMonsterCount);
         request.seed = m_gameSession.randomRootSeed() ^ (static_cast<uint64_t>(state.entered) << 20) ^ 0x6775617264ull;
         spawned = pWorldRuntime->spawnMonsters(request);
     }
@@ -963,6 +1051,7 @@ void GameApplication::placeDungeonRunGuardian()
     GAMEPLAY_DEBUG_TRACE(
         "dungeon_run_guardian map=\"" + m_gameSession.currentMapFileName() + "\""
         + " monster=" + std::to_string(progress.strongestMonsterId)
+        + " count=" + std::to_string(progress.strongestMonsterCount)
         + " actor=" + std::to_string(state.guardianActor));
 
     if (pRuntimeState != nullptr)
@@ -1422,9 +1511,70 @@ void GameApplication::updateDungeonRunRules()
         answerDungeonRunChoice(answer);
     }
 
+    // The party's arrival at a stop: the monsters already dead on its map (corpses of the first fill) are not the
+    // stop's to clear. Taken once, on the stop's own map.
+    if (state.entered > 0 && state.arrivalStop != state.entered)
+    {
+        const DungeonRunStop *pStop = currentDungeonRunStop();
+        MapKillProgress arrival;
+
+        if (pStop != nullptr && toLowerCopy(pStop->mapFileName) == toLowerCopy(m_gameSession.currentMapFileName())
+            && pWorldRuntime->mapKillProgress(arrival))
+        {
+            state.arrivalStop = state.entered;
+            state.arrivalSlainMonsters = arrival.slainMonsters;
+            state.arrivalSlainHealth = static_cast<int>(std::lround(arrival.slainHealth));
+
+            if (arrival.slainMonsters > 0)
+            {
+                GAMEPLAY_DEBUG_TRACE("dungeon_run_arrival map=\"" + pStop->mapFileName + "\" dead="
+                    + std::to_string(arrival.slainMonsters) + " health=" + std::to_string(state.arrivalSlainHealth));
+            }
+        }
+    }
+
     if (state.guardian == RoguelikeRunState::GuardianDue)
     {
         placeDungeonRunGuardian();
+    }
+
+    // A dungeon that shows no hostile monster for a few seconds (no first fill to clear, nothing hidden to come): no
+    // guardian can be called there, so the way out opens instead of staying sealed for good.
+    MapKillProgress emptyCheck;
+    const bool emptyMap = state.entered > 0 && state.guardian == RoguelikeRunState::GuardianNone
+        && state.arrivalStop == state.entered && pWorldRuntime->mapKillProgress(emptyCheck)
+        && runStopProgress(state, emptyCheck).countedHealth <= 0 && emptyCheck.remainingActors.empty()
+        && emptyCheck.hiddenMonsters == 0;
+
+    if (emptyMap)
+    {
+        const uint64_t now = SDL_GetTicks();
+
+        if (m_dungeonRunEmptyMapSinceTicks == 0)
+        {
+            m_dungeonRunEmptyMapSinceTicks = now;
+        }
+        else if (now - m_dungeonRunEmptyMapSinceTicks >= DungeonRunEmptyMapMilliseconds)
+        {
+            // The stop's level-ups come as its clearing would have given them.
+            const int due = pRules->rules().levelUpsBefore(static_cast<size_t>(state.entered));
+
+            while (state.levelUps < due)
+            {
+                grantRunLevelUp(pRules->rules(), *pParty);
+                ++state.levelUps;
+            }
+
+            state.guardian = RoguelikeRunState::GuardianSlain;
+            m_dungeonRunEmptyMapSinceTicks = 0;
+            GAMEPLAY_DEBUG_TRACE("dungeon_run_empty_map map=\"" + m_gameSession.currentMapFileName() + "\"");
+            pRuntimeState->statusMessages.push_back(
+                Engine::tr("No monster holds this dungeon: the way out is open."));
+        }
+    }
+    else
+    {
+        m_dungeonRunEmptyMapSinceTicks = 0;
     }
 
     if (state.guardian == RoguelikeRunState::GuardianSlain && state.promoted == 0
