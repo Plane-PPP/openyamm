@@ -1,11 +1,28 @@
-# OpenYAMM 2.7 integration + Roguelike v2 — Windows update over patch #51 (2026-11-18, CI pending)
+# OpenYAMM 2.7 integration + Roguelike v2 — verified Windows update over patch #51 (2026-11-18)
 
+Windows executable source: `f4dd6d0f33b506f6d757f866aab90bd7d7c76317`.
 Branch: `integration/minotaur-v2.7-20261117`; official target v2.7 `71235186061e3e9c307cd09d242877433b924f39`.
+[CI run 44256532900 (#53)](https://github.com/Plane-PPP/openyamm/actions/runs/44256532900), 07:08-08:11 UTC: preflight,
+offline installer tests, desktop content, the program with all 12 Windows test groups and the package with all 24
+scenarios passed; the whole workflow succeeded. Later documentation-only commits do not change the packaged executable
+source SHA.
+Version: `minotaur-2.7-f4dd6d0f33b5-53-1`.
+[Download the update ZIP](https://github.com/Plane-PPP/openyamm/actions/runs/44256532900/artifacts/14409626776):
+444,754,939 bytes, SHA256 `2caa93fd6819aea52f4604c417d428ec4d45a018cb986710b11e9d9940d1f089`, expires
+2026-11-25 08:07 UTC (Actions retention). It applies only to `minotaur-2.4-51ec30f41533-51-1`: 12 changed content packs
+(418,516,203 bytes) are shipped, 283 are reused from the installation.
+
 Previous confirmed build: patch #51 `minotaur-2.4-51ec30f41533-51-1`, source `51ec30f41533c30683635697bbdbf71ba7887488`,
 [run 44083463333](https://github.com/Plane-PPP/openyamm/actions/runs/44083463333), installed and played by the user.
 It is the update base: `packaging/minotaur/bases/minotaur-2.4-51ec30f41533-51-1.json` is that run's metadata artifact
-as downloaded. The package's actual source SHA and its changed files against 51ec30f4 are appended below by the
-Windows job; the run and its results are added here when it ends.
+as downloaded. The package's changed files against 51ec30f4 are appended to its own BUILD-NOTES.md by the Windows job.
+
+Windows test groups (cases): gameplay 294, world 7, medusa-importer 49, updater 17, upstream-ai 155, upstream-indoor 20,
+roguelike 47, mm9 187, upstream24 431, upstream27 42, native-ui 28, maw24 347 — all passed, including the cases whose
+resources the sparse Linux checkout lacks. Scenarios of the package: the 15 release scenarios, MM9 shop after a world
+switch, Medusa's start, the four Roguelike scenarios (run to victory, v184 and #51 saves, three worlds), the standard
+exit dialog, the MM8 plane gateway and the MAW potion turn. Run #52 (44255438450) was cancelled before compiling: the
+Windows compile fix below came after it.
 
 Compared with #51: the official 2.7 merge (2.5-2.7: HUD draw list, Chinese, remappable solo bar, Manathirst, potion
 upkeep orders, named mods, scene overlays, the loot filter, Map Studio and the shared `core/`, MAW pouches, the
@@ -18,8 +35,9 @@ Piercing Arrows card plays as 2.7's Chaining Arrows (2.7 removed the piercing fl
 `/third_party/cgltf/` checked out, as upstream 2.7; one line of upstream's `core/compile/EditorDocument.cpp` made to
 compile on Windows (the unit tests link it; upstream builds neither on Windows).
 
-Linux checks: [integration record](docs/research/openyamm-2.7-integration.md). No Windows, screen or playthrough check
-yet.
+Linux checks: [integration record](docs/research/openyamm-2.7-integration.md); before the run a MinGW-w64 syntax
+check of the 712 units the Windows job compiles found no other Windows-only error. No installation, screen or
+playthrough check on Windows yet; no release, tag, main merge or baseline promotion.
 
 # OpenYAMM 2.4 integration — verified Windows x64 ZIP (2026-11-15)
 

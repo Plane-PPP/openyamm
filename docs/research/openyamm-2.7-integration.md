@@ -120,8 +120,13 @@ Partial clone `blob:none`: недостающие blob-ы v2.7 (1364) скача
   Windows не компилируется: `relativePath.native().starts_with("..")` в `core/compile/EditorDocument.cpp`
   (`native()` там — широкая строка). Заменено на `generic_string()`, на Linux/macOS поведение то же. Остальное новое
   для Windows (`core/compile/`, тесты 2.5–2.7, наш код) просмотрено на ту же ловушку (`path` → `std::string`,
-  `c_str()`, POSIX-функции) — других мест нет; локальная проверка компилятором MinGW не выполнялась (запуск
-  скачанного компилятора не разрешён в этой сессии), окончательно проверит CI.
+  `c_str()`, POSIX-функции) — других мест нет. Затем, с разрешения пользователя, — проверка синтаксиса компилятором
+  MinGW-w64 13 (пакеты Ubuntu `g++-mingw-w64-x86-64-posix`, флаги и списки файлов целей Linux-сборки): 712 единиц
+  трансляции `openyamm_unit_tests`, `openyamm_runtime_tests`, `openyamm_core_compile`, `openyamm_core`,
+  `openyamm_engine`, `openyamm_game`, `openyamm`. Три отказа — особенности проверки, не кода: `SDKDDKVer.h` (на
+  Windows имена файлов без учёта регистра), шейдерный заголовок, который создаёт сама сборка, и `stat` в
+  `tests/PartyCreationSheetTests.cpp` (`struct stat` заголовков mingw-w64 11 Ubuntu; файл не менялся с 1.21 и собирался
+  на Windows в #51). Сборка на Windows (ниже) это подтвердила.
 - `tools/check_minotaur_workflow.py` раньше сверял с upstream только ресурсы и пропустил это. Теперь он требует, чтобы
   `content` выкачивал исходные пути задачи `content` upstream, а `windows` — задач `windows` и `linux` (каталог
   покрывает вложенные пути). На workflow до правки он выдаёт все шесть пропусков.
@@ -133,10 +138,20 @@ Partial clone `blob:none`: недостающие blob-ы v2.7 (1364) скача
 - Запуск: `gh workflow run minotaur-windows.yml --repo Plane-PPP/openyamm --ref integration/minotaur-v2.7-20261117
   -f package_mode=update -f previous_build_sha=51ec30f41533c30683635697bbdbf71ba7887488`. Ветка не добавлена в
   push-триггеры, как и ветка 2.4.
+- Запуск #52 (44255438450, `42cb0942`) отменён ещё на выкачивании, когда нашлась ошибка компиляции выше.
+- [Запуск #53 (44256532900)](https://github.com/Plane-PPP/openyamm/actions/runs/44256532900), исходник `f4dd6d0f`,
+  07:08–08:11 UTC — успешен целиком. Preflight, тесты установщика, ресурсы (26 мин), программа и тесты (53 мин),
+  пакет и сценарии (9 мин). Группы тестов на Windows с полными данными: gameplay 294, world 7, medusa-importer 49,
+  updater 17, upstream-ai 155, upstream-indoor 20, roguelike 47, mm9 187, upstream24 431, upstream27 42, native-ui 28,
+  maw24 347 — все проходят, в том числе случаи, которым здесь не хватало ресурсов. Сценарии пакета: 24 из 24.
+- Пакет: `Minotaur-Update-minotaur-2.7-f4dd6d0f33b5-53-1.zip`, 444 754 939 байт, SHA-256
+  `2caa93fd6819aea52f4604c417d428ec4d45a018cb986710b11e9d9940d1f089`, хранится до 2026-11-25 08:07 UTC. Ставится только
+  на `minotaur-2.4-51ec30f41533-51-1`: 12 изменённых пакетов ресурсов (418 516 203 байта), 283 берутся из установки.
+  Новой базой #53 станет, когда пользователь его установит (как #50 и #51).
 
 ## Не проверено
 
-- Windows-сборка, Windows CI, установленный пакет, Vulkan.
+- Установка пакета на Windows у пользователя, Vulkan.
 - Игра на экране: карточный экран, бой и скрипты карт MM7–MM9 внутри забега, правила мира MM9 в забеге.
 - По `AGENTS.md` слияние upstream, форматы сохранений, миграции и инвентарные транзакции требуют независимого ревью
   второго агента (Codex) — не выполнено.
