@@ -15,7 +15,8 @@ run; a frozen fixture of the #51 writer. Roguelike v2: 94 MM6-MM9 dungeons drawn
 the save; a #51 run keeps its route), a lone guardian at x2 hit points, corpses present on arrival not counted, a map
 with nothing to fight opens its way. The camp sells the brewable bottle 220; #51's bottles 1765 become 220 on load. The
 Piercing Arrows card plays as 2.7's Chaining Arrows (2.7 removed the piercing flight). CI: `/core/` and
-`/third_party/cgltf/` checked out, as upstream 2.7.
+`/third_party/cgltf/` checked out, as upstream 2.7; one line of upstream's `core/compile/EditorDocument.cpp` made to
+compile on Windows (the unit tests link it; upstream builds neither on Windows).
 
 Linux checks: [integration record](docs/research/openyamm-2.7-integration.md). No Windows, screen or playthrough check
 yet.

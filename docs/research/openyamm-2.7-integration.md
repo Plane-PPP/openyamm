@@ -115,6 +115,13 @@ Partial clone `blob:none`: недостающие blob-ы v2.7 (1364) скача
 - Задачи `content` и `windows` теперь выкачивают `/core/` и `/third_party/cgltf/`: upstream добавил их во все задачи
   сборки в 2.6–2.7, а корневой `CMakeLists.txt` делает `add_subdirectory(core)` — без них сборка в CI упала бы на
   конфигурации. Флаг `-DOPENYAMM_BUILD_EDITOR=OFF` убран, как в upstream (в 2.7 такой опции нет).
+- Задача `windows` собирает модульные тесты, а они в 2.7 подключают `openyamm_core_compile` (перенесённый из редактора
+  код `core/compile/`). Upstream под Windows ни тесты, ни этот код не собирает, и в нём нашлась строка, которая на
+  Windows не компилируется: `relativePath.native().starts_with("..")` в `core/compile/EditorDocument.cpp`
+  (`native()` там — широкая строка). Заменено на `generic_string()`, на Linux/macOS поведение то же. Остальное новое
+  для Windows (`core/compile/`, тесты 2.5–2.7, наш код) просмотрено на ту же ловушку (`path` → `std::string`,
+  `c_str()`, POSIX-функции) — других мест нет; локальная проверка компилятором MinGW не выполнялась (запуск
+  скачанного компилятора не разрешён в этой сессии), окончательно проверит CI.
 - `tools/check_minotaur_workflow.py` раньше сверял с upstream только ресурсы и пропустил это. Теперь он требует, чтобы
   `content` выкачивал исходные пути задачи `content` upstream, а `windows` — задач `windows` и `linux` (каталог
   покрывает вложенные пути). На workflow до правки он выдаёт все шесть пропусков.

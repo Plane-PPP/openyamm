@@ -608,10 +608,12 @@ std::string displayPathForDocument(
 {
     std::error_code relativeError;
     const std::filesystem::path relativePath = std::filesystem::relative(path, editorDevelopmentRoot, relativeError);
+    // generic_string(), not native(): on Windows a path's native string is wide and starts_with("..") does not compile.
+    const std::string relativeText = relativePath.generic_string();
 
-    if (!relativeError && !relativePath.empty() && !relativePath.native().starts_with(".."))
+    if (!relativeError && !relativePath.empty() && !relativeText.starts_with(".."))
     {
-        return relativePath.generic_string();
+        return relativeText;
     }
 
     return path.generic_string();
