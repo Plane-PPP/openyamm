@@ -1,7 +1,7 @@
 # Интеграция OpenYAMM 2.7 — 2026-11-17/18
 
 Рабочая ветка: `integration/minotaur-v2.7-20261117` (worktree `/home/plane/projects/openyamm-minotaur-v2.3`).
-Коммиты локальные: push, CI и Windows-сборка не выполнялись (нужно отдельное разрешение).
+Windows-сборка — по разрешению пользователя 2026-11-18 (раздел «Windows-поставка»).
 
 ## Ревизии и возврат
 
@@ -108,11 +108,28 @@ Partial clone `blob:none`: недостающие blob-ы v2.7 (1364) скача
 Для ASan-сборки шейдеры взяты из обычной сборки: инструментированный компилятор шейдеров bgfx (`fcpp`, сторонний
 код) падает на новых шейдерах 2.7 с `stack-buffer-overflow` — это не код мода и не игры.
 
+## Windows-поставка
+
+- `minotaur-windows.yml` переведён на 2.7: `MINOTAUR_UPSTREAM_VERSION` 2.7, `MINOTAUR_UPSTREAM_SHA` `71235186`, версия
+  пакета `minotaur-2.7-<SHA>-<run>-<attempt>` (как при переносе 2.4 в `763f7701`).
+- Задачи `content` и `windows` теперь выкачивают `/core/` и `/third_party/cgltf/`: upstream добавил их во все задачи
+  сборки в 2.6–2.7, а корневой `CMakeLists.txt` делает `add_subdirectory(core)` — без них сборка в CI упала бы на
+  конфигурации. Флаг `-DOPENYAMM_BUILD_EDITOR=OFF` убран, как в upstream (в 2.7 такой опции нет).
+- `tools/check_minotaur_workflow.py` раньше сверял с upstream только ресурсы и пропустил это. Теперь он требует, чтобы
+  `content` выкачивал исходные пути задачи `content` upstream, а `windows` — задач `windows` и `linux` (каталог
+  покрывает вложенные пути). На workflow до правки он выдаёт все шесть пропусков.
+- База обновления — установленная у пользователя #51: `packaging/minotaur/bases/minotaur-2.4-51ec30f41533-51-1.json`,
+  артефакт `minotaur-update-metadata-51ec30f4…` запуска
+  [44083463333](https://github.com/Plane-PPP/openyamm/actions/runs/44083463333) без изменений (`check-base`: версия и
+  SHA `51ec30f41533c30683635697bbdbf71ba7887488`, 294 пакета); `latest-baseline.json` указывает на неё. Формат пакетов
+  в 2.7 тот же (`content_format` 1), инструменты упаковки не менялись.
+- Запуск: `gh workflow run minotaur-windows.yml --repo Plane-PPP/openyamm --ref integration/minotaur-v2.7-20261117
+  -f package_mode=update -f previous_build_sha=51ec30f41533c30683635697bbdbf71ba7887488`. Ветка не добавлена в
+  push-триггеры, как и ветка 2.4.
+
 ## Не проверено
 
-- Windows-сборка, Windows CI, установленный пакет, Vulkan; AddressSanitizer-прогон чек-листа перед push.
+- Windows-сборка, Windows CI, установленный пакет, Vulkan.
 - Игра на экране: карточный экран, бой и скрипты карт MM7–MM9 внутри забега, правила мира MM9 в забеге.
-- Поставка-обновление: база #51 ещё не записана в `packaging/minotaur/bases` (как делалось для #50 в `255988af`) —
-  нужна перед сборкой пакета обновления.
 - По `AGENTS.md` слияние upstream, форматы сохранений, миграции и инвентарные транзакции требуют независимого ревью
   второго агента (Codex) — не выполнено.

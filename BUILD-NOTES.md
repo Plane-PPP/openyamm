@@ -1,3 +1,25 @@
+# OpenYAMM 2.7 integration + Roguelike v2 — Windows update over patch #51 (2026-11-18, CI pending)
+
+Branch: `integration/minotaur-v2.7-20261117`; official target v2.7 `71235186061e3e9c307cd09d242877433b924f39`.
+Previous confirmed build: patch #51 `minotaur-2.4-51ec30f41533-51-1`, source `51ec30f41533c30683635697bbdbf71ba7887488`,
+[run 44083463333](https://github.com/Plane-PPP/openyamm/actions/runs/44083463333), installed and played by the user.
+It is the update base: `packaging/minotaur/bases/minotaur-2.4-51ec30f41533-51-1.json` is that run's metadata artifact
+as downloaded. The package's actual source SHA and its changed files against 51ec30f4 are appended below by the
+Windows job; the run and its results are added here when it ends.
+
+Compared with #51: the official 2.7 merge (2.5-2.7: HUD draw list, Chinese, remappable solo bar, Manathirst, potion
+upkeep orders, named mods, scene overlays, the loot filter, Map Studio and the shared `core/`, MAW pouches, the
+ground-item spotter, turn-based hazards), keeping Minotaur, Medusa, the portrait importer and Roguelike. Save writer
+OYMINO1/v194 = upstream schema 193; 2.7's MAW talent migrations are deferred for mod saves and skipped for a Roguelike
+run; a frozen fixture of the #51 writer. Roguelike v2: 94 MM6-MM9 dungeons drawn by stage (route [1, 2, 3, 4], kept in
+the save; a #51 run keeps its route), a lone guardian at x2 hit points, corpses present on arrival not counted, a map
+with nothing to fight opens its way. The camp sells the brewable bottle 220; #51's bottles 1765 become 220 on load. The
+Piercing Arrows card plays as 2.7's Chaining Arrows (2.7 removed the piercing flight). CI: `/core/` and
+`/third_party/cgltf/` checked out, as upstream 2.7.
+
+Linux checks: [integration record](docs/research/openyamm-2.7-integration.md). No Windows, screen or playthrough check
+yet.
+
 # OpenYAMM 2.4 integration — verified Windows x64 ZIP (2026-11-15)
 
 Windows executable source: `b54edf462b4ec4da50452926497399211df7c50b`.

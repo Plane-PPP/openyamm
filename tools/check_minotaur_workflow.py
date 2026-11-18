@@ -3,6 +3,8 @@
 
 - The content job checks out at least what upstream's desktop content job does (.github/workflows/packages.yml) and
   every world tools/packaging/packs.yml ships, and packs them all (no --world or --engine-only narrowing).
+- The content and Windows jobs check out every source path upstream's jobs build with (its content job; its Windows
+  and Linux jobs, the latter with the tests), so a directory a new release adds (2.6's core/) is not left behind.
 - The Windows job checks out every shipped world, so the tests that read their data (MM9's) find it.
 - Every scenario the workflow plays exists, and the test groups it runs are tools/minotaur_ci_tests.sh's.
 
@@ -25,6 +27,17 @@ def checkout_paths(job):
     raise ValueError(f"No checkout of this repository in job {job.get('name')}")
 
 
+def covered(path, paths):
+    """A sparse path is checked out when it is listed or a listed directory holds it (negations do not count)."""
+    return any(path == entry or (entry.endswith("/") and path.startswith(entry))
+               for entry in paths if not entry.startswith("!"))
+
+
+def source_paths(job):
+    """A job's checkout without its matrix's asset lines (`${{ matrix.assets }}`)."""
+    return [path for path in checkout_paths(job) if not path.startswith("${{")]
+
+
 def run_text(job):
     return "\n".join(str(step.get("run", "")) for step in job["steps"])
 
@@ -43,6 +56,9 @@ def main():
     for path in upstream_assets + [f"/assets_dev/worlds/{world}/" for world in worlds]:
         if path not in content:
             problems.append(f"content job does not check out {path} (upstream's desktop release does)")
+    for path in source_paths(upstream["jobs"]["content"]):
+        if not covered(path, content):
+            problems.append(f"content job does not check out {path} (upstream's content job builds with it)")
     packing = run_text(jobs["content"])
     if "package_runtime_assets.py" not in packing:
         problems.append("content job does not run tools/package_runtime_assets.py")
@@ -54,6 +70,10 @@ def main():
                         "--content-only)")
 
     windows = checkout_paths(jobs["windows"])
+    for upstream_job in ("windows", "linux"):
+        for path in source_paths(upstream["jobs"][upstream_job]):
+            if not covered(path, windows):
+                problems.append(f"windows job does not check out {path} (upstream's {upstream_job} job builds with it)")
     for world in worlds:
         if f"/assets_dev/worlds/{world}/" not in windows:
             problems.append(f"windows job does not check out /assets_dev/worlds/{world}/ its tests read")

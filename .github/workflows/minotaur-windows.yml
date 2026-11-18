@@ -72,8 +72,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MINOTAUR_UPSTREAM_VERSION: "2.4"
-  MINOTAUR_UPSTREAM_SHA: f052579667e2233d6318d9855dce29097e8ca9ef
+  MINOTAUR_UPSTREAM_VERSION: "2.7"
+  MINOTAUR_UPSTREAM_SHA: 71235186061e3e9c307cd09d242877433b924f39
   MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
 
 jobs:
@@ -117,10 +117,10 @@ jobs:
           REQUESTED_BASE: ${{ inputs.baseline_version }}
           PREVIOUS_BUILD_SHA: ${{ inputs.previous_build_sha }}
         run: |
-          version="minotaur-2.4-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          version="minotaur-2.7-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [ "$MINOTAUR_PACKAGE_MODE" = full ]; then
-            # A full installation starts a new base (the full 2.4 desktop release): no patch to an older one.
+            # A full installation starts a new base (the full 2.7 desktop release): no patch to an older one.
             if [ -n "$REQUESTED_BASE$PREVIOUS_BUILD_SHA" ]; then
               echo "::error::package_mode=full builds a new base; baseline_version and previous_build_sha are for update/both"
               exit 1
@@ -193,8 +193,10 @@ jobs:
             /LICENSE
             /COPYRIGHT
             /cmake/
+            /core/
             /engine/
             /game/
+            /third_party/cgltf/
             /packaging/
             /tools/
             /assets_dev/_legacy/sprites_original/
@@ -236,7 +238,7 @@ jobs:
       - name: Build the sprite atlas cooker
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=OFF -DOPENYAMM_BUILD_TESTS=OFF -DOPENYAMM_BUILD_EDITOR=OFF \
+            -DOPENYAMM_BUILD_DESKTOP_EXECUTABLE=OFF -DOPENYAMM_BUILD_TESTS=OFF \
             -DOPENYAMM_BUILD_TOOLS=OFF -DSDL_ALSA=OFF -DSDL_JACK=OFF -DSDL_KMSDRM=OFF -DSDL_PIPEWIRE=OFF \
             -DSDL_PULSEAUDIO=OFF -DSDL_SNDIO=OFF -DSDL_UNIX_CONSOLE_BUILD=ON -DSDL_WAYLAND=OFF -DSDL_X11=OFF
           cmake --build build --target openyamm_sprite_atlas_cook --parallel 4
@@ -304,11 +306,13 @@ jobs:
             /LICENSE
             /COPYRIGHT
             /cmake/
+            /core/
             /engine/
             /game/
             /packaging/
             /tools/
             /tests/
+            /third_party/cgltf/
             /third_party/doctest/
             /assets_dev/_legacy/sprites_original/
             /assets_dev/engine/
@@ -386,7 +390,6 @@ jobs:
           -DOPENYAMM_COOK_ON_BUILD=OFF
           -DOPENYAMM_RELEASE_VERSION=${MINOTAUR_RELEASE_VERSION}
           -DOPENYAMM_RELEASE_THIN=ON
-          -DOPENYAMM_BUILD_EDITOR=OFF
           -DOPENYAMM_BUILD_TOOLS=OFF
 
       - name: Record package revision and changes
