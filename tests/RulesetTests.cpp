@@ -1852,7 +1852,8 @@ TEST_CASE("saves of version 192 load their two pouches, with an empty quest pouc
     // The quest pouch's empty count follows the two pouches' counts and their three items.
     eraseEmptyCounts(bytes, pouchesOffset + 2 * sizeof(uint64_t) + (bytes.size() - emptySize), 1);
     const uint32_t previousVersion = 192;
-    std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
+    // Minotaur writes its own header (OYMINO1); an older upstream save is an official one.
+    stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
     const auto restored = OpenYAMM::Game::loadGameDataFromPath(path, error);
     std::filesystem::remove(path);
@@ -1911,7 +1912,7 @@ TEST_CASE("Minotaur frozen MAW mod180 reads the retired alchemist as schema179 a
     CHECK(summary->ruleset == original->ruleset);
     const std::optional<GameSaveData> restored = roundTrip(*original, error);
     REQUIRE_MESSAGE(restored, error);
-    CHECK(restored->sourceSaveVersion == 183);
+    CHECK(restored->sourceSaveVersion == 193);
     CHECK(restored->ruleset == original->ruleset);
     REQUIRE(restored->mawState);
     CHECK(*restored->mawState == *original->mawState);

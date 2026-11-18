@@ -2231,11 +2231,6 @@ bool Character::tryPlaceInventoryItemAt(
     placedItem.gridX = gridX;
     placedItem.gridY = gridY;
 
-    if (!inventoryItemFitsAt(placedItem, gridX, gridY, openBagGrid(*this)))
-    {
-        return false;
-    }
-
     std::optional<size_t> targetItemIndex;
 
     for (size_t itemIndex = 0; itemIndex < inventory.size(); ++itemIndex)
@@ -2247,14 +2242,11 @@ bool Character::tryPlaceInventoryItemAt(
         }
     }
 
-    if (!targetItemIndex)
+    // Minotaur's reagent stacks: a drop on a stack of its kind merges into it, whatever room the dropped stack's own
+    // shape would need at the cell (a 1x2 bottle stack dropped on the lower cell of the last row's stack).
+    if (targetItemIndex && ReagentStacks::compatible(inventory[*targetItemIndex], item, pTable))
     {
-        return addInventoryItemAt(placedItem, gridX, gridY, pTable);
-    }
-
-    InventoryItem &target = inventory[*targetItemIndex];
-    if (ReagentStacks::compatible(target, item, pTable))
-    {
+        InventoryItem &target = inventory[*targetItemIndex];
         const uint32_t space = target.quantity < ReagentStacks::Limit ? ReagentStacks::Limit - target.quantity : 0;
         const uint32_t moved = std::min(space, item.quantity);
         target.quantity += moved;
@@ -2266,6 +2258,18 @@ bool Character::tryPlaceInventoryItemAt(
         }
         return true;
     }
+
+    // Upstream 2.7: a drop that would stick out of the open bag's grid (a pouch's is smaller) is refused.
+    if (!inventoryItemFitsAt(placedItem, gridX, gridY, openBagGrid(*this)))
+    {
+        return false;
+    }
+
+    if (!targetItemIndex)
+    {
+        return addInventoryItemAt(placedItem, gridX, gridY, pTable);
+    }
+
     replacedItem = inventory[*targetItemIndex];
     inventory.erase(inventory.begin() + *targetItemIndex);
 
