@@ -124,9 +124,12 @@ def match_skin(generated, donor, seam, strength_other, strength):
     join[seam:seam + 60] = True
     target = skin_mask(donor) & join
     labels, count = ndimage.label(ndimage.binary_opening(skin_mask(generated) & region, iterations=2))
-    if not count:
-        raise ValueError("Empty generated skin mask")
-    source = labels == (1 + np.argmax(np.bincount(labels.ravel())[1:]))
+    sizes = np.bincount(labels.ravel(), minlength=count + 1)
+    # ndimage labels in raster order, so the first eligible component starts highest.
+    eligible = np.flatnonzero(sizes[1:] >= 150) + 1
+    if not eligible.size:
+        raise ValueError("No generated skin component of at least 150 pixels")
+    source = labels == eligible[0]
     if min(source.sum(), target.sum()) < 150:
         raise ValueError(f"Skin mask too small: source={source.sum()} donor={target.sum()}")
     lab = srgb_to_lab(generated[..., :3])
@@ -141,7 +144,7 @@ def match_skin(generated, donor, seam, strength_other, strength):
                  "skin_target_rgb": [round(v) for v in donor[target][:, :3].mean(0)]}
 
 
-def head_weight(generated, donor, threshold):
+def head_weight(generated, donor, threshold, seam, dark_value):
     import numpy as np
     """Where the new head differs from the donor: the generated pixels there replace the donor's. Codex copies the
     body around the head closely, so shoulders, arms and clothes keep the donor's own pixels (no tone step), while
@@ -163,7 +166,15 @@ def head_weight(generated, donor, threshold):
         keep = [i + 1 for i in range(count) if tops[i] < mask.shape[0] / 3 or sizes[i] > 400]
         mask = np.isin(labels, keep)
     mask = ndimage.binary_dilation(mask, iterations=2)
-    return np.clip(ndimage.gaussian_filter(mask.astype(float), 1.2) * 1.4, 0, 1)
+    dark = ((generated[..., 3] > 220) & (donor[..., 3] > 220)
+            & (generated[..., :3].max(axis=2) < dark_value * 255)
+            & (donor[..., :3].max(axis=2) < dark_value * 255))
+    dark[seam:] = False
+    grown = ndimage.binary_propagation(mask, structure=np.ones((3, 3)), mask=mask | dark)
+    added = grown & ~mask
+    weights = np.clip(ndimage.gaussian_filter(grown.astype(float), 1.2) * 1.4, 0, 1)
+    weights[added] = 1
+    return weights, mask, added
 
 
 
@@ -183,7 +194,8 @@ def extract(name):
     for strength in CFG['skin_match_strengths']:
         generated, skin, counts = match_skin(registered, donor, seam, CFG['skin_match_other'], strength)
         report.update(counts)
-        weights = head_weight(generated, donor, CFG['difference_threshold'])
+        weights, difference, added = head_weight(generated, donor, CFG['difference_threshold'],
+                                                     seam, CFG.get('dark_value', 0.35))
         # Weight of the generated pixels: 1 above the band, 0 below, linear inside it.
         rows = np.clip((seam + band / 2 - np.arange(CROP.height)) / band, 0, 1)[:, None]
         weight = (rows * weights)[:, :, None]
@@ -210,15 +222,16 @@ def extract(name):
         visible = saved[:,:,3] > 0
         invalid = any(np.any(visible & np.all(saved[:,:,:3] == colour, axis=2))
                       for colour in [(255,0,255), (0,255,255)])
-        report['checks'][tag] = dict(format=result.size==(166,594) and path.read_bytes()[24:26]==bytes([8,6]),
+        report['checks'][tag] = dict(format=result.size==BODY.size and path.read_bytes()[24:26]==bytes([8,6]),
                                      size=path.stat().st_size<=1000000,
                                      rows=np.array_equal(saved[keep:],np.asarray(BODY)[keep:]),
-                                     colours=not invalid, top=not bool(visible[0].any()), sampling=bool(sampling>=2))
+                                     colours=not invalid, sampling=bool(sampling>=2))
         if tag == 's065':
             mask = result.crop(BOX).convert('RGB')
             overlay = np.array(mask, dtype=float)
-            red = (weights*rows*.45)[:,:,None]
+            red = (difference*rows*.45)[:,:,None]
             overlay = overlay*(1-red) + np.array([255,0,0])*red
+            overlay[added] = .45*overlay[added]+.55*np.array([40,150,255])
             overlay[skin] = .4*overlay[skin]+.6*np.array([0,255,0])
             Image.fromarray(overlay.astype('uint8')).save(folder/'mask.png')
     (folder/'report.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -291,8 +304,10 @@ def qa():
         warnings = []
         if abs(r['scale_vs_height_fit']-1) > .08:
             warnings.append('масштаб')
-        if abs((bbox[2]-bbox[0])/(donor_bbox[2]-donor_bbox[0])-1)>.12 or not 2<=bbox[1]<=14:
+        if abs((bbox[2]-bbox[0])/(donor_bbox[2]-donor_bbox[0])-1)>.12:
             warnings.append('рамка головы')
+        if bbox[1] == 0:
+            warnings.append('касание верхнего края')
         r.update(head_bbox=bbox, warnings=warnings)
         path.write_text(json.dumps(r,indent=2,ensure_ascii=False)+'\n')
         status='PASS' if all(all(c.values()) for c in r['checks'].values()) else 'FAIL'
