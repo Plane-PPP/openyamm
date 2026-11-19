@@ -31,13 +31,13 @@ DOLL_FILES = ["body.png"] + [f"hand_{name}.png" for name in
                              ("left_closed", "left_hold", "left_open", "right_fingers", "right_open", "right_hold")]
 
 
-def clear_key_colours(frame):
+def clear_key_colours(frame, *, visible_only=False):
     # The HUD makes pure #FF00FF and #00FFFF transparent; resampling leaves them in near-transparent edge pixels.
     pixels = frame.load()
     for y in range(frame.height):
         for x in range(frame.width):
-            red, green, blue, _ = pixels[x, y]
-            if (red, green, blue) in KEY_COLOURS:
+            red, green, blue, alpha = pixels[x, y]
+            if (alpha or not visible_only) and (red, green, blue) in KEY_COLOURS:
                 pixels[x, y] = (0, 0, 0, 0)
 
 
@@ -85,15 +85,15 @@ def main():
 
     doll = []
     if args.doll:
-        for name in DOLL_FILES:
-            path = args.doll / name
+        for part in DOLL_FILES:
+            path = args.doll / part
             if not path.is_file():
                 continue
             with Image.open(path) as image:
                 if image.mode != "RGBA":
                     sys.exit(f"{path.name}: the doll images need a transparent background (RGBA)")
                 image.load()
-                doll.append((name, image.copy()))
+                doll.append((part, image.copy()))
         unknown = sorted(p.name for p in args.doll.iterdir() if p.is_file() and p.name not in DOLL_FILES)
         if unknown:
             sys.exit("Unknown doll files: " + ", ".join(unknown) + " (expected " + ", ".join(DOLL_FILES) + ")")
@@ -108,9 +108,9 @@ def main():
         frame.save(args.output / f"{number:02d}.png", optimize=True)
     if doll:
         (args.output / "doll").mkdir(exist_ok=True)
-        for name, image in doll:
-            clear_key_colours(image)
-            image.save(args.output / "doll" / name, optimize=True)
+        for part, image in doll:
+            clear_key_colours(image, visible_only=True)
+            image.save(args.output / "doll" / part, optimize=True)
 
     if args.zip:
         archive = args.output.with_suffix(".zip")
