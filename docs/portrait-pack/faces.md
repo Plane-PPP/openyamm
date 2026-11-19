@@ -28,9 +28,16 @@
 | Зрачки | y 620 (49 %), x 330 и 614 | ±25 по y, ±30 по x |
 | Кончик носа | y 800, x 472 | ±40 |
 | Линия рта | y 935 | ±40 |
-| Подбородок | y 1110 (88 %) | ±45 |
+| Подбородок | **FAIL** только вне y 1065–1245; ориентир по полу — женщины ≈ 1110 (`pc02`, `pc12`), мужчины ≈ 1200 (`pc05` ≈ 1215, `pc09` ≈ 1200) | дальше 45 от ориентира — WARN |
 | Шея | от подбородка до низа кадра, без плеч и среза | зазор под шеей ≤ 12 px |
 | Волосы | заполняют окно до краёв, лишнее обрезается окном | — |
+
+**Подбородок задаёт лицо персонажа, а не кадрирование.** `compose` ставит зрачки в канонические точки, то есть
+масштабирует голову по расстоянию между зрачками. Где окажется подбородок, решают пропорции лица: у длинного мужского
+лица он ниже. Промптом это не исправить: если генератор «поднимет подбородок», уменьшив лицо, `compose` растянет его
+обратно по зрачкам. Из-за подбородка не перегенерировать. Ориентиры по полу измерены по сетке на оригиналах игры
+(2026-11-19): женщины ≈ 1110, мужчины ≈ 1200. Прежний допуск 1110 ± 45 был снят с женского `pc02`, и мужские
+оригиналы `pc05` и `pc09` его не проходили.
 
 ## 3. Тексты для промптов
 
@@ -56,7 +63,8 @@ Late-1990s Might and Magic VIII party portrait, remastered: pre-rendered 3D CG h
 readable facial planes, restrained specular highlights, soft frontal studio light slightly from the upper left,
 warm neutral tone. Not a photograph, not a painting, no brush strokes, no outline.
 Front view, camera at eye level. The head fills a tall portrait frame: top of the hair near the top edge, pupils
-just below the middle of the height, chin at about 88 % of the height, short neck below it.
+just below the middle of the height, the face in its natural proportions, chin near the bottom of the frame, short
+neck below it.
 Transparent background. One head only: no sheet, no grid, no text, no frame, no guide lines, no shadow.
 ```
 
