@@ -80,7 +80,10 @@ $PACKS/
 Сессию запускать в `$REPO` с правом записи в `$PACKS` (`codex --add-dir /home/plane/projects/portrait-packs` или
 подтвердить запись по запросу).
 
-1. `_venv` с `pillow numpy scipy opencv-python-headless`.
+1. `$PACKS/_venv` с `pillow numpy scipy opencv-python-headless` — постоянное, не в `/tmp`. Создавать Python, у которого
+   есть модуль `venv`: здесь `/home/plane/.local/bin/python3.11 -m venv $PACKS/_venv` (сборка uv; ею же сделан venv для
+   куклы Медузы). Системный `python3` в Ubuntu без пакета `python3.X-venv` окружение не создаст — системные пакеты не
+   ставить, а взять Python из uv (`uv python install`) или другой с модулем `venv`.
 2. `tools/portrait_pack/portrait_kit.py` (лежит как в Medusa): убрать пути по умолчанию к `project-medusa`, всё —
    аргументами; добавить `fetch-reference --prefix pc02 [--frames 1-56] --out $PACKS/_cache/reference` (кадры 118×158 и
    ×4 LANCZOS в `x4/`).
