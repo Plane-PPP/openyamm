@@ -153,6 +153,7 @@ with the head of input 2's character.
 | Старые волосы есть уже в генерации | «No hair from input 1 remains anywhere, also behind the shoulders.» |
 | Маска кожи не на лице, сила тона не меняет лицо | сборка: маска кожи — самая верхняя область (раздел 4); повторить `extract` |
 | Лицо меньше или уже, чем у донора | «The eyes sit exactly on input 1's eye line and the chin exactly on input 1's chin line.» Голову скриптом не масштабировать |
+| Голова того же размера, что у донора, но в игре кажется маленькой | не сборка: у донора мелкое лицо для такой причёски. Другой донор по фильтру [каталога](dolls.md), новая генерация. Масштабировать голову нельзя — шлемы |
 | Поворот или взгляд вбок | `identity_frames: [1]`; «Head and eyes face the same way as input 1; never a three-quarter turn.» |
 | Волосы короткие, шея длинная и тонкая | «The hair covers the sides of the neck and rests on the shoulders where input 1's hair lies.» (если это не противоречит причёске персонажа) |
 | Волосы шире и выше донора, упираются в край | «Hair stays within input 1's head-and-hair outline.» |
