@@ -24,8 +24,12 @@ Typical flow (see docs/design/portrait-generation-brief-v2.md):
 """
 
 import argparse
+import io
 import json
 import math
+import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,6 +56,25 @@ CANON = {
     "chin_y": 1110,           # 88 %, the neck continues below and fades into the oval
 }
 CANON_TOL = {"pupil_y": 25, "pupil_left_x": 30, "pupil_right_x": 30, "nose_tip_y": 40, "mouth_y": 40, "chin_y": 45}
+CHIN_BY_SEX = {"female": 1110, "male": 1200}
+
+
+def portrait_sex(explicit, path):
+    if explicit:
+        return explicit
+    for folder in Path(path).resolve().parents:
+        card = folder / "card.yml"
+        if card.is_file():
+            contents = card.read_text()
+            if contents.lstrip().startswith("{"):
+                sex = json.loads(contents).get("sex")
+            else:
+                match = re.search(r"""^sex:[ \t]*["']?(female|male)["']?[ \t]*(?:#.*)?$""", contents, re.M)
+                sex = match[1] if match else None
+            if sex not in CHIN_BY_SEX:
+                sys.exit(f"{card}: expected sex: female or male")
+            return sex
+    return "female"  # Preserve the original reference for legacy folders without a card.
 
 # How far the whole oval drops in the duck frames (fraction of the height), measured on pc02/7pc02/7pc05/pc14.
 DUCK_SHIFT = {35: 0.25, 36: 0.52}
@@ -376,7 +399,7 @@ def cmd_compose(args):
         out[..., 3] *= oval_alpha()
         save_rgba(finish(out), args.out)
         print("master placed: pupils ->", CANON["pupil_left_x"], CANON["pupil_right_x"], "at y", CANON["pupil_y"],
-              "| now write landmarks.json next to it and check with: qa / grid")
+              "| chin reference:", CHIN_BY_SEX[args.sex], "| now write landmarks.json next to it and check with: qa / grid")
         return
 
     if not args.master:
@@ -553,10 +576,17 @@ def cmd_qa(args):
         lm = json.loads(lm_path.read_text())
         checks = {"pupil_y": (lm["pupil_left"][1] + lm["pupil_right"][1]) / 2, "pupil_left_x": lm["pupil_left"][0],
                   "pupil_right_x": lm["pupil_right"][0], "nose_tip_y": lm["nose_tip"][1],
-                  "mouth_y": (lm["mouth_left"][1] + lm["mouth_right"][1]) / 2, "chin_y": lm["chin"][1]}
+                  "mouth_y": (lm["mouth_left"][1] + lm["mouth_right"][1]) / 2}
         for key, value in checks.items():
             rep.check(abs(value - CANON[key]) <= CANON_TOL[key],
                       f"01: {key} = {value:.0f}, canonical {CANON[key]} ± {CANON_TOL[key]}")
+        chin = lm["chin"][1]
+        target = CHIN_BY_SEX[args.sex]
+        if 1065 <= chin <= 1245:
+            rep.check(abs(chin - target) <= 45, f"01: chin_y = {chin}, {args.sex} reference {target} ± 45",
+                      warn_only=True)
+        else:
+            rep.check(False, f"01: chin_y = {chin}, outside 1065–1245")
     else:
         rep.check(False, "landmarks.json missing: master layout and edit regions cannot be checked", warn_only=True)
 
@@ -687,13 +717,84 @@ def cmd_qa(args):
     sys.exit(1 if rep.fails else 0)
 
 
+def cmd_master_sheet(args):
+    images = [args.source, args.reference, *args.candidates]
+    sheet = Image.new("RGB", (248 * len(images), 530), "#343438")
+    draw = ImageDraw.Draw(sheet)
+    window_area = oval_alpha().sum()
+    for i, path in enumerate(images):
+        with Image.open(path) as image:
+            rgba = image.convert("RGBA")
+        label = ["Source", "MM reference"][i] if i < 2 else path.stem
+        x = i * 248
+        draw.text((x + 8, 4), label, fill="white")
+        small = rgba.copy()
+        small.thumbnail((GAME_W, GAME_H), Image.Resampling.LANCZOS)
+        for size, top in [(1, 24), (2, 193)]:
+            tile = small.resize((small.width * size, small.height * size), Image.Resampling.NEAREST)
+            sheet.paste(tile, (x + (248 - tile.width) // 2, top), tile)
+        if i >= 2:
+            stats = frame_stats(np.asarray(rgba).astype(np.float32) / 255)
+            draw.text((x + 8, 512), f"Luma {stats['luma']:.0f}   Window {stats['area']/window_area:.0%}", fill="white")
+    sheet.save(args.out)
+
+
+def cmd_fetch_reference(args):
+    if not re.fullmatch(r"(?:[789])?pc[0-9]{2}", args.prefix):
+        sys.exit("Expected a portrait prefix such as pc02 or 7pc05")
+    bounds = re.fullmatch(r"(\d+)(?:-(\d+))?", args.frames)
+    if not bounds:
+        sys.exit("Expected a frame or inclusive range, e.g. 1-56")
+    start = int(bounds[1])
+    end = int(bounds[2] or start)
+    if not 1 <= start <= end <= 56:
+        sys.exit("Frame range must be within 1-56")
+    repo = Path(__file__).resolve().parents[2]
+    (args.out / "x4").mkdir(parents=True, exist_ok=True)
+    for number in range(start, end + 1):
+        name = f"{args.prefix}-{number:02}.png"
+        local = args.source / name if args.source else None
+        if local and local.is_file():
+            data = local.read_bytes()
+        else:
+            path = f"assets_dev/engine/icons_x2/{name}"
+            obj = subprocess.run(["git", "cat-file", "-p", f"HEAD:{path}"],
+                                 cwd=repo, capture_output=True,
+                                 env={**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_ALLOW_PROTOCOL": ""})
+            if obj.returncode:
+                url = f"https://raw.githubusercontent.com/pjasicek/openyamm/master/{path}"
+                data = subprocess.check_output(["curl", "--http1.1", "-fsSL", url])
+            else:
+                data = obj.stdout
+        with Image.open(io.BytesIO(data)) as frame:
+            if frame.size != (GAME_W, GAME_H) or frame.format != "PNG":
+                sys.exit(f"{name}: expected a {GAME_W}x{GAME_H} PNG, got {frame.size} {frame.format}")
+            frame.convert("RGBA").resize((4 * GAME_W, 4 * GAME_H), Image.Resampling.LANCZOS).save(
+                args.out / "x4" / name)
+        (args.out / name).write_bytes(data)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("mask", help="write the oval alpha template and layout guide")
-    p.add_argument("--out", default="portraits/templates")
+    p.add_argument("--out", required=True)
     p.set_defaults(func=cmd_mask)
+
+    p = sub.add_parser("fetch-reference", help="cache original game frames and 4x reference images")
+    p.add_argument("--prefix", required=True)
+    p.add_argument("--frames", default="1-56")
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--source", type=Path, help="existing directory of original frames")
+    p.set_defaults(func=cmd_fetch_reference)
+
+    p = sub.add_parser("master-sheet", help="compare master candidates at game size and twice game size")
+    p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--reference", type=Path, required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("candidates", type=Path, nargs="+")
+    p.set_defaults(func=cmd_master_sheet)
 
     p = sub.add_parser("grid", help="draw a coordinate grid over an image to read landmarks")
     p.add_argument("image")
@@ -708,6 +809,7 @@ def main():
     p.set_defaults(func=cmd_regions)
 
     p = sub.add_parser("compose", help="align a generated image to the master and build a canvas frame")
+    p.add_argument("--sex", choices=CHIN_BY_SEX, help="character sex (defaults to card.yml)")
     p.add_argument("image", help="generated image (any size; transparent background, or a flat background)")
     p.add_argument("--kind", required=True, choices=["master", "eyes", "mouth", "face", "head", "pose"],
                    help="master: place frame 01; eyes/mouth/face: paste only that region onto the master; "
@@ -723,6 +825,7 @@ def main():
     p.set_defaults(func=cmd_compose)
 
     p = sub.add_parser("qa", help="check a folder of 01..56.png and write review material")
+    p.add_argument("--sex", choices=CHIN_BY_SEX, help="character sex (defaults to card.yml)")
     p.add_argument("folder")
     p.add_argument("--out")
     p.add_argument("--reference", help="folder with original frames, e.g. pc02-01.png ... pc02-56.png")
@@ -731,6 +834,10 @@ def main():
     p.set_defaults(func=cmd_qa)
 
     args = parser.parse_args()
+    if args.command == "qa":
+        args.sex = portrait_sex(args.sex, Path(args.folder) / "01.png")
+    elif args.command == "compose":
+        args.sex = portrait_sex(args.sex, args.out)
     args.func(args)
 
 
