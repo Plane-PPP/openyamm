@@ -2,8 +2,13 @@
 
 Source branch `integration/minotaur-v3.2-20261124`, upstream v3.2 `2539b76596c815be1edd86c703e2a6c98cd6d918`.
 The workflow checks out the new Xeen world and validates its update packs. It retains the existing selected
-update base. The confirmed Windows executable and package are still the v2.7 entries below.
-[Local checks and integration details](docs/research/openyamm-3.2-integration.md).
+update base. [Local checks and integration details](docs/research/openyamm-3.2-integration.md).
+
+Windows: run [#54](https://github.com/Plane-PPP/openyamm/actions/runs/45329059011) from `9e3596663bd6c03a7990c028c1c12ca1eed554ff`
+passed every job; `Minotaur-Update-minotaur-3.2-9e3596663bd6-54-1.zip` (2 322 561 079 bytes, over patch #53) was
+installed and checked by the user 2026-11-24. It is the update base now (`packaging/minotaur/bases/`), and
+`.github/workflows/minotaur-release-3.2.yml` publishes it and #53 as releases (the 3.2 ZIP in two parts: release
+assets must be under 2 GiB).
 
 # OpenYAMM 2.7 integration + Roguelike v2 — verified Windows update over patch #51 (2026-11-18)
 
