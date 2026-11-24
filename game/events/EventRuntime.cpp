@@ -13,6 +13,7 @@
 #include "game/items/ItemGenerator.h"
 #include "game/party/PlaythroughStatistics.h"
 #include "game/party/Party.h"
+#include "game/tables/RosterTable.h"
 #include "game/party/SkillData.h"
 #include "game/events/MechanismAudio.h"
 #include "game/events/MechanismDistance.h"
@@ -5158,6 +5159,59 @@ int luaHasItemAnywhere(lua_State *pLuaState)
     const uint32_t itemId = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 1));
     lua_pushboolean(pLuaState, pParty != nullptr && pParty->hasItemAnywhere(itemId));
     return 1;
+}
+
+// evt.JoinParty(rosterId): the engine roster's row joins the party (Party::joinFromRoster), or waits at the Adventurer's
+// Inn when the party is full. Returns true when the character is in the party now, then what happened: "joined",
+// "inn", "along" (in the party or at the inn already), "solo" (nobody joins a solo run) or "unknown" (no such row).
+int luaJoinParty(lua_State *pLuaState)
+{
+    Party *pParty = writableParty(pLuaState);
+    EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
+    const lua_Integer requested = luaL_checkinteger(pLuaState, 1);
+    const uint32_t rosterId = requested > 0 ? static_cast<uint32_t>(requested) : 0u;
+    const Party::RosterJoinResult result =
+        pParty != nullptr ? pParty->joinFromRoster(rosterId) : Party::RosterJoinResult::UnknownRow;
+    const char *pOutcome = "unknown";
+
+    switch (result)
+    {
+    case Party::RosterJoinResult::Joined:
+        pOutcome = "joined";
+        break;
+    case Party::RosterJoinResult::WaitsAtInn:
+        pOutcome = "inn";
+        break;
+    case Party::RosterJoinResult::AlreadyAlong:
+        pOutcome = "along";
+        break;
+    case Party::RosterJoinResult::SoloRun:
+        pOutcome = "solo";
+        break;
+    case Party::RosterJoinResult::UnknownRow:
+        pOutcome = "unknown";
+        break;
+    }
+
+    // What the player is told, as MM8's roster offers tell it; a joining member shows in the portraits.
+    if (pRuntimeState != nullptr && pParty != nullptr && pParty->rosterTable() != nullptr)
+    {
+        const RosterEntry *pRosterEntry = pParty->rosterTable()->get(rosterId);
+
+        if (result == Party::RosterJoinResult::WaitsAtInn && pRosterEntry != nullptr)
+        {
+            pRuntimeState->statusMessages.push_back(
+                Engine::tr("{name} waits at the Adventurer's Inn.", {{"name", pRosterEntry->name}}));
+        }
+        else if (result == Party::RosterJoinResult::SoloRun)
+        {
+            pRuntimeState->statusMessages.push_back(Engine::tr("You travel alone: nobody joins a solo run."));
+        }
+    }
+
+    lua_pushboolean(pLuaState, result == Party::RosterJoinResult::Joined ? 1 : 0);
+    lua_pushstring(pLuaState, pOutcome);
+    return 2;
 }
 
 int luaHasQuestBit(lua_State *pLuaState)
@@ -10479,6 +10533,7 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "Cmp", luaCompare);
     registerLuaFunction(pLuaState, "HasEverOwnedItem", luaHasEverOwnedItem);
     registerLuaFunction(pLuaState, "HasItemAnywhere", luaHasItemAnywhere);
+    registerLuaFunction(pLuaState, "JoinParty", luaJoinParty);
     registerLuaFunction(pLuaState, "HasQuestBit", luaHasQuestBit);
     registerLuaFunction(pLuaState, "SetQuestBit", luaSetQuestBit);
     registerLuaFunction(pLuaState, "QuestCompleteFeedback", luaQuestCompleteFeedback);

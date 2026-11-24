@@ -8,6 +8,7 @@
 #include "game/indoor/IndoorLightingRuntime.h"
 #include "game/indoor/IndoorMapData.h"
 #include "game/party/Party.h"
+#include "game/tables/RosterTable.h"
 #include "game/ui/GameplayUiController.h"
 
 #include <filesystem>
@@ -1036,4 +1037,141 @@ TEST_CASE("an event that gives experience and shows no text of its own says how 
     REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9031, runtimeState, &party));
     REQUIRE_EQ(runtimeState.statusMessages.size(), 1u);
     CHECK_EQ(runtimeState.statusMessages.front(), "+500 Experience.");
+}
+
+namespace
+{
+// A roster with the layout of engine/data_tables/roster.txt: a group row, the header row (skills from column 22 in
+// pairs, spell counts in 100-111), then the rows. Row 20001 is a Medusa-range companion: a level 3 sorcerer.
+RosterTable joinPartyTestRoster()
+{
+    std::vector<std::string> header(125);
+    header[0] = "#";
+    header[1] = "Name";
+    header[2] = "Class";
+    header[22] = "Staff";
+    header[40] = "Leather";
+    header[46] = "Fire";
+    header[48] = "Air";
+    header[96] = "Alchemy";
+    header[100] = "Fire";
+    header[101] = "Air";
+    std::vector<std::string> row(125);
+    row[0] = "20001";
+    row[1] = "Friend";
+    row[2] = "Sorcerer";
+    row[3] = "1150";
+    row[6] = "3000";
+    row[7] = "3";
+    row[8] = "8";
+    row[9] = "20";
+    row[10] = "9";
+    row[11] = "11";
+    row[12] = "13";
+    row[13] = "12";
+    row[14] = "11";
+    row[22] = "B";
+    row[23] = "1";
+    row[40] = "B";
+    row[41] = "1";
+    row[46] = "B";
+    row[47] = "1";
+    row[48] = "B";
+    row[49] = "1";
+    row[96] = "E";
+    row[97] = "4";
+    row[100] = "1";
+    row[101] = "1";
+    RosterTable roster;
+    REQUIRE(roster.loadFromRows({std::vector<std::string>(125), header, row}, nullptr));
+    return roster;
+}
+}
+
+TEST_CASE("evt.JoinParty brings a roster row into the party, to the inn when it is full, and once only")
+{
+    const std::string source = eventSupportText() + "\n"
+        "RegisterGlobalEvent(9040, \"Friend\", function()\n"
+        "    local joined, outcome = evt.JoinParty(20001)\n"
+        "    evt.StatusText(tostring(joined) .. \" \" .. outcome)\n"
+        "end)\n"
+        "RegisterGlobalEvent(9041, \"Nobody\", function()\n"
+        "    local joined, outcome = evt.JoinParty(20999)\n"
+        "    evt.StatusText(tostring(joined) .. \" \" .. outcome)\n"
+        "end)\n";
+    std::string error;
+    const std::optional<ScriptedEventProgram> program =
+        ScriptedEventProgram::loadFromLuaText(source, "@join_party_test.lua", ScriptedEventScope::Global, error);
+    REQUIRE_MESSAGE(program.has_value(), error.c_str());
+    const RosterTable roster = joinPartyTestRoster();
+    REQUIRE(roster.get(20001) != nullptr);
+    CHECK_EQ(roster.get(20001)->className, "Sorcerer");
+    EventRuntime eventRuntime = {};
+
+    SUBCASE("a party of one: the friend joins, then is along")
+    {
+        Party party = {};
+        PartySeed seed = {};
+        seed.members.resize(1);
+        party.seed(seed);
+        party.setRosterTable(&roster);
+        EventRuntimeState runtimeState = {};
+
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9040, runtimeState, &party));
+        REQUIRE_EQ(party.members().size(), 2u);
+        CHECK_EQ(party.members()[1].name, "Friend");
+        CHECK_EQ(party.members()[1].rosterId, 20001u);
+        CHECK_EQ(party.members()[1].level, 3u);
+        CHECK(party.members()[1].hasSkill("Alchemy"));
+        CHECK(party.hasRosterMember(20001));
+        CHECK_EQ(runtimeState.statusMessages.back(), "true joined");
+
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9040, runtimeState, &party));
+        CHECK_EQ(party.members().size(), 2u);
+        CHECK_EQ(runtimeState.statusMessages.back(), "false along");
+
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9041, runtimeState, &party));
+        CHECK_EQ(party.members().size(), 2u);
+        CHECK_EQ(runtimeState.statusMessages.back(), "false unknown");
+    }
+
+    SUBCASE("a full party: the friend waits at the Adventurer's Inn")
+    {
+        Party party = {};
+        PartySeed seed = {};
+        seed.members.resize(Party::MaxMembers);
+        party.seed(seed);
+        party.setRosterTable(&roster);
+        EventRuntimeState runtimeState = {};
+
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9040, runtimeState, &party));
+        CHECK_EQ(party.members().size(), Party::MaxMembers);
+        CHECK(party.hasRosterMember(20001));
+        REQUIRE_GE(runtimeState.statusMessages.size(), 2u);
+        CHECK_EQ(runtimeState.statusMessages[runtimeState.statusMessages.size() - 2],
+            "Friend waits at the Adventurer's Inn.");
+        CHECK_EQ(runtimeState.statusMessages.back(), "false inn");
+    }
+
+    SUBCASE("a solo run takes nobody in; without a roster nobody is found")
+    {
+        Party party = {};
+        PartySeed seed = {};
+        seed.members.resize(1);
+        party.seed(seed);
+        party.setSoloRun(true);
+        party.setRosterTable(&roster);
+        EventRuntimeState runtimeState = {};
+
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9040, runtimeState, &party));
+        CHECK_EQ(party.members().size(), 1u);
+        CHECK_FALSE(party.hasRosterMember(20001));
+        CHECK_EQ(runtimeState.statusMessages.back(), "false solo");
+
+        Party noRoster = {};
+        noRoster.seed(seed);
+        REQUIRE(eventRuntime.executeEventById(std::nullopt, program, 9040, runtimeState, &noRoster));
+        CHECK_EQ(noRoster.members().size(), 1u);
+        CHECK_EQ(runtimeState.statusMessages.back(), "false unknown");
+    }
 }

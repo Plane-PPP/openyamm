@@ -12996,6 +12996,7 @@ void GameApplication::bindPartyDependencies(Party &party)
     party.setClassSkillTable(&data.classSkillTable());
     party.setTrainerDirectory(&data.trainerDirectory());
     party.setMm9HirelingTable(&data.mm9HirelingTable());
+    party.setRosterTable(&data.rosterTable());
     // MM9's hirelings wait behind in a world without their table (every world but MM9).
     party.setMm9HirelingsAlong(!data.mm9HirelingTable().entries().empty());
     party.setNpcFollowersActive(m_activeWorldManifest.npcFollowers);

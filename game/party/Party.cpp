@@ -5394,6 +5394,45 @@ bool Party::hasRosterMember(uint32_t rosterId) const
     return false;
 }
 
+void Party::setRosterTable(const RosterTable *pRosterTable)
+{
+    m_pRosterTable = pRosterTable;
+}
+
+const RosterTable *Party::rosterTable() const
+{
+    return m_pRosterTable;
+}
+
+Party::RosterJoinResult Party::joinFromRoster(uint32_t rosterId)
+{
+    const RosterEntry *pRosterEntry =
+        m_pRosterTable != nullptr && rosterId != 0 ? m_pRosterTable->get(rosterId) : nullptr;
+
+    if (pRosterEntry == nullptr)
+    {
+        return RosterJoinResult::UnknownRow;
+    }
+
+    if (hasRosterMember(rosterId))
+    {
+        return RosterJoinResult::AlreadyAlong;
+    }
+
+    if (m_soloRun)
+    {
+        return RosterJoinResult::SoloRun;
+    }
+
+    if (isFull())
+    {
+        // The inn's picture comes from the character's own portrait (0: none of an NPC to show).
+        return addAdventurersInnMember(*pRosterEntry, 0) ? RosterJoinResult::WaitsAtInn : RosterJoinResult::UnknownRow;
+    }
+
+    return recruitRosterMember(*pRosterEntry) ? RosterJoinResult::Joined : RosterJoinResult::UnknownRow;
+}
+
 CampaignState &Party::campaign()
 {
     return m_campaign.get();
