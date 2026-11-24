@@ -629,6 +629,13 @@ void eraseMonsterHealthPlayers(std::vector<uint8_t> &bytes)
     eraseBytes(bytes, indoorOffset, sizeof(uint8_t));
 }
 
+// SaveVersionMapInstances added a string at the end of the save. These fixtures leave the id empty.
+void eraseEmptyMapInstance(std::vector<uint8_t> &bytes)
+{
+    REQUIRE(bytes.size() >= sizeof(uint64_t));
+    eraseEmptyCounts(bytes, bytes.size() - sizeof(uint64_t), 1);
+}
+
 // Saves before version 192 end the party without its pouches: cuts their empty counts, and the empty count of the
 // waiting given items (version 199) that follows them. Called on the save as written, before anything else is cut.
 void erasePartyPouches(std::vector<uint8_t> &bytes, const OpenYAMM::Game::GameSaveData &save)
@@ -645,6 +652,7 @@ void eraseSoloRun(std::vector<uint8_t> &bytes, const OpenYAMM::Game::GameSaveDat
 {
     erasePartyPouches(bytes, save);
     eraseMonsterHealthPlayers(bytes);
+    eraseEmptyMapInstance(bytes);
     constexpr size_t HeaderSize = 8 + sizeof(uint32_t);
     constexpr size_t PlaythroughSize = sizeof(uint64_t) + sizeof(double);
     uint32_t summarySize = 0;
@@ -835,9 +843,6 @@ void moveSummaryToLegacyPlaces(
         piece(rulesetOffset, summary.size() - rulesetOffset - nameAndPreviewSize - 2 * sizeof(bool));
     const std::vector<uint8_t> nameAndPreview = piece(summary.size() - nameAndPreviewSize, nameAndPreviewSize);
 
-    // The save ends with the map instance id of version 195 (empty here: its length alone), which no summary-less
-    // save has.
-    eraseBytes(bytes, bytes.size() - sizeof(uint64_t), sizeof(uint64_t));
     bytes.insert(bytes.end(), nameAndPreview.begin(), nameAndPreview.end());
     const size_t seedOffset = findValue(bytes, seedMarker);
     bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(seedOffset), ruleset.begin(), ruleset.end());
@@ -1906,6 +1911,7 @@ TEST_CASE("saves of version 192 load their two pouches, with an empty quest pouc
     // items' (version 199) follows it.
     eraseEmptyCounts(bytes, pouchesOffset + 2 * sizeof(uint64_t) + (bytes.size() - emptySize), 2);
     eraseMonsterHealthPlayers(bytes);
+    eraseEmptyMapInstance(bytes);
     const uint32_t previousVersion = 192;
     // Minotaur writes its own header (OYMINO1); an older upstream save is an official one.
     stampOfficialSaveVersion(bytes, previousVersion);
