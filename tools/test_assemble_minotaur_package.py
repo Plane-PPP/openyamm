@@ -32,7 +32,7 @@ def fixture(root):
         path.write_bytes(pe_header() if name.endswith(".exe") else b"file")
     (stage / "app/current").write_text(VERSION + "\n")
     (source / "tools/packaging").mkdir(parents=True)
-    (source / "tools/packaging/packs.yml").write_text("worlds: [mm6, mm7, mm8, mm9]\n")
+    (source / "tools/packaging/packs.yml").write_text("worlds: [mm6, mm7, mm8, mm9, xeen]\n")
     sources = {"assets_dev/languages/ru/language.yml": b"id: ru",
                "assets_dev/engine/rulesets/medusa/ruleset.yml": b"id: medusa",
                "assets_dev/engine/rulesets/medusa/icons_x2/med01-01.png": b"face",
@@ -47,7 +47,7 @@ def fixture(root):
               ("engine.rulesets", "engine", "/engine/rulesets"): {
                   "medusa/ruleset.yml": b"id: medusa", "medusa/icons_x2/med01-01.png": b"face",
                   "roguelike/ruleset.yml": b"id: roguelike", "roguelike/icons_x2/med01-01.png": b"face"},
-              **{(w + ".core", w, "/worlds/" + w): {"world.txt": w.encode()} for w in ("mm6", "mm7", "mm8", "mm9")}}
+              **{(w + ".core", w, "/worlds/" + w): {"world.txt": w.encode()} for w in ("mm6", "mm7", "mm8", "mm9", "xeen")}}
     (content / "packs").mkdir(parents=True)
     records = []
     for (pack_id, package, mount), entries in layout.items():
@@ -95,5 +95,5 @@ with tempfile.TemporaryDirectory() as directory:
                              "--stage", str(stage), "--content", str(content),
                              "--full-output", str(root / "cli.zip")], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-    assert "6 packs of engine, mm6, mm7, mm8, mm9" in result.stdout, result.stdout
+    assert "7 packs of engine, mm6, mm7, mm8, mm9, xeen" in result.stdout, result.stdout
 print("Package assembly regression passed")

@@ -244,7 +244,7 @@ jobs:
             -DSDL_PULSEAUDIO=OFF -DSDL_SNDIO=OFF -DSDL_UNIX_CONSOLE_BUILD=ON -DSDL_WAYLAND=OFF -DSDL_X11=OFF
           cmake --build build --target openyamm_sprite_atlas_cook --parallel 4
 
-      # The whole desktop release: the worlds tools/packaging/packs.yml ships (MM6-MM9) and every language's packs.
+      # The whole desktop release: the worlds tools/packaging/packs.yml ships (MM6-MM9 and Xeen) and every language's packs.
       - name: Pack and verify the content
         env:
           VERSION: ${{ needs.preflight.outputs.version }}

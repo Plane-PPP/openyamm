@@ -89,7 +89,7 @@ def full_case(drop=None, change=None):
         root = Path(directory)
         stage, source = root / "stage", root / "source"
         (source / "tools/packaging").mkdir(parents=True)
-        (source / "tools/packaging/packs.yml").write_text("worlds: [mm6, mm7, mm8, mm9]\n")
+        (source / "tools/packaging/packs.yml").write_text("worlds: [mm6, mm7, mm8, mm9, xeen]\n")
         files = {
             "assets_dev/languages/ru/language.yml": b"id: ru",
             "assets_dev/languages/ru/engine/fonts/a.ttf": b"font",
@@ -116,7 +116,7 @@ def full_case(drop=None, change=None):
                 "medusa/icons_x2/med01-01.png": b"face", "roguelike/ruleset.yml": b"id: roguelike",
                 "roguelike/run.yml": b"rules: {}", "roguelike/icons_x2/med01-01.png": b"face"},
             ("lang-ru.engine.fonts", "engine", "/engine/fonts", "ru"): {"a.ttf": b"font"},
-            **{(w + ".core", w, "/worlds/" + w, None): {"manifest.txt": b"world"} for w in ("mm6", "mm7", "mm8", "mm9")},
+            **{(w + ".core", w, "/worlds/" + w, None): {"manifest.txt": b"world"} for w in ("mm6", "mm7", "mm8", "mm9", "xeen")},
         }
         (stage / "assets/packs").mkdir(parents=True)
         records = []
