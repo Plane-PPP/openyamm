@@ -931,7 +931,7 @@ bool GameApplication::holdMapMoveForDungeonRunCamp(const EventRuntimeState::Pend
     {
         for (uint16_t guildType = 5; guildType <= 15; ++guildType)
         {
-            pParty->setEventVariableValue(static_cast<uint16_t>(0x8000u | guildType), 1);
+            pParty->campaign().setEventVariableValue(static_cast<uint16_t>(0x8000u | guildType), 1);
         }
     }
 

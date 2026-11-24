@@ -187,7 +187,7 @@ TEST_CASE("Inventory hotfix genuine old mod saves summarize restore and round tr
         CHECK(party.member(0)->experience == original.members[0].experience);
         CHECK(party.member(0)->level == original.members[0].level);
         CHECK(party.member(0)->className == original.members[0].className);
-        CHECK(party.snapshot().questBits == original.questBits);
+        CHECK(party.snapshot().campaign.questBits == original.campaign.questBits);
         if (const auto *pSkill = original.members[0].findSkill("LethalStrike"))
         {
             REQUIRE(party.member(0)->findSkill("LethalStrike"));
@@ -202,7 +202,7 @@ TEST_CASE("Inventory hotfix genuine old mod saves summarize restore and round tr
         CHECK(loaded->sourceSaveVersion == 201);
         CHECK(loaded->party.members[0].inventory == old->party.members[0].inventory);
         CHECK(loaded->party.members[0].rulesetState.storedBags == old->party.members[0].rulesetState.storedBags);
-        CHECK(loaded->party.questBits == old->party.questBits);
+        CHECK(loaded->party.campaign.questBits == old->party.campaign.questBits);
         CHECK(loaded->party.members.size() == old->party.members.size());
         for (size_t i = 0; i < old->party.members.size(); ++i)
         {
@@ -227,7 +227,7 @@ TEST_CASE("Inventory hotfix genuine old mod saves summarize restore and round tr
             CHECK(after.inventory == before.inventory);
         }
         CHECK(loaded->party.gold == old->party.gold);
-        CHECK(loaded->party.autonotes == old->party.autonotes);
+        CHECK(loaded->party.campaign.autonotes == old->party.campaign.autonotes);
         CHECK(loaded->savedGameMinutes == old->savedGameMinutes);
         CHECK(loaded->outdoorWorldStates.size() == old->outdoorWorldStates.size());
         CHECK(loaded->indoorSceneStates.size() == old->indoorSceneStates.size());
@@ -291,7 +291,7 @@ TEST_CASE("Inventory hotfix overflow is serialized and restored before a world c
     }
     Party::Snapshot snapshot;
     snapshot.members.push_back(legacy);
-    snapshot.questBits.insert(1234);
+    snapshot.campaign.questBits.insert(1234);
     Party party;
     party.setItemTable(&table());
     party.restoreSnapshot(snapshot);
@@ -312,7 +312,7 @@ TEST_CASE("Inventory hotfix overflow is serialized and restored before a world c
     CHECK(restored.member(0)->rulesetState.storedBags == party.member(0)->rulesetState.storedBags);
     CHECK(restored.member(0)->experience == 123456);
     CHECK(restored.member(0)->findSkill("LethalStrike")->mastery == SkillMastery::Master);
-    CHECK(restored.hasQuestBit(1234));
+    CHECK(restored.campaign().hasQuestBit(1234));
     CHECK(loaded->savedGameMinutes == 12345);
     CHECK(loaded->cameraYawRadians == 1.25f);
     CHECK(InventoryBags::takeOverflow(*restored.member(0)).size() == 70);

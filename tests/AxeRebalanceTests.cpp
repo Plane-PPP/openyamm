@@ -407,7 +407,7 @@ TEST_CASE("Axe traced live action preserves damage recovery and complete saved p
                     if (!trace)
                     {
                         initialState = party.snapshot();
-                        initialState->houseStockSeed = 123;
+                        initialState->campaign.houseStockSeed = 123;
                     }
                     party.restoreSnapshot(*initialState);
                     party.member(0)->equippedItemEffectFlags.insert("PerfectAccuracy");
