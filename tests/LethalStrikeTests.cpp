@@ -782,7 +782,7 @@ TEST_CASE("Lethal Strike latest separates technology and named mod skills throug
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     save = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(save, error);
-    CHECK(save->sourceSaveVersion == 193);
+    CHECK(save->sourceSaveVersion == 201);
     const auto &c = save->party.members[0];
     CHECK(c.techPoints == 321);
     CHECK(c.spellbookSchool == 2);
@@ -814,7 +814,7 @@ TEST_CASE("Lethal Strike production 1.14 v132 migrates to current schema without
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     auto loaded = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(loaded, error);
-    CHECK(loaded->sourceSaveVersion == 193);
+    CHECK(loaded->sourceSaveVersion == 201);
     CHECK(loaded->party.members.front().inventory == old.inventory);
     CHECK(loaded->party.members.front().techPoints == 321);
     CHECK(loaded->party.members.front().findSkill("LethalStrike")->level == 7);
@@ -838,11 +838,11 @@ TEST_CASE("Minotaur frozen production 1.21 v155 migrates to 2.4 without losing s
     REQUIRE(member.findSkill("LethalStrike"));
     CHECK(member.findSkill("LethalStrike")->level == 7);
     CHECK(member.findSkill("LethalStrike")->mastery == SkillMastery::Master);
-    const auto path = std::filesystem::temp_directory_path() / "minotaur-v155-to-v194.oysav";
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-v155-to-v202.oysav";
     REQUIRE_MESSAGE(saveGameDataToPath(path, *original, error), error);
     const auto loaded = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(loaded, error);
-    CHECK(loaded->sourceSaveVersion == 193);
+    CHECK(loaded->sourceSaveVersion == 201);
     REQUIRE(loaded->party.members.size() == 1);
     const Character &restored = loaded->party.members.front();
     CHECK(restored.inventory == member.inventory);
@@ -867,7 +867,7 @@ TEST_CASE("Minotaur rejects unknown mod envelopes instead of decoding them as of
     std::vector<char> bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     REQUIRE(bytes.size() > 12);
     const auto path = std::filesystem::temp_directory_path() / "minotaur-unknown-envelope.oysav";
-    for (uint32_t version : {154u, 176u, 177u, 179u, 181u, 182u, 183u, 185u, 192u, 193u, 195u})
+    for (uint32_t version : {154u, 176u, 177u, 179u, 181u, 182u, 183u, 185u, 192u, 193u, 195u, 198u, 201u, 203u})
     {
         std::memcpy(bytes.data() + 8, &version, sizeof(version));
         {

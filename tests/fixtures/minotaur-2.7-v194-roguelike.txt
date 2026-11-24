@@ -1,0 +1,13 @@
+Production-format Roguelike save (OYMINO1/v194, upstream schema 193), captured 2026-11-24 before merging OpenYAMM v3.2.
+Integration base e04c983d9610f89f4acf018e464463ec31fa164c. The unmodified Linux v2.7 executable was built
+on 2026-11-18 in the previous worktree and copied for capture. The v2.7 game source at
+402f99ff34ee4f4e723c69ba8ad6501f7764ac35 matches the base in game/, engine/, tests/ and assets_dev/.
+The only subsequent change in the build source directories is the Windows editor path fix in core/compile/EditorDocument.cpp.
+Binary SHA256 15a2e103622b0dafd1a77e348b967e64ddd9600cae24f5b3414150424ef5d811.
+Fixture SHA256 49b46e23a964b731af1bb83e1ed4da17467192dd28a1f8c2929c21c068c1a9b5 (405459 bytes).
+
+The original base scenario tests/scenarios/rulesets/roguelike_run.yml ran against the previous assets_dev,
+with a separate user-data directory and OPENYAMM_SCENARIO_SAVE_DIR. It saved and reloaded roguelike_rewarded
+after the first guardian was slain and reward item 2029 granted. Seed 4, route 6d01.blv 6t3.blv 6d12.blv 6d07.blv,
+first dungeon, three level-ups of ten. Serena has attunement=2 and Zoltan attunement=1.
+Protected run 20261124T035239Z-4991f6f1e4 passed 170/170 steps. No private player data.

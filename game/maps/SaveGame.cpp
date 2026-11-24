@@ -555,7 +555,7 @@ private:
     const std::vector<uint8_t> &m_bytes;
     size_t m_offset = 0;
     bool m_failed = false;
-    uint32_t m_version = SaveVersion;
+    uint32_t m_version = UpstreamSaveVersion;
     bool m_legacyMinotaurV85 = false;
     bool m_modCombatLevel = false;
     bool m_deferTalentMigrations = false;

@@ -1058,17 +1058,44 @@ TEST_CASE("Minotaur frozen 2.4 v1 run (patch #51): talents by id survive 2.7, th
     REQUIRE(data().itemTable.get(220) != nullptr);
     CHECK(data().itemTable.get(220)->isEmptyAlchemyBottle);
 
-    // Written by this version (OYMINO1/v194, upstream 193) and read back: the same talents.
+    // Written by this version (OYMINO1/v202, upstream 201) and read back: the same talents.
     const std::filesystem::path path =
         std::filesystem::temp_directory_path() / "openyamm-roguelike-v1-roundtrip.oysav";
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     std::optional<GameSaveData> restored = loadGameDataFromPath(path, error);
     std::filesystem::remove(path);
     REQUIRE_MESSAGE(restored, error);
-    CHECK_EQ(restored->sourceSaveVersion, 193u);
+    CHECK_EQ(restored->sourceSaveVersion, 201u);
 
     for (size_t index = 0; index < ranks.size(); ++index)
     {
         CHECK(restored->party.members[index].talentRanks == ranks[index]);
     }
+}
+
+TEST_CASE("Minotaur frozen v194 keeps its run's route and talents in v202")
+{
+    const std::filesystem::path fixture =
+        std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-2.7-v194-roguelike.oysav";
+    std::string error;
+    const auto save = loadGameDataFromPath(fixture, error);
+    REQUIRE_MESSAGE(save, error);
+    CHECK_EQ(save->sourceSaveVersion, 193u);
+    CHECK_EQ(save->ruleset.id, "roguelike");
+    REQUIRE_EQ(save->party.members.size(), 4u);
+    CHECK_EQ(save->party.members[1].talentRanks.at("resolve"), 1);
+    CHECK_EQ(save->party.members[2].talentRanks.at("attunement"), 2);
+    CHECK_EQ(save->party.members[3].talentRanks.at("attunement"), 1);
+
+    const auto summary = loadGameSaveSummaryFromPath(fixture, error);
+    REQUIRE_MESSAGE(summary, error);
+    CHECK_EQ(summary->mapFileName, "6d01.blv");
+    CHECK(summary->ruleset == save->ruleset);
+
+    RoguelikeRunState state;
+    readRunState(save->namedGlobalVars, state);
+    CHECK_EQ(state.guardian, RoguelikeRunState::GuardianSlain);
+    CHECK_EQ(state.rewarded, 1);
+    CHECK_EQ(state.route, std::vector<int32_t>{dungeonRunMapKey("6d01.blv"), dungeonRunMapKey("6t3.blv"),
+        dungeonRunMapKey("6d12.blv"), dungeonRunMapKey("6d07.blv")});
 }

@@ -1758,6 +1758,7 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
             sweep.blowScreenDirection.reset();
             sweep.swingSoundPlayed = false;
             sweep.recoverySpentSeconds = 0.0f;
+            sweep.talentBlow = true;
             sweep.talentShare = attackExtras.sweepShare;
             sweep.talentExtraBlow = true;
             sweep.preferMelee = true;

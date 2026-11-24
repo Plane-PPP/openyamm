@@ -1946,7 +1946,7 @@ TEST_CASE("saves keep the items an event gave that wait for room")
     std::vector<uint8_t> bytes = readBytes(path);
     eraseEmptyCounts(bytes, pouchesOffset + OpenYAMM::Game::ItemPouchCount * sizeof(uint64_t), 1);
     const uint32_t previousVersion = 198;
-    std::memcpy(bytes.data() + 8, &previousVersion, sizeof(previousVersion));
+    stampOfficialSaveVersion(bytes, previousVersion);
     writeBytes(path, bytes);
     const auto loaded = OpenYAMM::Game::loadGameDataFromPath(path, error);
     std::filesystem::remove(path);

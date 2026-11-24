@@ -199,7 +199,7 @@ TEST_CASE("Inventory hotfix genuine old mod saves summarize restore and round tr
         REQUIRE_MESSAGE(saveGameDataToPath(next, *old, error), error);
         auto loaded = loadGameDataFromPath(next, error);
         REQUIRE_MESSAGE(loaded, error);
-        CHECK(loaded->sourceSaveVersion == 193);
+        CHECK(loaded->sourceSaveVersion == 201);
         CHECK(loaded->party.members[0].inventory == old->party.members[0].inventory);
         CHECK(loaded->party.members[0].rulesetState.storedBags == old->party.members[0].rulesetState.storedBags);
         CHECK(loaded->party.questBits == old->party.questBits);

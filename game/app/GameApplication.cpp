@@ -11680,7 +11680,7 @@ void GameApplication::applyCurrentSettingsToActiveRuntime()
     }
 
     // After a load and on entering a map too: a save from another setting gets the pouches of this one.
-    m_gameSession.setPartyPouches(m_settings.partyPouches);
+    m_gameSession.setPartyPouches(m_settings.partyPouches && m_gameSession.roguelikeRules() == nullptr);
 
     if (m_pMapSceneRuntime != nullptr)
     {
@@ -12987,7 +12987,7 @@ void GameApplication::bindPartyDependencies(Party &party)
     party.setRules(m_gameSession.rulesetGameRules());
     party.setSoloRun(m_gameSession.ruleset().options.soloRun);
     party.setMm9LootInOlderWorlds(m_settings.mm9LootInOlderWorlds);
-    party.setPartyPouches(m_settings.partyPouches);
+    party.setPartyPouches(m_settings.partyPouches && m_gameSession.roguelikeRules() == nullptr);
     party.setItemTable(&data.itemTable());
     party.setJournalQuestTable(&data.journalQuestTable());
     party.setCharacterDollTable(&data.characterDollTable());

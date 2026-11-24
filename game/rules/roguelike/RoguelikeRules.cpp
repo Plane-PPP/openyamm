@@ -1219,7 +1219,7 @@ public:
         std::mt19937 &rng) const override
     {
         ItemRules::adjustShopStock(stock, house, party, itemTable, rng);
-        const Party::HouseStockState *pState = party.houseStockState(house.id);
+        const CampaignState::HouseStockState *pState = party.campaign().houseStockState(house.id);
 
         if (pState == nullptr || &stock != &pState->standardStock)
         {
