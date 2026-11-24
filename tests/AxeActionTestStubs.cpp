@@ -2,6 +2,7 @@
 #include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/GameplaySpellActionController.h"
+#include "game/gameplay/GameplaySpellService.h"
 #include "game/gameplay/TurnBasedCombatRuntime.h"
 
 #include <stdexcept>
@@ -70,6 +71,17 @@ GameplaySpellActionController::AttackCastResult GameplaySpellActionController::t
 {
     throw std::logic_error("Unexpected spell casting in melee action test");
 }
+std::optional<GameplaySpellService::CoopCharacterTarget> GameplaySpellService::coopCharacterTarget(
+    GameplayScreenRuntime &, size_t, uint32_t, bool) const
+{
+    return std::nullopt;
+}
+
+float GameplaySpellService::coopLowestOtherHealthShare() const
+{
+    return 1.0f;
+}
+
 GameplaySpellService::MemberSpellCastResolution GameplaySpellService::castSpellFromMember(
     GameplayScreenRuntime &, size_t, uint32_t, const std::string &, bool, const TargetQueries *)
 {
