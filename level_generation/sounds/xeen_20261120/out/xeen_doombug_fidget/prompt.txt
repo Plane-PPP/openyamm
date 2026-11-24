@@ -1,0 +1,9 @@
+A giant cricket waiting on the ground at night: slow loud rasping chirps in short trills, the click of mandibles and the scratch of spiny legs, close
+
+kind: sfx
+duration: 1.6
+loop: false
+variants: 3
+model: eleven_text_to_sound_v2
+prompt_influence: 0.45
+loudness_db: -11

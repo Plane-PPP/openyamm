@@ -47,7 +47,9 @@ def parse_args():
     parser.add_argument('--yaw-radians', type=finite_number)
     parser.add_argument('--pitch-degrees', type=finite_number)
     parser.add_argument('--settings', type=Path, default=ROOT / 'settings.ini', help='Settings to copy')
-    parser.add_argument('--binary', type=Path, default=ROOT / 'build/game/openyamm', help='Executable to test')
+    parser.add_argument('--binary', type=Path,
+                        default=Path(os.environ.get('OPENYAMM_GAME_BINARY') or ROOT / 'build/game/openyamm'),
+                        help='Executable to test (default $OPENYAMM_GAME_BINARY, else build/game/openyamm)')
     parser.add_argument('--assets', type=Path, help='Asset root override (otherwise resolved from copied settings)')
     parser.add_argument('--extra-mount', type=Path,
                         help='A development folder read in front of the asset root (the game\'s --extra-mount), such as '
@@ -160,7 +162,8 @@ def prepare(args, run, binary, metadata):
         if args.map:
             pose['map'] = args.map
         steps.append({'set_pose': pose})
-    steps.append({'save_game': 'desktop'})
+    # An autosave name: maps that forbid saving (an arena's allow_save_game: false) still accept the game's autosave.
+    steps.append({'save_game': 'autosave'})
     scenario = {'id': 'desktop_launch', 'world': args.world, 'mode': 'faithful', 'steps': steps}
     # JSON is a YAML subset; use the existing scenario loader without a Python YAML dependency.
     scenario_path = run / 'prepare.yml'
@@ -184,7 +187,7 @@ def prepare(args, run, binary, metadata):
                     raise RuntimeError('Scenario preparation failed; inspect prepare.log')
             finally:
                 stop_game(process)
-        prepared = run / 'prepared/desktop.oysav'
+        prepared = run / 'prepared/autosave.oysav'
     startup_save = run / 'saves/startup.oysav'
     shutil.copy2(prepared, startup_save)
     # Faithful scenarios can rewrite debug settings: restore the requested rendering/settings snapshot afterwards.

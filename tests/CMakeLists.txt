@@ -1,5 +1,6 @@
 add_executable(openyamm_unit_tests
     AssetFileSystemTests.cpp
+    CoopRulesTests.cpp
     UserDataPathsTests.cpp
     CustomPortraitTests.cpp
     LogFileTests.cpp
@@ -24,6 +25,7 @@ add_executable(openyamm_unit_tests
     RulesetTests.cpp
     NamedModsTests.cpp
     MapLayoutIdentityTests.cpp
+    WorldScriptSourcesTests.cpp
     PlaythroughStatisticsTests.cpp
     BattleOrdersTests.cpp
     ProjectMedusaTests.cpp
@@ -376,6 +378,7 @@ add_executable(openyamm_unit_tests
     ../game/items/ItemRuntime.cpp
     ../game/items/WorldItemShape.cpp
     ../game/party/Party.cpp
+    ../game/party/CampaignState.cpp
     ../game/party/BattleOrders.cpp
     ../game/party/PlaythroughNames.cpp
     ../game/party/CustomPortraits.cpp
@@ -494,6 +497,8 @@ add_executable(openyamm_unit_tests
     ../game/ui/HouseShopLedger.cpp
     ../game/ui/SpellbookUiLayout.cpp
     ../game/ui/UiLayoutManager.cpp
+    ../game/ui/GameplayHudCommon.cpp
+    ../game/ui/GameplayMm9TalkBarScroll.cpp
     ../game/outdoor/OutdoorMeadow.cpp
     ../game/outdoor/OutdoorLightingRuntime.cpp
     ../game/outdoor/OutdoorLightingData.cpp
@@ -598,6 +603,7 @@ add_executable(openyamm_runtime_tests
     StealingInputRuntimeTests.cpp
     MapStateResetRuntimeTests.cpp
     MawMm9ShopRuntimeTests.cpp
+    CoopNetTests.cpp
 )
 
 target_include_directories(openyamm_runtime_tests PRIVATE

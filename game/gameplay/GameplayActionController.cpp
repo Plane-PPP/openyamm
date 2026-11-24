@@ -574,9 +574,11 @@ CharacterAttackResult buildRangedReleaseAttack(
     return attack;
 }
 
+// requireLineOfSight false: the actor was already found in sight (a solo run's talent blow: collectTalentTargets also
+// takes a monster whose middle a door frame hides when its side is in view).
 std::optional<GameplayActionController::PartyAttackActorFacts> resolveUsableActorTarget(
     const GameplayActionController::PartyAttackConfig &config,
-    std::optional<size_t> actorIndex);
+    std::optional<size_t> actorIndex, bool requireLineOfSight = true);
 
 // The monsters a sweeping blow also strikes (CharacterAttackExtras::sweepTargets): the living hostiles in blow reach
 // within the arc in front of the party, nearest first, without the blow's own target.
@@ -609,7 +611,8 @@ std::vector<size_t> collectSweepTargets(
 
 std::optional<GameplayActionController::PartyAttackActorFacts> resolveUsableActorTarget(
     const GameplayActionController::PartyAttackConfig &config,
-    std::optional<size_t> actorIndex)
+    std::optional<size_t> actorIndex,
+    bool requireLineOfSight)
 {
     if (!actorIndex || config.pWorldRuntime == nullptr)
     {
@@ -619,7 +622,8 @@ std::optional<GameplayActionController::PartyAttackActorFacts> resolveUsableActo
     const std::optional<GameplayPartyAttackActorFacts> actor =
         config.pWorldRuntime->partyAttackActorFacts(*actorIndex, false);
 
-    if (!actor || !GameplayActionController::isPartyAttackActorTargetable(*actor) || !actor->lineOfSightToParty)
+    if (!actor || !GameplayActionController::isPartyAttackActorTargetable(*actor)
+        || (requireLineOfSight && !actor->lineOfSightToParty))
     {
         return std::nullopt;
     }
@@ -1244,7 +1248,7 @@ AttackOrderFacts attackOrderFacts(
     facts.entityTargetHit = config.pWorldRuntime != nullptr
         && config.directTargetEntityIndex.has_value()
         && config.pWorldRuntime->isPartyAttackMeleeEntityTarget(*config.directTargetEntityIndex);
-    facts.target = resolveUsableActorTarget(config, config.directTargetActorIndex);
+    facts.target = resolveUsableActorTarget(config, config.directTargetActorIndex, !config.talentBlow);
 
     if (!facts.target)
     {
@@ -1274,6 +1278,14 @@ AttackOrderFacts attackOrderFacts(
         config.pWorldRuntime != nullptr && config.pWorldRuntime->partyBreathFraction().has_value();
     facts.situation = battleOrderSituation(party, memberIndex,
         facts.target ? std::optional<float>(facts.targetDistance) : std::nullopt, config.pWorldRuntime);
+
+    // "An ally below X %" counts the other players' characters within reach as well (a co-op session).
+    if (config.pSpellService != nullptr)
+    {
+        facts.situation.lowestAllyHealthShare =
+            std::min(facts.situation.lowestAllyHealthShare, config.pSpellService->coopLowestOtherHealthShare());
+    }
+
     return facts;
 }
 
@@ -1365,19 +1377,40 @@ std::optional<std::string> GameplayActionController::attackOrderSpell(const Part
     return std::nullopt;
 }
 
-bool GameplayActionController::partyAttackTargetInMeleeReach(IGameplayWorldRuntime &world,
-    const GameplayPartyAttackFrameInput &input, std::optional<size_t> directActorIndex)
+namespace
 {
-    PartyAttackConfig config;
+// The actor a party attack made now strikes, as attackOrderFacts picks it: the usable actor under the crosshair, else
+// the nearest hostile the fallback finds.
+std::optional<GameplayActionController::PartyAttackActorFacts> partyAttackActorTargetFacts(
+    IGameplayWorldRuntime &world, const GameplayPartyAttackFrameInput &input, std::optional<size_t> directActorIndex)
+{
+    GameplayActionController::PartyAttackConfig config;
     config.pWorldRuntime = &world;
     config.fallbackQuery = input.fallbackQuery;
     config.partyPosition = {input.partyPosition.x, input.partyPosition.y, input.partyPosition.z};
-    std::optional<PartyAttackActorFacts> target = resolveUsableActorTarget(config, directActorIndex);
+    std::optional<GameplayActionController::PartyAttackActorFacts> target =
+        resolveUsableActorTarget(config, directActorIndex);
     if (!target)
     {
         target = chooseFallbackRangedTarget(config);
     }
-    return target && actorDistanceFromParty(*target, config.partyPosition) <= CharacterMeleeAttackDistance;
+    return target;
+}
+} // namespace
+
+bool GameplayActionController::partyAttackTargetInMeleeReach(IGameplayWorldRuntime &world,
+    const GameplayPartyAttackFrameInput &input, std::optional<size_t> directActorIndex)
+{
+    const std::optional<PartyAttackActorFacts> target = partyAttackActorTargetFacts(world, input, directActorIndex);
+    const WorldPoint party = {input.partyPosition.x, input.partyPosition.y, input.partyPosition.z};
+    return target && actorDistanceFromParty(*target, party) <= CharacterMeleeAttackDistance;
+}
+
+std::optional<size_t> GameplayActionController::partyAttackActorTarget(IGameplayWorldRuntime &world,
+    const GameplayPartyAttackFrameInput &input, std::optional<size_t> directActorIndex)
+{
+    const std::optional<PartyAttackActorFacts> target = partyAttackActorTargetFacts(world, input, directActorIndex);
+    return target ? std::optional<size_t>(target->actorIndex) : std::nullopt;
 }
 
 void GameplayActionController::updateCooldowns(GameplayScreenState &screenState, float deltaSeconds)
@@ -1894,7 +1927,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                     attack.shieldTier,
                     attack.shieldModifiers,
                     attack.criticalDamage,
-                    !config.talentNoHitReaction);
+                    !config.talentNoHitReaction,
+                    pAttacker->equipment.mainHand != 0 ? pAttacker->equipment.mainHand : pAttacker->equipment.offHand);
 
             if (attacked)
             {
@@ -1914,6 +1948,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                 hit.type = attack.damageType;
                 hit.melee = true;
                 hit.killed = killed;
+                hit.critical = attack.criticalDamage;
+                hit.recoverySeconds = attack.recoverySeconds;
                 hit.pWorld = config.pWorldRuntime;
                 hit.targetActorIndex = target->actorIndex;
                 hit.extraBlow = config.talentExtraBlow;
@@ -2254,6 +2290,8 @@ GameplayActionController::PartyAttackExecutionResult GameplayActionController::e
                         && config.pRuntime->soloTalents()
                     ? std::make_shared<bool>(true)
                     : nullptr,
+                // Multishot's arrows: a Carnage blast hurts the monsters it reaches without making them flinch.
+                .quietBlast = config.talentFanArrows > 1,
             };
             if (attack.projectileSpreadArcRadians > 0.0f)
             {
@@ -2659,8 +2697,10 @@ GameplayActionController::PartyUpkeepResult GameplayActionController::executePar
     for (const size_t memberIndex : casters)
     {
         const Character &member = party.members()[memberIndex];
-        const BattleOrderSituation situation = battleOrderSituation(party, memberIndex, std::nullopt,
+        BattleOrderSituation situation = battleOrderSituation(party, memberIndex, std::nullopt,
             config.pWorldRuntime);
+        situation.lowestAllyHealthShare =
+            std::min(situation.lowestAllyHealthShare, config.pSpellService->coopLowestOtherHealthShare());
 
         for (const BattleOrder &order : member.upkeepOrders)
         {
@@ -2739,8 +2779,21 @@ GameplayActionController::PartyUpkeepResult GameplayActionController::executePar
                 continue;
             }
 
-            const std::optional<PartySpellSystem::UpkeepNeed> need = PartySpellSystem::upkeepNeed(
+            std::optional<PartySpellSystem::UpkeepNeed> need = PartySpellSystem::upkeepNeed(
                 party, memberIndex, spellId, config.pSpellTable, order.renewBelowMinutes);
+            std::optional<PlayerId> needPlayer;
+
+            // In a co-op session a heal, cure or raising is due for whoever near needs it most, another player's
+            // character too.
+            if (PartySpellSystem::hasQuickCastCharacterTarget(spellId))
+            {
+                if (const std::optional<GameplaySpellService::CoopCharacterTarget> target =
+                        config.pSpellService->coopCharacterTarget(*config.pRuntime, memberIndex, spellId, false))
+                {
+                    need = PartySpellSystem::UpkeepNeed{target->memberIndex};
+                    needPlayer = target->player;
+                }
+            }
 
             if (!need)
             {
@@ -2762,6 +2815,7 @@ GameplayActionController::PartyUpkeepResult GameplayActionController::executePar
             party.setActiveMemberIndex(memberIndex);
             GameplaySpellService::TargetQueries targetQueries = {};
             targetQueries.characterTargetIndex = need->targetCharacterIndex;
+            targetQueries.characterTargetPlayer = needPlayer;
             const GameplaySpellService::MemberSpellCastResolution cast = config.pSpellService->castSpellFromMember(
                 *config.pRuntime, memberIndex, spellId, pSpellEntry->name, true, &targetQueries);
             result.attempted = true;
@@ -2824,6 +2878,14 @@ GameplayActionController::GatherLootResult GameplayActionController::gatherLoot(
 
     if (!gathering)
     {
+        return result;
+    }
+
+    // In a guest's game the corpses and what lies about are copies of the host's: gathering them here would give
+    // the guest things that still lie in the host's world. No command asks the host for it yet.
+    if (worldRuntime.replica())
+    {
+        result.statusText = Engine::tr("Only the host can gather the loot of a co-op world");
         return result;
     }
 

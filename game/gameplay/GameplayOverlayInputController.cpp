@@ -12,6 +12,7 @@
 #include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/HouseServiceRuntime.h"
+#include "game/gameplay/PlayerCommands.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
 #include "game/items/InventoryBags.h"
@@ -461,7 +462,7 @@ void finishJournalMapNoteEdit(GameplayScreenRuntime &view, GameplayUiController:
     Party *pParty = view.party();
     const std::string mapFileName = gameplayJournalNormalizeMapFileName(view.currentMapFileName());
     const JournalMapNote *pNote =
-        pParty != nullptr ? pParty->findJournalMapNote(mapFileName, journalScreen.mapNoteEditId) : nullptr;
+        pParty != nullptr ? pParty->campaign().findJournalMapNote(mapFileName, journalScreen.mapNoteEditId) : nullptr;
 
     if (pNote != nullptr && pNote->personal)
     {
@@ -474,14 +475,14 @@ void finishJournalMapNoteEdit(GameplayScreenRuntime &view, GameplayUiController:
 
         if ((keep && text.empty()) || (!keep && journalScreen.mapNoteEditNew))
         {
-            pParty->removeJournalMapNote(mapFileName, journalScreen.mapNoteEditId);
+            pParty->campaign().removeJournalMapNote(mapFileName, journalScreen.mapNoteEditId);
             journalScreen.selectedMapNoteId = 0;
         }
         else if (keep)
         {
             JournalMapNote edited = *pNote;
             edited.text = text;
-            pParty->setJournalMapNote(edited);
+            pParty->campaign().setJournalMapNote(edited);
         }
     }
 
@@ -526,7 +527,7 @@ uint32_t nextPersonalJournalMapNoteId(const Party &party, const std::string &map
 {
     uint32_t id = PersonalJournalMapNoteIdBase;
 
-    for (const JournalMapNote &note : party.journalMapNotes())
+    for (const JournalMapNote &note : party.campaign().journalMapNotes())
     {
         if (note.mapFileName == mapFileName && note.id >= id)
         {
@@ -587,7 +588,7 @@ uint32_t findJournalMapNoteAtPointer(
     uint32_t bestNoteId = 0;
     float bestDistanceSquared = hitRadiusSquared;
 
-    for (const JournalMapNote &note : pParty->journalMapNotes())
+    for (const JournalMapNote &note : pParty->campaign().journalMapNotes())
     {
         if (!runtimeMapNoteMatchesCurrentMap(note, normalizedCurrentMapFileName))
         {
@@ -863,17 +864,16 @@ InventoryItem chestItemAsInventoryItem(const GameplayChestItemState &chestItem)
 
 // Takes all gold, then (unless goldOnly) every item that fits somewhere in the party (largest first), each into a bag
 // tagged for it as a ground pickup goes; the rest stays in the chest.
-void GameplayOverlayInputController::takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
+GameplayOverlayInputController::ChestTakeAllResult GameplayOverlayInputController::takeAllActiveChestItems(
+    IGameplayWorldRuntime &worldRuntime,
+    Party &party,
+    const ItemTable *pItemTable,
+    bool goldOnly)
 {
-    IGameplayWorldRuntime *pWorldRuntime = view.worldRuntime();
-    Party *pParty = view.party();
-
-    if (pWorldRuntime == nullptr || pParty == nullptr || pWorldRuntime->activeChestView() == nullptr)
-    {
-        return;
-    }
-
-    FoundGold totalGold = {};
+    IGameplayWorldRuntime *pWorldRuntime = &worldRuntime;
+    Party *pParty = &party;
+    ChestTakeAllResult result = {};
+    FoundGold &totalGold = result.gold;
     std::vector<std::pair<uint8_t, uint8_t>> leftBehindCells;
     const auto isLeftBehind =
         [&leftBehindCells](const GameplayChestItemState &item)
@@ -921,7 +921,7 @@ void GameplayOverlayInputController::takeAllActiveChestItems(GameplayScreenRunti
         std::optional<StoredPickup> stored;
 
         if (!chestItem.isGold
-            && !(stored = storePickedUpItem(*pParty, chestItemAsInventoryItem(chestItem), view.itemTable())))
+            && !(stored = storePickedUpItem(*pParty, chestItemAsInventoryItem(chestItem), pItemTable)))
         {
             leftBehindCells.emplace_back(chestItem.gridX, chestItem.gridY);
             continue;
@@ -937,23 +937,145 @@ void GameplayOverlayInputController::takeAllActiveChestItems(GameplayScreenRunti
         if (removedItem.isGold)
         {
             const FoundGold foundGold = resolveFoundGold(removedItem.goldAmount, pWorldRuntime->eventRuntimeState(), pParty);
-            pParty->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootChest);
+            creditFoundGold(
+                *pParty,
+                static_cast<int>(foundGold.partyAmount),
+                GoldReason::LootChest,
+                pWorldRuntime->eventRuntimeState());
             totalGold.amount += foundGold.amount;
             totalGold.followerShare += foundGold.followerShare;
             totalGold.partyAmount += foundGold.partyAmount;
+            ++result.taken;
             continue;
         }
+
+        ++result.taken;
 
         GAMEPLAY_DEBUG_TRACE(
             "item_received destination=inventory source=chest_take_all item_id="
             + std::to_string(removedItem.item.objectDescriptionId)
-            + gameplayDebugTraceItemSummary(removedItem.item.objectDescriptionId, view.itemTable())
+            + gameplayDebugTraceItemSummary(removedItem.item.objectDescriptionId, pItemTable)
             + " member_index=" + std::to_string(stored ? stored->memberIndex : 0));
     }
 
-    std::string status = totalGold.amount > 0 ? foundGoldStatusText(totalGold) : std::string();
+    result.leftBehind = !leftBehindCells.empty();
+    return result;
+}
 
-    if (!leftBehindCells.empty())
+void GameplayOverlayInputController::performHouseStockAction(
+    GameplayScreenRuntime &view,
+    const HouseEntry &houseEntry,
+    HouseStockMode stockMode,
+    size_t slotIndex,
+    HouseStockAction action)
+{
+    if (view.party() == nullptr || view.itemTable() == nullptr || view.worldRuntime() == nullptr)
+    {
+        return;
+    }
+
+    std::string statusText;
+
+    if (action == HouseStockAction::Reroll)
+    {
+        const bool rerolled = HouseServiceRuntime::tryRerollStock(
+            *view.party(),
+            *view.itemTable(),
+            *view.standardItemEnchantTable(),
+            *view.specialItemEnchantTable(),
+            houseEntry,
+            view.worldRuntime()->gameMinutes(),
+            statusText);
+        view.setStatusBarEvent(statusText);
+        view.playSpeechReaction(
+            view.partyReadOnly()->activeMemberIndex(),
+            rerolled ? SpeechId::ShopItemBought : SpeechId::NotEnoughGold,
+            true);
+        return;
+    }
+
+    HouseServiceRuntime::ShopItemServiceResult serviceResult = HouseServiceRuntime::ShopItemServiceResult::None;
+
+    if (action == HouseStockAction::Steal)
+    {
+        static thread_local std::mt19937 rng(std::random_device{}());
+        HouseServiceRuntime::tryStealStockItem(
+            *view.party(),
+            *view.worldRuntime(),
+            *view.itemTable(),
+            *view.standardItemEnchantTable(),
+            *view.specialItemEnchantTable(),
+            houseEntry,
+            view.worldRuntime()->gameMinutes(),
+            stockMode,
+            slotIndex,
+            std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
+            std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
+            statusText,
+            &serviceResult,
+            effectiveReputationForView(view));
+    }
+    else
+    {
+        HouseServiceRuntime::tryBuyStockItem(
+            *view.party(),
+            *view.itemTable(),
+            *view.standardItemEnchantTable(),
+            *view.specialItemEnchantTable(),
+            houseEntry,
+            view.worldRuntime()->gameMinutes(),
+            stockMode,
+            slotIndex,
+            statusText,
+            &serviceResult,
+            effectiveReputationForView(view));
+    }
+
+    if (!statusText.empty())
+    {
+        view.setStatusBarEvent(statusText);
+    }
+
+    const size_t activeMemberIndex = view.partyReadOnly()->activeMemberIndex();
+
+    if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::Success
+        || serviceResult == HouseServiceRuntime::ShopItemServiceResult::Stolen)
+    {
+        if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::Success)
+        {
+            view.markHouseShopTransactionPerformed(houseEntry.id);
+        }
+
+        view.playSpeechReaction(activeMemberIndex, SpeechId::ShopItemBought, true);
+    }
+    else if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::TheftCaught)
+    {
+        view.playSpeechReaction(activeMemberIndex, SpeechId::WrongShop, true);
+    }
+    else if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::NotEnoughGold)
+    {
+        view.playSpeechReaction(activeMemberIndex, SpeechId::NotEnoughGold, true);
+    }
+    else if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::InventoryFull)
+    {
+        view.playSpeechReaction(activeMemberIndex, SpeechId::InventoryRoom, true);
+    }
+}
+
+void GameplayOverlayInputController::takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
+{
+    IGameplayWorldRuntime *pWorldRuntime = view.worldRuntime();
+    Party *pParty = view.party();
+
+    if (pWorldRuntime == nullptr || pParty == nullptr || pWorldRuntime->activeChestView() == nullptr)
+    {
+        return;
+    }
+
+    const ChestTakeAllResult result = takeAllActiveChestItems(*pWorldRuntime, *pParty, view.itemTable(), goldOnly);
+    std::string status = result.gold.amount > 0 ? foundGoldStatusText(result.gold) : std::string();
+
+    if (result.leftBehind)
     {
         status += status.empty() ? Engine::tr("Inventory full.") : " " + Engine::tr("Inventory full.");
     }
@@ -2782,7 +2904,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
             if (journalOwnerTabsShown(journalScreen))
             {
                 if (const auto page = resolveTrainerPage())
-                    if (const uint32_t continent = journalOwnerTargetAt(*page, pointerX, pointerY))
+                    if (const uint32_t continent = journalOwnerTargetAt(view, *page, pointerX, pointerY))
                         return {GameplayJournalPointerTargetType::JournalContinent, continent};
             }
 
@@ -3287,8 +3409,9 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
         {
             const uint32_t noteId = findJournalMapNoteAtPointer(pNotesParty, normalizedCurrentMapFileName,
                 journalScreen, *mapViewport, journalPointerState.x, journalPointerState.y, pJournalMinimapState);
-            const JournalMapNote *pNote =
-                noteId != 0 ? pNotesParty->findJournalMapNote(normalizedCurrentMapFileName, noteId) : nullptr;
+            const JournalMapNote *pNote = noteId != 0
+                ? pNotesParty->campaign().findJournalMapNote(normalizedCurrentMapFileName, noteId)
+                : nullptr;
 
             if (pNote != nullptr && pNote->personal)
             {
@@ -3309,7 +3432,7 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
                 note.y = int32_t(std::lround(world.y));
                 note.mapFileName = normalizedCurrentMapFileName;
                 note.personal = true;
-                pNotesParty->setJournalMapNote(note);
+                pNotesParty->campaign().setJournalMapNote(note);
                 beginJournalMapNoteEdit(journalScreen, note, true);
             }
 
@@ -3322,11 +3445,12 @@ bool GameplayOverlayInputController::handleJournalOverlayInput(
         {
             const uint32_t noteId =
                 journalScreen.hoveredMapNoteId != 0 ? journalScreen.hoveredMapNoteId : journalScreen.selectedMapNoteId;
-            const JournalMapNote *pNote = pNotesParty->findJournalMapNote(normalizedCurrentMapFileName, noteId);
+            const JournalMapNote *pNote =
+                pNotesParty->campaign().findJournalMapNote(normalizedCurrentMapFileName, noteId);
 
             if (pNote != nullptr && pNote->personal)
             {
-                pNotesParty->removeJournalMapNote(normalizedCurrentMapFileName, noteId);
+                pNotesParty->campaign().removeJournalMapNote(normalizedCurrentMapFileName, noteId);
                 journalScreen.selectedMapNoteId = 0;
                 journalScreen.hoveredMapNoteId = 0;
             }
@@ -4114,95 +4238,19 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
                         return;
                     }
 
-                    std::string statusText;
+                    const bool stealRequested = input.isScancodeHeld(SDL_SCANCODE_LCTRL)
+                        || input.isScancodeHeld(SDL_SCANCODE_RCTRL);
+                    const HouseStockAction action = slotIndex == RerollSlotIndex ? HouseStockAction::Reroll
+                        : stealRequested ? HouseStockAction::Steal : HouseStockAction::Buy;
 
-                    if (slotIndex == RerollSlotIndex)
+                    // A co-op guest's game: the stock is the host's, so the host does it for this player.
+                    if (IPlayerCommandRemote *pRemote = view.playerCommands().remote(); pRemote != nullptr)
                     {
-                        const bool rerolled = HouseServiceRuntime::tryRerollStock(
-                            *view.party(),
-                            *view.itemTable(),
-                            *view.standardItemEnchantTable(),
-                            *view.specialItemEnchantTable(),
-                            *pDialogueHouseEntry,
-                            view.worldRuntime()->gameMinutes(),
-                            statusText);
-                        view.setStatusBarEvent(statusText);
-                        view.playSpeechReaction(
-                            view.partyReadOnly()->activeMemberIndex(),
-                            rerolled ? SpeechId::ShopItemBought : SpeechId::NotEnoughGold,
-                            true);
+                        pRemote->houseStockAction(action, *stockMode, slotIndex);
                         return;
                     }
 
-                    HouseServiceRuntime::ShopItemServiceResult serviceResult =
-                        HouseServiceRuntime::ShopItemServiceResult::None;
-                    const bool stealRequested = input.isScancodeHeld(SDL_SCANCODE_LCTRL)
-                        || input.isScancodeHeld(SDL_SCANCODE_RCTRL);
-
-                    if (stealRequested)
-                    {
-                        static thread_local std::mt19937 rng(std::random_device{}());
-                        HouseServiceRuntime::tryStealStockItem(
-                            *view.party(),
-                            *view.worldRuntime(),
-                            *view.itemTable(),
-                            *view.standardItemEnchantTable(),
-                            *view.specialItemEnchantTable(),
-                            *pDialogueHouseEntry,
-                            view.worldRuntime()->gameMinutes(),
-                            *stockMode,
-                            slotIndex,
-                            std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
-                            std::uniform_int_distribution<uint32_t>(0, 1000000u)(rng),
-                            statusText,
-                            &serviceResult,
-                            effectiveReputationForView(view));
-                    }
-                    else
-                    {
-                        HouseServiceRuntime::tryBuyStockItem(
-                            *view.party(),
-                            *view.itemTable(),
-                            *view.standardItemEnchantTable(),
-                            *view.specialItemEnchantTable(),
-                            *pDialogueHouseEntry,
-                            view.worldRuntime()->gameMinutes(),
-                            *stockMode,
-                            slotIndex,
-                            statusText,
-                            &serviceResult,
-                            effectiveReputationForView(view));
-                    }
-
-                    if (!statusText.empty())
-                    {
-                        view.setStatusBarEvent(statusText);
-                    }
-
-                    const size_t activeMemberIndex = view.partyReadOnly()->activeMemberIndex();
-
-                    if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::Success
-                        || serviceResult == HouseServiceRuntime::ShopItemServiceResult::Stolen)
-                    {
-                        if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::Success)
-                        {
-                            view.markHouseShopTransactionPerformed(pDialogueHouseEntry->id);
-                        }
-
-                        view.playSpeechReaction(activeMemberIndex, SpeechId::ShopItemBought, true);
-                    }
-                    else if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::TheftCaught)
-                    {
-                        view.playSpeechReaction(activeMemberIndex, SpeechId::WrongShop, true);
-                    }
-                    else if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::NotEnoughGold)
-                    {
-                        view.playSpeechReaction(activeMemberIndex, SpeechId::NotEnoughGold, true);
-                    }
-                    else if (serviceResult == HouseServiceRuntime::ShopItemServiceResult::InventoryFull)
-                    {
-                        view.playSpeechReaction(activeMemberIndex, SpeechId::InventoryRoom, true);
-                    }
+                    performHouseStockAction(view, *pDialogueHouseEntry, *stockMode, slotIndex, action);
                 });
         }
     }
@@ -4405,6 +4453,14 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
 
             if (view.activeEventDialog().presentation == EventDialogPresentation::Mm9Rude)
             {
+                const int scroll =
+                    GameplayMm9TalkBar::scrollButtonAtPoint(view, screenWidth, screenHeight, mouseX, mouseY);
+
+                if (scroll != 0)
+                {
+                    return {GameplayDialoguePointerTargetType::Mm9TalkScroll, scroll < 0 ? size_t(0) : size_t(1)};
+                }
+
                 const std::optional<size_t> action =
                     GameplayMm9TalkBar::actionAtPoint(view, screenWidth, screenHeight, mouseX, mouseY);
                 return action ? GameplayDialoguePointerTarget{GameplayDialoguePointerTargetType::Action, *action}
@@ -4782,13 +4838,17 @@ void GameplayOverlayInputController::handleDialogueOverlayInput(
         view.interactionState().dialoguePressedTarget,
         noneDialogueTarget,
         findDialoguePointerTarget,
-        [&view](const GameplayDialoguePointerTarget &target)
+        [&view, screenWidth, screenHeight](const GameplayDialoguePointerTarget &target)
         {
             if (target.type == GameplayDialoguePointerTargetType::Action
                 && target.index < view.activeEventDialog().actions.size())
             {
                 view.eventDialogSelectionIndex() = target.index;
                 view.executeActiveDialogAction();
+            }
+            else if (target.type == GameplayDialoguePointerTargetType::Mm9TalkScroll)
+            {
+                GameplayMm9TalkBar::scroll(view, screenWidth, screenHeight, target.index == 0 ? -1 : 1);
             }
             else if (target.type == GameplayDialoguePointerTargetType::CloseButton)
             {
@@ -4849,6 +4909,17 @@ void GameplayOverlayInputController::handleLootOverlayInput(
     if (!hasActiveLootView)
     {
         view.resetLootOverlayInteractionState();
+        return;
+    }
+
+    // An event's window drawn over the loot view (a chest whose event also says something) takes the input; the
+    // chest waits open under it, its clicks latched so the press that closes the window does not reach it.
+    if (view.activeEventDialog().isActive)
+    {
+        view.interactionState().chestClickLatch = true;
+        view.interactionState().chestPressedTarget = {};
+        view.interactionState().chestItemClickLatch = true;
+        view.interactionState().lootChestItemLatch = true;
         return;
     }
 
@@ -5275,7 +5346,11 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                             takenItem.goldAmount,
                             view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr,
                             view.party());
-                        view.party()->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootChest);
+                        creditFoundGold(
+                            *view.party(),
+                            static_cast<int>(foundGold.partyAmount),
+                            GoldReason::LootChest,
+                            view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
                         view.setStatusBarEvent(foundGoldStatusText(foundGold));
                     }
                     else
@@ -5435,7 +5510,11 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                                 removedItem.goldAmount,
                                 view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr,
                                 view.party());
-                            view.party()->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootChest);
+                            creditFoundGold(
+                                *view.party(),
+                                static_cast<int>(foundGold.partyAmount),
+                                GoldReason::LootChest,
+                                view.worldRuntime() != nullptr ? view.worldRuntime()->eventRuntimeState() : nullptr);
                             view.setStatusBarEvent(foundGoldStatusText(foundGold));
                         }
                         else

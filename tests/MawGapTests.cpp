@@ -8,6 +8,7 @@
 #include "game/events/EventRuntime.h"
 #include "game/gameplay/GameplayMonsterSpawn.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
+#include "game/gameplay/ReputationRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/items/ItemGenerator.h"
@@ -628,8 +629,8 @@ TEST_CASE("MAW item resistance enchantments and Shielding cut damage on their ow
     CHECK(mawMitigatedDamage(hit) == doctest::Approx(500).epsilon(0.002));
     hit.itemResistances[0] = 0;
     hit.resistances[0] = 100;
-    // Resistances are divided by 100 + the attacker's level (MAW 249b00da; 100 + 12 L before).
-    CHECK(mawMitigatedDamage(hit) == doctest::Approx(1000 / (100.0 / 250 + 1)).epsilon(0.002));
+    // Resistances are divided by 100 + twice the attacker's level (MAW f1ffd3b1; 100 + L before).
+    CHECK(mawMitigatedDamage(hit) == doctest::Approx(1000 / (100.0 / 400 + 1)).epsilon(0.002));
 
     // The best resistance enchantment per element counts, not their sum.
     EquippedItemRuntimeState state;
@@ -993,7 +994,7 @@ TEST_CASE("MAW bosses cast their spell at its skill times the damage multiplier 
     CHECK_EQ(strong.spell1SkillLevel, 13u);
 }
 
-TEST_CASE("MAW gives walking melee monsters a ranged attack from Hell up, outside the starting maps (A3.3)")
+TEST_CASE("MAW gives walking melee monsters a ranged attack from Hell up, outside every world's starting maps (A3.3)")
 {
     MercenaryMap world;
     RulesetOptions options;
@@ -1012,8 +1013,40 @@ TEST_CASE("MAW gives walking melee monsters a ranged attack from Hell up, outsid
     // 1d6 becomes ceil(1 / 1.4) d ceil(6 / 1.4): a shot about 60 % of the blow.
     CHECK(hell.rulesetFacts.attack2Damage == doctest::Approx(hell.rulesetFacts.attack1Damage * 3.0 / 3.5));
 
-    world.map.fileName = "out02.odm";
-    CHECK_FALSE(monsters.resolveMonster(world.context(), stats, nullptr).generatedAttack2);
+    // The starting maps are MAW's data: its six (map_levels.yml ranged_free_maps), Vertigo and MM9's Bootcamp and
+    // Isle of Ashes (their worlds' balance files, `ranged_free`). Indoors no monster gains one.
+    MawMapLevels installed;
+    std::string error;
+    REQUIRE_MESSAGE(installed.loadFromYaml(readSource("assets_dev/engine/rulesets/maw/data/map_levels.yml"), error),
+        error);
+    REQUIRE_MESSAGE(installed.loadWorldBalance(
+                        readSource("assets_dev/engine/rulesets/maw/worlds/xeen/balance.yml"), error), error);
+    REQUIRE_MESSAGE(installed.loadWorldBalance(
+                        readSource("assets_dev/engine/rulesets/maw/worlds/mm9/balance.yml"), error), error);
+    MawRules installedRules(options, installed, installedItemData());
+    const MonsterRules &installedMonsters = installedRules.gameRules().monsters;
+    const auto gains = [&](const std::string &mapFileName)
+    {
+        world.map.fileName = mapFileName;
+        return installedMonsters.resolveMonster(world.context(), stats, nullptr).generatedAttack2;
+    };
+
+    for (const char *pStart : {"out01.odm", "out02.odm", "7out01.odm", "7out02.odm", "oute3.odm", "outd3.odm",
+             "xeen_x1.odm"})
+    {
+        CAPTURE(pStart);
+        CHECK(installed.isRangedFreeMap(pStart));
+        CHECK_FALSE(gains(pStart));
+    }
+
+    CHECK(installed.isRangedFreeMap("bootcamp.blv"));
+    CHECK(installed.isRangedFreeMap("isleofashes.blv"));
+    CHECK_FALSE(installed.isRangedFreeMap("sturmford.blv"));
+    CHECK_FALSE(installed.isRangedFreeMap("out05.odm"));
+    CHECK(gains("out05.odm"));
+    CHECK(gains("xeen_x2.odm"));
+    CHECK_FALSE(gains("d05.blv"));
+    CHECK_FALSE(gains("xeen_xd02.blv"));
 }
 
 TEST_CASE("MAW's Endless Arena: wave corpses carry no gold or item, the wave boss keeps its loot (audit MON-4)")
@@ -2333,7 +2366,7 @@ TEST_CASE("MAW legendaries 15, 18/22, 24, 27 and 30 in MAW's order and on MAW's 
 
     for (const uint32_t aura : {3u, 5u, 14u, 17u, 38u, 46u, 83u, 85u})
     {
-        rules.state().auraHolders = {{aura, 1}};
+        party.rulesetState().auraHolders = {{aura, 1}};
         spells.updateAuras(party, 0.5f);
         reserved = spells.reservedSpellPoints(party, 1);
 
@@ -2355,7 +2388,7 @@ TEST_CASE("MAW legendaries 15, 18/22, 24, 27 and 30 in MAW's order and on MAW's 
     kill.killed = true;
     combat.applyPartyHitEffects(party, kill);
     CHECK_EQ(killer.spellPoints, int((Party::effectiveMaximumSpellPoints(killer) - reserved) * 0.05));
-    rules.state().auraHolders.clear();
+    party.rulesetState().auraHolders.clear();
 
     // L6: legendary 27 sends a leech's overheal to the lowest member, an unconscious one too.
     Character &biter = *party.member(2);
@@ -2451,17 +2484,17 @@ TEST_CASE("MAW shops want quest items only once their quest is done, and unique 
     InventoryItem quest;
     quest.objectDescriptionId = 1342;
     CHECK(items.sellRefusal(party, quest).has_value());
-    party.setQuestBit(1564, true);
+    party.campaign().setQuestBit(1564, true);
     CHECK_FALSE(items.sellRefusal(party, quest).has_value());
 
     // A sold unique item is bought once; the seer's bit is cleared to hand it out again.
     InventoryItem relic;
     relic.objectDescriptionId = 539;
-    party.setQuestBit(1540, true);
-    party.setQuestBit(199, true);
+    party.campaign().setQuestBit(1540, true);
+    party.campaign().setQuestBit(199, true);
     REQUIRE_FALSE(items.sellRefusal(party, relic).has_value());
     items.itemSold(party, relic);
-    CHECK_FALSE(party.hasQuestBit(199));
+    CHECK_FALSE(party.campaign().hasQuestBit(199));
     CHECK_EQ(items.sellRefusal(party, relic).value_or(""), "I have already bought an item like that.");
     InventoryItem sword;
     sword.objectDescriptionId = 1;
@@ -2755,12 +2788,12 @@ TEST_CASE("MAW Regenerating bosses start each map unhit (audit ROB-2-4)")
     rules.setCurrentMap("out05.odm");
     const size_t boss = world.addActor(bossActor(1, 195, MawBossAffix::Regenerating, 5000));
     monsters.updateMonsters(world, 0.2f);
-    // A drop in health is no party hit: the party's hits are counted with the actor (FCOR-2-6).
+    // A drop in health is no party hit: the party's damage is counted with the actor (FCOR-2-6).
     world.actor(boss).currentHp = 50;
     monsters.updateMonsters(world, 0.2f);
     monsters.updateMonsters(world, 0.2f);
     CHECK_EQ(world.healed, 0);
-    world.actor(boss).rulesetFacts.regeneratingHits = 1;
+    world.actor(boss).rulesetFacts.regeneratingDamage = 1;
     monsters.updateMonsters(world, 0.2f);
     monsters.updateMonsters(world, 0.2f);
     REQUIRE(world.healed > 0);
@@ -2769,7 +2802,7 @@ TEST_CASE("MAW Regenerating bosses start each map unhit (audit ROB-2-4)")
     rules.setCurrentMap("out06.odm");
     world.healed = 0;
     world.actor(boss).currentHp = 50;
-    world.actor(boss).rulesetFacts.regeneratingHits = 0;
+    world.actor(boss).rulesetFacts.regeneratingDamage = 0;
     monsters.updateMonsters(world, 0.2f);
     monsters.updateMonsters(world, 0.2f);
     CHECK_EQ(world.healed, 0);
@@ -2830,6 +2863,8 @@ TEST_CASE("MAW Swapper bosses swap places and turn hits aside; Pullers jump the 
     Party party;
     party.seed(seed);
     party.setRules(&rules.gameRules());
+    // The struck party is the world's own (another player's, in a co-op host's game, is not moved).
+    world.bindParty(&party);
     world.swaps.clear();
     combat.applyMonsterHitEffects(party, &world, 0, world.actor(swapper).rulesetFacts, 1, 10,
         CombatDamageType::Physical);
@@ -2845,6 +2880,62 @@ TEST_CASE("MAW Swapper bosses swap places and turn hits aside; Pullers jump the 
     CHECK(world.launches[0][0] == doctest::Approx(0.0f));
     CHECK(world.launches[0][1] == doctest::Approx(923.88f).epsilon(0.001));
     CHECK(world.launches[0][2] == doctest::Approx(382.68f).epsilon(0.001));
+}
+
+TEST_CASE("MAW Venomous, Plagueborn and Fixator hits go past Protection from Magic")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    const CombatRules &combat = rules.gameRules().combat;
+    BossTestWorld world;
+    const std::array<std::pair<MawBossAffix, CharacterCondition>, 3> affixes = {{
+        {MawBossAffix::Venomous, CharacterCondition::PoisonSevere},
+        {MawBossAffix::Plagueborn, CharacterCondition::DiseaseSevere},
+        {MawBossAffix::Fixator, CharacterCondition::Weak},
+    }};
+
+    for (const auto &[affix, condition] : affixes)
+    {
+        PartySeed seed;
+        seed.members.resize(2);
+        Party party;
+        party.seed(seed);
+        party.setRules(&rules.gameRules());
+        world.bindParty(&party);
+        const size_t boss = world.addActor(bossActor(uint32_t(10 + size_t(affix)), 195, affix, 1000));
+        const ActorRulesetFacts &facts = world.actor(boss).rulesetFacts;
+
+        // Unprotected, the hit lands its condition.
+        combat.applyMonsterHitEffects(party, &world, 0, facts, world.actor(boss).actorId, 10,
+            CombatDamageType::Physical);
+        CHECK(party.member(0)->conditions.test(size_t(condition)));
+
+        // Protected, the next member's hit lands it too and spends no charge (MAW writes the condition directly).
+        party.applyPartyBuff(PartyBuffId::ProtectionFromMagic, 600, 2, 75, 10, SkillMastery::Master, 0);
+        combat.applyMonsterHitEffects(party, &world, 1, facts, world.actor(boss).actorId, 10,
+            CombatDamageType::Physical);
+        CHECK(party.member(1)->conditions.test(size_t(condition)));
+        REQUIRE(party.partyBuff(PartyBuffId::ProtectionFromMagic) != nullptr);
+        CHECK_EQ(party.partyBuff(PartyBuffId::ProtectionFromMagic)->power, 2);
+    }
+}
+
+TEST_CASE("MAW reputation counts for nothing; Standard's does")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    CHECK_EQ(effectivePartyReputation(41, nullptr), 41);
+    bindGameRules(&rules.gameRules());
+    CHECK_FALSE(rules.gameRules().monsters.reputationCounts());
+    CHECK_EQ(effectivePartyReputation(41, nullptr), 0);
+    CHECK_EQ(effectivePartyReputation(-30, nullptr), 0);
+    bindGameRules(nullptr);
+    CHECK_EQ(effectivePartyReputation(41, nullptr), 41);
+}
+
+TEST_CASE("MAW monsters never flee; Standard ones do")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    CHECK_FALSE(rules.gameRules().monsters.monstersFlee());
+    CHECK(gameRulesFor(nullptr).monsters.monstersFlee());
 }
 
 TEST_CASE("MAW Broodlings drop items by tier (L3.2)")
@@ -2919,7 +3010,7 @@ TEST_CASE("MAW Shadow bosses blind the Wizard Eye aura too (A3.6)")
     Party party;
     party.seed(seed);
     party.setRules(&rules.gameRules());
-    rules.state().auraHolders[12] = 0;
+    party.rulesetState().auraHolders[12] = 0;
     rules.gameRules().spells.updateAuras(party, 0.5f);
     REQUIRE(party.hasPartyBuff(PartyBuffId::WizardEye));
 
@@ -3456,7 +3547,7 @@ TEST_CASE("Road to Insanity: no refills, revived monsters drop nothing, dungeons
     rules.setCurrentMap("d01.blv");
     monsters.updateMonsters(world, 0.016f);
     CHECK_EQ(party.food(), 16);
-    CHECK_EQ(rules.state().heldFood, 24);
+    CHECK_EQ(party.rulesetState().heldFood, 24);
     monsters.updateMonsters(world, 0.016f);
     CHECK_EQ(party.food(), 16);
 
@@ -3464,7 +3555,7 @@ TEST_CASE("Road to Insanity: no refills, revived monsters drop nothing, dungeons
     rules.setCurrentMap("out01.odm");
     monsters.updateMonsters(world, 0.016f);
     CHECK_EQ(party.food(), 40);
-    CHECK_EQ(rules.state().heldFood, 0);
+    CHECK_EQ(party.rulesetState().heldFood, 0);
 }
 
 TEST_CASE("Beyond Madness: special bosses carry bad-luck protection, none in the Arena (P9.M4)")
@@ -3727,23 +3818,37 @@ TEST_CASE("A solo run's early monster cut divides monsters' hits and multiplies 
     REQUIRE(plainTaken > 20);
     REQUIRE(plainDealt > 0);
 
-    solo.setSoloMonsterCut(2.5);
+    // A hit that names its character reads the cut of that character's level, whichever party is in play (in a game
+    // of several players each character has its own); a hit that names none reads the party in play's.
+    SoloTalentTable table;
+    std::string error;
+    REQUIRE_MESSAGE(table.loadFromYaml("early_monster_cut:\n  - [1, 2.5]\n  - [20, 2.5]\ntalents: []", error), error);
+    bindSoloTalentTable(&table);
     // A monster's hit is cut before armour, so the result is the plain one over the cut, to rounding.
     CHECK(taken(solo, true) == doctest::Approx(plainTaken / 2.5).epsilon(0.05));
     // A fall is no monster's hit.
     CHECK_EQ(taken(solo, false), plainFall);
     // The party's hit counts for 2.5 times as much; a monster striking a monster is left alone.
+    CHECK_EQ(dealt(solo, 0), plainDealt);
+    solo.setSoloMonsterCut(2.5);
     CHECK(dealt(solo, 0) == doctest::Approx(plainDealt * 2.5).epsilon(0.01));
     CHECK_EQ(dealt(solo, 5), plainMonsterBlow);
 
-    // The cut never raises a monster above its own numbers.
-    solo.setSoloMonsterCut(0.5);
-    CHECK_EQ(taken(solo, true), plainTaken);
+    // Another player's party in play has its own cut.
+    solo.setPartyInPlay(1);
     CHECK_EQ(dealt(solo, 0), plainDealt);
+    solo.setPartyInPlay(LocalPlayer);
+    CHECK(dealt(solo, 0) == doctest::Approx(plainDealt * 2.5).epsilon(0.01));
 
     // A game that is not a solo run ignores it: a party of one in plain MAW fights MAW's monsters.
     MawRules party(RulesetOptions{}, MawMapLevels{});
     party.setSoloMonsterCut(2.5);
     CHECK_EQ(taken(party, true), plainTaken);
     CHECK_EQ(dealt(party, 0), plainDealt);
+
+    // The cut never raises a monster above its own numbers.
+    bindSoloTalentTable(nullptr);
+    solo.setSoloMonsterCut(0.5);
+    CHECK_EQ(taken(solo, true), plainTaken);
+    CHECK_EQ(dealt(solo, 0), plainDealt);
 }

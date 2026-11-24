@@ -22,6 +22,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import struct
 import subprocess
 import sys
@@ -35,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bake_geometry import (fnv, group_coplanar_faces, newell_normal, pack_lightmap_charts, plane_chart_basis,  # noqa
                            rgbm, rle_bgra)
-from bake_assets import bake_texture_paths, source_roots  # noqa: E402
+from bake_assets import bake_texture_paths, dependency_name, liquid_face_colours  # noqa: E402
 
 MAGIC = b'OYILIT1\0'
 VERSION = 1
@@ -77,6 +78,11 @@ def load_profile(path, samples):
         raise ValueError('max_lighting must be within (0, 4]: the file stores RGBM up to 4')
     if profile['samples'] < 1 or profile['units_per_texel'] <= 0:
         raise ValueError('Samples and texel spacing must be positive')
+    limit = profile.get('rendered_limit')
+    if limit is not None and not (0 < limit.get('mean', 255) <= 255 and 0 <= limit.get('clip', 100) <= 100
+                                  and 0 < limit.get('ceiling', 1) <= 1):
+        raise ValueError('rendered_limit takes a mean luma within (0, 255], a clipped share within [0, 100] and a '
+                         'ceiling within (0, 1]')
     return profile
 
 
@@ -101,6 +107,21 @@ def texture_albedo(path):
         return (0.0, 0.0, 0.0), 0.0
     linear = np.where(opaque <= 0.04045, opaque / 12.92, ((opaque + 0.055) / 1.055) ** 2.4)
     return tuple(float(value) for value in linear.mean(axis=0)), float(len(opaque) / len(pixels))
+
+
+def texture_display_colour(path):
+    """The mean sRGB colour of a bitmap's opaque texels: what the indoor shader multiplies by the lighting."""
+    image = bpy.data.images.load(str(path), check_existing=True)
+    pixels = np.array(image.pixels[:], dtype=np.float32).reshape(-1, 4)
+    bpy.data.images.remove(image)
+    transparent = (pixels[:, 0] >= 248 / 255) & (pixels[:, 1] <= 8 / 255) & (pixels[:, 2] >= 248 / 255)
+    opaque = pixels[~transparent, :3]
+    return opaque.mean(axis=0) if len(opaque) else np.zeros(3, dtype=np.float32)
+
+
+# Face textures the game draws as a liquid with no picture of their own (engine/liquids/liquids.yml, e.g. Xeen's
+# xjuice*): texture name -> the liquid's linear colour, filled by main() for the scene's world.
+LIQUID_ALBEDO = {}
 
 
 def is_receiver(face):
@@ -380,7 +401,8 @@ def bake_passes(scene, charts, dimensions, profile, texture_paths, out, lights, 
         if no_shadow:
             key += '#noshadow'
         if key not in materials:
-            albedo, _ = texture_albedo(texture_paths[texture.lower()])
+            albedo = (LIQUID_ALBEDO[texture.lower()] if texture.lower() not in texture_paths
+                      else texture_albedo(texture_paths[texture.lower()])[0])
             mat = bpy.data.materials.new(key)
             mat.use_nodes = True
             bsdf = next(node for node in mat.node_tree.nodes if node.type == 'BSDF_PRINCIPLED')
@@ -489,8 +511,55 @@ def bake_passes(scene, charts, dimensions, profile, texture_paths, out, lights, 
     return passes
 
 
-def compose(scene, charts, dimensions, profile, passes):
-    """Final lighting pages and the per-sector actor ambient, in renderer lighting units."""
+def drawn_caps(colours, masks, profile):
+    """Per texel and channel, the most light the profile's `rendered_limit` `ceiling` lets the texture's mean colour
+    take (colour x light <= ceiling), within `max_lighting`; `max_lighting` alone without a ceiling."""
+    ceiling = (profile.get('rendered_limit') or {}).get('ceiling')
+    caps = []
+    for colour, mask in zip(colours, masks):
+        cap = np.full(colour.shape, profile['max_lighting'], dtype=np.float32)
+        if ceiling is not None:
+            cap[mask] = np.minimum(cap[mask], ceiling / np.maximum(colour[mask], 1e-3))
+        caps.append(cap)
+    return caps
+
+
+def rendered_stats(raws, colours, masks, caps, scale, weights):
+    """The bake as the indoor shader draws it with no torch (sRGB texture mean x lighting, clamped at 1), over the lit
+    texels by the area each stands for: mean Rec. 709 luma (0-255) and the share (%) with a channel at 1."""
+    total = luma_sum = clipped = 0.0
+    for raw, colour, mask, cap, weight in zip(raws, colours, masks, caps, weights):
+        drawn = np.minimum(colour[mask] * np.minimum(scale * raw[mask], cap[mask]), 1.0)
+        w = weight[mask]
+        total += float(w.sum())
+        luma_sum += float(((drawn @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)) * w).sum()) * 255
+        clipped += float(w[drawn.max(axis=1) >= 0.995].sum())
+    return (luma_sum / total, clipped / total * 100) if total else (0.0, 0.0)
+
+
+def exposure_scale(raws, colours, masks, caps, weights, profile):
+    """The profile's `rendered_limit` ({mean, clip}): the largest factor (at most 1) on all of the bake's light that
+    keeps the rendered mean luma and the clipped share within it (devdocs/INDOOR_BAKED_LIGHTING.md, "Rendered limit")."""
+    limit = profile.get('rendered_limit')
+    if not limit:
+        return 1.0
+
+    def within(scale):
+        mean, clip = rendered_stats(raws, colours, masks, caps, scale, weights)
+        return mean <= limit.get('mean', 255) and clip <= limit.get('clip', 100)
+
+    if within(1.0):
+        return 1.0
+    low, high = 0.0, 1.0
+    for _ in range(14):
+        middle = (low + high) / 2
+        low, high = (middle, high) if within(middle) else (low, middle)
+    return round(low, 4)
+
+
+def compose(scene, charts, dimensions, profile, passes, colour_of):
+    """Final lighting pages, the per-sector actor ambient (renderer lighting units) and the rendered statistics.
+    colour_of(texture) is the texture's mean sRGB colour."""
     ids = chart_ids(charts, dimensions, profile['padding'])
     pages = []
     sector_sum = np.zeros((scene['sector_count'], 3))
@@ -502,6 +571,16 @@ def compose(scene, charts, dimensions, profile, passes):
                        for index, emitter in enumerate(profile['emitters'])}
     glass_floor = {texture.lower(): np.array(glass['colour'], dtype=np.float32) * glass['display']
                    for glass in profile['glass'] for texture in glass['textures']}
+    # A chart may join coplanar faces of several textures: its colour is their mean by area.
+    chart_colours, chart_areas = [], []
+    for chart in charts:
+        areas = [math.sqrt(sum(v * v for v in newell_normal(member['points']))) / 2 for member in chart['members']]
+        colours = [colour_of(member['face']['texture']) for member in chart['members']]
+        chart_colours.append(np.average(colours, axis=0, weights=areas) if sum(areas) > 0 else colours[0])
+        chart_areas.append(sum(areas))
+    chart_colours = np.array(chart_colours + [np.zeros(3)], dtype=np.float32)
+    lit_chart = np.array([chart['emitter'] is None for chart in charts] + [False])
+    raws, fills, coverages, colours, masks = [], [], [], [], []
     for page, (width, height) in enumerate(dimensions):
         direct = passes[(page, 'direct')]
         indirect = passes[(page, 'indirect')]
@@ -519,8 +598,25 @@ def compose(scene, charts, dimensions, profile, passes):
             sky_bounce = masked_blur(passes[(page, 'sky_indirect')][:, :, :3], coverage, ids[page],
                                      profile['blur_radius'])
             fill = fill + profile['sky_scale'] * (sky_direct + profile['sky_bounce_scale'] * sky_bounce)
-        # MM9's lightmaps clip at their full value where its lights overlap; `max_lighting` is that ceiling per channel.
-        lighting = np.minimum(profile['direct_scale'] * direct[:, :, :3] + fill, profile['max_lighting'])
+        raws.append(profile['direct_scale'] * direct[:, :, :3] + fill)
+        fills.append(fill)
+        coverages.append(coverage)
+        colours.append(chart_colours[ids[page]])
+        masks.append((coverage > 0) & lit_chart[ids[page]])
+    # Each lit texel stands for its chart's area over the chart's lit texels (a small chart has a minimum size and a
+    # margin, so plain texel counts would overweight trims and edges).
+    counts = np.zeros(len(charts) + 1)
+    for page in range(len(dimensions)):
+        counts += np.bincount(ids[page][masks[page]], minlength=len(charts) + 1)[:len(charts) + 1]
+    texel_area = np.array(chart_areas + [0.0]) / np.maximum(counts, 1)
+    weights = [texel_area[ids[page]].astype(np.float32) for page in range(len(dimensions))]
+    caps = drawn_caps(colours, masks, profile)
+    scale = exposure_scale(raws, colours, masks, caps, weights, profile)
+    for page, (width, height) in enumerate(dimensions):
+        raw, fill, coverage = raws[page], fills[page] * scale, coverages[page]
+        # MM9's lightmaps clip at their full value where its lights overlap; `max_lighting` is that ceiling per channel
+        # (and a `rendered_limit` ceiling lower on bright textures).
+        lighting = np.minimum(scale * raw, caps[page])
         lighting[ids[page] < 0] = 0
         # Translucent glass at least as bright as the profile's `glass` level for its texture (MM9's preprocessor
         # lights a translucent surface from both sides, unshadowed; the bake gives a pane only its front's light).
@@ -554,9 +650,15 @@ def compose(scene, charts, dimensions, profile, passes):
         if sector_weight[sector] > 0:
             sector_ambient.append(tuple(float(v) for v in np.clip(sector_sum[sector] / sector_weight[sector], 0, 4)))
         else:
-            value = profile['ambient_scale'] * scene['sector_ambient'][sector]
+            value = scale * profile['ambient_scale'] * scene['sector_ambient'][sector]
             sector_ambient.append(tuple(float(value * c) for c in ambient_colour))
-    return pages, sector_ambient
+    before = rendered_stats(raws, colours, masks, [np.full(c.shape, profile['max_lighting'], dtype=np.float32)
+                                                   for c in colours], 1.0, weights)
+    after = rendered_stats(raws, colours, masks, caps, scale, weights)
+    stats = {'exposure_scale': scale, 'rendered_mean': round(after[0], 1), 'rendered_clip': round(after[1], 2),
+             'unlimited_mean': round(before[0], 1), 'unlimited_clip': round(before[1], 2)}
+    print('RENDERED', json.dumps(stats), flush=True)
+    return pages, sector_ambient, stats
 
 
 def write_lighting(path, scene, charts, dimensions, pages, sector_ambient, deps, geometry_hash):
@@ -642,8 +744,7 @@ def main():
     deps = {}
 
     def dependency(path):
-        base = next((root for root in source_roots(assets, extra_sources) if path.is_relative_to(root)), assets)
-        deps[str(path.relative_to(base))] = fnv(path.read_bytes())
+        deps[dependency_name(assets, path, extra_sources)] = fnv(path.read_bytes())
 
     geometry = assets / scene['geometry_path']
     geometry_bytes = geometry.read_bytes()
@@ -683,8 +784,14 @@ def main():
     start = time.monotonic()
     # Every drawn face's texture (its mean colour is what light bounces off).
     texture_paths, _ = bake_texture_paths(assets, scene['world'], extra_sources)
+    # A liquid without a picture bounces its liquids.yml colour.
+    liquid_colours, liquids_path = liquid_face_colours(assets, scene['world'])
     for texture in sorted({f['texture'].lower() for f in scene['faces']
                            if f['visible'] and not f['attributes'] & INDOOR_SKY}):
+        if texture not in texture_paths and texture in liquid_colours:
+            LIQUID_ALBEDO[texture] = liquid_colours[texture]
+            dependency(liquids_path)
+            continue
         if texture not in texture_paths:
             raise ValueError('Missing authoritative bake material: ' + texture)
         dependency(texture_paths[texture])
@@ -697,6 +804,7 @@ def main():
             lighting = np.where((ids[page] >= 0)[:, :, None], np.float32(0.5), np.float32(0.0))
             lighting = np.repeat(lighting, 3, axis=2)
             pages.append(np.concatenate([lighting, np.ones((height, width, 1), dtype=np.float32)], axis=2))
+        rendered = {}
         sector_ambient = [tuple(float(profile['ambient_scale'] * value) for _ in range(3))
                           for value in scene['sector_ambient']]
         bake_seconds = time.monotonic() - start
@@ -709,7 +817,17 @@ def main():
             passes = bake_passes(scene, charts, dimensions, profile, texture_paths, out,
                                  scene['lights'] + extra_lights, emitters)
         bake_seconds = time.monotonic() - start
-        pages, sector_ambient = compose(scene, charts, dimensions, profile, passes)
+        display = {}
+
+        def colour_of(texture):
+            texture = texture.lower()
+            if texture not in display:
+                display[texture] = (np.array(LIQUID_ALBEDO[texture], dtype=np.float32) ** (1 / 2.2)
+                                    if texture not in texture_paths else
+                                    texture_display_colour(texture_paths[texture]))
+            return display[texture]
+
+        pages, sector_ambient, rendered = compose(scene, charts, dimensions, profile, passes, colour_of)
     output = out / Path(scene['geometry_path']).with_suffix('.lighting').name
     compressed = write_lighting(output, scene, charts, dimensions, pages, sector_ambient, deps, geometry_hash)
     report = {'profile': profile, 'blender': bpy.app.version_string, 'charts': len(charts),
@@ -720,6 +838,7 @@ def main():
               'lights': len(scene['lights']), 'extra_lights': len(extra_lights), 'pages': dimensions, 'texels': texels,
               'compressed_bytes': compressed, 'output_bytes': output.stat().st_size,
               'bake_seconds': round(bake_seconds, 1), 'recomposed': args.recompose,
+              'rendered': rendered,
               'sector_ambient': sector_ambient, 'dependencies': deps,
               'output_sha256': hashlib.sha256(output.read_bytes()).hexdigest()}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')

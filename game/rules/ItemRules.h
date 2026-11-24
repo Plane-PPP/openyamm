@@ -82,6 +82,31 @@ struct WorldItemSpotting
     float indoorRadius = 0.0f;
 };
 
+// Where on the current map the party stands when it uses a travel item (ItemRules::useTravelItem).
+struct TravelItemOrigin
+{
+    int32_t x = 0;
+    int32_t y = 0;
+    int32_t z = 0;
+};
+
+// What using a travel item does (ItemRules::useTravelItem).
+struct TravelItemUse
+{
+    // The rules refuse and say why: the party stays and keeps the item.
+    std::string refusal;
+    // The map to go to and the instance of it (GameSession::mapInstanceId; empty: the map itself), at the map's start
+    // point or at the given place.
+    std::string mapFileName;
+    std::string instanceId;
+    bool useMapStartPosition = true;
+    int32_t x = 0;
+    int32_t y = 0;
+    int32_t z = 0;
+    // The item is used up.
+    bool consumed = true;
+};
+
 // How random items are rolled, what they give and what they are worth (devdocs/maw/HANDOFF.md §3.5). This class is the
 // Standard MMMerge rules; a ruleset that handles items differently derives from it.
 class ItemRules
@@ -207,9 +232,15 @@ public:
         const ItemTable &itemTable,
         std::mt19937 &rng) const;
 
-    // Where using the item takes the party (MAW: a dimension map, to the map it opens), once the rules set the visit
-    // up; the item is used up. Nothing for an item that does not travel (Standard: every item).
-    virtual std::optional<std::string> useTravelItem(Party &party, const InventoryItem &item) const;
+    // Where using the item takes the party (MAW: a dimension map into the rift it opens, the dimensional portal into
+    // the open rift and back out). `from` is where the party stands. Nothing for an item that does not travel
+    // (Standard: every item). Two steps, so that the autosave of the map being left holds the item unused:
+    // planTravelItem when the player uses the item changes nothing (the item stays in hand, the move is queued);
+    // useTravelItem as the party sets off, after that autosave, sets the visit up for good and may still refuse.
+    virtual std::optional<TravelItemUse> planTravelItem(
+        const Party &party, const InventoryItem &item, const TravelItemOrigin &from) const;
+    virtual std::optional<TravelItemUse> useTravelItem(
+        Party &party, const InventoryItem &item, const TravelItemOrigin &from) const;
     // The loot filter in force (MAW's, a player preference; it also reads items placed in chests). Standard: none.
     virtual const RulesetLootFilter *lootFilter() const;
     // What the loot filter needs to know of a drop (LootFilter.h); none for an item it never takes.
@@ -258,10 +289,19 @@ public:
     virtual bool gathersItem(const InventoryItem &item) const;
     // The party's shared pouch the item lives in instead of the members' bags (MAW: Workbench materials in the
     // crafting pouch; potions, bottles and reagents in the alchemy pouch; quest items, worth nothing, in the quest
-    // pouch): the party keeps such an item nowhere else (Party::pouchFor). Standard: none, there are no pouches.
+    // pouch): the party keeps such an item nowhere else (Party::pouchFor). Standard: none of its own; the Gameplay
+    // setting Party pouches gives it the alchemy and quest pouches (Party::partyPouches).
     virtual std::optional<ItemPouch> pouch(const ItemDefinition &definition) const;
-    // Whether the party has the pouches `pouch` names (the inventory's endless tabs). Standard: no.
+    // Whether the ruleset always has the pouches `pouch` names (the inventory's endless tabs). Standard: no.
     virtual bool hasPouches() const;
+    // A quest item: what is worth nothing and is no gear (keys, letters, message scrolls, trophies; the user,
+    // 2026-11-17), potions' bottles and reagents aside. Where quest items lie in a pouch this decides which they are:
+    // under a ruleset with pouches, and in a co-op session under any (Party::pouchFor).
+    static bool questItem(const ItemDefinition &definition);
+    // The pouch of the party's potions, bottles and reagents (alchemy) or of its quest items (quest), else none: MAW's
+    // pouches but the crafting one, which Standard has too while the Gameplay setting Party pouches is on
+    // (Party::partyPouches).
+    static std::optional<ItemPouch> alchemyOrQuestPouch(const ItemDefinition &definition);
     // Why the party cannot open a chest on a map of this lock rating (MapStatsEntry::disarmDifficulty), or nothing
     // (Standard: chests always open, their traps aside).
     virtual std::optional<std::string> chestOpenRefusal(const Party &party, int mapLock) const;

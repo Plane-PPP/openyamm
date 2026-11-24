@@ -1,10 +1,13 @@
 #pragma once
 
+#include "engine/AssetFileSystem.h"
+
 #include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace OpenYAMM::Game
@@ -112,6 +115,18 @@ struct SkyStarField
     float poleElevationDegrees = 55.0f;
 };
 
+// Space past the world's edge (a map's terrain.void, U-12): what the sky shows below the horizon over the void.
+// Used only on maps with void cells; a preset or theme `void` block sets it, a theme's overriding the preset's.
+struct SkyVoidLook
+{
+    // Linear RGB of empty space.
+    SkyColor color = {0.004f, 0.006f, 0.016f};
+    // Star brightness below the horizon, by day and night.
+    float stars = 0.9f;
+    // Depth below the horizon over which the horizon's haze turns into space (the air's limb).
+    float limbDegrees = 3.0f;
+};
+
 struct SkyPreset
 {
     std::string name;
@@ -128,6 +143,7 @@ struct SkyPreset
     SkyHorizonRing horizonRing;
     SkyStarField stars;
     SkyOrbitRing orbitRing;
+    std::optional<SkyVoidLook> voidLook;
     std::vector<SkyCloudLayer> clouds;
     // A storm sky keeps its own look in rain instead of switching to the generic rain preset.
     bool storm = false;
@@ -142,6 +158,22 @@ struct SkySpecialPresets
     std::string alwaysDark;
     std::string rain;
     std::string snow;
+};
+
+// A glow along part of the horizon, fixed in world direction (D-36: the bright face's rim seen from the Darkside's
+// edge): it climbs heightDegrees above the horizon and shows belowDegrees under it where no land covers it (the
+// void), behind the clouds, in its own colour. Its strength blends from day to night by the preset's star weight.
+struct SkyRimGlow
+{
+    // Compass bearing of its middle: 0 north (+Y), 90 east (+X).
+    float directionDegrees = 90.0f;
+    // Its full width along the horizon.
+    float widthDegrees = 75.0f;
+    float heightDegrees = 10.0f;
+    float belowDegrees = 2.0f;
+    SkyColor color = {1.0f, 0.92f, 0.75f};
+    float dayStrength = 0.0f;
+    float nightStrength = 0.0f;
 };
 
 // A map's look layered over whichever preset the weather selects, keyed by map file name in `maps`.
@@ -161,6 +193,8 @@ struct SkyTheme
     // Minimum haze toward the themed fog colour (0-1), as with fog weather.
     float haze = 0.0f;
     float starScale = 1.0f;
+    std::optional<SkyRimGlow> rimGlow;
+    std::optional<SkyVoidLook> voidLook;
 };
 
 class SkyPresetLibrary
@@ -195,4 +229,18 @@ private:
     std::string m_fallback;
     float m_transitionSeconds = 45.0f;
 };
+
+// The sky library with the worlds' own skies (worldTexts: world id, its rendering/sky/sky.yml): a world file has the
+// library's version and may hold aliases, presets, themes and maps, each a name the library and the other worlds do
+// not define (a world adds skies; it changes none). Its presets may inherit the engine's. composed is the library's
+// YAML text.
+bool composeSkyLibraryYaml(
+    const std::string &engineText,
+    const std::vector<std::pair<std::string, std::string>> &worldTexts,
+    std::string &composed,
+    std::string &errorMessage);
+
+// engine/rendering/sky/sky.yml composed with every mounted world's worlds/<id>/rendering/sky/sky.yml; nothing when it
+// cannot be read or composed (errorMessage says why).
+std::optional<std::string> readSkyLibraryYaml(const Engine::AssetFileSystem &assets, std::string &errorMessage);
 }

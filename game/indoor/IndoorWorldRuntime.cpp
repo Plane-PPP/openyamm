@@ -1,6 +1,10 @@
 #include "game/indoor/IndoorWorldRuntime.h"
-#include "engine/Localization.h"
 
+#include "engine/Localization.h"
+#include "game/coop/ReplicaWorldCalls.h"
+#include "game/maps/SaveSections.h"
+
+#include "game/gameplay/MonsterTargetChoice.h"
 #include "game/gameplay/CinematicRuntime.h"
 #include "game/party/PlaythroughStatistics.h"
 
@@ -1151,6 +1155,8 @@ struct IndoorProjectileCollisionCandidate
         GameplayProjectileService::ProjectileFrameCollisionKind::None;
     GameplayWorldPoint point = {};
     size_t actorIndex = static_cast<size_t>(-1);
+    // For a hit on a party: the player whose party it is.
+    PlayerId partyPlayer = LocalPlayer;
     size_t faceIndex = static_cast<size_t>(-1);
     // A destructible prop (a decoration entity) struck; kind World without a face.
     size_t entityIndex = static_cast<size_t>(-1);
@@ -1892,6 +1898,9 @@ bool hasActiveActorSpellEffectOverride(const GameplayActorSpellEffectState &stat
         || state.shrinkRemainingSeconds > 0.0f
         || state.armorClassHalvedRemainingSeconds > 0.0f
         || state.darkGraspRemainingSeconds > 0.0f
+        || state.silenceRemainingSeconds > 0.0f
+        || state.moveSlowRemainingSeconds > 0.0f
+        || state.demoralizeRemainingSeconds > 0.0f
         || state.dayOfProtectionRemainingSeconds > 0.0f
         || state.hourOfPowerRemainingSeconds > 0.0f
         || state.painReflectionRemainingSeconds > 0.0f
@@ -3294,7 +3303,8 @@ IndoorWorldRuntime::MapActorAiState buildIndoorMapActorAiState(
     const MonsterTable *pMonsterTable,
     const SpellTable *pSpellTable,
     const GameplayActorService *pGameplayActorService,
-    const SpriteFrameTable *pActorSpriteFrameTable)
+    const SpriteFrameTable *pActorSpriteFrameTable,
+    const ActorNpcNameTables &npcNames)
 {
     const int16_t resolvedMonsterId = resolveIndoorActorStatsId(actor);
     const MonsterTable::MonsterStatsEntry *pStats =
@@ -3312,7 +3322,8 @@ IndoorWorldRuntime::MapActorAiState buildIndoorMapActorAiState(
         actor.diagnosticSourceActorIndex != static_cast<size_t>(-1) ? actor.diagnosticSourceActorIndex : actorIndex;
     state.actorId = static_cast<uint32_t>(sourceActorIndex);
     state.monsterId = resolvedMonsterId;
-    state.displayName = pMonsterTable != nullptr ? resolveMapDeltaActorName(*pMonsterTable, actor) : actor.name;
+    state.displayName =
+        pMonsterTable != nullptr ? resolveMapDeltaActorName(*pMonsterTable, actor, npcNames) : actor.name;
     state.bolsterRewardMultiplier = std::max(1.0f, actor.bolsterRewardMultiplier);
     state.spriteFrameIndex = pActorSpriteFrameTable != nullptr
         ? resolveRuntimeActorSpriteFrameIndex(*pActorSpriteFrameTable, actor, pMonsterEntry)
@@ -3345,7 +3356,9 @@ IndoorWorldRuntime::MapActorAiState buildIndoorMapActorAiState(
             || monsterConditionSpellCastSupported(pStats->spell1Name, pModifiers, 1);
         state.spell2CastSupported = indoorMonsterSpellCastSupported(pStats->spell2Name)
             || monsterConditionSpellCastSupported(pStats->spell2Name, pModifiers, 2);
-        state.wanderRadius = wanderRadiusForMovementType(pStats->movementType);
+        state.wanderRadius = pModifiers != nullptr && pModifiers->wanderRadius
+            ? *pModifiers->wanderRadius
+            : wanderRadiusForMovementType(pStats->movementType);
 
         if (pSpellTable != nullptr)
         {
@@ -3423,7 +3436,8 @@ void refreshIndoorMapActorAiStaticFields(
     const MonsterTable *pMonsterTable,
     const SpellTable *pSpellTable,
     const GameplayActorService *pGameplayActorService,
-    const SpriteFrameTable *pActorSpriteFrameTable)
+    const SpriteFrameTable *pActorSpriteFrameTable,
+    const ActorNpcNameTables &npcNames)
 {
     const IndoorWorldRuntime::MapActorAiState defaults =
         buildIndoorMapActorAiState(
@@ -3432,7 +3446,8 @@ void refreshIndoorMapActorAiStaticFields(
             pMonsterTable,
             pSpellTable,
             pGameplayActorService,
-            pActorSpriteFrameTable);
+            pActorSpriteFrameTable,
+            npcNames);
 
     state.actorId = defaults.actorId;
     state.monsterId = defaults.monsterId;
@@ -4102,6 +4117,7 @@ void IndoorWorldRuntime::initialize(
     m_actorShields.bind(&monsterTable.shields(), &monsterTable);
     m_actorModifiers.bind(&monsterTable.modifiers());
     m_appliedRelationRevision = UINT64_MAX;
+    m_appliedConditionalHostility.clear();
     m_pMergedBolsterMapTable = pMergedBolsterMapTable;
     m_pMergedBolsterMonsterTable = pMergedBolsterMonsterTable;
     m_pMonsterProjectileTable = &monsterProjectileTable;
@@ -4258,6 +4274,7 @@ void IndoorWorldRuntime::initialize(
     m_actorShields.bind(&monsterTable.shields(), &monsterTable);
     m_actorModifiers.bind(&monsterTable.modifiers());
     m_appliedRelationRevision = UINT64_MAX;
+    m_appliedConditionalHostility.clear();
     m_pMergedBolsterMapTable = pMergedBolsterMapTable;
     m_pMergedBolsterMonsterTable = pMergedBolsterMonsterTable;
     m_pMonsterProjectileTable = nullptr;
@@ -4415,6 +4432,16 @@ void IndoorWorldRuntime::bindGameplayView(IndoorGameView *pView)
 void IndoorWorldRuntime::setBolsterMonstersEnabled(bool enabled)
 {
     m_bolsterMonstersEnabled = enabled;
+}
+
+void IndoorWorldRuntime::setActorNpcNames(const ActorNpcNameTables &npcNames)
+{
+    m_actorNpcNames = npcNames;
+}
+
+const ActorNpcNameTables &IndoorWorldRuntime::actorNpcNames() const
+{
+    return m_actorNpcNames;
 }
 
 void IndoorWorldRuntime::bindEventExecution(
@@ -5343,14 +5370,13 @@ std::optional<float> IndoorWorldRuntime::partyShotAimHeight(size_t actorIndex) c
         return std::nullopt;
     }
 
-    const IndoorMoveState &partyMoveState = m_pPartyRuntime->movementState();
+    // From where the acting party stands (another player's, when the host's game shoots for it).
     const GameplayWorldPoint sourcePoint = {
-        partyMoveState.x,
-        partyMoveState.y,
-        partyMoveState.footZ + PartyCollisionHeight / 3.0f,
+        partyX(),
+        partyY(),
+        partyFootZ() + PartyCollisionHeight / 3.0f,
     };
-    const int16_t sourceSectorId =
-        partyMoveState.eyeSectorId >= 0 ? partyMoveState.eyeSectorId : partyMoveState.sectorId;
+    const int16_t sourceSectorId = actingEyeSectorId();
     int16_t targetSectorId = -1;
 
     if (actorIndex < m_mapActorAiStates.size() && m_mapActorAiStates[actorIndex].sectorId >= 0)
@@ -5397,7 +5423,7 @@ bool IndoorWorldRuntime::indoorActorCanApplyPartyMeleeImpact(size_t actorIndex) 
         return false;
     }
 
-    const IndoorMoveState &partyMoveState = m_pPartyRuntime->movementState();
+    const ActorPartyBody partyMoveState = actorPartyBody(aiState.partyPlayer);
     const float actorTargetZ =
         aiState.preciseZ + std::max(24.0f, static_cast<float>(aiState.collisionHeight) * ActorDirectionHeightFactor);
     const GameplayWorldPoint actorTargetPoint = {aiState.preciseX, aiState.preciseY, actorTargetZ};
@@ -5494,7 +5520,8 @@ void IndoorWorldRuntime::syncMapActorAiStates()
                 m_pMonsterTable,
                 m_pSpellTable,
                 m_pGameplayActorService,
-                m_pActorSpriteFrameTable);
+                m_pActorSpriteFrameTable,
+                m_actorNpcNames);
         if (freshActor)
         {
             actorState.bolsterRewardMultiplier = bolster->rewardMultiplier;
@@ -5548,6 +5575,13 @@ void IndoorWorldRuntime::refreshActivatedIndoorSectors()
         const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
         activateIndoorSector(moveState.sectorId);
         activateIndoorSector(moveState.eyeSectorId);
+    }
+
+    // The rooms the other players stand in wake as the host's does: a player who walks ahead alone meets monsters
+    // that act, not ones asleep until the host arrives.
+    for (const int16_t sectorId : m_guestBodySectors)
+    {
+        activateIndoorSector(sectorId);
     }
 }
 
@@ -5972,6 +6006,218 @@ std::vector<bool> IndoorWorldRuntime::selectIndoorActiveActors(
     return activeActorMask;
 }
 
+bool IndoorWorldRuntime::sharedWithOtherPlayers() const
+{
+    return m_replica || !m_guestBodies.empty();
+}
+
+void IndoorWorldRuntime::setGuestBodies(std::vector<GameplayGuestBody> bodies)
+{
+    m_guestBodies = std::move(bodies);
+    m_waitingPlayerViews.keepPlayers(m_guestBodies);
+    m_guestBodySectors.assign(m_guestBodies.size(), int16_t(-1));
+
+    if (m_pIndoorMapData == nullptr)
+    {
+        return;
+    }
+
+    RuntimeGeometryCache &runtimeGeometry = runtimeGeometryCache();
+
+    for (size_t index = 0; index < m_guestBodies.size(); ++index)
+    {
+        const GameplayPlayerBody &body = m_guestBodies[index].body;
+        m_guestBodySectors[index] = resolveIndoorPointSector(
+            m_pIndoorMapData,
+            runtimeGeometry.vertices,
+            &runtimeGeometry.geometryCache,
+            bx::Vec3{body.x, body.y, body.footZ + PartyCollisionHeight * 0.5f},
+            int16_t(-1));
+    }
+}
+
+uint32_t IndoorWorldRuntime::grantKillExperienceToPlayers(const MonsterKillReward &reward)
+{
+    if (m_pParty == nullptr)
+    {
+        return 0;
+    }
+
+    const uint32_t granted = m_pParty->grantMonsterKillExperience(reward);
+
+    if (m_guestBodies.empty())
+    {
+        return granted;
+    }
+
+    // The party that made the kill is the world's while its command runs: the local one, or a guest acting.
+    MonsterKillReward otherReward = reward;
+    otherReward.banksExperience = false;
+    Party *pLocalParty = m_pPartyRuntime != nullptr ? &m_pPartyRuntime->party() : nullptr;
+
+    if (pLocalParty != nullptr && pLocalParty != m_pParty)
+    {
+        pLocalParty->grantMonsterKillExperience(otherReward);
+    }
+
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        if (guest.pParty != nullptr && guest.pParty != m_pParty)
+        {
+            guest.pParty->grantMonsterKillExperience(otherReward);
+        }
+    }
+
+    return granted;
+}
+
+Party *IndoorWorldRuntime::swapActingParty(Party *pParty)
+{
+    Party *pPrevious = m_pParty;
+    PlayerId player = LocalPlayer;
+
+    // While another player's party acts, the party's place is where that player stands.
+    m_actingBody.reset();
+
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        if (guest.pParty == pParty)
+        {
+            player = guest.player;
+            m_actingBody = guest.body;
+        }
+    }
+
+    // Each player has their own open chest and corpse.
+    m_waitingPlayerViews.exchange(m_actingPlayer, player, m_activeChestView, m_activeCorpseView);
+    m_actingPlayer = player;
+    m_pParty = pParty;
+    return pPrevious;
+}
+
+IndoorWorldRuntime::ActorPartyBody IndoorWorldRuntime::actorPartyBody(PlayerId player) const
+{
+    if (player != LocalPlayer)
+    {
+        for (size_t index = 0; index < m_guestBodies.size(); ++index)
+        {
+            const GameplayGuestBody &guest = m_guestBodies[index];
+
+            if (guest.player == player)
+            {
+                const int16_t sectorId = index < m_guestBodySectors.size() ? m_guestBodySectors[index] : int16_t(-1);
+                return ActorPartyBody{
+                    guest.player, guest.pParty, guest.body.x, guest.body.y, guest.body.footZ, sectorId, sectorId};
+            }
+        }
+    }
+
+    ActorPartyBody body = {};
+    body.pParty = m_pParty;
+
+    if (m_pPartyRuntime != nullptr)
+    {
+        const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
+        body.x = moveState.x;
+        body.y = moveState.y;
+        body.footZ = moveState.footZ;
+        body.sectorId = moveState.sectorId;
+        body.eyeSectorId = moveState.eyeSectorId;
+    }
+
+    return body;
+}
+
+void IndoorWorldRuntime::assignActorPartyPlayers()
+{
+    if (m_guestBodies.empty())
+    {
+        if (m_actorPartyPlayersAssigned)
+        {
+            for (MapActorAiState &aiState : m_mapActorAiStates)
+            {
+                aiState.partyPlayer = LocalPlayer;
+            }
+
+            m_actorPartyPlayersAssigned = false;
+        }
+
+        return;
+    }
+
+    // Whom each monster fights (chooseMonsterTarget): a party that can act and can be seen, whoever last hurt it,
+    // else the nearest with some hold on its present target.
+    m_actorPartyPlayersAssigned = true;
+    const ActorPartyBody local = actorPartyBody(LocalPlayer);
+    std::vector<MonsterTargetCandidate> candidates;
+    candidates.push_back(MonsterTargetCandidate{LocalPlayer, local.x, local.y, local.footZ,
+        m_pParty != nullptr && m_pParty->hasActableMember(),
+        m_pParty != nullptr && m_pParty->hasPartyBuff(PartyBuffId::Invisibility)});
+
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        if (guest.pParty != nullptr)
+        {
+            candidates.push_back(MonsterTargetCandidate{guest.player, guest.body.x, guest.body.y, guest.body.footZ,
+                guest.pParty->hasActableMember(), guest.pParty->hasPartyBuff(PartyBuffId::Invisibility)});
+        }
+    }
+
+    for (size_t actorIndex = 0; actorIndex < m_mapActorAiStates.size(); ++actorIndex)
+    {
+        MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+        const std::optional<PlayerId> threat = float(m_gameMinutes) < aiState.threatUntilGameMinutes
+            ? std::optional<PlayerId>(aiState.threatPlayer) : std::nullopt;
+        const PlayerId chosen = chooseMonsterTarget(
+            aiState.preciseX, aiState.preciseY, aiState.preciseZ, aiState.partyPlayer, threat, candidates);
+
+        if (chosen != aiState.partyPlayer)
+        {
+            // Its route led to the party it fought before: it plans anew, and what it had learned of reaching that
+            // one (no route, no straight walk for a while) is not true of this one.
+            aiState.partyPlayer = chosen;
+            m_actorPathRuntime.resetActor(actorIndex);
+            aiState.mm9World.targetUnreachable = false;
+            aiState.suppressDirectPathUntilSeconds = 0.0;
+        }
+    }
+}
+
+GameplayWorldPoint IndoorWorldRuntime::actorPartyFeet(size_t actorIndex) const
+{
+    const ActorPartyBody body = actorPartyBody(
+        actorIndex < m_mapActorAiStates.size() ? m_mapActorAiStates[actorIndex].partyPlayer : LocalPlayer);
+    return GameplayWorldPoint{body.x, body.y, body.footZ};
+}
+
+PlayerId IndoorWorldRuntime::nearestPartyPlayer(float x, float y) const
+{
+    PlayerId nearest = LocalPlayer;
+    float nearestSquared = (partyX() - x) * (partyX() - x) + (partyY() - y) * (partyY() - y);
+
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        const float distanceSquared = (guest.body.x - x) * (guest.body.x - x) + (guest.body.y - y) * (guest.body.y - y);
+
+        if (distanceSquared < nearestSquared)
+        {
+            nearestSquared = distanceSquared;
+            nearest = guest.player;
+        }
+    }
+
+    return nearest;
+}
+
+void IndoorWorldRuntime::noteActorThreat(size_t actorIndex, PlayerId player)
+{
+    if (actorIndex < m_mapActorAiStates.size() && !m_guestBodies.empty())
+    {
+        m_mapActorAiStates[actorIndex].threatPlayer = player;
+        m_mapActorAiStates[actorIndex].threatUntilGameMinutes = float(m_gameMinutes) + MonsterThreatGameMinutes;
+    }
+}
+
 ActorAiFrameFacts IndoorWorldRuntime::collectIndoorActorAiFrameFacts(
     float deltaSeconds,
     IndoorActorAiPerformanceDiagnostics *pDiagnostics)
@@ -6019,8 +6265,36 @@ ActorAiFrameFacts IndoorWorldRuntime::collectIndoorActorAiFrameFacts(
         pGeometryCache = &runtimeGeometry.geometryCache;
     }
 
-    const std::vector<bool> activeActorMask =
+    assignActorPartyPlayers();
+    std::vector<bool> activeActorMask =
         selectIndoorActiveActors(facts.party, partySectorId, *pVertices, pDiagnostics);
+    // Another player's party as the monsters meet it: where it stands, with the local party's size, and how fast it
+    // moves between the places its game tells (for a shot led at it).
+    const auto guestPartyFacts = [this, &facts](const ActorPartyBody &body)
+    {
+        ActorPartyFacts guestParty = facts.party;
+        const ActorPartyVelocityTracker guestVelocity = m_guestPartyVelocities.of(body.player);
+        guestParty.position = GameplayWorldPoint{body.x, body.y, body.footZ};
+        guestParty.velocityX = guestVelocity.velocityX;
+        guestParty.velocityY = guestVelocity.velocityY;
+        guestParty.invisible = body.pParty != nullptr && body.pParty->hasPartyBuff(PartyBuffId::Invisibility);
+        guestParty.hasDispellableBuffs = partyHasDispellableBuffs(body.pParty);
+        return guestParty;
+    };
+
+    // Every other player's surroundings wake and alert their monsters as the local party's do.
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        const ActorPartyBody body = actorPartyBody(guest.player);
+        const std::vector<bool> guestMask =
+            selectIndoorActiveActors(guestPartyFacts(body), body.sectorId, *pVertices, pDiagnostics);
+
+        for (size_t actorIndex = 0; actorIndex < activeActorMask.size() && actorIndex < guestMask.size(); ++actorIndex)
+        {
+            activeActorMask[actorIndex] = activeActorMask[actorIndex] || guestMask[actorIndex];
+        }
+    }
+
     const size_t activeActorCount =
         static_cast<size_t>(std::count(activeActorMask.begin(), activeActorMask.end(), true));
     facts.activeActors.reserve(activeActorCount);
@@ -6055,14 +6329,32 @@ ActorAiFrameFacts IndoorWorldRuntime::collectIndoorActorAiFrameFacts(
 
         const bool active = actorIndex < activeActorMask.size() && activeActorMask[actorIndex];
         const uint64_t actorFactBeginTickCount = pDiagnostics != nullptr ? SDL_GetTicksNS() : 0;
+        // The party this monster deals with: the frame's, or another player's.
+        std::optional<ActorPartyFacts> guestParty;
+
+        if (pAiState->partyPlayer != LocalPlayer)
+        {
+            const ActorPartyBody body = actorPartyBody(pAiState->partyPlayer);
+
+            if (body.player != LocalPlayer)
+            {
+                guestParty = guestPartyFacts(body);
+            }
+        }
+
         std::optional<ActorAiFacts> actorFacts =
             collectIndoorActorAiFacts(
                 actorIndex,
                 active,
-                facts.party,
+                guestParty ? *guestParty : facts.party,
                 *pVertices,
                 *pGeometryCache,
                 spellEffectOverrideMask);
+
+        if (actorFacts && guestParty)
+        {
+            actorFacts->party = guestParty;
+        }
 
         if (pDiagnostics != nullptr)
         {
@@ -6151,6 +6443,21 @@ std::vector<bool> IndoorWorldRuntime::applyIndoorActorAiFrameResult(
             partyMoveState.x,
             partyMoveState.y,
             partyMoveState.footZ,
+            PartyCollisionRadius * 2.0f,
+            PartyCollisionHeight,
+            false});
+    }
+
+    // The other players' parties stand in a monster's way as the local one does (a player can hold a doorway).
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        const ActorPartyBody body = actorPartyBody(guest.player);
+        actorColliders.push_back(IndoorActorCollision{
+            static_cast<size_t>(-1),
+            body.sectorId,
+            body.x,
+            body.y,
+            body.footZ,
             PartyCollisionRadius * 2.0f,
             PartyCollisionHeight,
             false});
@@ -6586,12 +6893,16 @@ std::vector<bool> IndoorWorldRuntime::applyIndoorActorAiFrameResult(
 
             if (m_pGameplayCombatController != nullptr)
             {
+                // The reach check above has made sure the index names a monster.
+                m_pGameplayCombatController->setRecordingPlayer(
+                    m_mapActorAiStates[deferredAttackRequest.sourceActorId].partyPlayer);
                 m_pGameplayCombatController->recordMonsterMeleeImpact(
                     deferredAttackRequest.sourceActorId,
                     attackRequest.damage,
                     attackRequest.attackBonus,
                     attackRequest.damageType,
                     attackRequest.ability);
+                m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
             }
             else if (m_pParty != nullptr)
             {
@@ -6687,7 +6998,8 @@ void IndoorWorldRuntime::collectIndoorMm9LayerFacts(
 
         if (state.targetKind == ActorAiTargetKind::Party && m_pPartyRuntime != nullptr)
         {
-            const IndoorMoveState &party = m_pPartyRuntime->movementState();
+            // The sector of the party it hides from, not the host's wherever that stands.
+            const ActorPartyBody party = actorPartyBody(aiState.partyPlayer);
             targetPoint = GameplayWorldPoint{partyFacts.position.x, partyFacts.position.y,
                 partyFacts.position.z + PartyTargetHeightOffset};
             targetSectorId = party.eyeSectorId >= 0 ? party.eyeSectorId : party.sectorId;
@@ -6943,7 +7255,8 @@ void IndoorWorldRuntime::deliverMm9Call(
 
         if (request.callTargetKind == ActorAiTargetKind::Party && m_pPartyRuntime != nullptr)
         {
-            const IndoorMoveState &party = m_pPartyRuntime->movementState();
+            // The party the caller fights.
+            const ActorPartyBody party = actorPartyBody(sender.partyPlayer);
             world.callTargetValid = receiver.hostileToParty;
             world.callTargetDistance = std::max(0.0f, length3d(party.x - receiver.preciseX,
                 party.y - receiver.preciseY, party.footZ - receiver.preciseZ) - float(receiver.collisionRadius));
@@ -7634,12 +7947,21 @@ bool IndoorWorldRuntime::applyIndoorActorProjectileRequest(const ActorProjectile
             sourceState.preciseZ, static_cast<float>(sourceState.collisionRadius),
             static_cast<float>(sourceState.collisionHeight))
         : std::nullopt;
+    // The body launch height is capped by the drawn model's top while models are on (actorLaunchHeight).
+    float bodyLaunchHeight = 0.0f;
+    if (!modelSource)
+    {
+        const float factor = indoorActorProjectileSourceHeightFactor(projectileRequest.ability);
+        const uint16_t collisionHeight = std::max<uint16_t>(sourceState.collisionHeight, 1);
+        GameplayRuntimeActorState launchState = {};
+        bodyLaunchHeight = actorRuntimeState(projectileRequest.sourceActorIndex, launchState)
+            ? actorLaunchHeight(*m_pMonsterTable, m_pActorSpriteFrameTable, launchState.monsterId, collisionHeight,
+                launchState.bodyHeight, launchState.drawScale, launchState.visualScale, factor)
+            : GameMechanics::actorLaunchHeight(collisionHeight, factor, 0.0f);
+    }
     spawnRequest.sourceX = modelSource ? (*modelSource)[0] : sourceState.preciseX;
     spawnRequest.sourceY = modelSource ? (*modelSource)[1] : sourceState.preciseY;
-    spawnRequest.sourceZ = modelSource ? (*modelSource)[2]
-        : sourceState.preciseZ
-            + static_cast<float>(std::max<uint16_t>(sourceState.collisionHeight, 1))
-                * indoorActorProjectileSourceHeightFactor(projectileRequest.ability);
+    spawnRequest.sourceZ = modelSource ? (*modelSource)[2] : sourceState.preciseZ + bodyLaunchHeight;
     spawnRequest.targetX = projectileRequest.target.x;
     spawnRequest.targetY = projectileRequest.target.y;
     spawnRequest.targetZ = projectileRequest.target.z;
@@ -8252,26 +8574,42 @@ GameplayProjectileService::ProjectileFrameFacts IndoorWorldRuntime::collectIndoo
 
         if (facts.canHitParty && m_pGameplayProjectileService->canProjectileCollideWithParty(projectile))
         {
-            const GameplayWorldPoint partyCenter = {
-                partyPosition.x,
-                partyPosition.y,
-                partyPosition.z + PartyCollisionHeight * 0.5f
-            };
-            std::optional<IndoorProjectileCollisionCandidate> partyHit =
-                findProjectileCylinderHit(
-                    segmentStart,
-                    segmentEnd,
-                    partyCenter,
-                    PartyCollisionRadius + static_cast<float>(projectile.radius),
-                    PartyCollisionHeight * 0.5f);
-
-            if (partyHit)
+            // The local party's body, then every other player's: the first met along the segment is the one hit.
+            const auto considerPartyBody = [&](PlayerId player, float bodyX, float bodyY, float bodyFootZ)
             {
-                partyHit->kind = GameplayProjectileService::ProjectileFrameCollisionKind::Party;
+                const GameplayWorldPoint partyCenter = {bodyX, bodyY, bodyFootZ + PartyCollisionHeight * 0.5f};
+                std::optional<IndoorProjectileCollisionCandidate> partyHit =
+                    findProjectileCylinderHit(
+                        segmentStart,
+                        segmentEnd,
+                        partyCenter,
+                        PartyCollisionRadius + static_cast<float>(projectile.radius),
+                        PartyCollisionHeight * 0.5f);
 
-                if (!bestCollision || projectileHitSortsBefore(*partyHit, *bestCollision))
+                if (partyHit)
                 {
-                    bestCollision = *partyHit;
+                    partyHit->kind = GameplayProjectileService::ProjectileFrameCollisionKind::Party;
+                    partyHit->partyPlayer = player;
+
+                    if (!bestCollision || projectileHitSortsBefore(*partyHit, *bestCollision))
+                    {
+                        bestCollision = *partyHit;
+                    }
+                }
+            };
+
+            // With several players a party that is down is out of the fight: a missile flies through where it
+            // lies.
+            if (m_guestBodies.empty() || m_pParty == nullptr || m_pParty->hasActableMember())
+            {
+                considerPartyBody(LocalPlayer, partyPosition.x, partyPosition.y, partyPosition.z);
+            }
+
+            for (const GameplayGuestBody &guest : m_guestBodies)
+            {
+                if (guest.pParty == nullptr || guest.pParty->hasActableMember())
+                {
+                    considerPartyBody(guest.player, guest.body.x, guest.body.y, guest.body.footZ);
                 }
             }
         }
@@ -8501,6 +8839,8 @@ GameplayProjectileService::ProjectileFrameFacts IndoorWorldRuntime::collectIndoo
         if (projectile.sourceKind != GameplayProjectileService::ProjectileState::SourceKind::Actor
             && m_pIndoorMapData != nullptr)
         {
+            const EventRuntimeState *pPropEvents = eventRuntimeState();
+
             for (const DestructiblePropCollider &prop : m_destructiblePropColliders)
             {
                 if (prop.destructibleIndex >= m_pIndoorMapData->destructibles.size()
@@ -8509,7 +8849,22 @@ GameplayProjectileService::ProjectileFrameFacts IndoorWorldRuntime::collectIndoo
                     continue;
                 }
 
-                const GameplayWorldPoint center = {prop.base.x, prop.base.y, prop.base.z + prop.height * 0.5f};
+                GameplayWorldPoint center = {prop.base.x, prop.base.y, prop.base.z + prop.height * 0.5f};
+
+                // A prop an event moved (evt.MoveDecoration: Thjorgard's racing boat) is struck where it is drawn.
+                if (pPropEvents != nullptr && !pPropEvents->decorationAims.empty())
+                {
+                    const auto aim = pPropEvents->decorationAims.find(
+                        m_pIndoorMapData->destructibles[prop.destructibleIndex].decorationCog);
+
+                    if (aim != pPropEvents->decorationAims.end())
+                    {
+                        center.x += aim->second.offset[0];
+                        center.y += aim->second.offset[1];
+                        center.z += aim->second.offset[2];
+                    }
+                }
+
                 std::optional<IndoorProjectileCollisionCandidate> propHit = findProjectileCylinderHit(
                     segmentStart, segmentEnd, center, prop.radius + float(projectile.radius), prop.height * 0.5f);
 
@@ -8586,6 +8941,7 @@ GameplayProjectileService::ProjectileFrameFacts IndoorWorldRuntime::collectIndoo
             facts.collision.kind = bestCollision->kind;
             facts.collision.point = bestCollision->point;
             facts.collision.actorIndex = bestCollision->actorIndex;
+            facts.collision.partyPlayer = bestCollision->partyPlayer;
 
             if (bestCollision->kind == GameplayProjectileService::ProjectileFrameCollisionKind::World
                 && bestCollision->entityIndex != static_cast<size_t>(-1))
@@ -8636,6 +8992,44 @@ GameplayProjectileService::ProjectileFrameFacts IndoorWorldRuntime::collectIndoo
     return facts;
 }
 
+Party *IndoorWorldRuntime::playerParty(PlayerId player) const
+{
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        if (guest.player == player && guest.pParty != nullptr)
+        {
+            return guest.pParty;
+        }
+    }
+
+    return m_pParty;
+}
+
+int16_t IndoorWorldRuntime::actingEyeSectorId() const
+{
+    const ActorPartyBody body = actorPartyBody(m_actingBody ? actingPlayer() : LocalPlayer);
+    return body.eyeSectorId >= 0 ? body.eyeSectorId : body.sectorId;
+}
+
+PlayerId IndoorWorldRuntime::actingPlayer() const
+{
+    return m_pGameplayProjectileService != nullptr ? m_pGameplayProjectileService->spawningPlayer() : LocalPlayer;
+}
+
+const Party *IndoorWorldRuntime::missileParty(const GameplayProjectileService::ProjectileState &projectile) const
+{
+    // The party that shot it: another player's where the host's game shot it for that player.
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        if (guest.player == projectile.sourcePlayer && guest.pParty != nullptr)
+        {
+            return guest.pParty;
+        }
+    }
+
+    return m_pParty;
+}
+
 GameplayProjectileService::ProjectileDirectActorImpactInput IndoorWorldRuntime::buildProjectileDirectActorImpactInput(
     const GameplayProjectileService::ProjectileState &projectile,
     size_t actorIndex) const
@@ -8650,7 +9044,7 @@ GameplayProjectileService::ProjectileDirectActorImpactInput IndoorWorldRuntime::
     input.partyCount = m_pParty != nullptr ? int(std::max<size_t>(1, m_pParty->members().size())) : 1;
     const bool partyMissile =
         m_pParty != nullptr && projectile.sourceKind == GameplayProjectileService::ProjectileState::SourceKind::Party;
-    input.pShooter = partyMissile ? m_pParty->member(projectile.sourcePartyMemberIndex) : nullptr;
+    input.pShooter = partyMissile ? missileParty(projectile)->member(projectile.sourcePartyMemberIndex) : nullptr;
 
     if (const MapDeltaData *pDeltaData = mapDeltaData();
         pDeltaData != nullptr && actorIndex < pDeltaData->actors.size())
@@ -8846,6 +9240,7 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
     {
         if (m_pGameplayCombatController != nullptr)
         {
+            m_pGameplayCombatController->setRecordingPlayer(facts.collision.partyPlayer);
             m_pGameplayCombatController->recordPartyProjectileImpact(
                 projectile.sourceId,
                 *frameResult.directPartyDamage,
@@ -8853,7 +9248,9 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                 projectile.spellId,
                 false,
                 projectile.damageType,
-                actorAbilityFromProjectileAbility(projectile.ability));
+                actorAbilityFromProjectileAbility(projectile.ability),
+                projectile.firedDistance);
+            m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
         }
         else if (m_pParty != nullptr)
         {
@@ -8932,6 +9329,8 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
 
             if (m_pGameplayCombatController != nullptr)
             {
+                noteActorThreat(impact.actorIndex, projectile.sourcePlayer);
+                m_pGameplayCombatController->setRecordingPlayer(projectile.sourcePlayer);
                 m_pGameplayCombatController->recordPartyProjectileActorImpact(
                     projectile.sourceId,
                     projectile.sourcePartyMemberIndex,
@@ -8942,6 +9341,7 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                     beforeHp > 0 && afterHp <= 0,
                     projectile.critical,
                     projectile.hitCredit);
+                m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
             }
         }
         else if (impact.queuePartyProjectileActorEvent && m_pGameplayCombatController != nullptr)
@@ -8952,6 +9352,8 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                 recordPartyAttackWorldResult(impact.actorIndex, false, true, true);
             }
 
+            noteActorThreat(impact.actorIndex, projectile.sourcePlayer);
+            m_pGameplayCombatController->setRecordingPlayer(projectile.sourcePlayer);
             m_pGameplayCombatController->recordPartyProjectileActorImpact(
                 projectile.sourceId,
                 projectile.sourcePartyMemberIndex,
@@ -8962,6 +9364,7 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                 false,
                 projectile.critical,
                 projectile.hitCredit);
+            m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
         }
         else if (impact.applyNonPartyProjectileDamage && impact.damage > 0)
         {
@@ -9041,6 +9444,78 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                 return hasIndoorCombatLineOfSight(areaImpact.point, impactSectorId, target, targetSectorId);
             };
 
+        // Every other player's party the blast reaches and can see takes it as the local party does, a player's own
+        // blast and another player's included (the user, 2026-11-21). Not an event's missile that is not meant for
+        // parties.
+        // A missile that struck one party itself gave that party its own damage and no blast on top, as in a game
+        // of one; the other parties its blast reaches and can see take the blast.
+        const bool struckParty = frameResult.directPartyDamage.has_value();
+        const int blastDamage = areaImpact.impact.partyDamage > 0 ? areaImpact.impact.partyDamage
+            : struckParty ? facts.nonPartyProjectileDamage : 0;
+
+        if (m_pGameplayCombatController != nullptr && blastDamage > 0
+            && (!projectile.eventMissile || projectile.eventMissileStrikesParty))
+        {
+            if (struckParty && facts.collision.partyPlayer != LocalPlayer)
+            {
+                const ActorPartyBody body = actorPartyBody(LocalPlayer);
+
+                if (GameplayProjectileService::areaImpactReachesParty(
+                        GameplayWorldPoint{body.x, body.y, body.footZ},
+                        PartyCollisionRadius,
+                        PartyCollisionHeight,
+                        areaImpact.point,
+                        areaImpact.radius)
+                    && areaImpactHasLineOfSight(
+                        GameplayWorldPoint{body.x, body.y, body.footZ + PartyCollisionHeight * 0.5f}, body.sectorId))
+                {
+                    m_pGameplayCombatController->recordPartyProjectileImpact(
+                        projectile.sourceId,
+                        blastDamage,
+                        projectile.attackBonus,
+                        projectile.spellId,
+                        true,
+                        projectile.damageType,
+                        actorAbilityFromProjectileAbility(projectile.ability),
+                        projectile.firedDistance);
+                }
+            }
+
+            for (const GameplayGuestBody &guest : m_guestBodies)
+            {
+                const ActorPartyBody body = actorPartyBody(guest.player);
+                const GameplayWorldPoint guestTarget = {body.x, body.y, body.footZ + PartyCollisionHeight * 0.5f};
+
+                if (struckParty && guest.player == facts.collision.partyPlayer)
+                {
+                    continue;
+                }
+
+                if (!GameplayProjectileService::areaImpactReachesParty(
+                        GameplayWorldPoint{body.x, body.y, body.footZ},
+                        PartyCollisionRadius,
+                        PartyCollisionHeight,
+                        areaImpact.point,
+                        areaImpact.radius)
+                    || !areaImpactHasLineOfSight(guestTarget, body.sectorId))
+                {
+                    continue;
+                }
+
+                m_pGameplayCombatController->setRecordingPlayer(guest.player);
+                m_pGameplayCombatController->recordPartyProjectileImpact(
+                    projectile.sourceId,
+                    blastDamage,
+                    projectile.attackBonus,
+                    projectile.spellId,
+                    true,
+                    projectile.damageType,
+                    actorAbilityFromProjectileAbility(projectile.ability),
+                    projectile.firedDistance);
+                m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
+            }
+        }
+
         if (areaImpact.impact.hitParty && m_pParty != nullptr)
         {
             const IndoorMoveState *pPartyMoveState =
@@ -9065,7 +9540,8 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                         projectile.spellId,
                         true,
                         projectile.damageType,
-                        actorAbilityFromProjectileAbility(projectile.ability));
+                        actorAbilityFromProjectileAbility(projectile.ability),
+                        projectile.firedDistance);
                 }
                 else if (m_pParty != nullptr)
                 {
@@ -9134,6 +9610,10 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                                 projectile.projectileId
                                 ^ static_cast<uint32_t>((actorHit.actorIndex + 1) * 2654435761u)
                                 ^ static_cast<uint32_t>(std::max(0, blastDamage)));
+                            // The blast knows how many monsters it damages (a solo run's Overload).
+                            PartyMissileSource blastSource = GameplayProjectileService::partyMissileSource(
+                                projectile, m_pParty, m_pItemTable, *pStats, targetActor.hp);
+                            blastSource.blastMonsters = int(areaImpact.impact.actorHits.size());
                             appliedDamage = resolveDamageToMonster(
                                 gameRulesFor(m_pParty).combat,
                                 blastDamage,
@@ -9144,8 +9624,7 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                                 rng,
                                 actorRulesetFacts(actorHit.actorIndex),
                                 {},
-                                GameplayProjectileService::partyMissileSource(
-                                    projectile, m_pParty, m_pItemTable, *pStats, targetActor.hp));
+                                blastSource);
                         }
 
                         const int previousHp = targetActor.hp;
@@ -9158,7 +9637,12 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                                 GameplayProjectileService::projectileShieldTier(projectile),
                                 GameplayProjectileService::partyShieldModifiers(projectile, m_pParty),
                                 projectile.critical,
-                                projectile.chainStruckActorIds.empty()))
+                                projectile.chainStruckActorIds.empty() && !projectile.quietBlast,
+                                projectile.spellId != 0 ? "spell" : "missile",
+                                projectile.spellId == 0 && m_pParty != nullptr
+                                        && m_pParty->member(projectile.sourcePartyMemberIndex) != nullptr
+                                    ? m_pParty->member(projectile.sourcePartyMemberIndex)->equipment.bow
+                                    : 0))
                         {
                             appliedDamage = 0;
                         }
@@ -9169,6 +9653,8 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                                 actorHit.actorIndex < m_mapActorAiStates.size()
                                     ? m_mapActorAiStates[actorHit.actorIndex].actorId
                                     : static_cast<uint32_t>(actorHit.actorIndex);
+                            noteActorThreat(actorHit.actorIndex, projectile.sourcePlayer);
+                            m_pGameplayCombatController->setRecordingPlayer(projectile.sourcePlayer);
                             m_pGameplayCombatController->recordPartyProjectileActorImpact(
                                 projectile.sourceId,
                                 projectile.sourcePartyMemberIndex,
@@ -9178,6 +9664,7 @@ void IndoorWorldRuntime::applyIndoorProjectileFrameResult(
                                 true,
                                 previousHp > 0 && targetActor.hp <= 0,
                                 projectile.critical);
+                            m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
                         }
                     }
                     else
@@ -9744,7 +10231,7 @@ void IndoorWorldRuntime::applyFireSpikeTrapTriggerResult(
         const int beforeHp = pMapDeltaData->actors[triggeredActorIndex].hp;
         const int rolledDamage =
             trap.sourceKind == GameplayProjectileService::ProjectileState::SourceKind::Party
-            ? GameplayProjectileService::partyWorldSpellDamage(m_pParty, m_pSpellTable,
+            ? GameplayProjectileService::partyWorldSpellDamage(playerParty(trap.sourcePlayer), m_pSpellTable,
                   trap.sourcePartyMemberIndex, trap.spellId, trap.skillLevel, trap.skillMastery, result.damage)
             : result.damage;
         int appliedDamage = rolledDamage;
@@ -9787,6 +10274,7 @@ void IndoorWorldRuntime::applyFireSpikeTrapTriggerResult(
                     triggeredActorIndex < m_mapActorAiStates.size()
                         ? m_mapActorAiStates[triggeredActorIndex].actorId
                         : static_cast<uint32_t>(triggeredActorIndex);
+                m_pGameplayCombatController->setRecordingPlayer(trap.sourcePlayer);
                 m_pGameplayCombatController->recordPartyProjectileActorImpact(
                     trap.sourceId,
                     trap.sourcePartyMemberIndex,
@@ -9795,6 +10283,7 @@ void IndoorWorldRuntime::applyFireSpikeTrapTriggerResult(
                     trap.spellId,
                     true,
                     beforeHp > 0 && pMapDeltaData->actors[triggeredActorIndex].hp <= 0);
+                m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
             }
         }
         else
@@ -10618,7 +11107,7 @@ void IndoorWorldRuntime::applyIndoorActorMovementIntegration(
         pActorService->effectiveActorMoveSpeed(
             moveSpeed,
             pStats->speed,
-            aiState.spellEffects.slowMoveMultiplier,
+            aiState.spellEffects.slowMoveMultiplier * aiState.spellEffects.moveSlowMultiplier,
             aiState.spellEffects.darkGraspRemainingSeconds > 0.0f)
         * m_actorModifiers.moveSpeedMultiplier(actorIndex, aiState.actorId)
         * m_actorBehaviors.speedMultiplier(actorIndex, aiState.actorId);
@@ -11065,7 +11554,8 @@ void IndoorWorldRuntime::applyIndoorActorMovementIntegration(
 
             if (stoppedByPath && !directFallbackAfterPlannerStopped && m_pPartyRuntime != nullptr)
             {
-                const IndoorMoveState &partyMoveState = m_pPartyRuntime->movementState();
+                // The party it fights, which with several players need not be the local one.
+                const ActorPartyBody partyMoveState = actorPartyBody(aiState.partyPlayer);
                 const GameplayWorldPoint actorTargetPoint = {
                     oldX,
                     oldY,
@@ -11139,6 +11629,9 @@ void IndoorWorldRuntime::applyIndoorActorMovementIntegration(
         && indoorBodyWaterSample(m_pIndoorMapData->waterVolumes, m_waterTopOffsets, moveState.x, moveState.y,
             moveState.footZ, body.height).has_value();
     const float waterSpeedFactor = walkerInWater ? IndoorWaterWalkerSpeedFactor : 1.0f;
+    // A post's leash holds the step whatever steered it (keepStepOnLeash).
+    keepStepOnLeash(update.movementIntent.leashRadius, update.movementIntent.leashHome, moveState.x, moveState.y,
+        movementIntent.desiredMoveX, movementIntent.desiredMoveY);
     const float desiredVelocityX = movementIntent.desiredMoveX * movementIntentSpeed * waterSpeedFactor;
     const float desiredVelocityY = movementIntent.desiredMoveY * movementIntentSpeed * waterSpeedFactor;
     aiState.intendedSpeed = std::hypot(desiredVelocityX, desiredVelocityY);
@@ -11801,6 +12294,7 @@ std::optional<GameplayMonsterBolsterResult> IndoorWorldRuntime::resolveActorBols
             .pBolsterMonsterTable = m_pMergedBolsterMonsterTable,
             .pParty = m_pParty,
             .bolsterMonstersEnabled = m_bolsterMonstersEnabled,
+            .playerCount = healthPlayerCountFor(actor),
             .pExistingFacts = &actor.rulesetFacts,
         },
         *pStats,
@@ -11868,8 +12362,8 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
     int16_t partySectorId = -1;
     if (m_pPartyRuntime != nullptr)
     {
-        const IndoorMoveState &partyMoveState = m_pPartyRuntime->movementState();
-        partySectorId = partyMoveState.eyeSectorId >= 0 ? partyMoveState.eyeSectorId : partyMoveState.sectorId;
+        const ActorPartyBody partyBody = actorPartyBody(aiState.partyPlayer);
+        partySectorId = partyBody.eyeSectorId >= 0 ? partyBody.eyeSectorId : partyBody.sectorId;
     }
     const bool sameSectorAsParty = actorSectorId >= 0 && actorSectorId == partySectorId;
     const GameplayWorldPoint partyTargetPoint =
@@ -11986,6 +12480,7 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
     facts.stats.attack2MissileTypeOverride = bolster.generatedAttack2MissileType;
     facts.stats.attackConstraints.blindActive = aiState.spellEffects.blindRemainingSeconds > 0.0f;
     facts.stats.attackConstraints.darkGraspActive = aiState.spellEffects.darkGraspRemainingSeconds > 0.0f;
+    facts.stats.attackConstraints.silenced = aiState.spellEffects.silenceRemainingSeconds > 0.0f;
     facts.stats.attackConstraints.rangedCommitAllowed = true;
 
     facts.runtime.motionState = aiState.motionState;
@@ -12054,8 +12549,19 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
                 state.preciseY, state.preciseZ, float(state.collisionHeight)).has_value();
     };
     const bool mm9InWater = mm9WaterKnown && actorInWater(aiState);
-    const bool mm9PartyInWater =
-        mm9WaterKnown && m_pPartyRuntime != nullptr && m_pPartyRuntime->swimState() != IndoorSwimState::Dry;
+    // The party it fights: the local one's swimming, or another player's body where it stands.
+    bool mm9PartyInWater = false;
+
+    if (mm9WaterKnown && aiState.partyPlayer == LocalPlayer)
+    {
+        mm9PartyInWater = m_pPartyRuntime != nullptr && m_pPartyRuntime->swimState() != IndoorSwimState::Dry;
+    }
+    else if (mm9WaterKnown)
+    {
+        const ActorPartyBody body = actorPartyBody(aiState.partyPlayer);
+        mm9PartyInWater = indoorBodyWaterSample(m_pIndoorMapData->waterVolumes, m_waterTopOffsets, body.x, body.y,
+            body.footZ, PartyCollisionHeight).has_value();
+    }
 
     if (mm9Profile)
     {
@@ -12096,6 +12602,8 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
     facts.status.hasDetectedParty = hasDetectedParty;
     facts.status.defaultHostileToParty = defaultHostile;
     facts.status.suppressLowHealthFlee = aiState.suppressLowHealthFlee;
+    facts.status.neverFlees =
+        aiState.aiType != GameplayActorAiType::Wimp && !gameRulesFor(m_pParty).monsters.monstersFlee();
     facts.status.forceFleeFromParty = aiState.yellFleeRemainingSeconds > 0.0f;
     facts.status.shieldDownSinceBreakSeconds = m_actorShields.secondsDownSinceBreak(actorIndex);
 
@@ -12351,7 +12859,7 @@ std::optional<ActorAiFacts> IndoorWorldRuntime::collectIndoorActorAiFacts(
         pActorService->effectiveActorMoveSpeed(
             facts.stats.moveSpeed,
             pStats->speed,
-            aiState.spellEffects.slowMoveMultiplier,
+            aiState.spellEffects.slowMoveMultiplier * aiState.spellEffects.moveSlowMultiplier,
             aiState.spellEffects.darkGraspRemainingSeconds > 0.0f);
     facts.movement.distanceToParty =
         length2d(partyFacts.position.x - aiState.preciseX, partyFacts.position.y - aiState.preciseY);
@@ -12616,30 +13124,68 @@ const Party *IndoorWorldRuntime::party() const
 
 float IndoorWorldRuntime::partyX() const
 {
+    if (m_actingBody)
+    {
+        return m_actingBody->x;
+    }
+
     return m_pPartyRuntime != nullptr ? m_pPartyRuntime->partyX() : 0.0f;
 }
 
 float IndoorWorldRuntime::partyY() const
 {
+    if (m_actingBody)
+    {
+        return m_actingBody->y;
+    }
+
     return m_pPartyRuntime != nullptr ? m_pPartyRuntime->partyY() : 0.0f;
 }
 
 float IndoorWorldRuntime::partyFootZ() const
 {
+    if (m_actingBody)
+    {
+        return m_actingBody->footZ;
+    }
+
     return m_pPartyRuntime != nullptr ? m_pPartyRuntime->partyFootZ() : 0.0f;
 }
 
 void IndoorWorldRuntime::teleportParty(float x, float y, float footZ)
 {
+    // Another player's party is moved by its own game: the place is kept as an order for it (takeActingBodyOrder).
+    if (m_actingBody)
+    {
+        m_actingBody->x = x;
+        m_actingBody->y = y;
+        m_actingBody->footZ = footZ;
+        m_actingBodyOrder = m_actingBody;
+        return;
+    }
+
     if (m_pPartyRuntime != nullptr)
     {
         m_pPartyRuntime->teleportPartyPosition(x, y, footZ);
     }
 }
 
+std::optional<GameplayPlayerBody> IndoorWorldRuntime::takeActingBodyOrder()
+{
+    return std::exchange(m_actingBodyOrder, std::nullopt);
+}
+
 float IndoorWorldRuntime::partyEyeZ() const
 {
-    return m_pPartyRuntime != nullptr ? m_pPartyRuntime->movementState().eyeZ() : 0.0f;
+    if (m_pPartyRuntime == nullptr)
+    {
+        return 0.0f;
+    }
+
+    // Another player's eyes are as high above its feet as the local party's.
+    return m_actingBody
+        ? m_actingBody->footZ + m_pPartyRuntime->movementState().eyeZ() - m_pPartyRuntime->partyFootZ()
+        : m_pPartyRuntime->movementState().eyeZ();
 }
 
 float IndoorWorldRuntime::partyEngagementRange() const
@@ -12705,6 +13251,11 @@ GameplayWorldPoint IndoorWorldRuntime::chooseBountyHuntSpawnPoint(uint32_t seed)
 
 float IndoorWorldRuntime::gameplayCameraYawRadians() const
 {
+    if (m_actingBody)
+    {
+        return m_actingBody->yawRadians;
+    }
+
     return m_pRenderer != nullptr ? m_pRenderer->cameraYawRadians() : 0.0f;
 }
 
@@ -12720,12 +13271,16 @@ float IndoorWorldRuntime::gameplayViewAspectRatio() const
 
 bool IndoorWorldRuntime::partyNeedsTurnBasedPhysicsUpdate() const
 {
-    return m_pPartyRuntime != nullptr && !m_pPartyRuntime->movementState().grounded;
+    // A special jump (a MAW Puller's hit) launches the party at once in turn-based combat too; without this it
+    // waited, grounded, for turn-based combat to end.
+    return m_pPartyRuntime != nullptr
+        && (!m_pPartyRuntime->movementState().grounded || m_pPartyRuntime->specialJumpActive());
 }
 
 void IndoorWorldRuntime::syncSpellMovementStatesFromPartyBuffs()
 {
-    if (m_pPartyRuntime != nullptr)
+    // Another player's flight and water walk are its own game's to work out.
+    if (m_pPartyRuntime != nullptr && !m_actingBody)
     {
         m_pPartyRuntime->syncSpellMovementStatesFromPartyBuffs();
     }
@@ -12733,7 +13288,8 @@ void IndoorWorldRuntime::syncSpellMovementStatesFromPartyBuffs()
 
 void IndoorWorldRuntime::requestPartyJump(float verticalVelocity, float lift)
 {
-    if (m_pPartyRuntime != nullptr)
+    // Another player's jump happens in its own game, which tried the spell before it asked for it.
+    if (m_pPartyRuntime != nullptr && !m_actingBody)
     {
         const std::optional<float> velocityOverride =
             verticalVelocity > 0.0f ? std::optional<float>(verticalVelocity) : std::nullopt;
@@ -12793,6 +13349,13 @@ void IndoorWorldRuntime::updateActorAi(float deltaSeconds)
         return;
     }
 
+    // A replica's monsters are its host's: here they only move on between the host's messages.
+    if (m_replica)
+    {
+        updateReplicaActors(deltaSeconds);
+        return;
+    }
+
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr)
@@ -12814,6 +13377,8 @@ void IndoorWorldRuntime::updateActorAi(float deltaSeconds)
         const IndoorMoveState &partyMoveState = m_pPartyRuntime->movementState();
         m_actorAiPartyVelocity.update(partyMoveState.x, partyMoveState.y, deltaSeconds);
     }
+
+    m_guestPartyVelocities.update(m_guestBodies, deltaSeconds);
 
     const uint64_t syncBeginTickCount = collectDiagnostics ? SDL_GetTicksNS() : 0;
     syncMapActorAiStates();
@@ -13231,6 +13796,13 @@ size_t IndoorWorldRuntime::turnBasedPendingWorldActionCount() const
 
 void IndoorWorldRuntime::scareNearbyPeasants(float radius, float seconds)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        replicaWorldCall(ReplicaWorldCalls::scareNearbyPeasants(radius, seconds));
+        return;
+    }
+
     const MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr)
@@ -13446,6 +14018,14 @@ void IndoorWorldRuntime::updateWorld(float deltaSeconds)
     }
 
     m_firstFillOpen = false;
+
+    // A replica's host burns, drops, shoots and scripts; here the map only shows.
+    if (m_replica)
+    {
+        updateWorldItemSpotting(deltaSeconds);
+        return;
+    }
+
     // In turn-based combat the aura burns only by each completed turn's game time (advanceTurnBasedWorldTime), as the
     // original burns it from the turn's timed effects; wall-clock time on the party's turn must not burn monsters.
     if (m_turnBasedActorFacts.mode == ActorTurnBasedMode::RealTime)
@@ -13464,10 +14044,16 @@ void IndoorWorldRuntime::updateWorld(float deltaSeconds)
 
 void IndoorWorldRuntime::updateImmolation(float deltaSeconds)
 {
-    const PartyBuffState *pBuff = m_pParty != nullptr ? m_pParty->partyBuff(PartyBuffId::Immolation) : nullptr;
-    MapDeltaData *pMapDeltaData = mapDeltaData();
+    // Every player's party that holds the aura burns what stands near that player.
+    bool anyBurning = m_pParty != nullptr && m_pParty->partyBuff(PartyBuffId::Immolation) != nullptr;
 
-    if (pBuff == nullptr || m_pPartyRuntime == nullptr || pMapDeltaData == nullptr)
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        anyBurning = anyBurning
+            || (guest.pParty != nullptr && guest.pParty->partyBuff(PartyBuffId::Immolation) != nullptr);
+    }
+
+    if (!anyBurning || m_pPartyRuntime == nullptr || mapDeltaData() == nullptr)
     {
         m_immolationTickAccumulatorGameMinutes = 0.0f;
         return;
@@ -13488,10 +14074,31 @@ void IndoorWorldRuntime::updateImmolation(float deltaSeconds)
     m_immolationTickAccumulatorGameMinutes = 0.0f;
     ++m_immolationTickSequence;
 
-    const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
-    const float partyX = moveState.x;
-    const float partyY = moveState.y;
-    const float partyZ = moveState.footZ;
+    if (m_pParty != nullptr)
+    {
+        const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
+        burnWithImmolation(LocalPlayer, *m_pParty, moveState.x, moveState.y, moveState.footZ);
+    }
+
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        if (guest.pParty != nullptr)
+        {
+            burnWithImmolation(guest.player, *guest.pParty, guest.body.x, guest.body.y, guest.body.footZ);
+        }
+    }
+}
+
+void IndoorWorldRuntime::burnWithImmolation(PlayerId player, const Party &party, float partyX, float partyY, float partyZ)
+{
+    const PartyBuffState *pBuff = party.partyBuff(PartyBuffId::Immolation);
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pBuff == nullptr || pMapDeltaData == nullptr)
+    {
+        return;
+    }
+
     const GameplayWorldPoint source = {partyX, partyY, partyZ};
     const uint32_t spellId = spellIdValue(SpellId::Immolation);
     const uint32_t skillLevel = std::max<uint32_t>(1, pBuff->skillLevel != 0 ? pBuff->skillLevel : pBuff->power);
@@ -13532,7 +14139,7 @@ void IndoorWorldRuntime::updateImmolation(float deltaSeconds)
             ^ m_immolationTickSequence * 2246822519u
             ^ skillLevel * 3266489917u;
         // The party's rules may burn by their own spell damage (MAW).
-        const std::optional<int> rulesDamage = m_pParty->rules().spells.auraDamage(*m_pParty, spellId);
+        const std::optional<int> rulesDamage = party.rules().spells.auraDamage(party, spellId);
         const int damage = rulesDamage ? *rulesDamage : rollImmolationDamage(skillLevel, seed);
         int appliedDamage = damage;
         const int16_t resolvedMonsterId = resolveIndoorActorStatsId(actor);
@@ -13543,7 +14150,7 @@ void IndoorWorldRuntime::updateImmolation(float deltaSeconds)
         {
             std::mt19937 rng(seed ^ 0x9e3779b9u);
             appliedDamage = resolveDamageToMonster(
-                gameRulesFor(m_pParty).combat,
+                gameRulesFor(&party).combat,
                 damage,
                 damageType,
                 monsterResistanceForDamageType(*pStats, damageType),
@@ -13558,6 +14165,7 @@ void IndoorWorldRuntime::updateImmolation(float deltaSeconds)
 
         if (applied && m_pGameplayCombatController != nullptr)
         {
+            m_pGameplayCombatController->setRecordingPlayer(player);
             m_pGameplayCombatController->recordPartyProjectileActorImpact(
                 0,
                 pBuff->casterMemberIndex,
@@ -13566,6 +14174,7 @@ void IndoorWorldRuntime::updateImmolation(float deltaSeconds)
                 static_cast<int>(spellId),
                 true,
                 beforeHp > 0 && actor.hp <= 0);
+            m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
         }
     }
 }
@@ -13683,7 +14292,7 @@ void IndoorWorldRuntime::refreshConditionalMonsterRelations()
     const Party *pParty = m_pParty;
     relations.refreshConditions([pParty](uint32_t questBitId)
     {
-        return pParty->hasQuestBit(questBitId);
+        return pParty->campaign().hasQuestBit(questBitId);
     });
 
     MapDeltaData *pMapDeltaData = mapDeltaData();
@@ -13696,6 +14305,22 @@ void IndoorWorldRuntime::refreshConditionalMonsterRelations()
     // A QBit switched a faction's relation to the party, or the map was loaded: its actors take the current rule.
     m_appliedRelationRevision = relations.revision();
     const GameplayActorService actorService = {};
+    // The factions whose relation changed since the last apply (all of them after a load).
+    std::unordered_map<int16_t, bool> changed;
+    const auto relationChanged = [this, &changed](int16_t relationMonsterId)
+    {
+        if (const auto known = changed.find(relationMonsterId); known != changed.end())
+        {
+            return known->second;
+        }
+
+        const bool hostile = m_pMonsterTable->isHostileToParty(relationMonsterId);
+        const auto applied = m_appliedConditionalHostility.find(relationMonsterId);
+        const bool switched = applied == m_appliedConditionalHostility.end() || applied->second != hostile;
+        m_appliedConditionalHostility[relationMonsterId] = hostile;
+        changed.emplace(relationMonsterId, switched);
+        return switched;
+    };
 
     for (size_t actorIndex = 0; actorIndex < pMapDeltaData->actors.size(); ++actorIndex)
     {
@@ -13705,7 +14330,8 @@ void IndoorWorldRuntime::refreshConditionalMonsterRelations()
         const bool partyControlled = actorIndex < m_mapActorAiStates.size()
             && actorService.isPartyControlledActor(m_mapActorAiStates[actorIndex].spellEffects.controlMode);
 
-        if (actor.hp <= 0 || partyControlled || !relations.partyRelationIsConditional(relationMonsterId))
+        if (actor.hp <= 0 || partyControlled || !relations.partyRelationIsConditional(relationMonsterId)
+            || !relationChanged(relationMonsterId))
         {
             continue;
         }
@@ -14038,6 +14664,12 @@ bool IndoorWorldRuntime::blinkMapActor(const GameplayActorModifiers::BlinkReques
 
 bool IndoorWorldRuntime::suspendActorShield(size_t actorIndex, float seconds)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::suspendActorShield(actorIndex, seconds));
+    }
+
     const MapDeltaData *pMapDeltaData = mapDeltaData();
     return pMapDeltaData != nullptr && actorIndex < pMapDeltaData->actors.size()
         && m_actorShields.suspend(actorIndex, resolveIndoorActorStatsId(pMapDeltaData->actors[actorIndex]), seconds);
@@ -14045,6 +14677,12 @@ bool IndoorWorldRuntime::suspendActorShield(size_t actorIndex, float seconds)
 
 bool IndoorWorldRuntime::restoreActorShield(size_t actorIndex)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::restoreActorShield(actorIndex));
+    }
+
     return m_actorShields.restore(actorIndex);
 }
 
@@ -14073,7 +14711,9 @@ bool IndoorWorldRuntime::blinkActor(size_t actorIndex)
     request.pBlink = pModifiers != nullptr && pModifiers->blink ? &*pModifiers->blink
                                                                 : &GameplayActorModifiers::defaultBlink();
     request.origin = {aiState.preciseX, aiState.preciseY, aiState.preciseZ};
-    request.threat = std::array<float, 3>{partyX(), partyY(), partyFootZ() + PartyTargetHeightOffset};
+    const ActorPartyBody threatBody = actorPartyBody(aiState.partyPlayer);
+    request.threat =
+        std::array<float, 3>{threatBody.x, threatBody.y, threatBody.footZ + PartyTargetHeightOffset};
     request.seed = aiState.actorId * 0x9e3779b9u ^ m_actorModifiers.blinkCount() * 0x85ebca6bu;
     const bool blinked = blinkMapActor(request);
     m_actorModifiers.finishBlink(request, blinked);
@@ -14120,10 +14760,12 @@ GameplayActorModifiers::ChargeActorFacts IndoorWorldRuntime::chargeActorFacts(si
     facts.hostileToParty = aiState.hostileToParty && !partyControlled;
     facts.engagesParty = facts.hostileToParty && aiState.hasDetectedParty;
     facts.position = {aiState.preciseX, aiState.preciseY, aiState.preciseZ};
-    facts.partyPosition = {partyX(), partyY(), partyFootZ()};
+    // The party the monster fights (another player's with several players), not the host's wherever it stands.
+    const ActorPartyBody target = actorPartyBody(aiState.partyPlayer);
+    facts.partyPosition = {target.x, target.y, target.footZ};
     facts.partyEdgeDistance = std::max(0.0f,
-        std::sqrt((partyX() - aiState.preciseX) * (partyX() - aiState.preciseX)
-            + (partyY() - aiState.preciseY) * (partyY() - aiState.preciseY))
+        std::sqrt((target.x - aiState.preciseX) * (target.x - aiState.preciseX)
+            + (target.y - aiState.preciseY) * (target.y - aiState.preciseY))
             - float(aiState.collisionRadius) - PartyCollisionRadius);
 
     // A post (placed `immobile`, tactics with a leash) dashes no further than its leash.
@@ -14143,7 +14785,8 @@ GameplayActorModifiers::ChargeWorld IndoorWorldRuntime::chargeWorld()
     {
         const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
         RuntimeGeometryCache &geometry = runtimeGeometryCache();
-        const GameplayWorldPoint party = {partyX(), partyY(), partyFootZ() + PartyTargetHeightOffset};
+        const ActorPartyBody target = actorPartyBody(aiState.partyPlayer);
+        const GameplayWorldPoint party = {target.x, target.y, target.footZ + PartyTargetHeightOffset};
         const std::optional<int16_t> partySector = findIndoorSectorForPoint(
             *m_pIndoorMapData, geometry.vertices, {party.x, party.y, party.z}, &geometry.geometryCache);
         const GameplayWorldPoint eye = {aiState.preciseX, aiState.preciseY,
@@ -14215,17 +14858,23 @@ void IndoorWorldRuntime::handleChargeEvent(const GameplayActorModifiers::ChargeE
     const GameplayActorModifiers::ChargeHit hit = GameplayActorModifiers::chargeHit(*event.pCharge, pStats,
         aiState.actorId * 0x9e3779b9u ^ m_actorModifiers.chargeCount() * 0x85ebca6bu);
 
+    // Struck is the player it ran into: the one it charged, or another who stood in the way.
+    const PlayerId struckPlayer = nearestPartyPlayer(aiState.preciseX, aiState.preciseY);
+
     if (m_pGameplayCombatController != nullptr)
     {
+        m_pGameplayCombatController->setRecordingPlayer(struckPlayer);
         m_pGameplayCombatController->recordMonsterMeleeImpact(
             aiState.actorId, hit.damage, hit.attackBonus, hit.damageType, hit.ability);
+        m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
     }
     else if (m_pParty != nullptr)
     {
         m_pParty->applyDamageToActiveMember(hit.damage, "monster charge");
     }
 
-    if (m_pPartyRuntime != nullptr && event.pCharge->knockback > 0.0f)
+    // Thrown back is the player struck; another player's body is its own game's to move.
+    if (m_pPartyRuntime != nullptr && event.pCharge->knockback > 0.0f && struckPlayer == LocalPlayer)
     {
         constexpr float PartyGravity = 1280.0f;
         // The hop goes up at once; its horizontal speed lasts the whole flight (a jump's lasts one frame).
@@ -14252,8 +14901,9 @@ bool IndoorWorldRuntime::chargeActor(size_t actorIndex)
     }
 
     const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+    const ActorPartyBody target = actorPartyBody(aiState.partyPlayer);
     return m_actorModifiers.startCharge(actorIndex, resolveIndoorActorStatsId(pMapDeltaData->actors[actorIndex]),
-        aiState.actorId, {aiState.preciseX, aiState.preciseY, aiState.preciseZ}, {partyX(), partyY(), partyFootZ()},
+        aiState.actorId, {aiState.preciseX, aiState.preciseY, aiState.preciseZ}, {target.x, target.y, target.footZ},
         chargeWorld());
 }
 
@@ -14405,8 +15055,21 @@ std::optional<IndoorWorldRuntime::IndoorActorSpot> IndoorWorldRuntime::checkMapA
         }
     }
 
-    if (m_pPartyRuntime != nullptr
-        && overlaps(partyX(), partyY(), partyFootZ(), PartyCollisionRadius + 16.0f, PartyCollisionHeight))
+    // Any player's party stands in the way as the local one does. With several players a party that is down is
+    // out of the fight: nothing stops at it.
+    bool partyInTheWay = m_pPartyRuntime != nullptr
+        && (m_guestBodies.empty() || m_pParty == nullptr || m_pParty->hasActableMember())
+        && overlaps(partyX(), partyY(), partyFootZ(), PartyCollisionRadius + 16.0f, PartyCollisionHeight);
+
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        partyInTheWay = partyInTheWay
+            || (guest.pParty != nullptr && guest.pParty->hasActableMember()
+                && overlaps(guest.body.x, guest.body.y, guest.body.footZ, PartyCollisionRadius + 16.0f,
+                    PartyCollisionHeight));
+    }
+
+    if (partyInTheWay)
     {
         if (pBlockedByParty != nullptr)
         {
@@ -14665,6 +15328,12 @@ bool IndoorWorldRuntime::swapActorPlaces(size_t actorIndex, std::optional<size_t
 
 bool IndoorWorldRuntime::pushActor(size_t actorIndex, float directionX, float directionY, float distance)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::pushActor(actorIndex, directionX, directionY, distance));
+    }
+
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
@@ -14687,6 +15356,13 @@ bool IndoorWorldRuntime::pushActor(size_t actorIndex, float directionX, float di
 
 size_t IndoorWorldRuntime::revealActorsAround(size_t actorIndex, float radius)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        replicaWorldCall(ReplicaWorldCalls::revealActorsAround(actorIndex, radius));
+        return 0;
+    }
+
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
@@ -15191,9 +15867,12 @@ void IndoorWorldRuntime::aggroNearbyMapActorFaction(size_t actorIndex, bool aler
 
         MapDeltaActor &otherActor = pMapDeltaData->actors[otherActorIndex];
 
+        // MM9's CanDamage off (mm9ActorRefusesDamage): no hit hurts or turns such an actor, and neither does its kin's
+        // alert. Tamur Leng, who must talk after the Battle of Frosgard, shares the peasants' relations with Forad
+        // Darre and Tryggva Ravenlocks: a party hit on either turned him against the party, and he would not talk.
         if (otherActor.hp <= 0
             || (otherActor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) != 0
-            || otherActorIndex >= m_mapActorAiStates.size())
+            || otherActorIndex >= m_mapActorAiStates.size() || !otherActor.mm9CanReceiveDamage)
         {
             continue;
         }
@@ -15408,7 +16087,9 @@ int IndoorWorldRuntime::applyMonsterDamageEventHooks(
     int16_t monsterId,
     int damage,
     CombatDamageType damageType,
-    bool byParty)
+    bool byParty,
+    const char *pAttackKind,
+    uint32_t weaponItemId)
 {
     EventRuntimeState *pEventRuntimeState = eventRuntimeState();
 
@@ -15424,6 +16105,8 @@ int IndoorWorldRuntime::applyMonsterDamageEventHooks(
     hookContext.damage = damage;
     hookContext.damageType = evtDamageTypeFromCombatDamageType(damageType);
     hookContext.byParty = byParty;
+    hookContext.attackKind = pAttackKind != nullptr ? pAttackKind : "other";
+    hookContext.weaponItemId = weaponItemId;
     pEventRuntimeState->activeHookContext = hookContext;
 
     const bool executed = executeEventHooks(EventRuntimeHookKind::MonsterDamage);
@@ -15925,6 +16608,40 @@ void IndoorWorldRuntime::collectProjectilePresentationState(
     projectiles.insert(projectiles.end(), std::make_move_iterator(traps.begin()), std::make_move_iterator(traps.end()));
 }
 
+std::optional<uint32_t> IndoorWorldRuntime::worldItemKey(size_t worldItemIndex) const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || worldItemIndex >= pMapDeltaData->spriteObjects.size())
+    {
+        return std::nullopt;
+    }
+
+    return pMapDeltaData->spriteObjects[worldItemIndex].objectKey;
+}
+
+std::optional<size_t> IndoorWorldRuntime::worldItemIndexOfKey(uint32_t key) const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    for (size_t objectIndex = 0; objectIndex < pMapDeltaData->spriteObjects.size(); ++objectIndex)
+    {
+        const MapDeltaSpriteObject &spriteObject = pMapDeltaData->spriteObjects[objectIndex];
+
+        if (spriteObject.objectKey == key && (spriteObject.attributes & SpriteAttrRemoved) == 0)
+        {
+            return objectIndex;
+        }
+    }
+
+    return std::nullopt;
+}
+
 void IndoorWorldRuntime::collectWorldItemPresentationStates(
     std::vector<GameplayWorldItemPresentationState> &items) const
 {
@@ -16377,7 +17094,9 @@ bool IndoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successRo
 {
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
-    if (pMapDeltaData == nullptr
+    // A guest's copy of the map gives nothing: what a monster carries is the host's world's.
+    if (replica()
+        || pMapDeltaData == nullptr
         || actorIndex >= pMapDeltaData->actors.size()
         || m_pMonsterTable == nullptr
         || m_pParty == nullptr)
@@ -16560,7 +17279,7 @@ bool IndoorWorldRuntime::actorInspectState(
 
     // The rules name what they made of the actor (a boss's affix, a risen monster).
     state.displayName = gameRulesFor(m_pParty).monsters.actorDisplayName(
-        actor.rulesetFacts, resolveMapDeltaActorName(*m_pMonsterTable, actor));
+        actor.rulesetFacts, resolveMapDeltaActorName(*m_pMonsterTable, actor, m_actorNpcNames));
     state.uniqueActorIndex = actor.diagnosticSourceActorIndex != static_cast<size_t>(-1)
         ? actor.diagnosticSourceActorIndex
         : actorIndex;
@@ -16578,6 +17297,7 @@ bool IndoorWorldRuntime::actorInspectState(
                 .pBolsterMonsterTable = m_pMergedBolsterMonsterTable,
                 .pParty = m_pParty,
                 .bolsterMonstersEnabled = m_bolsterMonstersEnabled,
+                .playerCount = healthPlayerCountFor(actor),
                 .pExistingFacts = &actor.rulesetFacts,
             },
             *pStats,
@@ -16636,6 +17356,9 @@ bool IndoorWorldRuntime::actorInspectState(
         state.fearRemainingSeconds = pEffectState->fearRemainingSeconds;
         state.shrinkRemainingSeconds = pEffectState->shrinkRemainingSeconds;
         state.darkGraspRemainingSeconds = pEffectState->darkGraspRemainingSeconds;
+        state.silenceRemainingSeconds = pEffectState->silenceRemainingSeconds;
+        state.moveSlowRemainingSeconds = pEffectState->moveSlowRemainingSeconds;
+        state.demoralizeRemainingSeconds = pEffectState->demoralizeRemainingSeconds;
         state.controlRemainingSeconds = pEffectState->controlRemainingSeconds;
         state.dayOfProtectionRemainingSeconds = pEffectState->dayOfProtectionRemainingSeconds;
         state.hourOfPowerRemainingSeconds = pEffectState->hourOfPowerRemainingSeconds;
@@ -16748,7 +17471,8 @@ std::optional<GameplayCombatActorInfo> IndoorWorldRuntime::combatActorInfoById(u
     {
         const GameplayActorSpellEffectState &effects = m_mapActorAiStates[actorIndex].spellEffects;
         info.attackBonus = m_pGameplayActorService->effectiveAttackHitBonus(effects);
-        info.damageDebuffed = effects.shrinkRemainingSeconds > 0.0f || effects.darkGraspRemainingSeconds > 0.0f;
+        info.damageDebuffed = effects.shrinkRemainingSeconds > 0.0f || effects.darkGraspRemainingSeconds > 0.0f
+            || effects.demoralizeRemainingSeconds > 0.0f;
     }
 
     if (const MonsterTable::MonsterStatsEntry *pStats = m_pMonsterTable->findStatsById(inspectState.monsterId))
@@ -16766,6 +17490,7 @@ std::optional<GameplayCombatActorInfo> IndoorWorldRuntime::combatActorInfoById(u
                     .pBolsterMonsterTable = m_pMergedBolsterMonsterTable,
                     .pParty = m_pParty,
                     .bolsterMonstersEnabled = m_bolsterMonstersEnabled,
+                    .playerCount = pActor != nullptr ? healthPlayerCountFor(*pActor) : m_monsterHealthPlayerCount,
                     .pExistingFacts = pActor != nullptr ? &pActor->rulesetFacts : nullptr,
                 },
                 *pStats,
@@ -16789,6 +17514,13 @@ bool IndoorWorldRuntime::applyReflectedDamageToActor(
     CombatDamageType damageType,
     uint32_t sourcePartyMemberIndex)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(
+            ReplicaWorldCalls::reflectedDamage(actorId, damage, damageType, sourcePartyMemberIndex));
+    }
+
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr || actorId >= pMapDeltaData->actors.size() || damage <= 0)
@@ -16868,7 +17600,7 @@ bool IndoorWorldRuntime::applyReflectedDamageToActor(
 
         if (pStats != nullptr && m_pParty != nullptr)
         {
-            m_pParty->grantMonsterKillExperience(killReward(actor, aiState, *pStats));
+            grantKillExperienceToPlayers(killReward(actor, aiState, *pStats));
             rewardRulesetMapProgress();
         }
     }
@@ -16886,6 +17618,12 @@ bool IndoorWorldRuntime::applyReflectedDamageToActor(
 
 bool IndoorWorldRuntime::castPartySpellProjectile(const GameplayPartySpellProjectileRequest &request)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::spellProjectile(request));
+    }
+
     if (m_pGameplayProjectileService == nullptr || m_pObjectTable == nullptr || m_pSpellTable == nullptr)
     {
         return false;
@@ -16923,6 +17661,9 @@ bool IndoorWorldRuntime::castPartySpellProjectile(const GameplayPartySpellProjec
     spawnRequest.skillMastery = static_cast<uint32_t>(request.skillMastery);
     spawnRequest.damage = request.damage;
     spawnRequest.critical = request.critical;
+    spawnRequest.chainCount = request.chainCount;
+    spawnRequest.chainShare = request.chainShare;
+    spawnRequest.chainRadius = request.chainRadius;
     spawnRequest.attackBonus = 0;
     spawnRequest.useActorHitChance = false;
     spawnRequest.damageType = request.damageType;
@@ -16935,8 +17676,7 @@ bool IndoorWorldRuntime::castPartySpellProjectile(const GameplayPartySpellProjec
     spawnRequest.targetZ = request.targetZ;
     if (m_pPartyRuntime != nullptr)
     {
-        const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
-        spawnRequest.sectorId = moveState.eyeSectorId >= 0 ? moveState.eyeSectorId : moveState.sectorId;
+        spawnRequest.sectorId = actingEyeSectorId();
     }
     spawnRequest.allowInstantImpact = true;
 
@@ -17039,6 +17779,13 @@ bool IndoorWorldRuntime::applyPartySpellToActor(
     if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size())
     {
         return false;
+    }
+
+    // A guest's game trying a cast it then asks the host for: the map is the host's to change, and the try leaves
+    // its copy as it is.
+    if (m_replicaDryRun)
+    {
+        return true;
     }
 
     MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
@@ -17326,7 +18073,8 @@ bool IndoorWorldRuntime::applyPartySpellToActor(
             resolvedMonsterId,
             damage,
             GameMechanics::spellCombatDamageType(spellId, m_pSpellTable),
-            true),
+            true,
+            "spell"),
         ShieldAttackTier::Spell,
         {partyX, partyY, partyZ}).bodyDamage;
 
@@ -17420,8 +18168,7 @@ std::vector<size_t> IndoorWorldRuntime::collectMapActorIndicesWithinRadius(
 
         if (sourceSectorId < 0 && m_pPartyRuntime != nullptr)
         {
-            const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
-            sourceSectorId = moveState.eyeSectorId >= 0 ? moveState.eyeSectorId : moveState.sectorId;
+            sourceSectorId = actingEyeSectorId();
         }
     }
 
@@ -17561,8 +18308,7 @@ std::vector<size_t> IndoorWorldRuntime::collectVisibleMapActorIndicesWithinRadiu
 
         if (startSectorId < 0 && m_pPartyRuntime != nullptr)
         {
-            const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
-            startSectorId = moveState.eyeSectorId >= 0 ? moveState.eyeSectorId : moveState.sectorId;
+            startSectorId = actingEyeSectorId();
         }
 
         if (startSectorId < 0 && !pRuntimeGeometry->vertices.empty())
@@ -17698,6 +18444,13 @@ bool IndoorWorldRuntime::spawnPartyFireSpikeTrap(
         return false;
     }
 
+    // A guest's game trying a cast it then asks the host for: the map is the host's to change, and the try leaves
+    // its copy as it is.
+    if (m_replicaDryRun)
+    {
+        return true;
+    }
+
     const SpellEntry *pSpellEntry = m_pSpellTable->findById(static_cast<int>(spellId));
 
     if (pSpellEntry == nullptr || spellIdFromValue(spellId) != SpellId::FireSpike)
@@ -17747,7 +18500,7 @@ bool IndoorWorldRuntime::spawnPartyFireSpikeTrap(
                 runtimeGeometry.vertices,
                 &runtimeGeometry.geometryCache,
                 {x, y, z},
-                m_pPartyRuntime != nullptr ? m_pPartyRuntime->movementState().sectorId : int16_t(-1));
+                m_pPartyRuntime != nullptr ? actingEyeSectorId() : int16_t(-1));
 
         const IndoorFloorSample floorSample =
             sampleIndoorFloor(
@@ -17774,6 +18527,7 @@ bool IndoorWorldRuntime::spawnPartyFireSpikeTrap(
     trap.sourceKind = GameplayProjectileService::ProjectileState::SourceKind::Party;
     trap.sourceId = casterMemberIndex + 1;
     trap.sourcePartyMemberIndex = casterMemberIndex;
+    trap.sourcePlayer = actingPlayer();
     trap.objectDescriptionId = definition.objectDescriptionId;
     trap.objectSpriteId = definition.objectSpriteId;
     trap.objectSpriteFrameIndex = resolveRuntimeProjectileSpriteFrameIndex(
@@ -17822,6 +18576,13 @@ bool IndoorWorldRuntime::summonFriendlyMonsterById(
     if (m_pMonsterTable == nullptr || count == 0)
     {
         return false;
+    }
+
+    // A guest's game trying a cast it then asks the host for: the map is the host's to change, and the try leaves
+    // its copy as it is.
+    if (m_replicaDryRun)
+    {
+        return true;
     }
 
     MapDeltaData *pMapDeltaData = mapDeltaData();
@@ -18174,6 +18935,13 @@ bool IndoorWorldRuntime::tryStartArmageddon(
     SkillMastery skillMastery,
     std::string &failureText)
 {
+    // A guest's game trying a cast it then asks the host for: the map is the host's to change, and the try leaves
+    // its copy as it is.
+    if (m_replicaDryRun)
+    {
+        return true;
+    }
+
     // About the outdoor quake's two degrees, as the shared smooth tremor (CameraShake), over the spell's time.
     constexpr float ArmageddonShakeIntensity = 1.5f;
 
@@ -18181,6 +18949,8 @@ bool IndoorWorldRuntime::tryStartArmageddon(
     {
         return false;
     }
+
+    m_armageddonState.sourcePlayer = actingPlayer();
 
     if (EventRuntimeState *pEventRuntimeState = eventRuntimeState())
     {
@@ -18289,7 +19059,8 @@ void IndoorWorldRuntime::resolveArmageddonDetonation(const GameplayWorldPoint &p
         }
 
         const int beforeHp = actor.hp;
-        const int damage = armageddonMonsterDamage(m_armageddonState, m_pParty, m_pSpellTable);
+        const int damage =
+            armageddonMonsterDamage(m_armageddonState, playerParty(m_armageddonState.sourcePlayer), m_pSpellTable);
 
         if (!applyPartyAttackMeleeDamage(actorIndex, damage, damageType, partyFeet, ShieldAttackTier::Spell))
         {
@@ -18298,6 +19069,7 @@ void IndoorWorldRuntime::resolveArmageddonDetonation(const GameplayWorldPoint &p
 
         if (m_pGameplayCombatController != nullptr)
         {
+            m_pGameplayCombatController->setRecordingPlayer(m_armageddonState.sourcePlayer);
             m_pGameplayCombatController->recordPartyProjectileActorImpact(
                 0,
                 m_armageddonState.casterMemberIndex,
@@ -18306,6 +19078,7 @@ void IndoorWorldRuntime::resolveArmageddonDetonation(const GameplayWorldPoint &p
                 static_cast<int>(spellId),
                 true,
                 beforeHp > 0 && actor.hp <= 0);
+            m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
         }
 
         if (actor.hp > 0)
@@ -18314,7 +19087,20 @@ void IndoorWorldRuntime::resolveArmageddonDetonation(const GameplayWorldPoint &p
         }
     }
 
-    applyArmageddonToParty(m_armageddonState, *m_pParty);
+    // It strikes everyone on the map: every player's party, whoever cast it. With several players a party that is
+    // down is out of the fight (GameplayCombatController::handleAndClearPendingCombatEvents).
+    if (m_guestBodies.empty() || m_pParty->hasActableMember())
+    {
+        applyArmageddonToParty(m_armageddonState, *m_pParty);
+    }
+
+    for (const GameplayGuestBody &guest : m_guestBodies)
+    {
+        if (guest.pParty != nullptr && guest.pParty->hasActableMember())
+        {
+            applyArmageddonToParty(m_armageddonState, *guest.pParty);
+        }
+    }
 }
 
 void IndoorWorldRuntime::beginMapActorDyingState(size_t actorIndex, MapDeltaActor &actor)
@@ -18430,6 +19216,37 @@ void IndoorWorldRuntime::detonatePendingDeathExplosions()
                 true,
                 result.partyDamageType,
                 GameplayActorAttackAbility::Attack1);
+        }
+
+        // The other players of a co-op session, each where they stand.
+        const float bodyHeight = partyEyeZ() - partyFootZ();
+
+        for (const GameplayGuestBody &guest : m_guestBodies)
+        {
+            const std::optional<int> guestDamage = m_pGameplayCombatController != nullptr
+                ? monsterDeathExplosionDamageAt(
+                    *this,
+                    explosion,
+                    guest.body.x,
+                    guest.body.y,
+                    guest.body.footZ,
+                    guest.body.footZ + bodyHeight,
+                    rng)
+                : std::nullopt;
+
+            if (guestDamage)
+            {
+                m_pGameplayCombatController->setRecordingPlayer(guest.player);
+                m_pGameplayCombatController->recordPartyProjectileImpact(
+                    explosion.actorId,
+                    *guestDamage,
+                    0,
+                    0,
+                    true,
+                    result.partyDamageType,
+                    GameplayActorAttackAbility::Attack1);
+                m_pGameplayCombatController->setRecordingPlayer(LocalPlayer);
+            }
         }
 
         for (const MonsterDeathExplosionActorHit &hit : result.actorHits)
@@ -18682,6 +19499,7 @@ int IndoorWorldRuntime::effectiveIndoorActorArmorClass(
                 .pBolsterMonsterTable = m_pMergedBolsterMonsterTable,
                 .pParty = m_pParty,
                 .bolsterMonstersEnabled = m_bolsterMonstersEnabled,
+                .playerCount = healthPlayerCountFor(actor),
                 .pExistingFacts = &actor.rulesetFacts,
             },
             stats,
@@ -19288,6 +20106,12 @@ bool IndoorWorldRuntime::canActivateWorldHit(
 
 bool IndoorWorldRuntime::activateWorldHit(const GameplayWorldHit &hit)
 {
+    // A replica's host activates things for the player (PlayerCommands).
+    if (m_replica)
+    {
+        return false;
+    }
+
     if (hit.kind == GameplayWorldHitKind::Actor && hit.actor)
     {
         const size_t actorIndex = hit.actor->actorIndex;
@@ -19333,7 +20157,8 @@ bool IndoorWorldRuntime::activateWorldHit(const GameplayWorldHit &hit)
                 goldAmount,
                 m_pEventRuntimeState != nullptr && *m_pEventRuntimeState ? &**m_pEventRuntimeState : nullptr,
                 m_pParty);
-            m_pParty->addGold(static_cast<int>(foundGold.partyAmount), GoldReason::LootGround);
+            creditFoundGold(
+                *m_pParty, static_cast<int>(foundGold.partyAmount), GoldReason::LootGround, eventRuntimeState());
             m_pParty->requestSound(SoundId::Gold);
             pMapDeltaData->spriteObjects.erase(
                 pMapDeltaData->spriteObjects.begin() + std::ptrdiff_t(hit.worldItem->worldItemIndex));
@@ -19411,6 +20236,12 @@ bool IndoorWorldRuntime::activateWorldHit(const GameplayWorldHit &hit)
 
 bool IndoorWorldRuntime::activateWorldHitFromSpell(const GameplayWorldHit &hit, uint32_t spellId)
 {
+    // On a guest's copy nothing is activated; its try of the cast answers whether there is something to act on.
+    if (m_replica)
+    {
+        return m_replicaDryRun && hit.hasHit;
+    }
+
     EventRuntimeState *pRuntimeState = eventRuntimeState();
     const uint32_t previousSpellId = pRuntimeState != nullptr ? pRuntimeState->activeEventSpellId : 0;
 
@@ -19474,6 +20305,13 @@ bool IndoorWorldRuntime::canActivateTelekinesisTarget(const GameplayWorldHit &hi
 
 bool IndoorWorldRuntime::activateTelekinesisTarget(const GameplayWorldHit &hit)
 {
+    // A replica's host activates things for the player (PlayerCommands). The try a guest's game makes of its own
+    // cast says whether the thing could be reached, so that the cast is asked of the host at all.
+    if (m_replica)
+    {
+        return m_replicaDryRun && canActivateTelekinesisTarget(hit);
+    }
+
     if (!canActivateTelekinesisTarget(hit))
     {
         return false;
@@ -19680,6 +20518,7 @@ void IndoorWorldRuntime::placeRulesetMapMonsters()
                 .pBolsterMonsterTable = m_pMergedBolsterMonsterTable,
                 .pParty = m_pParty,
                 .bolsterMonstersEnabled = m_bolsterMonstersEnabled,
+                .playerCount = m_monsterHealthPlayerCount,
             },
             placements))
     {
@@ -19711,6 +20550,466 @@ void IndoorWorldRuntime::refreshRulesetMonsters()
         if (actor.hp > 0 && !actor.rulesetFacts.empty())
         {
             refreshRulesetMonster(actorIndex);
+        }
+    }
+}
+
+size_t IndoorWorldRuntime::monsterHealthPlayerCount() const
+{
+    return m_monsterHealthPlayerCount;
+}
+
+bool IndoorWorldRuntime::captureReplicaActorPose(size_t actorIndex, ReplicaActorPose &pose) const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
+        || actorIndex >= m_mapActorAiStates.size())
+    {
+        return false;
+    }
+
+    const MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+    const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+    pose.actorIndex = uint16_t(actorIndex);
+    pose.x = aiState.preciseX;
+    pose.y = aiState.preciseY;
+    pose.z = aiState.preciseZ;
+    pose.yawRadians = aiState.yawRadians;
+    pose.velocityX = aiState.velocityX;
+    pose.velocityY = aiState.velocityY;
+    pose.velocityZ = aiState.velocityZ;
+    pose.intendedSpeed = aiState.intendedSpeed;
+    pose.animationTimeTicks = aiState.animationTimeTicks;
+    pose.actionSeconds = aiState.actionSeconds;
+    pose.skirmishSeconds = aiState.skirmishSeconds;
+    pose.hp = actor.hp;
+    pose.animation = uint8_t(aiState.animationState);
+    pose.aiState = uint8_t(aiState.motionState);
+    pose.attackAbility = uint8_t(aiState.queuedAttackAbility);
+    pose.skirmishPhase = uint8_t(aiState.skirmishPhase);
+    pose.flags = uint8_t((aiState.motionState == ActorAiMotionState::Dead ? ReplicaActorPose::Dead : 0)
+        | ((actor.attributes & uint32_t(EvtActorAttribute::Invisible)) != 0 ? ReplicaActorPose::Invisible : 0)
+        | (aiState.hostileToParty ? ReplicaActorPose::HostileToParty : 0)
+        | (aiState.hasDetectedParty ? ReplicaActorPose::DetectedParty : 0)
+        | (aiState.attackImpactTriggered ? ReplicaActorPose::AttackImpactTriggered : 0));
+    return true;
+}
+
+uint64_t IndoorWorldRuntime::replicaActorSignature(size_t actorIndex) const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
+        || actorIndex >= m_mapActorAiStates.size())
+    {
+        return 0;
+    }
+
+    // What of a monster changes seldom and is not in its pose: who it is, whose side it is on, how strong it is, what
+    // it carries and which spells hold it.
+    const MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+    const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+    const GameplayActorSpellEffectState &effects = aiState.spellEffects;
+    uint64_t signature = 1469598103934665603ull;
+    const auto mix = [&signature](uint64_t value)
+    {
+        signature = (signature ^ value) * 1099511628211ull;
+    };
+    mix(uint64_t(actor.monsterId));
+    mix(uint64_t(actor.npcId));
+    mix(std::hash<std::string>{}(aiState.displayName));
+    mix(actor.uniqueNameIndex);
+    mix(actor.group);
+    mix(actor.ally);
+    mix(actor.hostilityType);
+    // The invisible bit is in the pose.
+    mix(actor.attributes & ~uint32_t(EvtActorAttribute::Invisible));
+    mix(uint64_t(actor.summonerMemberIndex));
+    mix(uint64_t(actor.rulesetFacts.maxHp));
+    mix(uint64_t(aiState.bolster ? aiState.bolster->maxHp : 0));
+    mix(uint64_t(effects.controlMode));
+    mix(actor.heldItems.size());
+    mix(actor.carriedItemId);
+    mix(actor.radius);
+    mix(actor.height);
+    mix(uint64_t((actor.dormant ? 1 : 0) | (actor.immobile ? 2 : 0) | (aiState.angeredByParty ? 8 : 0)
+        | (aiState.killedByParty ? 16 : 0)));
+    mix(uint64_t((effects.slowRemainingSeconds > 0.0f ? 1 : 0) | (effects.stunRemainingSeconds > 0.0f ? 2 : 0)
+        | (effects.paralyzeRemainingSeconds > 0.0f ? 4 : 0) | (effects.fearRemainingSeconds > 0.0f ? 8 : 0)
+        | (effects.blindRemainingSeconds > 0.0f ? 16 : 0) | (effects.shrinkRemainingSeconds > 0.0f ? 32 : 0)
+        | (effects.darkGraspRemainingSeconds > 0.0f ? 64 : 0) | (effects.silenceRemainingSeconds > 0.0f ? 128 : 0)
+        | (effects.moveSlowRemainingSeconds > 0.0f ? 256 : 0) | (effects.demoralizeRemainingSeconds > 0.0f ? 512 : 0)
+        | (effects.armorClassHalvedRemainingSeconds > 0.0f ? 1024 : 0)
+        | (effects.dayOfProtectionRemainingSeconds > 0.0f ? 2048 : 0)
+        | (effects.hourOfPowerRemainingSeconds > 0.0f ? 4096 : 0)
+        | (effects.painReflectionRemainingSeconds > 0.0f ? 8192 : 0)
+        | (effects.hammerhandsRemainingSeconds > 0.0f ? 16384 : 0)
+        | (effects.hasteRemainingSeconds > 0.0f ? 32768 : 0) | (effects.shieldRemainingSeconds > 0.0f ? 65536 : 0)
+        | (effects.stoneskinRemainingSeconds > 0.0f ? 131072 : 0)
+        | (effects.blessRemainingSeconds > 0.0f ? 262144 : 0) | (effects.fateRemainingSeconds > 0.0f ? 524288 : 0)
+        | (effects.heroismRemainingSeconds > 0.0f ? 1048576 : 0)));
+    return signature;
+}
+
+std::vector<uint8_t> IndoorWorldRuntime::encodeReplicaActor(size_t actorIndex) const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
+        || actorIndex >= m_mapActorAiStates.size())
+    {
+        return {};
+    }
+
+    return SaveSections::encode(std::pair(pMapDeltaData->actors[actorIndex], m_mapActorAiStates[actorIndex]));
+}
+
+bool IndoorWorldRuntime::applyReplicaActor(size_t actorIndex, std::span<const uint8_t> record)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+    std::pair<MapDeltaActor, MapActorAiState> decoded;
+
+    if (pMapDeltaData == nullptr || actorIndex > pMapDeltaData->actors.size()
+        || !SaveSections::decode(record, decoded))
+    {
+        return false;
+    }
+
+    syncMapActorAiStates();
+
+    if (actorIndex == pMapDeltaData->actors.size())
+    {
+        pMapDeltaData->actors.push_back(std::move(decoded.first));
+        syncMapActorAiStates();
+    }
+    else
+    {
+        // Where it is shown stays: the record's place is older than the last pose.
+        const MapDeltaActor &shown = pMapDeltaData->actors[actorIndex];
+        decoded.first.x = shown.x;
+        decoded.first.y = shown.y;
+        decoded.first.z = shown.z;
+        decoded.first.sectorId = shown.sectorId;
+        pMapDeltaData->actors[actorIndex] = std::move(decoded.first);
+    }
+
+    if (actorIndex >= m_mapActorAiStates.size())
+    {
+        return false;
+    }
+
+    MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+    const MapActorAiState shownState = aiState;
+    const bool newActor =
+        shownState.actorId != decoded.second.actorId || shownState.monsterId != decoded.second.monsterId;
+    aiState = std::move(decoded.second);
+
+    if (!newActor)
+    {
+        aiState.preciseX = shownState.preciseX;
+        aiState.preciseY = shownState.preciseY;
+        aiState.preciseZ = shownState.preciseZ;
+        aiState.sectorId = shownState.sectorId;
+        aiState.eyeSectorId = shownState.eyeSectorId;
+        aiState.yawRadians = shownState.yawRadians;
+        aiState.animationState = shownState.animationState;
+        aiState.animationTimeTicks = shownState.animationTimeTicks;
+        aiState.bloodSplatSpawned = shownState.bloodSplatSpawned;
+    }
+
+    // What a load works out for a monster from its tables: its sprites, its sizes, its strength under the rules.
+    refreshIndoorMapActorAiStaticFields(
+        aiState,
+        pMapDeltaData->actors[actorIndex],
+        actorIndex,
+        m_pMonsterTable,
+        m_pSpellTable,
+        m_pGameplayActorService,
+        m_pActorSpriteFrameTable,
+        m_actorNpcNames);
+    aiState.bolster = resolveActorBolster(pMapDeltaData->actors[actorIndex]);
+    return true;
+}
+
+void IndoorWorldRuntime::applyReplicaActorPose(const ReplicaActorPose &pose)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || pose.actorIndex >= pMapDeltaData->actors.size()
+        || pose.actorIndex >= m_mapActorAiStates.size())
+    {
+        return;
+    }
+
+    if (m_replicaActorSmoothing.size() < m_mapActorAiStates.size())
+    {
+        m_replicaActorSmoothing.resize(m_mapActorAiStates.size());
+    }
+
+    MapDeltaActor &actor = pMapDeltaData->actors[pose.actorIndex];
+    MapActorAiState &aiState = m_mapActorAiStates[pose.actorIndex];
+    m_replicaActorSmoothing[pose.actorIndex].correct(
+        aiState.preciseX, aiState.preciseY, aiState.preciseZ, pose.x, pose.y, pose.z);
+    aiState.yawRadians = pose.yawRadians;
+    aiState.velocityX = pose.velocityX;
+    aiState.velocityY = pose.velocityY;
+    aiState.velocityZ = pose.velocityZ;
+    aiState.intendedSpeed = pose.intendedSpeed;
+    aiState.actionSeconds = pose.actionSeconds;
+    aiState.skirmishSeconds = pose.skirmishSeconds;
+    actor.hp = pose.hp;
+    const ActorAiAnimationState animation = ActorAiAnimationState(pose.animation);
+
+    // The clock of an animation that goes on runs here; one that started anew starts where the host has it.
+    if (animation != aiState.animationState || pose.animationTimeTicks < aiState.animationTimeTicks - 16.0f
+        || pose.animationTimeTicks > aiState.animationTimeTicks + 32.0f)
+    {
+        aiState.animationTimeTicks = pose.animationTimeTicks;
+    }
+
+    aiState.animationState = animation;
+    aiState.motionState = ActorAiMotionState(pose.aiState);
+    aiState.queuedAttackAbility = GameplayActorAttackAbility(pose.attackAbility);
+    aiState.skirmishPhase = ActorSkirmishPhase(pose.skirmishPhase);
+    aiState.hostileToParty = (pose.flags & ReplicaActorPose::HostileToParty) != 0;
+    aiState.hasDetectedParty = (pose.flags & ReplicaActorPose::DetectedParty) != 0;
+    aiState.attackImpactTriggered = (pose.flags & ReplicaActorPose::AttackImpactTriggered) != 0;
+
+    if ((pose.flags & ReplicaActorPose::Invisible) != 0)
+    {
+        actor.attributes |= uint32_t(EvtActorAttribute::Invisible);
+    }
+    else
+    {
+        actor.attributes &= ~uint32_t(EvtActorAttribute::Invisible);
+    }
+
+    if (animation == ActorAiAnimationState::Dying || animation == ActorAiAnimationState::Dead)
+    {
+        spawnBloodSplatForActorIfNeeded(pose.actorIndex);
+    }
+}
+
+void IndoorWorldRuntime::updateReplicaActors(float deltaSeconds)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr)
+    {
+        return;
+    }
+
+    syncMapActorAiStates();
+
+    if (m_replicaActorSmoothing.size() < m_mapActorAiStates.size())
+    {
+        m_replicaActorSmoothing.resize(m_mapActorAiStates.size());
+    }
+
+    const size_t actorCount = std::min(pMapDeltaData->actors.size(), m_mapActorAiStates.size());
+
+    for (size_t actorIndex = 0; actorIndex < actorCount; ++actorIndex)
+    {
+        MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+        MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+
+        if ((actor.attributes & uint32_t(EvtActorAttribute::Invisible)) != 0)
+        {
+            continue;
+        }
+
+        const bool dead = aiState.motionState == ActorAiMotionState::Dead;
+
+        // A corpse lies still.
+        if (aiState.animationState != ActorAiAnimationState::Dead)
+        {
+            aiState.animationTimeTicks += deltaSeconds * TicksPerSecond;
+        }
+
+        m_replicaActorSmoothing[actorIndex].advance(
+            aiState.preciseX,
+            aiState.preciseY,
+            aiState.preciseZ,
+            dead ? 0.0f : aiState.velocityX,
+            dead ? 0.0f : aiState.velocityY,
+            dead ? 0.0f : aiState.velocityZ,
+            deltaSeconds);
+        actor.x = int(std::lround(aiState.preciseX));
+        actor.y = int(std::lround(aiState.preciseY));
+        actor.z = int(std::lround(aiState.preciseZ));
+    }
+}
+
+std::vector<uint8_t> IndoorWorldRuntime::encodeReplicaWorldItems() const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr)
+    {
+        return {};
+    }
+
+    // Without each thing's age, which a replica has no use for and which would make the list new every moment.
+    std::vector<MapDeltaSpriteObject> spriteObjects = pMapDeltaData->spriteObjects;
+
+    for (MapDeltaSpriteObject &spriteObject : spriteObjects)
+    {
+        spriteObject.timeSinceCreated = 0;
+        spriteObject.lifetimeTickAccumulator = 0.0f;
+    }
+
+    return SaveSections::encode(spriteObjects);
+}
+
+bool IndoorWorldRuntime::applyReplicaWorldItems(std::span<const uint8_t> bytes)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+    std::vector<MapDeltaSpriteObject> spriteObjects;
+
+    if (pMapDeltaData == nullptr || !SaveSections::decode(bytes, spriteObjects))
+    {
+        return false;
+    }
+
+    pMapDeltaData->spriteObjects = std::move(spriteObjects);
+    return true;
+}
+
+void IndoorWorldRuntime::setReplicaLootViews(
+    std::optional<GameplayChestViewState> chestView,
+    std::optional<GameplayCorpseViewState> corpseView)
+{
+    m_activeChestView = std::move(chestView);
+    m_activeCorpseView = std::move(corpseView);
+}
+
+void IndoorWorldRuntime::setReplicaGameMinutes(float gameMinutes)
+{
+    m_gameMinutes = gameMinutes;
+}
+
+bool IndoorWorldRuntime::replicaWorldCall(std::vector<uint8_t> call)
+{
+    if (!m_replicaDryRun)
+    {
+        m_replicaWorldCalls.push_back(std::move(call));
+    }
+
+    return true;
+}
+
+std::vector<std::vector<uint8_t>> IndoorWorldRuntime::takeReplicaWorldCalls()
+{
+    return std::exchange(m_replicaWorldCalls, {});
+}
+
+void IndoorWorldRuntime::setReplicaDryRun(bool dryRun)
+{
+    m_replicaDryRun = dryRun;
+}
+
+void IndoorWorldRuntime::predictReplicaMeleeDamage(size_t actorIndex, int damage, bool critical)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (m_replicaDryRun || pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
+        || actorIndex >= m_mapActorAiStates.size() || damage <= 0)
+    {
+        return;
+    }
+
+    MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+    const MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+    const int previousHp = actor.hp;
+    actor.hp = std::max(0, int(actor.hp) - damage);
+    m_combatFeedbackEvents.push_back(
+        GameplayCombatFeedbackEvent{
+            .actorIndex = actorIndex,
+            .damage = damage,
+            .x = aiState.preciseX,
+            .y = aiState.preciseY,
+            .z = aiState.preciseZ,
+            .height = static_cast<float>(aiState.collisionHeight),
+            .killed = previousHp > 0 && actor.hp <= 0,
+            .critical = critical,
+        });
+}
+
+void IndoorWorldRuntime::noteReplicaPositionTrigger(const ReplicaPositionTrigger &trigger)
+{
+    m_replicaPositionTriggers.push_back(trigger);
+}
+
+std::vector<ReplicaPositionTrigger> IndoorWorldRuntime::takeReplicaPositionTriggers()
+{
+    return std::exchange(m_replicaPositionTriggers, {});
+}
+
+bool IndoorWorldRuntime::executeReplicaPositionTrigger(
+    const ReplicaPositionTrigger &trigger,
+    const GameplayPlayerBody &body)
+{
+    if (trigger.kind != ReplicaPositionTrigger::Kind::IndoorFace
+        && trigger.kind != ReplicaPositionTrigger::Kind::IndoorTouchFace)
+    {
+        return false;
+    }
+
+    const std::optional<GameplayWorldPoint> previousEventSourcePoint = m_pendingEventSourcePoint;
+    m_pendingEventSourcePoint = GameplayWorldPoint{.x = body.x, .y = body.y, .z = body.footZ};
+    const FaceAttribute attribute = trigger.kind == ReplicaPositionTrigger::Kind::IndoorTouchFace
+        ? FaceAttribute::TriggerByTouch : FaceAttribute::PressurePlate;
+    const bool executed = executeFaceTriggeredEvent(trigger.first, attribute, false);
+    m_pendingEventSourcePoint = previousEventSourcePoint;
+    return executed;
+}
+
+size_t IndoorWorldRuntime::healthPlayerCountFor(const MapDeltaActor &actor) const
+{
+    return actor.summonerMemberIndex >= 0 ? 1 : m_monsterHealthPlayerCount;
+}
+
+void IndoorWorldRuntime::resizeMonstersForPlayers(size_t playerCount)
+{
+    const size_t previousPlayerCount = m_monsterHealthPlayerCount;
+    m_monsterHealthPlayerCount = std::max<size_t>(1, playerCount);
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (m_monsterHealthPlayerCount == previousPlayerCount || pMapDeltaData == nullptr)
+    {
+        return;
+    }
+
+    const size_t actorCount = std::min(pMapDeltaData->actors.size(), m_mapActorAiStates.size());
+
+    for (size_t actorIndex = 0; actorIndex < actorCount; ++actorIndex)
+    {
+        MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+        MapActorAiState &aiState = m_mapActorAiStates[actorIndex];
+
+        // What a player summoned is never sized.
+        if (actor.hp <= 0 || actor.summonerMemberIndex >= 0)
+        {
+            continue;
+        }
+
+        // The ruleset's own maximum, sized for the new count; the actor keeps the share of health it has left.
+        const int previousMaxHp = actor.rulesetFacts.maxHp > 0 ? actor.rulesetFacts.maxHp
+            : aiState.bolster                                   ? aiState.bolster->maxHp
+                                                                : actor.hp;
+        const int maxHp = MonsterRules::healthForPlayers(
+            m_monsterHealthPlayerCount, MonsterRules::healthWithoutPlayers(previousPlayerCount, previousMaxHp));
+        actor.hp = std::max(1, int(std::lround(float(actor.hp) * float(maxHp) / float(previousMaxHp))));
+
+        if (actor.rulesetFacts.maxHp > 0)
+        {
+            actor.rulesetFacts.maxHp = maxHp;
+        }
+
+        if (aiState.bolster)
+        {
+            aiState.bolster = resolveActorBolster(actor);
         }
     }
 }
@@ -19791,8 +21090,25 @@ ActorRulesetFacts *IndoorWorldRuntime::mutableActorRulesetFacts(size_t actorInde
         : nullptr;
 }
 
+bool IndoorWorldRuntime::addActorHitMarks(size_t actorIndex, const ActorHitMarks &marks)
+{
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::actorHitMarks(actorIndex, marks));
+    }
+
+    return IGameplayWorldRuntime::addActorHitMarks(actorIndex, marks);
+}
+
 bool IndoorWorldRuntime::healMapActor(size_t actorIndex, int amount)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::healActor(actorIndex, amount));
+    }
+
     MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size() || amount <= 0
@@ -19944,47 +21260,80 @@ size_t IndoorWorldRuntime::reviveSlainMonsters(float experienceShare)
             continue;
         }
 
-        const MapActorAiState previous = m_mapActorAiStates[actorIndex];
-        actor.hp = std::max(1, actor.rulesetFacts.maxHp > 0 ? actor.rulesetFacts.maxHp : pStats->hitPoints);
         actor.rulesetFacts.experience = uint32_t(float(actor.rulesetFacts.experience) * experienceShare);
         actor.rulesetFacts.risen = true;
-        actor.rulesetFacts.spearDamageTaken = 0;
-        actor.rulesetFacts.legendaryDamageTaken = 0;
-
-        // MAW raises the slain where the map first placed them (zzMaw-Monsters.lua LeaveMap).
-        if (actor.fillPosition)
-        {
-            actor.x = (*actor.fillPosition)[0];
-            actor.y = (*actor.fillPosition)[1];
-            actor.z = (*actor.fillPosition)[2];
-            actor.sectorId = actor.fillSectorId;
-        }
-
-        // A searched corpse gave up its loot for good.
-        if (actorIndex < m_mapActorCorpseViews.size() && m_mapActorCorpseViews[actorIndex])
-        {
-            actor.carriedItemId = 0;
-            actor.proceduralDeathLoot = false;
-            m_mapActorCorpseViews[actorIndex].reset();
-        }
-
-        if (actorIndex < m_mapActorRevealedLoot.size())
-        {
-            m_mapActorRevealedLoot[actorIndex].reset();
-        }
-
-        MapActorAiState risen = buildIndoorMapActorAiState(
-            actor, actorIndex, m_pMonsterTable, m_pSpellTable, m_pGameplayActorService, m_pActorSpriteFrameTable);
-        risen.bolster = previous.bolster;
-        risen.bolsterRewardMultiplier = previous.bolsterRewardMultiplier;
-        risen.displayName = gameRulesFor(m_pParty).monsters.actorDisplayName(
-            actor.rulesetFacts, resolveMapDeltaActorName(*m_pMonsterTable, actor));
-        m_mapActorAiStates[actorIndex] = std::move(risen);
-        std::erase(m_actorCorpsePhysicsActorIndices, actorIndex);
+        raiseSlainMapActor(actorIndex, *pStats);
         ++revived;
     }
 
     return revived;
+}
+
+// A slain actor stands again (MAW's revival, evt.ReviveMapActor): full hit points where the map first placed it, its
+// corpse's loot gone, its AI state built afresh as at a map load (its bolster kept).
+void IndoorWorldRuntime::raiseSlainMapActor(size_t actorIndex, const MonsterTable::MonsterStatsEntry &stats)
+{
+    MapDeltaActor &actor = mapDeltaData()->actors[actorIndex];
+    const MapActorAiState previous = m_mapActorAiStates[actorIndex];
+    actor.hp = std::max(1, actor.rulesetFacts.maxHp > 0 ? actor.rulesetFacts.maxHp : stats.hitPoints);
+    actor.rulesetFacts.spearDamageTaken = 0;
+    actor.rulesetFacts.legendaryDamageTaken = 0;
+
+    // Where the map first placed it (MAW raises the slain there: zzMaw-Monsters.lua LeaveMap).
+    if (actor.fillPosition)
+    {
+        actor.x = (*actor.fillPosition)[0];
+        actor.y = (*actor.fillPosition)[1];
+        actor.z = (*actor.fillPosition)[2];
+        actor.sectorId = actor.fillSectorId;
+    }
+
+    // A searched corpse gave up its loot for good.
+    if (actorIndex < m_mapActorCorpseViews.size() && m_mapActorCorpseViews[actorIndex])
+    {
+        actor.carriedItemId = 0;
+        actor.proceduralDeathLoot = false;
+        m_mapActorCorpseViews[actorIndex].reset();
+    }
+
+    if (actorIndex < m_mapActorRevealedLoot.size())
+    {
+        m_mapActorRevealedLoot[actorIndex].reset();
+    }
+
+    MapActorAiState risen = buildIndoorMapActorAiState(actor, actorIndex, m_pMonsterTable, m_pSpellTable,
+        m_pGameplayActorService, m_pActorSpriteFrameTable, m_actorNpcNames);
+    risen.bolster = previous.bolster;
+    risen.bolsterRewardMultiplier = previous.bolsterRewardMultiplier;
+    risen.displayName = gameRulesFor(m_pParty).monsters.actorDisplayName(
+        actor.rulesetFacts, resolveMapDeltaActorName(*m_pMonsterTable, actor, m_actorNpcNames));
+    m_mapActorAiStates[actorIndex] = std::move(risen);
+    std::erase(m_actorCorpsePhysicsActorIndices, actorIndex);
+}
+
+bool IndoorWorldRuntime::reviveMapActor(size_t actorIndex)
+{
+    MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || m_pMonsterTable == nullptr || actorIndex >= pMapDeltaData->actors.size())
+    {
+        return false;
+    }
+
+    syncMapActorAiStates();
+    MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+    const MonsterTable::MonsterStatsEntry *pStats = findIndoorActorStats(m_pMonsterTable, actor);
+
+    if (actor.hp > 0 || pStats == nullptr || actorIndex >= m_mapActorAiStates.size())
+    {
+        return false;
+    }
+
+    // A body without a corpse was hidden at its death.
+    actor.attributes &= ~static_cast<uint32_t>(EvtActorAttribute::Invisible);
+    actor.currentActionAnimation = indoorActionAnimationFromActorAi(ActorAiAnimationState::Standing);
+    raiseSlainMapActor(actorIndex, *pStats);
+    return true;
 }
 
 void IndoorWorldRuntime::rewardRulesetMapProgress()
@@ -20014,8 +21363,13 @@ MonsterKillReward IndoorWorldRuntime::killReward(
     reward.baseExperience = stats.experience;
     reward.baseHitPoints = stats.hitPoints;
     reward.bolsterRewardMultiplier = aiState.bolsterRewardMultiplier;
-    reward.maxHp = aiState.bolster ? aiState.bolster->maxHp : stats.hitPoints;
+    // The rules that weigh a kill read the monster's health without the players' share.
+    const size_t healthPlayerCount = healthPlayerCountFor(actor);
+    reward.maxHp = aiState.bolster
+        ? MonsterRules::healthWithoutPlayers(healthPlayerCount, aiState.bolster->maxHp)
+        : stats.hitPoints;
     reward.facts = actor.rulesetFacts;
+    reward.facts.maxHp = MonsterRules::healthWithoutPlayers(healthPlayerCount, reward.facts.maxHp);
     reward.continentId = m_map ? m_map->mergedContinentId : 0;
     reward.partyAlly = actorFightsForParty(actor, aiState);
     return reward;
@@ -20251,7 +21605,7 @@ void IndoorWorldRuntime::rewardKillByActor(size_t victimIndex, uint32_t sourceAc
         MonsterKillReward reward = killReward(victim, m_mapActorAiStates[victimIndex], *pStats);
         reward.byPartyAlly = byPartyAlly;
         reward.mindControlled = mindControlled;
-        m_pParty->grantMonsterKillExperience(reward);
+        grantKillExperienceToPlayers(reward);
     }
 }
 
@@ -20264,6 +21618,8 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     const ShieldHitModifiers &shieldModifiers,
     bool critical,
     bool hitReaction,
+    const char *pAttackKind,
+    uint32_t weaponItemId,
     bool lethalStrike)
 {
     MapDeltaData *pMapDeltaData = mapDeltaData();
@@ -20273,6 +21629,8 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
         return false;
     }
 
+    // The monster turns on whoever hurt it (a missile's shooter is named where the missile lands).
+    noteActorThreat(actorIndex, actingPlayer());
     MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
 
     if (actor.hp <= 0
@@ -20288,6 +21646,7 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     }
 
     if (actorIndex < m_mapActorAiStates.size() && !m_mapActorAiStates[actorIndex].hostileToParty
+        && (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::QuestTarget)) == 0
         && !gameRulesFor(m_pParty).combat.harmsFriendlyActors())
     {
         return false;
@@ -20309,7 +21668,8 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     // A raised shield takes the hit (no hit reaction); an exposed body takes energy at the exposed multiplier.
     const GameplayActorShieldHit shieldHit = applyActorShieldHit(
         actorIndex,
-        lethalStrike ? 0 : applyMonsterDamageEventHooks(actorIndex, resolvedMonsterId, damage, damageType, true),
+        lethalStrike ? 0 : applyMonsterDamageEventHooks(actorIndex, resolvedMonsterId, damage, damageType, true, pAttackKind,
+            weaponItemId),
         shieldTier,
         source,
         shieldModifiers);
@@ -20440,7 +21800,7 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
             {
                 MonsterKillReward reward = killReward(actor, m_mapActorAiStates[actorIndex], *pStats);
                 reward.partyAlly = reward.partyAlly || partyAlly;
-                experienceReward = static_cast<int>(m_pParty->grantMonsterKillExperience(reward));
+                experienceReward = static_cast<int>(grantKillExperienceToPlayers(reward));
             }
             rewardRulesetMapProgress();
         }
@@ -20483,10 +21843,21 @@ bool IndoorWorldRuntime::applyPartyAttackMeleeDamage(
     ShieldAttackTier shieldTier,
     const ShieldHitModifiers &shieldModifiers,
     bool critical,
-    bool hitReaction)
+    bool hitReaction,
+    uint32_t weaponItemId)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h; the host's hook
+    // sees no weapon for a guest's blow).
+    if (m_replica)
+    {
+        predictReplicaMeleeDamage(actorIndex, damage, critical);
+        return replicaWorldCall(
+            ReplicaWorldCalls::meleeDamage(
+                actorIndex, damage, source, shieldTier, shieldModifiers, critical, hitReaction));
+    }
+
     return applyPartyAttackMeleeDamage(actorIndex, damage, CombatDamageType::Physical, source, shieldTier,
-        shieldModifiers, critical, hitReaction);
+        shieldModifiers, critical, hitReaction, "melee", weaponItemId);
 }
 
 bool IndoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
@@ -20504,7 +21875,13 @@ bool IndoorWorldRuntime::debugSetActorHealth(size_t actorIndex, int health)
 
 bool IndoorWorldRuntime::killPartyAttackActor(size_t actorIndex, const GameplayWorldPoint &source)
 {
-    return applyPartyAttackMeleeDamage(actorIndex, 0, CombatDamageType::Physical, source, ShieldAttackTier::Physical, {}, false, true, true);
+    if (m_replica)
+    {
+        return false;
+    }
+
+    return applyPartyAttackMeleeDamage(actorIndex, 0, CombatDamageType::Physical, source, ShieldAttackTier::Physical,
+        {}, false, true, "melee", 0, true);
 }
 
 std::vector<GameplayCombatFeedbackEvent> IndoorWorldRuntime::drainCombatFeedbackEvents()
@@ -20556,6 +21933,12 @@ bool IndoorWorldRuntime::faceMapActorForTalk(size_t actorIndex, float partyX, fl
 
 bool IndoorWorldRuntime::stunActor(size_t actorIndex, float seconds)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::stunActor(actorIndex, seconds));
+    }
+
     const MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
@@ -20581,6 +21964,12 @@ bool IndoorWorldRuntime::stunActor(size_t actorIndex, float seconds)
 
 bool IndoorWorldRuntime::debuffActor(size_t actorIndex, GameplayActorHitDebuff debuff, float seconds, float power)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::debuffActor(actorIndex, debuff, seconds, power));
+    }
+
     const MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr || actorIndex >= pMapDeltaData->actors.size()
@@ -20605,6 +21994,19 @@ bool IndoorWorldRuntime::debuffActor(size_t actorIndex, GameplayActorHitDebuff d
     {
         spellEffects.darkGraspRemainingSeconds = std::max(spellEffects.darkGraspRemainingSeconds, seconds);
     }
+    else if (debuff == GameplayActorHitDebuff::Silence)
+    {
+        spellEffects.silenceRemainingSeconds = std::max(spellEffects.silenceRemainingSeconds, seconds);
+    }
+    else if (debuff == GameplayActorHitDebuff::MoveSlow)
+    {
+        spellEffects.moveSlowRemainingSeconds = std::max(spellEffects.moveSlowRemainingSeconds, seconds);
+        spellEffects.moveSlowMultiplier = std::min(spellEffects.moveSlowMultiplier, 1.0f / std::max(1.0f, power));
+    }
+    else if (debuff == GameplayActorHitDebuff::Demoralize)
+    {
+        spellEffects.demoralizeRemainingSeconds = std::max(spellEffects.demoralizeRemainingSeconds, seconds);
+    }
     else
     {
         spellEffects.slowRemainingSeconds = std::max(spellEffects.slowRemainingSeconds, seconds);
@@ -20620,6 +22022,13 @@ void IndoorWorldRuntime::applyPartyAttackMeleeEffects(
     const CharacterAttackResult &attack,
     const GameplayWorldPoint &source)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        replicaWorldCall(ReplicaWorldCalls::meleeEffects(actorIndex, attack, source));
+        return;
+    }
+
     const MapDeltaData *pMapDeltaData = mapDeltaData();
 
     if (pMapDeltaData == nullptr
@@ -20696,6 +22105,12 @@ void IndoorWorldRuntime::applyPartyAttackMeleeEffects(
 
 bool IndoorWorldRuntime::spawnPartyAttackProjectile(const GameplayPartyAttackProjectileRequest &request)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::attackProjectile(request));
+    }
+
     if (m_pGameplayProjectileService == nullptr || m_pObjectTable == nullptr)
     {
         return false;
@@ -20740,6 +22155,7 @@ bool IndoorWorldRuntime::spawnPartyAttackProjectile(const GameplayPartyAttackPro
     spawnRequest.chainShare = request.chainShare;
     spawnRequest.chainRadius = request.chainRadius;
     spawnRequest.hitCredit = request.hitCredit;
+    spawnRequest.quietBlast = request.quietBlast;
     spawnRequest.impactSoundIdOverride = request.impactSoundId;
     spawnRequest.turnBasedPendingAction = request.turnBasedPendingAction;
     spawnRequest.sourceX = request.source.x;
@@ -20751,8 +22167,7 @@ bool IndoorWorldRuntime::spawnPartyAttackProjectile(const GameplayPartyAttackPro
     spawnRequest.spawnForwardOffset = 0.0f;
     if (m_pPartyRuntime != nullptr)
     {
-        const IndoorMoveState &moveState = m_pPartyRuntime->movementState();
-        spawnRequest.sectorId = moveState.eyeSectorId >= 0 ? moveState.eyeSectorId : moveState.sectorId;
+        spawnRequest.sectorId = actingEyeSectorId();
     }
     spawnRequest.allowInstantImpact = true;
 
@@ -20831,6 +22246,12 @@ bool IndoorWorldRuntime::spawnPartyAttackProjectile(const GameplayPartyAttackPro
 
 bool IndoorWorldRuntime::castPartyAttackSpell(const GameplayPartyAttackSpellRequest &request)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::attackSpell(request));
+    }
+
     const std::optional<size_t> actorIndex = findActorOnAttackLine(*this, request.source, request.target);
 
     if (!actorIndex)
@@ -20859,6 +22280,12 @@ void IndoorWorldRuntime::recordPartyAttackWorldResult(
     bool actionPerformed,
     bool missed)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        replicaWorldCall(ReplicaWorldCalls::attackResult(actorIndex, attacked, actionPerformed, missed));
+    }
+
     if (actorIndex && actionPerformed)
     {
         const MapDeltaData *pMapDeltaData = mapDeltaData();
@@ -21134,7 +22561,7 @@ void IndoorWorldRuntime::onPlacedWorldItemTaken(const std::string &sourceId)
     {
         for (uint32_t qbit : sourceIt->setQBits)
         {
-            m_pParty->setQuestBit(qbit, true);
+            m_pParty->campaign().setQuestBit(qbit, true);
         }
     }
 
@@ -21339,6 +22766,12 @@ void IndoorWorldRuntime::applyPendingSpellCastWorldEffects(const PartySpellCastR
 
 bool IndoorWorldRuntime::dropHeldItemToWorld(const GameplayHeldItemDropRequest &request)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::dropHeldItem(request));
+    }
+
     if (m_pObjectTable == nullptr || m_pItemTable == nullptr || request.item.objectDescriptionId == 0)
     {
         return false;
@@ -21382,7 +22815,7 @@ bool IndoorWorldRuntime::dropHeldItemToWorld(const GameplayHeldItemDropRequest &
     spriteObject.velocityZ = clampToInt16(verticalSpeed);
     spriteObject.yawAngle = yawAngleFromRadians(request.yawRadians);
     spriteObject.attributes = SpriteAttrDroppedByPlayer;
-    spriteObject.sectorId = m_pPartyRuntime != nullptr ? m_pPartyRuntime->movementState().sectorId : -1;
+    spriteObject.sectorId = m_pPartyRuntime != nullptr ? actingEyeSectorId() : -1;
     spriteObject.temporaryLifetime = pObjectEntry->lifetimeTicks;
     spriteObject.initialX = spriteObject.x;
     spriteObject.initialY = spriteObject.y;
@@ -22075,6 +23508,16 @@ bool IndoorWorldRuntime::openMapActorCorpseView(size_t actorIndex)
         return false;
     }
 
+    if (m_waitingPlayerViews.holdsCorpse(*m_mapActorCorpseViews[actorIndex]))
+    {
+        if (EventRuntimeState *pEventRuntimeState = eventRuntimeState())
+        {
+            pEventRuntimeState->statusMessages.push_back(Engine::tr("Another player is using this"));
+        }
+
+        return false;
+    }
+
     m_activeCorpseView = *m_mapActorCorpseViews[actorIndex];
     return true;
 }
@@ -22488,16 +23931,16 @@ bool IndoorWorldRuntime::checkMonstersKilled(
         }
 
         ++totalActors;
+        // A hidden actor counts as defeated only when the event says so (MM8's InvisibleAsDead; MM7 has no such
+        // byte and hides an actor by disabling it, which its check counts as dead).
         const bool isInvisible =
             (actor.attributes & static_cast<uint32_t>(EvtActorAttribute::Invisible)) != 0;
 
-        if (actor.hp <= 0 || isInvisible)
+        if (actor.hp <= 0 || (invisibleAsDead && isInvisible))
         {
             ++defeatedActors;
         }
     }
-
-    (void)invisibleAsDead;
 
     if (count > 0)
     {
@@ -22707,7 +24150,21 @@ void IndoorWorldRuntime::applyEventRuntimeState(bool syncPersistentHostilityMask
         }
     }
 
-    // evt.SetMonsterRelation rows toward the party (right monster 0), as outdoors.
+    for (const auto &[groupId, hostileToParty] : pEventRuntimeState->actorGroupHostilityRequests)
+    {
+        for (size_t actorIndex = 0; actorIndex < pMapDeltaData->actors.size(); ++actorIndex)
+        {
+            const MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
+
+            if (actor.group == groupId)
+            {
+                setMapActorHostilityFromEvent(actorIndex, hostileToParty);
+            }
+        }
+    }
+
+    // evt.SetMonsterRelation rows toward the party (right monster 0), after the group requests: a relation row wins
+    // over a group made peaceful, as outdoors (decision Q11).
     if (!pEventRuntimeState->monsterRelationOverrides.empty())
     {
         for (size_t actorIndex = 0; actorIndex < pMapDeltaData->actors.size(); ++actorIndex)
@@ -22719,19 +24176,6 @@ void IndoorWorldRuntime::applyEventRuntimeState(bool syncPersistentHostilityMask
             if (partyRelation != pEventRuntimeState->monsterRelationOverrides.end())
             {
                 setMapActorHostilityFromEvent(actorIndex, partyRelation->second > 0);
-            }
-        }
-    }
-
-    for (const auto &[groupId, hostileToParty] : pEventRuntimeState->actorGroupHostilityRequests)
-    {
-        for (size_t actorIndex = 0; actorIndex < pMapDeltaData->actors.size(); ++actorIndex)
-        {
-            const MapDeltaActor &actor = pMapDeltaData->actors[actorIndex];
-
-            if (actor.group == groupId)
-            {
-                setMapActorHostilityFromEvent(actorIndex, hostileToParty);
             }
         }
     }
@@ -22818,6 +24262,12 @@ void IndoorWorldRuntime::applyEventRuntimeState(bool syncPersistentHostilityMask
     for (const EventRuntimeState::OpenedChestRequest &openedChestRequest : openedChestRequests)
     {
         const uint32_t openedChestId = openedChestRequest.chestId;
+
+        if (m_waitingPlayerViews.holdsChest(openedChestId))
+        {
+            pEventRuntimeState->statusMessages.push_back(Engine::tr("Another player is using this"));
+            continue;
+        }
 
         if (openedChestId < pMapDeltaData->chests.size())
         {
@@ -23509,6 +24959,11 @@ bool IndoorWorldRuntime::damageIndoorDestructible(const IndoorDestructible &dest
         m_pendingDestructibleEvents.push_back(destructible.damagedEvent);
     }
 
+    if (destructible.unbreakable)
+    {
+        return true;
+    }
+
     pState->hp = std::max(0, pState->hp - damage);
 
     if (pState->hp == 0)
@@ -23718,6 +25173,12 @@ bool IndoorWorldRuntime::isPartyAttackMeleeBModelTarget(size_t faceIndex) const
 
 bool IndoorWorldRuntime::applyPartyAttackMeleeBModelDamage(size_t faceIndex, int damage)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::meleeBModelDamage(faceIndex, damage));
+    }
+
     const IndoorDestructible *pDestructible = indoorDestructibleOfFace(faceIndex);
     return pDestructible != nullptr && damageIndoorDestructible(*pDestructible, damage);
 }
@@ -23729,6 +25190,12 @@ bool IndoorWorldRuntime::isPartyAttackMeleeEntityTarget(size_t entityIndex) cons
 
 bool IndoorWorldRuntime::applyPartyAttackMeleeEntityDamage(size_t entityIndex, int damage)
 {
+    // A replica does not change its map: its host does this for the player (ReplicaWorldCalls.h).
+    if (m_replica)
+    {
+        return replicaWorldCall(ReplicaWorldCalls::meleeEntityDamage(entityIndex, damage));
+    }
+
     const IndoorDestructible *pDestructible = indoorDestructibleOfEntity(entityIndex);
     return pDestructible != nullptr && damageIndoorDestructible(*pDestructible, damage);
 }
@@ -24228,6 +25695,19 @@ const EventRuntimeState *IndoorWorldRuntime::eventRuntimeState() const
     return &**m_pEventRuntimeState;
 }
 
+bool IndoorWorldRuntime::scriptedChestOpens(uint32_t chestId) const
+{
+    const MapDeltaData *pMapDeltaData = mapDeltaData();
+
+    if (pMapDeltaData == nullptr || chestId >= pMapDeltaData->chests.size() || m_pParty == nullptr || !m_map)
+    {
+        return true;
+    }
+
+    const uint16_t flags = chestFlagsWithEventBits(pMapDeltaData->chests[chestId].flags, eventRuntimeState(), chestId);
+    return chestOpensForParty(*m_pParty, *m_map, flags);
+}
+
 IndoorWorldRuntime::Snapshot IndoorWorldRuntime::snapshot() const
 {
     Snapshot snapshot = {};
@@ -24261,17 +25741,22 @@ IndoorWorldRuntime::Snapshot IndoorWorldRuntime::snapshot() const
     std::sort(snapshot.searchedLootPropSourceIds.begin(), snapshot.searchedLootPropSourceIds.end());
     snapshot.actorBehaviors = m_actorBehaviors.snapshot();
     snapshot.armageddon = m_armageddonState;
+    snapshot.monsterHealthPlayerCount = uint8_t(m_monsterHealthPlayerCount);
     return snapshot;
 }
 
 void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
 {
+    // The restored monsters may name players who are no longer here: the next assignment names them anew.
+    m_actorPartyPlayersAssigned = true;
+    m_monsterHealthPlayerCount = std::max<size_t>(1, snapshot.monsterHealthPlayerCount);
     m_worldItemSpotter.reset();
     // the scene restored its map state (its placed items' runtime-only pickup locks unset): evaluate them again
     m_placedWorldItemRevision = 0;
     m_actorShields.clear();
     m_actorModifiers.clear();
     m_appliedRelationRevision = UINT64_MAX;
+    m_appliedConditionalHostility.clear();
     m_gameMinutes = snapshot.gameMinutes;
 
     if (m_pParty != nullptr)
@@ -24283,6 +25768,7 @@ void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_sessionChestSeed = snapshot.sessionChestSeed;
     m_materializedChestViews = snapshot.materializedChestViews;
     m_activeChestView = snapshot.activeChestView;
+    m_waitingPlayerViews.clear();
     m_mapActorCorpseViews = snapshot.mapActorCorpseViews;
     m_mapActorRevealedLoot = snapshot.mapActorRevealedLoot;
     m_activeCorpseView = snapshot.activeCorpseView;
@@ -24372,7 +25858,8 @@ void IndoorWorldRuntime::restoreSnapshot(const Snapshot &snapshot)
                 m_pMonsterTable,
                 m_pSpellTable,
                 m_pGameplayActorService,
-                m_pActorSpriteFrameTable);
+                m_pActorSpriteFrameTable,
+                m_actorNpcNames);
             m_mapActorAiStates[actorIndex].bolster = resolveActorBolster(pMapDeltaData->actors[actorIndex]);
 
             if (indoorActorCorpsePhysicsNeedsStep(pMapDeltaData->actors[actorIndex], m_mapActorAiStates[actorIndex]))
@@ -24433,6 +25920,7 @@ void IndoorWorldRuntime::applyMapReentryReset()
                             .pBolsterMonsterTable = m_pMergedBolsterMonsterTable,
                             .pParty = m_pParty,
                             .bolsterMonstersEnabled = m_bolsterMonstersEnabled,
+                            .playerCount = healthPlayerCountFor(actor),
                             // The rules keep what they rolled for the actor (a boss, a risen monster).
                             .pExistingFacts = &actor.rulesetFacts,
                         },
@@ -24647,7 +26135,7 @@ bool IndoorWorldRuntime::attemptOpenChest(uint32_t chestId, bool openedByTelekin
 
     if (m_pPartyRuntime != nullptr)
     {
-        trapContext.partyZ = m_pPartyRuntime->partyFootZ() + PartyTargetHeightOffset;
+        trapContext.partyZ = partyFootZ() + PartyTargetHeightOffset;
     }
 
     trapContext.seed =
@@ -24710,7 +26198,7 @@ GameplayWorldPoint IndoorWorldRuntime::chestTrapSourcePoint() const
 
     if (m_pPartyRuntime != nullptr)
     {
-        point.z = m_pPartyRuntime->partyFootZ() + PartyTargetHeightOffset;
+        point.z = partyFootZ() + PartyTargetHeightOffset;
     }
 
     return point;

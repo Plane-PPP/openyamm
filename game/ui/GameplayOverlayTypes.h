@@ -194,6 +194,8 @@ struct GameplayHudTextureHandle
     bgfx::TextureHandle textureHandle = BGFX_INVALID_HANDLE;
 };
 
+struct GameplayHudFontLayer;
+
 struct GameplayHudFontHandle
 {
     std::string fontName;
@@ -203,6 +205,9 @@ struct GameplayHudFontHandle
     int fontHeight = 0;
     bgfx::TextureHandle mainTextureHandle = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowTextureHandle = BGFX_INVALID_HANDLE;
+
+    // The face's shadow, drawn black (GameplayHudFontLayer::shadowOf).
+    GameplayHudFontLayer shadowLayer() const;
 };
 
 struct GameplayHudBatchQuad
@@ -241,16 +246,32 @@ struct GameplayHudFontLayer
 {
     bgfx::TextureHandle textureHandle = BGFX_INVALID_HANDLE;
     uint32_t tintAbgr = 0xffffffffu;
+    // A shadow or outline layer: colour codes in the text leave it as it is.
+    bool shadow = false;
 
     GameplayHudFontLayer() = default;
 
-    // An atlas drawn in its own colours, such as a font's shadow layer.
+    // An atlas drawn in its own colours.
     GameplayHudFontLayer(bgfx::TextureHandle handle, uint32_t tint = 0xffffffffu)
         : textureHandle(handle)
         , tintAbgr(tint)
     {
     }
+
+    // A font's shadow atlas drawn black at the alpha of alphaBits. A Unicode face's shadow is its white glyph atlas,
+    // so the black has to come from the tint; the other faces' shadow atlases are black already.
+    static GameplayHudFontLayer shadowOf(bgfx::TextureHandle handle, uint32_t alphaBits = 0xff000000u)
+    {
+        GameplayHudFontLayer layer(handle, alphaBits & 0xff000000u);
+        layer.shadow = true;
+        return layer;
+    }
 };
+
+inline GameplayHudFontLayer GameplayHudFontHandle::shadowLayer() const
+{
+    return GameplayHudFontLayer::shadowOf(shadowTextureHandle);
+}
 
 enum class GameplayMinimapMarkerType
 {
@@ -312,7 +333,9 @@ enum class GameplayDialoguePointerTargetType
     Action,
     CloseButton,
     // Cancel of the popup that offers to reset a cleared dungeon (transitionResetPopupOpen).
-    ResetPopupCancel
+    ResetPopupCancel,
+    // A scroll button of the MM9 conversation bar: index 0 up, 1 down.
+    Mm9TalkScroll
 };
 
 struct GameplayDialoguePointerTarget
@@ -383,6 +406,23 @@ struct GameplayTownPortalDestination
     int32_t hitY = 0;
     uint32_t hitWidth = 0;
     uint32_t hitHeight = 0;
+    // A Dimension Door's name under its portal, printed at all times (0 width: none, as on Town Portal's maps).
+    int32_t nameX = 0;
+    int32_t nameY = 0;
+    uint32_t nameWidth = 0;
+    uint32_t nameHeight = 0;
+    // A Dimension Door's other landings: while the party has one's QBit, the first such replaces the landing above.
+    struct QBitLanding
+    {
+        uint32_t qbit = 0;
+        std::string mapName;
+        int32_t x = 0;
+        int32_t y = 0;
+        int32_t z = 0;
+        std::optional<int32_t> directionDegrees;
+        bool useMapStartPosition = false;
+    };
+    std::vector<QBitLanding> qbitLandings;
 };
 
 // One continent's Town Portal map: a `town_portal_switch.txt` group with the destinations this installation offers.
@@ -395,10 +435,9 @@ struct GameplayTownPortalContinent
     std::vector<GameplayTownPortalDestination> destinations;
 };
 
-// The Town Portal screen's continent buttons, `TownPortalContinentButton1` to `...4` in town_portal.yml, one per
-// continent in GameplayUiRuntime's order; a continent with no unlocked town shows its map with nothing to choose.
-constexpr size_t TownPortalContinentButtonCount = 4;
-
+// The Town Portal screen's continent buttons, `TownPortalContinentButton1`, `...2` and on in town_portal.yml, one per
+// continent in GameplayUiRuntime's order, as many as the layout has; a continent with no unlocked town shows its map
+// with nothing to choose.
 inline std::string townPortalContinentButtonId(size_t slot)
 {
     return "TownPortalContinentButton" + std::to_string(slot + 1);

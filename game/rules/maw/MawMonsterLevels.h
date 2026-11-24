@@ -14,13 +14,15 @@ namespace OpenYAMM::Game
 struct MapStatsEntry;
 
 // The MAW ruleset's map data (rulesets/maw/data/map_levels.yml): each map's monster level band, the horizontal
-// starter maps and the Beyond Madness level of each map. Keyed by lowercase map file name.
+// starter maps, the ranged-free starting maps and the Beyond Madness level of each map. Keyed by lowercase map file
+// name.
 class MawMapLevels
 {
 public:
     bool loadFromYaml(const std::string &text, std::string &errorMessage);
     // A world's maps from its MAW balance file (rulesets/maw/worlds/<world>/balance.yml `maps`: band,
-    // horizontal_starter, madness_start, madness_level, story_bands), after map_levels.yml. A map both list is an error.
+    // horizontal_starter, madness_start, madness_level, ranged_free, story_bands), after map_levels.yml. A map both
+    // list is an error.
     bool loadWorldBalance(const std::string &text, std::string &errorMessage);
     // Low, mid and high B levels (some are halves); {1, 1, 1} for a map MAW does not list. A story band (a world's
     // balance file) replaces the map's band once its quest bit is reached: the last reached one listed wins.
@@ -44,6 +46,9 @@ public:
     bool lists(const std::string &mapFileName) const;
     bool isHorizontalStarterMap(const std::string &mapFileName) const;
     bool isMadnessStartingMap(const std::string &mapFileName) const;
+    // A starting map where Hell's melee monsters gain no ranged attack (map_levels.yml `ranged_free_maps`, MAW's six of
+    // MON:633-658; a world's balance file `ranged_free`).
+    bool isRangedFreeMap(const std::string &mapFileName) const;
     // The fixed Beyond Madness level of a map, or 0 when it has none.
     int madnessLevel(const std::string &mapFileName) const;
 
@@ -71,6 +76,7 @@ private:
     std::unordered_set<uint32_t> m_reachedStoryQBits;
     std::unordered_set<std::string> m_horizontalStarterMaps;
     std::unordered_set<std::string> m_madnessStartingMaps;
+    std::unordered_set<std::string> m_rangedFreeMaps;
     std::unordered_map<std::string, int> m_madnessLevels;
 };
 
@@ -90,6 +96,8 @@ struct MawMonsterLevelInputs
     std::optional<int> dimensionPower;
     // A bounty hunt's map: every monster sits at its table level plus these, whatever else applies (MON:591-593).
     std::optional<double> bountyLevel;
+    // The Endless Arena's level (d42): the one being fought, else the next one; 0 counts as the first.
+    int arenaLevel = 0;
 };
 
 // The levels every monster of a map gains (bolsterLevel, zzMaw-Monsters.lua:417-445): the party's banked levels less
@@ -98,8 +106,8 @@ struct MawMonsterLevelInputs
 double mawMapBolster(const MawMapLevels &mapLevels, const MawMonsterLevelInputs &inputs);
 
 // Every monster's level on a map under MAW (devdocs/maw/BALANCE_MODEL.md §7.1-7.4, zzMaw-Monsters.lua
-// recalculateMonsterTable), by monster id. Levels are not capped at 255. The Arena (d42) and dimension maps have their
-// own rules; bounty maps raise the levels of their monsters where they are spawned.
+// recalculateMonsterTable), by monster id. Levels are not capped at 255. The Arena (d42, by the Endless Arena's level)
+// and dimension maps have their own rules; bounty maps raise the levels of their monsters where they are spawned.
 std::unordered_map<int, int> resolveMawMonsterLevels(
     const MonsterTable &monsterTable,
     const MawMapLevels &mapLevels,
@@ -129,7 +137,15 @@ struct MawMonsterFamily
 // Without a monster table a world's row is a family of its own.
 MawMonsterFamily mawMonsterFamily(const MonsterTable *pMonsterTable, int monsterId);
 
-// The arenas (MAW's d42, 7d05 and zarena, and MM9's thearena: each picks its fighters by the party's level), whose
+// The arenas (MAW's d42, 7d05 and zarena, MM9's thearena and Xeen's Warzone: each picks its fighters by the party's
+// level), whose
 // monsters get no bolster and whose kills in Beyond Madness pay nothing.
 bool mawArenaMap(const std::string &mapFileName);
+
+// The Endless Arena's families (monTbl): the C-tier monsters that are not wimps (less 462 and 579), by table level.
+std::vector<const MonsterTable::MonsterStatsEntry *> mawArenaFamilies(const MonsterTable &monsterTable);
+
+// The B row of the family the Endless Arena brings in a wave (arenaWaveMonster): the list in order, again from its
+// start once the waves run past it. 0 without families or for a wave below 1.
+int mawArenaWaveMonster(int wave, const MonsterTable &monsterTable);
 }

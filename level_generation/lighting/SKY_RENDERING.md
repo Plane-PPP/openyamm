@@ -134,6 +134,33 @@ Theme fields:
 - `haze` is the minimum wash toward the themed fog colour.
 - `stars` scales star brightness.
 - `preset` pins a preset regardless of weather.
+- `rim_glow` (D-36, the Darkside's view of the bright face) draws a glow along part of the horizon, fixed in world
+  direction: `{direction_deg, width_deg, height_deg, below_deg, color, day, night}`. `direction_deg` is the compass
+  bearing of its middle (0 north, 90 east, default 90), `width_deg` its full width along the horizon (75), `height_deg`
+  how far it climbs (10), `below_deg` how far it shows under the horizon where no land covers it (2, over the void),
+  `color` its own linear colour, `day` and `night` its strengths, blended by the preset's `stars` weight (0 by day,
+  1 at night) and dimmed by haze and fog like the sun's glow. It sits behind the clouds and lights the horizon's cloud
+  banks in front of it (so its base is not cut off from its part under the horizon, A6 on D4), in the main
+  view and water reflections (`fs_sky.sc` `rimGlow`, uniform `u_skyRim`); unset, nothing is drawn.
+- `void` (U-12, the Xeen world's rim) sets the look of empty space below the horizon over a map's void (the scene's
+  `terrain.void`, below): `{color, stars, limb_deg}`, a theme's block overriding its preset's (a preset may carry the
+  same block, inherited like `stars`). Defaults `color: [0.004, 0.006, 0.016]` (linear), `stars: 0.9` (star
+  brightness below the horizon, by day and night, dimmed by haze and fog), `limb_deg: 3` (the air's limb: the
+  horizon's colour turning into space over that depth). Used only on maps with void cells.
+
+### The void past the world's edge (terrain.void)
+
+A map whose scene has `terrain.void` (cell rectangles `[x0, y0, x1, y1]`, inclusive, tile-map cells; written by the
+studio from the sketch's `void`) ends there: its void cells draw no terrain, water, shore, seabed, grass or ground
+decorations (`OutdoorMapData::voidCells`, `isOutdoorVoidCell`), the distant sea is off on a side mostly in the void
+(`OutdoorDistantSea::voidWeights`), and the Enhanced sky draws space below the horizon where a view ray meets the void
+floor (z 0) over a void cell (an R8 mask `s_skyVoid`, only on such maps) or leaves the map on a void side: the
+horizon's haze turning into the space colour over `limb_deg`, a quarter-turned star field by day and night, the rim
+glow on top (`fs_sky.sc` `applyVoid`, uniform `u_skyVoid`). Fog toward a void side below the horizon fades into the
+same space colour (`sky_common.sh` `skyVoidDisplay`, `u_skyFog[40..41]`), so cliffs, the hull and falls seen steeply
+over the edge darken into the void while shallow views keep the haze. A map without `terrain.void` packs zeros and
+takes one uniform branch per fog evaluation; it looks as before. Movement is unchanged: void cells keep their terrain
+floor at 0 (Xeen's D-102 timer lifts a party there back onto the rim).
 
 Plane of Fire, Plane of Air, Plane of Water, the underwater tutorial and Shoals keep their special-flag presets.
 `sky theme <name|none|auto>` overrides the theme at runtime. `sky_review.py capture <label> --targets maps` captures

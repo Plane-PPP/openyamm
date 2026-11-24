@@ -160,7 +160,7 @@ Sigmund is willing to sign a peace treaty.  Find someone to write it."	Generated
 Kira has written a peace treaty for Sturmford and Drangheim.  Get Sigmund and Bjarni to agree to sign it."	Generated from NPC997.rude row 53, entry 208.	Chedian	90089	90092;90040
 90210	"Win a prize at the Thing for Yrsa's daughter.
 
-Go to the Thing in Thjorgard, and get the prize for Yrsa's daughter Bikki by winning all the games.  Once you have the prize, take it to Bikki Yrsadotir in Thronheim.  Return to the War Council in Thronheim when you are finished."	Generated from NPC997.rude row 54, entry 210.	Chedian	90093	90094
+Go to the Thing in Thjorgard, and get the prize for Yrsa's daughter Bikki by winning all the games (or take one of Markel the Great's from the shelf in his palace in Guberland City).  Once you have the prize, take it to Bikki Yrsadotir in Thronheim.  Return to the War Council in Thronheim when you are finished."	Generated from NPC997.rude row 54, entry 210.	Chedian	90093	90094
 90212	"Win a prize at the Thing for Yrsa's daughter.
 
 You have the Prize.  Take it to Yrsa's daughter Bikki."	Generated from NPC997.rude row 55, entry 212.	Chedian	90094	90095
@@ -361,7 +361,7 @@ Speak to Jarl Tryygva of Frosgard.  Convince him to commit a promise to celebrat
 Tryygva agreed to erect a runestone.  Return to the Green Man when you've finished his other tasks."	Generated from NPC997.rude row 120, entry 542.	Chedian	90278	90279
 90550	"Find Verhoffin's Diary.
 
-Go to the Verhoffin Ruins on the Isle of Ashes and recover Verhoffin's Diary.  Return to Johannes Bem in Thjorgard when you are finished."	Generated from NPC997.rude row 121, entry 550.	Chedian	90004	90493
+Go to the Verhoffin Ruins on the Isle of Ashes and recover Verhoffin's Diary.  Return to Johannes Bem in Thjorgard when you are finished."	Generated from NPC997.rude row 121, entry 550.	Chedian	90004	90493;90288
 90560	"Become a Lich.
 
 Follow the Lich Instructions and become a lich."	Generated from NPC997.rude row 122, entry 560.	Chedian	90296	90299
@@ -428,3 +428,6 @@ You got rid of Ebora and her concubines.  Return to Jokull the Ugly in Arslegard
 90710	"Find Gungnir.
 
 Hanndl lost his spear, called Gungnir.  Find it and return it to him."	Generated from NPC997.rude row 143, entry 710.	Chedian	90353	90357
+90551	"Find Verhoffin's Diary.
+
+The book from the Verhoffin Ruins was the wrong one.  It says the real diary is locked in a building in Drangheim Village, underneath a floor.  Johannes Bem gave you a Book Key that should unlock the right door.  Drangheim Village is the hamlet on the hill north-west of the Drangheim City gate.  Return to Johannes Bem in Thjorgard when you have the real book."	Generated from NPC997.rude row 144, entry 551.	Chedian	90288	90493

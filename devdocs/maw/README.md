@@ -1,6 +1,6 @@
 # MAW as an optional ruleset
 
-> Formulas updated to MAW `8fbb48d1` (2026-11-05) and `8967ae88` (2026-11-12) where [UPSTREAM_SYNC_8fbb48d1.md](UPSTREAM_SYNC_8fbb48d1.md) and [UPSTREAM_SYNC_8967ae88.md](UPSTREAM_SYNC_8967ae88.md) list a change.
+> Formulas updated to MAW `8fbb48d1` (2026-11-05), `8967ae88` (2026-11-12) and `7ddb228c` (2026-11-18) where [UPSTREAM_SYNC_8fbb48d1.md](UPSTREAM_SYNC_8fbb48d1.md), [UPSTREAM_SYNC_8967ae88.md](UPSTREAM_SYNC_8967ae88.md) and [UPSTREAM_SYNC_7ddb228c.md](UPSTREAM_SYNC_7ddb228c.md) list a change.
 
 Status: investigation only (2026-10-22). Built since (2026-10-24): the MAW ruleset in `game/rules/maw/` and
 `assets_dev/engine/rulesets/maw/`; what is left is in [GAPS.md](GAPS.md), the deliberate differences in
@@ -41,6 +41,7 @@ Lua where possible):
 | [CLASS_SPELLBOOKS.md](CLASS_SPELLBOOKS.md) | Proposal: the Death Knight's and Assassin's own spellbook pages, pictures and names over unchanged rules; mockup and open decisions |
 | [ITEMS_DATA.md](ITEMS_DATA.md) | Item, random-item and special-enchant patches in our formats; item tooltip spec; item record and save notes |
 | [MAPS_CONTENT.md](MAPS_CONTENT.md) | The 12 edited maps, every map and quest script change, dropped base fixes, overlay operations needed |
+| [DIMENSION_INSTANCES_PLAN.md](DIMENSION_INSTANCES_PLAN.md) | Built 2026-11-17: a dimension map opens a rift, an instance beside the untouched real map, with the Dimensional Portal to return, no Lloyd's Beacon inside and one rift at a time; the engine's map instances; notes for a hosted server (not decided) |
 | [solo_sim/](solo_sim/README.md) | Solo-class simulation (2026-11-14): simulated solo playthroughs, gear from their loot, fights against the real map groups; [results](solo_sim/RESULTS.md) |
 
 Machine-readable drafts extracted from MAW are in [data/](data/): YAML in the proposed ruleset shape (loot, legendary
@@ -104,7 +105,9 @@ Numbers here are summaries. Each heading links to the full treatment.
   and adds rules:
   - from MAW up: affixed bosses on every map;
   - from Hard: attacking cancels Fly;
-  - from Hell: melee monsters outdoors can gain a ranged attack;
+  - from Hell: melee monsters outdoors can gain a ranged attack (a mixed monster's: it shoots now and then and closes
+    to melee), except on the starting maps (MAW's six: out01, out02, 7out01, 7out02, oute3, outd3; Xeen's Vertigo;
+    MM9's Bootcamp and Isle of Ashes; `ranged_free` in the map data);
   - Nightmare (irreversible): saving costs food, no Lloyd/Town Portal near enemies, dungeons left below 65 % killed
     revive their dead, deep overkill means death or eradication.
 - **Game modes, fixed at party creation**: Normal, Doom, Road to Insanity, Beyond Madness, Austerity. Each is a

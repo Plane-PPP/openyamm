@@ -1,0 +1,9 @@
+A tiny spiteful fairy attacking: a quick shrill voiced giggle from a small throat, a fast flutter of small wings and a bright chime-like magic ping, close
+
+kind: sfx
+duration: 0.9
+loop: false
+variants: 3
+model: eleven_text_to_sound_v2
+prompt_influence: 0.45
+loudness_db: -9

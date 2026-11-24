@@ -81,6 +81,13 @@ public:
         return false;
     }
 
+    // Whether evt.OpenChest shows this chest's loot (chestOpensForParty); true when the world cannot tell.
+    virtual bool scriptedChestOpens(uint32_t chestId) const
+    {
+        (void)chestId;
+        return true;
+    }
+
     virtual bool fireEventMissile(const EventMissileRequest &request)
     {
         (void)request;
@@ -201,6 +208,16 @@ public:
     // evt.KillMapActor: the living actor dies as any death (its dying clip, corpse and loot; no experience to the
     // party and no hostility: MM9's script `Die`). False for an actor already dead or none.
     virtual bool killMapActor(size_t actorIndex)
+    {
+        (void)actorIndex;
+        return false;
+    }
+
+    // evt.ReviveMapActor: the dead actor stands again where the map first placed it (where it fell for an actor
+    // spawned later or a map filled before save version 185), at full hit points and seen, its corpse and loot gone
+    // and its AI as at a map load; its attitude stays as it was, for the script to set (Tamur Leng, killed in a 2.8
+    // save, back at his post for the talk the story needs). False for a living actor or none.
+    virtual bool reviveMapActor(size_t actorIndex)
     {
         (void)actorIndex;
         return false;

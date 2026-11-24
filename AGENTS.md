@@ -109,6 +109,9 @@ These rules apply to all AI-generated contributions in this repository.
   only the affected segments or quests (`run.py NN`). A change that deliberately alters a story path (an item made a
   world item, an event renumbered) updates the segments it breaks in the same change. How they are built, extended
   and debugged: the [Playthrough playbook](tests/playthrough/PLAYBOOK.md).
+- For the World of Xeen (the fifth world, Might and Magic IV/V rebuilt on new maps; "Xeen (alpha)" since 3.0: its
+  maps, generators, world tables, quests, towns, tests and the multi-agent lanes), start with
+  [the Xeen agent guide](devdocs/xeen/AGENT_GUIDE.md).
 - For the solo action mode research and the first-person view model prototype (held weapon and shield, swings that
   land at the blow, shield block, `[debug] view_model_path`), start with [Solo action mode](devdocs/solo_action/README.md).
 - For scripted monsters, bosses or encounters (per-actor Lua behaviours over the shared AI), start with
@@ -122,6 +125,19 @@ These rules apply to all AI-generated contributions in this repository.
 - For turn-based combat (the turn queue, initiative, recovery in turns, actions that must spend a turn, fairness
   bugs and their `tests/scenarios/turn_based/` scenarios), start with
   [Turn-based combat audit](devdocs/TURN_BASED_COMBAT_AUDIT.md).
+- For co-op multiplayer (a listen server: one character per player on a host's world; `game/coop/`, `engine/net/`,
+  the `coop` console command, `tests/scenarios/coop/`), start with
+  [the architecture](devdocs/plans/MULTIPLAYER_LISTEN_SERVER_ARCHITECTURE.md). Every known gap is a row in
+  [the open items](devdocs/plans/MULTIPLAYER_OPEN_ITEMS.md): look there before starting, and close or add rows
+  when done.
+- A second PC for two-machine checks (co-op over a real network) is reachable as `ssh oyamm-nb2`; how it is set up
+  and used is in [Two machines](tools/coop_two_machines/README.md).
+- A co-op session of two or three games on this PC, joined and ready with prepared strong parties (for the user's
+  play tests and agents' checks: `run.py <session> --hidden --seconds N`): [Co-op on one PC](tools/coop_local/README.md).
+- The co-op lobby service (the program games register with and find each other through; the built-in one is
+  `oylobby.jasicek.net`): how to build, run, sandbox and check one is in
+  [Running your own lobby server](tools/lobby_server/README.md). It must be rebuilt and redeployed whenever
+  `engine/net/Rendezvous*` changes.
 - For battle orders (what each member's Attack does: ordered spells and weapons with conditions, the weapon or hold
   fallback, the Battle Orders window over the spellbook, the spellbook's spell menu and the quick keys) and the upkeep
   list (the buffs, heals and cures the Upkeep key casts when they are due, and the buff potions it drinks, with their

@@ -1399,7 +1399,7 @@ msgstr "要偷窃（是/否）？"
 #: assets_dev/worlds/mm6/events/maps/cd2_mmmerge.lua:25 assets_dev/worlds/mm6/events/maps/cd3.lua:127 assets_dev/worlds/mm6/events/maps/cd3.lua:249
 #: assets_dev/worlds/mm6/events/maps/cd3_mmmerge.lua:30 assets_dev/worlds/mm6/events/maps/cd3_mmmerge.lua:60
 msgid "Y"
-msgstr ""
+msgstr "Y"
 
 # imported from packs (base v1.21)
 #: assets_dev/worlds/mm6/events/maps/cd2.lua:586
@@ -2059,6 +2059,7 @@ msgstr ""
 
 # imported from terms.mm6.po
 #: assets_dev/worlds/mm6/events/maps/outd3.lua:178 assets_dev/worlds/mm6/events/maps/outd3.lua:197 assets_dev/worlds/mm6/events/maps/outd3.lua:444
+#: assets_dev/worlds/mm6/events/maps/outd3_mmmerge.lua:93
 msgid ""
 "The prince has been kidnapped!  No visitors will be admitted until this crisis has been resolved!"
 msgstr "王子被绑架了！在危机解除之前，谢绝一切访客！"
@@ -3104,10 +3105,6 @@ msgstr "书桌"
 msgid ""
 "The Kreegan Hive lies in ruins and the demons who preyed on Enroth are broken. The kingdom of the Ironfists can heal at last, and its people will long remember the heroes who walked into the heart of the Hive and returned."
 msgstr "克里根巢穴化为废墟，祸害恩洛斯的恶魔也已被击溃。艾恩法斯特王国终于可以疗伤复原，人民将长久铭记那些深入巢穴核心、又平安归来的英雄。"
-
-# imported from packs (base v1.21)
-#~ msgid "Dragon Tower"
-#~ msgstr "龙之塔"
 
 # imported from packs (base v1.21)
 #~ msgid "Though your rise to high priest status was almost unseemly quick, "

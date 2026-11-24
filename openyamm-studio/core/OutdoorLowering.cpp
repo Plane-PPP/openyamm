@@ -994,14 +994,20 @@ class Lowerer
 {
 public:
     Lowerer(const Project &project, LoweredOutdoorMap &lowered, std::vector<ProjectIssue> &issues,
-        OutdoorLandCache *pLand)
-        : m_project(project)
+        OutdoorLandCache *pLand, const std::string &styleWorld = std::string())
+        : m_styleWorld(styleWorld)
+        , m_project(project)
         , m_lowered(lowered)
         , m_issues(issues)
         , m_plan(project.document("plan.yml"))
         , m_sketch(project.document(SketchFile))
         , m_pLand(pLand)
     {
+    }
+
+    void useDoorPictures(const OutdoorDoorPictures *pDoorPictures)
+    {
+        m_pDoorPictures = pDoorPictures;
     }
 
     bool run()
@@ -1011,6 +1017,7 @@ public:
         m_lowered = {};
         m_lowered.mapStem = textOf(card, "id");
         m_lowered.world = textOf(card, "world");
+        m_lowered.styleWorld = m_styleWorld.empty() ? m_lowered.world : m_styleWorld;
         std::transform(m_lowered.mapStem.begin(), m_lowered.mapStem.end(), m_lowered.mapStem.begin(),
             [](unsigned char character)
             {
@@ -1045,12 +1052,15 @@ public:
         }
 
         readSculpt();
+        readVoid();
         const std::vector<std::string> readWarnings = m_lowered.warnings;
         const bool landReadClean = m_issues.size() == issuesBeforeLand;
         m_lowered.roads = rasterizeOutdoorRoads(m_project, m_issues, m_lowered.warnings);
-        m_lowered.buildings = readOutdoorBuildings(m_project, m_lowered.world, m_issues, m_lowered.warnings);
-        m_lowered.caves = readOutdoorCaves(m_project, m_lowered.world, m_issues);
-        m_lowered.falls = readOutdoorFalls(m_project, m_lowered.world, m_issues);
+        m_lowered.doorPictures = m_pDoorPictures != nullptr ? *m_pDoorPictures : OutdoorDoorPictures();
+        m_lowered.buildings = readOutdoorBuildings(m_project, m_lowered.styleWorld, m_issues, m_lowered.warnings,
+            &m_lowered.doorPictures);
+        m_lowered.caves = readOutdoorCaves(m_project, m_lowered.styleWorld, m_issues);
+        m_lowered.falls = readOutdoorFalls(m_project, m_lowered.styleWorld, m_issues);
 
         if (m_issues.size() != issuesBefore)
         {
@@ -1214,9 +1224,139 @@ private:
                 waterNode[node] = std::isnan(waterNode[node]) ? waterNode[node] : settled[node];
             }
         }
+        applyVoid(waterNode);
         store(waterNode);
         checkCliffs();
         placeStart();
+    }
+
+    // The sketch's `void` (U-12): polygons in cells where the world ends.
+    void readVoid()
+    {
+        m_void.clear();
+        const YAML::Node voids = childOf(m_sketch, "void");
+
+        for (size_t index = 0; voids.IsDefined() && voids.IsSequence() && index < voids.size(); ++index)
+        {
+            std::vector<Point2> points;
+
+            if (!pointsOf(childOf(voids[index], "polygon"), points) || points.size() < 3)
+            {
+                issue("void[" + std::to_string(index) + "].polygon",
+                    "the outline is not a list of at least three [x, y] points", "geometry");
+                continue;
+            }
+
+            m_void.push_back(points);
+        }
+    }
+
+    // Every node inside a void polygon lies at 0 and is dry; a node on its outline (the land's edge) is dry and
+    // keeps the land's height (the highest of its land neighbours), so the land runs level to its edge and the drop
+    // lies in the first void cell, which is never drawn: no cliff face between the grass and the hull (D-109). A cell
+    // whose four corners are in or on the void is a void cell. No water may lie in a void (its open water would float
+    // in empty space).
+    void applyVoid(std::vector<double> &waterNode)
+    {
+        m_lowered.voidCells.clear();
+
+        if (m_void.empty())
+        {
+            return;
+        }
+
+        // 0 land, 1 on an outline (the edge), 2 inside
+        std::vector<uint8_t> inVoid(GroundNodeTotal, 0);
+        size_t wetNodes = 0;
+
+        for (int y = 0; y < OutdoorGroundNodes; ++y)
+        {
+            for (int x = 0; x < OutdoorGroundNodes; ++x)
+            {
+                const Point2 corner = {static_cast<double>(x), static_cast<double>(y)};
+                const size_t groundNode = static_cast<size_t>(y) * OutdoorGroundNodes + static_cast<size_t>(x);
+
+                for (const std::vector<Point2> &outline : m_void)
+                {
+                    const uint8_t where = outlineDistance(outline, corner) < 1.0e-9 ? 1
+                        : (insideOutline(outline, corner) ? 2 : 0);
+                    inVoid[groundNode] = std::max(inVoid[groundNode], where);
+                }
+
+                if (inVoid[groundNode] != 0)
+                {
+                    wetNodes += m_waterNode.size() == GroundNodeTotal && m_waterNode[groundNode] >= 0 ? 1 : 0;
+                }
+            }
+        }
+
+        const std::vector<double> before = m_lowered.ground;
+
+        for (int y = 0; y < Nodes; ++y)
+        {
+            for (int x = 0; x < Nodes; ++x)
+            {
+                const uint8_t where = inVoid[static_cast<size_t>(y) * OutdoorGroundNodes + static_cast<size_t>(x)];
+
+                if (where == 0)
+                {
+                    continue;
+                }
+
+                double height = 0.0;
+
+                if (where == 1)
+                {
+                    // The land's edge: the highest land node beside it (straight neighbours first, else diagonal).
+                    double best = -1.0;
+
+                    for (int pass = 0; pass < 2 && best < 0.0; ++pass)
+                    {
+                        for (int dy = -1; dy <= 1; ++dy)
+                        {
+                            for (int dx = -1; dx <= 1; ++dx)
+                            {
+                                const int nx = x + dx;
+                                const int ny = y + dy;
+
+                                if ((dx == 0 && dy == 0) || (pass == 0) != (dx == 0 || dy == 0) || nx < 0 || ny < 0
+                                    || nx >= Nodes || ny >= Nodes
+                                    || inVoid[static_cast<size_t>(ny) * OutdoorGroundNodes + static_cast<size_t>(nx)]
+                                        != 0)
+                                {
+                                    continue;
+                                }
+
+                                best = std::max(best, before[nodeIndex(nx, ny)]);
+                            }
+                        }
+                    }
+
+                    height = std::max(best, 0.0);
+                }
+
+                m_lowered.ground[nodeIndex(x, y)] = height;
+                waterNode[nodeIndex(x, y)] = std::numeric_limits<double>::quiet_NaN();
+            }
+        }
+
+        if (wetNodes != 0)
+        {
+            issue("void", std::to_string(wetNodes) + " corners of water lie in the void: no water body or river may "
+                "overlap it (its water would float in empty space)", "geometry");
+        }
+
+        m_lowered.voidCells.assign(NodeTotal, 0);
+
+        for (int y = 0; y < Nodes; ++y)
+        {
+            for (int x = 0; x < Nodes; ++x)
+            {
+                const size_t corner = static_cast<size_t>(y) * OutdoorGroundNodes + static_cast<size_t>(x);
+                m_lowered.voidCells[nodeIndex(x, y)] = inVoid[corner] != 0 && inVoid[corner + 1] != 0
+                    && inVoid[corner + OutdoorGroundNodes] != 0 && inVoid[corner + OutdoorGroundNodes + 1] != 0;
+            }
+        }
     }
 
     void saveLand(KeptLandState &state) const
@@ -1282,9 +1422,11 @@ private:
         // What the land made of the map so far (the structures' fields are read again).
         const std::string stem = m_lowered.mapStem;
         const std::string world = m_lowered.world;
+        const std::string styleWorld = m_lowered.styleWorld;
         m_lowered = state.lowered;
         m_lowered.mapStem = stem;
         m_lowered.world = world;
+        m_lowered.styleWorld = styleWorld;
         m_lowered.roads.clear();
         m_lowered.buildings.clear();
         m_lowered.caves.clear();
@@ -4016,6 +4158,7 @@ private:
             "arrival or both) with a point of the same id in sketch.yml `points`", "project"});
     }
 
+    const std::string m_styleWorld;
     const Project &m_project;
     LoweredOutdoorMap &m_lowered;
     std::vector<ProjectIssue> &m_issues;
@@ -4045,9 +4188,12 @@ private:
     std::vector<std::vector<Point2>> m_patches;
     bool m_handMade = false;
     OutdoorLandCache *m_pLand = nullptr;
+    // The asset root's door pictures (lowerOutdoorProject); none: no wing door is paired.
+    const OutdoorDoorPictures *m_pDoorPictures = nullptr;
     std::vector<PeakField> m_peaks;
     std::vector<RoughArea> m_rough;
     std::vector<WaterShape> m_water;
+    std::vector<std::vector<Point2>> m_void;
     bool m_hasGrid = false;
     int m_gridStep = 0;
     int m_gridSide = 0;
@@ -4092,6 +4238,31 @@ double LoweredOutdoorMap::storedHeightAt(double x, double y) const
     const double north = at(x0, y0) * (1.0 - shareX) + at(x0 + 1, y0) * shareX;
     const double south = at(x0, y0 + 1) * (1.0 - shareX) + at(x0 + 1, y0 + 1) * shareX;
     return north * (1.0 - shareY) + south * shareY;
+}
+
+double LoweredOutdoorMap::groundHeightAt(double x, double y) const
+{
+    if (samples.size() != NodeTotal)
+    {
+        return 0.0;
+    }
+
+    const double clampedX = std::clamp(x, 0.0, static_cast<double>(Nodes - 1));
+    const double clampedY = std::clamp(y, 0.0, static_cast<double>(Nodes - 1));
+    const int x0 = std::min(static_cast<int>(std::floor(clampedX)), Nodes - 2);
+    const int y0 = std::min(static_cast<int>(std::floor(clampedY)), Nodes - 2);
+    const double shareX = clampedX - x0;
+    const double shareY = clampedY - y0;
+    const auto at = [this](int nodeX, int nodeY)
+    {
+        return samples[nodeIndex(nodeX, nodeY)] * OutdoorHeightStep;
+    };
+    const double northWest = at(x0, y0);
+    const double northEast = at(x0 + 1, y0);
+    const double southWest = at(x0, y0 + 1);
+    const double southEast = at(x0 + 1, y0 + 1);
+    return shareX >= shareY ? northWest + shareX * (northEast - northWest) + shareY * (southEast - northEast)
+                            : northWest + shareY * (southWest - northWest) + shareX * (southEast - southWest);
 }
 
 bool outdoorNodeOnLine(const std::vector<std::array<double, 2>> &line, double width, int x, int y, size_t &segment,
@@ -4186,9 +4357,10 @@ bool lowerOutdoorLandOnly(const Project &project)
 }
 
 bool lowerOutdoorProject(const Project &project, LoweredOutdoorMap &lowered, std::vector<ProjectIssue> &issues,
-    OutdoorLandCache *pLand)
+    OutdoorLandCache *pLand, const std::string &styleWorld, const OutdoorDoorPictures *pDoorPictures)
 {
-    Lowerer lowerer(project, lowered, issues, pLand);
+    Lowerer lowerer(project, lowered, issues, pLand, styleWorld);
+    lowerer.useDoorPictures(pDoorPictures);
     return lowerer.run() && layOutdoorGround(project, lowered, issues);
 }
 }

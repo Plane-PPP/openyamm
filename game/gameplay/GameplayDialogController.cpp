@@ -865,7 +865,7 @@ bool tryAddRuntimeMapNote(
             ? eventRuntimeState.pendingDialogueContext->mapNoteSourcePoint
             : std::nullopt;
 
-    if (const JournalMapNote *pExisting = pParty->findJournalMapNote(noteMapFileName, noteId))
+    if (const JournalMapNote *pExisting = pParty->campaign().findJournalMapNote(noteMapFileName, noteId))
     {
         JournalMapNote note = *pExisting;
         note.listedWithTrainerNotes = !teacherHasAutonote;
@@ -876,7 +876,7 @@ bool tryAddRuntimeMapNote(
             note.y = mapNoteSourcePoint->y;
         }
 
-        pParty->setJournalMapNote(note);
+        pParty->campaign().setJournalMapNote(note);
         return false;
     }
 
@@ -898,7 +898,7 @@ bool tryAddRuntimeMapNote(
         note.y = static_cast<int32_t>(std::lround(pWorldRuntime->partyY()));
     }
 
-    pParty->setJournalMapNote(note);
+    pParty->campaign().setJournalMapNote(note);
 
     if (!teacherHasAutonote)
     {
@@ -946,8 +946,8 @@ bool tryRegisterTrainerNote(
 
     if (pParty != nullptr)
     {
-        changed = !pParty->hasAutonote(*autonoteId);
-        pParty->setAutonote(*autonoteId, true);
+        changed = !pParty->campaign().hasAutonote(*autonoteId);
+        pParty->campaign().setAutonote(*autonoteId, true);
     }
     else
     {
@@ -1059,7 +1059,7 @@ void syncAvailableRosterMembersToAdventurersInn(GameplayDialogController::Contex
     {
         if (pRosterEntry == nullptr
             || pRosterEntry->unlockQuestBitId == 0
-            || !context.pParty->hasQuestBit(pRosterEntry->unlockQuestBitId)
+            || !context.pParty->campaign().hasQuestBit(pRosterEntry->unlockQuestBitId)
             || context.pParty->hasRosterMember(pRosterEntry->id)
             || partyHasAdventurersInnRosterMember(*context.pParty, pRosterEntry->id))
         {
@@ -1095,8 +1095,8 @@ void syncAvailableRosterMembersToAdventurersInn(GameplayDialogController::Contex
         context.eventRuntimeState.generatedMercenaryRecruitsByNpcId.erase(npcId);
         context.eventRuntimeState.unavailableNpcIds.insert(npcId);
         context.eventRuntimeState.npcHouseOverrides.erase(npcId);
-        context.pParty->setNpcUnavailable(npcId, true);
-        context.pParty->clearNpcHouseOverride(npcId);
+        context.pParty->campaign().setNpcUnavailable(npcId, true);
+        context.pParty->campaign().clearNpcHouseOverride(npcId);
     }
 
     for (const auto &[npcId, houseId] : context.eventRuntimeState.npcHouseOverrides)
@@ -1255,22 +1255,7 @@ const std::optional<MapEdgeTransition> *currentMapTransitionForContext(
         return nullptr;
     }
 
-    switch (static_cast<MapBoundaryEdge>(dialogueContext.sourceId))
-    {
-        case MapBoundaryEdge::North:
-            return &context.pCurrentMap->northTransition;
-
-        case MapBoundaryEdge::South:
-            return &context.pCurrentMap->southTransition;
-
-        case MapBoundaryEdge::East:
-            return &context.pCurrentMap->eastTransition;
-
-        case MapBoundaryEdge::West:
-            return &context.pCurrentMap->westTransition;
-    }
-
-    return nullptr;
+    return context.pCurrentMap->mapTransitionAtSource(dialogueContext.sourceId);
 }
 
 int boundaryTravelHeadingDegrees(MapBoundaryEdge edge)
@@ -1293,22 +1278,18 @@ int boundaryTravelHeadingDegrees(MapBoundaryEdge edge)
     return 0;
 }
 
-bool applyMapTransitionTravelSideEffects(
-    GameplayDialogController::Context &context,
-    const MapEdgeTransition &transition)
+// What walking off the map costs: the days on the road, which guides shorten, and the road's food.
+TravelCost mapTransitionTravelCost(GameplayDialogController::Context &context, const MapEdgeTransition &transition)
 {
     if (context.pScreenRuntime != nullptr)
     {
         context.pScreenRuntime->stopAllAudioPlayback();
     }
 
-    const int foodRequired = mapTransitionTravelFoodRequired(context, transition);
-    return context.pParty != nullptr
-        && applyTravelDaysSideEffects(
-            *context.pParty,
-            context.pWorldRuntime,
-            hiredNpcWalkingTravelDays(transition.travelDays, context.eventRuntimeState),
-            foodRequired);
+    TravelCost cost;
+    cost.travelDays = std::max(0, hiredNpcWalkingTravelDays(transition.travelDays, context.eventRuntimeState));
+    cost.travelFood = std::max(0, mapTransitionTravelFoodRequired(context, transition));
+    return cost;
 }
 
 bool executeMapTransitionHook(
@@ -1328,7 +1309,8 @@ bool executeMapTransitionHook(
     if (context.eventRuntimeState.pendingDialogueContext.has_value()
         && context.eventRuntimeState.pendingDialogueContext->kind == DialogueContextKind::MapTransition)
     {
-        hookContext.boundaryEdge = context.eventRuntimeState.pendingDialogueContext->sourceId;
+        hookContext.boundaryEdge =
+            uint32_t(mapTransitionSourceEdge(context.eventRuntimeState.pendingDialogueContext->sourceId));
     }
 
     context.eventRuntimeState.activeHookContext = std::move(hookContext);
@@ -1496,11 +1478,12 @@ void cancelMapTransition(GameplayDialogController::Context &context)
 bool executeNpcTopicEvent(
     GameplayDialogController::Context &context,
     uint16_t eventId,
-    size_t &previousMessageCount)
+    size_t &previousMessageCount,
+    std::optional<uint8_t> continueStep = std::nullopt)
 {
     const QuestRewardProbe rewardBefore = questRewardProbe(context);
     const bool executed = context.pWorldRuntime != nullptr
-        && context.pWorldRuntime->executeNpcTopicEvent(eventId, previousMessageCount);
+        && context.pWorldRuntime->executeNpcTopicEvent(eventId, previousMessageCount, continueStep);
 
     if (executed)
     {
@@ -1879,7 +1862,7 @@ uint32_t autonoteVariableKey(uint32_t autonoteId)
 
 bool hasGuildMembership(const EventRuntimeState &runtimeState, const Party *pParty, uint32_t guildType)
 {
-    if (pParty != nullptr && pParty->eventVariableValue(guildMembershipPartyVariableId(guildType)) != 0)
+    if (pParty != nullptr && pParty->campaign().eventVariableValue(guildMembershipPartyVariableId(guildType)) != 0)
     {
         return true;
     }
@@ -1897,14 +1880,14 @@ void grantGuildMembership(
 
     if (pParty != nullptr)
     {
-        pParty->setEventVariableValue(guildMembershipPartyVariableId(offer.guildType), 1);
+        pParty->campaign().setEventVariableValue(guildMembershipPartyVariableId(offer.guildType), 1);
     }
 
     if (offer.autonoteId != 0)
     {
         if (pParty != nullptr)
         {
-            pParty->setAutonote(offer.autonoteId, true);
+            pParty->campaign().setAutonote(offer.autonoteId, true);
         }
         else
         {
@@ -2057,11 +2040,19 @@ std::string mm9RudeServiceTag(int32_t opcode)
     }
 }
 
-// How the conversation bar marks a row: the row that ends the talk, a quest row (one that needs keys) not chosen
-// yet, or one the party has chosen before.
-EventDialogChoiceMark mm9RudeChoiceMark(const Mm9RudeRow &row, const Party &party)
+// A row that ends the talk and sets no key: a page's plain way out ("Goodbye.", "Perhaps some other time.").
+bool mm9RudeRowIsPlainExit(const Mm9RudeRow &row)
 {
-    if (row.next == -1)
+    return row.next == -1 && row.grantedRawKeys.empty() && row.removedRawKeys.empty();
+}
+
+// How the conversation bar marks a row: the row that ends the talk, a quest row (one that needs keys) not chosen
+// yet, or one the party has chosen before. A row that ends the talk and sets keys is the way out only on a page
+// without a plain one: beside "Perhaps some other time.", Ealusaid's "We will find it for you." (key 311, her
+// quest) is a choice; marked as the exit it took Esc and lost its number key, so pressing 1 declined the quest.
+EventDialogChoiceMark mm9RudeChoiceMark(const Mm9RudeRow &row, const Party &party, bool pageHasPlainExit)
+{
+    if (row.next == -1 && (!pageHasPlainExit || mm9RudeRowIsPlainExit(row)))
     {
         return EventDialogChoiceMark::Exit;
     }
@@ -2135,6 +2126,8 @@ EventDialogContent buildMm9RudeContent(
     }
 
     const std::vector<const Mm9RudeRow *> visibleRows = table.visibleRows(rudeId, nodeId, party);
+    const bool pageHasPlainExit = std::any_of(visibleRows.begin(), visibleRows.end(),
+        [](const Mm9RudeRow *pRow) { return mm9RudeRowIsPlainExit(*pRow); });
     for (const Mm9RudeRow *pRow : visibleRows)
     {
         const Mm9SkillTrainerService *pTrainerService = pSkillTrainerTable != nullptr
@@ -2148,7 +2141,7 @@ EventDialogContent buildMm9RudeContent(
             action.label = Engine::localize(pRow->prompt, Mm9PartyLineContext);
             action.argument = "trainer=" + std::to_string(pTrainerService->topic.rawTrainerId)
                 + ";source_line=" + std::to_string(pRow->sourceLine);
-            action.choiceMark = mm9RudeChoiceMark(*pRow, party);
+            action.choiceMark = mm9RudeChoiceMark(*pRow, party, pageHasPlainExit);
             action.choiceTag = Engine::tr("Train \xC2\xB7 {mastery}",
                 {{"mastery", Engine::localize(masteryDisplayName(pTrainerService->topic.targetMastery), "mastery")}});
             content.actions.push_back(std::move(action));
@@ -2162,7 +2155,7 @@ EventDialogContent buildMm9RudeContent(
         action.label = Engine::localize(pRow->prompt, Mm9PartyLineContext);
         action.argument = "choice=" + std::to_string(pRow->choiceSlot)
             + ";next=" + std::to_string(pRow->next);
-        action.choiceMark = mm9RudeChoiceMark(*pRow, party);
+        action.choiceMark = mm9RudeChoiceMark(*pRow, party, pageHasPlainExit);
         action.choiceTag = pRow->next < -1 ? mm9RudeServiceTag(pRow->next) : std::string();
         content.actions.push_back(std::move(action));
     }
@@ -2171,7 +2164,7 @@ EventDialogContent buildMm9RudeContent(
     // (before the row that ends the talk).
     const Mm9PromotionService *pPromotion = table.promotionService(rudeId);
     if (pPromotion != nullptr && nodeId == int32_t(rudeId)
-        && party.hasQuestBit(*mm9QBitForRawQuestKey(pPromotion->doneRawKey)))
+        && party.campaign().hasQuestBit(*mm9QBitForRawQuestKey(pPromotion->doneRawKey)))
     {
         EventDialogAction action = {};
         action.kind = EventDialogActionKind::Mm9RudePromotionService;
@@ -2693,39 +2686,30 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             return result;
         }
 
-        context.pParty->addGold(-price, GoldReason::Travel);
-        if (waitDays > 0)
-        {
-            context.pParty->addFood(-waitFood);
-            const float waitMinutes = float(waitDays) * 24.0f * 60.0f;
-            context.pWorldRuntime->advanceGameMinutes(waitMinutes);
-            context.pParty->advanceTimedStates(waitMinutes * 60.0f);
-        }
+        // The talk ends before the party boards: its exit hook (the Frosgard dockmaster's) runs a map event, whose
+        // start drops the pending map move. Run after the boarding, it kept the fare and left the party ashore.
+        executeMm9RudeExitCallback(context);
+
         // MM9's boats arrive at 6:00 in the morning, the route's travel days after the departure date (a two-day trip
         // that leaves on Monday arrives on Wednesday at 6:00). The party rests on board, as on any journey.
-        context.pParty->restAndHealAll();
-        {
-            constexpr double MinutesPerDay = 24.0 * 60.0;
-            constexpr double ArrivalMinuteOfDay = 6.0 * 60.0;
-            const double departure = context.pWorldRuntime->gameMinutes();
-            const double arrival = (std::floor(departure / MinutesPerDay) + double(pRoute->travelDays)) * MinutesPerDay
-                + ArrivalMinuteOfDay;
-            const float travelMinutes = float(std::max(0.0, arrival - departure));
+        TravelCost cost;
+        cost.fareGold = price;
+        cost.waitDays = waitDays;
+        cost.waitFood = waitFood;
+        cost.travelDays = int(pRoute->travelDays);
+        cost.arrivesAtSix = true;
+        cost.rideByBoat = false;
+        // With other players in the world the ride waits for their agreement, and nobody pays before that.
+        const bool paidOnDeparture = context.pWorldRuntime->sharedWithOtherPlayers();
 
-            if (travelMinutes > 0.0f)
-            {
-                context.pWorldRuntime->advanceGameMinutes(travelMinutes);
-                context.pParty->advanceTimedStates(travelMinutes * 60.0f);
-            }
-        }
-
-        if (PlaythroughStatistics *pStatistics = context.pParty->statistics())
+        if (!paidOnDeparture)
         {
-            pStatistics->recordTravel(false, double(waitDays) + double(pRoute->travelDays));
+            applyTravelCost(*context.pParty, {}, context.pWorldRuntime, cost);
         }
 
         EventRuntimeState::PendingMapMove pendingMove = {};
-        pendingMove.travelTimeApplied = true;
+        pendingMove.travelTimeApplied = !paidOnDeparture;
+        pendingMove.unpaidCost = paidOnDeparture ? std::optional<TravelCost>(cost) : std::nullopt;
         pendingMove.mapName = pRoute->destinationMapFileName;
         pendingMove.x = pRoute->arrivalX;
         pendingMove.y = pRoute->arrivalY;
@@ -2757,7 +2741,6 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             Engine::trn("It will take {days} day to travel to {destination}.",
                 "It will take {days} days to travel to {destination}.", uint64_t(pRoute->travelDays),
                 {{"days", pRoute->travelDays}, {"destination", Engine::localize(pRoute->destinationName)}}));
-        executeMm9RudeExitCallback(context);
         result.shouldCloseActiveDialog = true;
         return result;
     }
@@ -2783,6 +2766,11 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         const std::vector<std::string> &racialSkills = context.pMm9RudeDialogueTable->racialAbilitySkills();
         const auto evaluate = [&](size_t memberIndex) -> std::optional<MasteryTeacherEvaluation>
         {
+            if (memberIndex >= party.members().size())
+            {
+                return std::nullopt;
+            }
+
             const std::optional<SkillMasteryTrainingRequest> lesson =
                 mm9RacialLesson(*party.member(memberIndex), *pTrainer, racialSkills);
             if (!lesson)
@@ -3336,6 +3324,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             }
 
             bool travelTimeApplied = false;
+            TravelCost walkCost;
 
             if (pMm9Transition != nullptr && context.pParty != nullptr)
             {
@@ -3354,15 +3343,24 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 {
                     context.eventRuntimeState.lastMapTransitionConfirmed->travelDays = uint32_t(travelDays);
                 }
-                travelTimeApplied = applyTravelDaysSideEffects(
-                    *context.pParty,
-                    context.pWorldRuntime,
-                    travelDays,
-                    regionWalk ? Mm9RegionWalkFood : travelDays);
+                walkCost.travelDays = std::max(0, travelDays);
+                walkCost.travelFood = std::max(0, regionWalk ? Mm9RegionWalkFood : travelDays);
             }
+
+            // With other players in the world the walk waits for their agreement, and nobody pays before that.
+            const bool paidOnDeparture =
+                context.pWorldRuntime != nullptr && context.pWorldRuntime->sharedWithOtherPlayers();
+
+            if (!paidOnDeparture && context.pParty != nullptr)
+            {
+                travelTimeApplied = applyTravelCost(*context.pParty, {}, context.pWorldRuntime, walkCost);
+            }
+
             context.eventRuntimeState.pendingMapMove =
                 *context.eventRuntimeState.pendingDialogueContext->transitionMapMove;
             context.eventRuntimeState.pendingMapMove->travelTimeApplied = travelTimeApplied;
+            context.eventRuntimeState.pendingMapMove->unpaidCost =
+                paidOnDeparture && walkCost.any() ? std::optional<TravelCost>(walkCost) : std::nullopt;
 
             if (action.kind == EventDialogActionKind::MapTransitionReset
                 && context.eventRuntimeState.pendingMapMove->mapName)
@@ -3390,7 +3388,12 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             return result;
         }
 
-        const bool travelTimeApplied = applyMapTransitionTravelSideEffects(context, **pTransition);
+        // With other players in the world the walk waits for their agreement, and nobody pays before that.
+        const TravelCost walkCost = mapTransitionTravelCost(context, **pTransition);
+        const bool paidOnDeparture =
+            context.pWorldRuntime != nullptr && context.pWorldRuntime->sharedWithOtherPlayers();
+        const bool travelTimeApplied = !paidOnDeparture && context.pParty != nullptr
+            && applyTravelCost(*context.pParty, {}, context.pWorldRuntime, walkCost);
 
         EventRuntimeState::PendingMapMove pendingMapMove = {};
 
@@ -3416,7 +3419,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             if (context.eventRuntimeState.pendingDialogueContext->kind == DialogueContextKind::MapTransition)
             {
                 pendingMapMove.directionDegrees = boundaryTravelHeadingDegrees(
-                    static_cast<MapBoundaryEdge>(context.eventRuntimeState.pendingDialogueContext->sourceId));
+                    mapTransitionSourceEdge(context.eventRuntimeState.pendingDialogueContext->sourceId));
             }
 
             if (!(*pTransition)->useMapStartPosition
@@ -3431,6 +3434,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         }
 
         pendingMapMove.travelTimeApplied = travelTimeApplied;
+        pendingMapMove.unpaidCost =
+            paidOnDeparture && walkCost.any() ? std::optional<TravelCost>(walkCost) : std::nullopt;
 
         logMapTransitionConfirmed(
             context.eventRuntimeState,
@@ -3477,9 +3482,48 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         const uint8_t step = action.id < prompt.answerContinueSteps.size() && prompt.answerContinueSteps[action.id] != 0
             ? prompt.answerContinueSteps[action.id] : prompt.continueStep;
+
+        // A topic's choice (a conversation or a house's): the topic continues at the answer's step and the
+        // conversation goes on, its topics back, as after a typed answer (GameApplication::finishPendingInputPrompt).
+        const std::optional<EventRuntimeState::PendingDialogueContext> talkContext =
+            context.eventRuntimeState.pendingDialogueContext;
+
+        if (talkContext
+            && (talkContext->kind == DialogueContextKind::NpcTalk
+                || talkContext->kind == DialogueContextKind::HouseService))
+        {
+            size_t executionPreviousMessageCount = result.previousMessageCount;
+            executeNpcTopicEvent(context, prompt.eventId, executionPreviousMessageCount, step);
+
+            if (context.eventRuntimeState.pendingDimensionDoorOverlay)
+            {
+                result.shouldCloseActiveDialog = true;
+                return result;
+            }
+
+            if (!context.eventRuntimeState.pendingDialogueContext
+                || samePendingDialogueContext(context.eventRuntimeState.pendingDialogueContext, talkContext))
+            {
+                context.eventRuntimeState.pendingDialogueContext = talkContext;
+            }
+
+            result.shouldOpenPendingEventDialog = true;
+            return result;
+        }
+
         context.eventRuntimeState.messages.clear();
         size_t previousMessageCount = 0;
         const bool executed = context.pWorldRuntime->executeMapEvent(prompt.eventId, previousMessageCount, step);
+
+        // The answer's step moved to a map that asks first (out of a dungeon to an ODM): that question shows next, as
+        // after a typed answer, instead of the move being dropped with the choice box.
+        if (executed && context.eventRuntimeState.pendingDialogueContext
+            && context.eventRuntimeState.pendingDialogueContext->kind == DialogueContextKind::MapTransition)
+        {
+            result.previousMessageCount = 0;
+            result.shouldOpenPendingEventDialog = true;
+            return result;
+        }
 
         if (executed
             && (context.eventRuntimeState.pendingInputPrompt || !context.eventRuntimeState.messages.empty()))
@@ -3503,7 +3547,11 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             return result;
         }
 
-        const HouseEntry *pHouseEntry = context.pHouseTable->get(context.activeEventDialog.sourceId);
+        // A proprietor's talk (houseProprietorResidentNpcId) offers his house's services: they act on the host house.
+        const uint32_t houseId = context.activeEventDialog.isHouseDialog
+            ? context.activeEventDialog.sourceId
+            : currentDialogueHostHouseId(context.eventRuntimeState);
+        const HouseEntry *pHouseEntry = context.pHouseTable->get(houseId);
 
         if (pHouseEntry == nullptr)
         {
@@ -3528,7 +3576,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             const HouseEntry::ExtraExit &extraExit = *pHouseEntry->extraExit;
 
             if (extraExit.requiredQuestBit != 0
-                && (context.pParty == nullptr || !context.pParty->hasQuestBit(extraExit.requiredQuestBit)))
+                && (context.pParty == nullptr || !context.pParty->campaign().hasQuestBit(extraExit.requiredQuestBit)))
             {
                 return result;
             }
@@ -3808,12 +3856,14 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             }
         }
 
-        context.eventRuntimeState.dialogueState.hostHouseId = context.activeEventDialog.sourceId;
+        // Back to the house the service acted on: in a proprietor's talk the dialog's source is his NPC id, which may
+        // be another house's id (Brother Tobit, NPC 4203, reopened house 4203, Emerson's office).
+        context.eventRuntimeState.dialogueState.hostHouseId = pHouseEntry->id;
         setPendingDialogueContext(
             context.eventRuntimeState,
             DialogueContextKind::HouseService,
-            context.activeEventDialog.sourceId,
-            context.activeEventDialog.sourceId);
+            pHouseEntry->id,
+            pHouseEntry->id);
         result.shouldOpenPendingEventDialog = true;
         return result;
     }
@@ -3992,8 +4042,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 context.eventRuntimeState.generatedMercenaryRecruitsByNpcId.erase(invite.npcId);
                 context.eventRuntimeState.unavailableNpcIds.insert(invite.npcId);
                 context.eventRuntimeState.npcHouseOverrides.erase(invite.npcId);
-                context.pParty->setNpcUnavailable(invite.npcId, true);
-                context.pParty->clearNpcHouseOverride(invite.npcId);
+                context.pParty->campaign().setNpcUnavailable(invite.npcId, true);
+                context.pParty->campaign().clearNpcHouseOverride(invite.npcId);
                 context.eventRuntimeState.messages.push_back(
                     Engine::tr("{name} waits at the Adventurer's Inn.", {{"name", recruit.character.name}}));
                 setPendingDialogueContext(
@@ -4021,8 +4071,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             context.eventRuntimeState.generatedMercenaryRecruitsByNpcId.erase(invite.npcId);
             context.eventRuntimeState.unavailableNpcIds.insert(invite.npcId);
             context.eventRuntimeState.npcHouseOverrides.erase(invite.npcId);
-            context.pParty->setNpcUnavailable(invite.npcId, true);
-            context.pParty->clearNpcHouseOverride(invite.npcId);
+            context.pParty->campaign().setNpcUnavailable(invite.npcId, true);
+            context.pParty->campaign().clearNpcHouseOverride(invite.npcId);
             context.eventRuntimeState.messages.push_back(Engine::tr("{name} joined the party.", {{"name", recruit.character.name}}));
             queueUiSound(context.eventRuntimeState, HeroismEffectSoundId);
             playSpeechReaction(context, context.pParty->activeMemberIndex(), SpeechId::HireNpc, true);
@@ -4055,7 +4105,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
             const uint32_t adventurersInnHouseId = defaultAdventurersInnHouseId(context);
             context.eventRuntimeState.npcHouseOverrides[invite.npcId] = adventurersInnHouseId;
-            context.pParty->setNpcHouseOverride(invite.npcId, adventurersInnHouseId);
+            context.pParty->campaign().setNpcHouseOverride(invite.npcId, adventurersInnHouseId);
 
             if (context.pNpcDialogTable != nullptr)
             {
@@ -4092,8 +4142,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         context.eventRuntimeState.unavailableNpcIds.insert(invite.npcId);
         context.eventRuntimeState.npcHouseOverrides.erase(invite.npcId);
-        context.pParty->setNpcUnavailable(invite.npcId, true);
-        context.pParty->clearNpcHouseOverride(invite.npcId);
+        context.pParty->campaign().setNpcUnavailable(invite.npcId, true);
+        context.pParty->campaign().clearNpcHouseOverride(invite.npcId);
         context.eventRuntimeState.messages.push_back(Engine::tr("{name} joined the party.", {{"name", pRosterEntry->name}}));
         queueUiSound(context.eventRuntimeState, HeroismEffectSoundId);
         playSpeechReaction(context, context.pParty->activeMemberIndex(), SpeechId::HireNpc, true);
@@ -4461,8 +4511,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             context.eventRuntimeState.unavailableNpcIds.insert(offer.npcId);
             context.eventRuntimeState.npcHouseOverrides.erase(offer.npcId);
             context.pParty->addHiredNpcFollower(follower);
-            context.pParty->setNpcUnavailable(offer.npcId, true);
-            context.pParty->clearNpcHouseOverride(offer.npcId);
+            context.pParty->campaign().setNpcUnavailable(offer.npcId, true);
+            context.pParty->campaign().clearNpcHouseOverride(offer.npcId);
             if (offer.sourceActorIndex)
             {
                 hideMapActorByIndex(context.eventRuntimeState, *offer.sourceActorIndex);
@@ -4544,7 +4594,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             if (context.pParty != nullptr)
             {
                 context.pParty->removeHiredNpcFollower(npcId);
-                context.pParty->setNpcUnavailable(npcId, false);
+                context.pParty->campaign().setNpcUnavailable(npcId, false);
             }
 
             context.eventRuntimeState.messages.push_back(
@@ -5235,6 +5285,14 @@ GameplayDialogController::CloseDialogRequestResult GameplayDialogController::han
         return result;
     }
 
+    // Escape refuses a choice that waits on its buttons (AskChoiceWithAnswerSteps, a topic's or an event's): its
+    // answers never stay on the screen Escape goes back to (a resident's topic, back to the house's menu).
+    if (context.eventRuntimeState.pendingInputPrompt
+        && context.eventRuntimeState.pendingInputPrompt->kind == EventRuntimeState::PendingInputPrompt::Kind::Choice)
+    {
+        context.eventRuntimeState.pendingInputPrompt.reset();
+    }
+
     if (context.eventRuntimeState.pendingDialogueContext.has_value()
         && context.eventRuntimeState.pendingDialogueContext->kind == DialogueContextKind::MapTransition)
     {
@@ -5318,8 +5376,16 @@ GameplayDialogController::CloseDialogRequestResult GameplayDialogController::han
         ? collectSelectableResidentNpcIds(*pHostHouseEntry, *context.pNpcDialogTable, context.eventRuntimeState)
         : std::vector<uint32_t>{};
 
+    // The proprietor's own talk in a house where he is the only resident is the house's menu: closing it leaves.
+    const bool soleProprietorTalk = pHostHouseEntry != nullptr
+        && context.pNpcDialogTable != nullptr
+        && hostResidentNpcIds.size() == 1
+        && houseProprietorResidentNpcId(*pHostHouseEntry, *context.pNpcDialogTable, context.eventRuntimeState)
+            == hostResidentNpcIds.front();
+
     if (!context.activeEventDialog.isHouseDialog
         && !isResidentSelectionMode
+        && !soleProprietorTalk
         && pHostHouseEntry != nullptr
         && (hostResidentNpcIds.size() > 1
             || (resolveHouseServiceType(*pHostHouseEntry) != HouseServiceType::None && !hostResidentNpcIds.empty())))

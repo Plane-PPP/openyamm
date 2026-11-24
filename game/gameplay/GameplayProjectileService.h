@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/gameplay/PlayerId.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 
 #include <cstddef>
@@ -27,6 +28,18 @@ class SpriteFrameTable;
 class GameplayProjectileService
 {
 public:
+    // The player a party's missiles belong to that are spawned from now on (ProjectileState::sourcePlayer): a
+    // co-op host's game sets it while it acts for a guest.
+    void setSpawningPlayer(PlayerId player)
+    {
+        m_spawningPlayer = player;
+    }
+
+    PlayerId spawningPlayer() const
+    {
+        return m_spawningPlayer;
+    }
+
     enum class MonsterAttackAbility
     {
         Attack1,
@@ -79,6 +92,9 @@ public:
         SourceKind sourceKind = SourceKind::Actor;
         uint32_t sourceId = 0;
         uint32_t sourcePartyMemberIndex = 0;
+        // The player whose party shot it (a party's missile). It lands frames after it was shot, when the host's
+        // game no longer acts for that player: the hit, its numbers and its kill are worked out for this player.
+        PlayerId sourcePlayer = LocalPlayer;
         int16_t sourceMonsterId = 0;
         bool fromSummonedMonster = false;
         MonsterAttackAbility ability = MonsterAttackAbility::Attack1;
@@ -100,6 +116,9 @@ public:
         float sourceX = 0.0f;
         float sourceY = 0.0f;
         float sourceZ = 0.0f;
+        // How far the target stood from the source when it was loosed (a monster's missile at the party: a solo run's
+        // Vanguard talent).
+        float firedDistance = 0.0f;
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;
@@ -138,6 +157,10 @@ public:
         // cooldown_per_hit off their cooldowns (GameplayCombatController); the attack's arrows share it, so the attack
         // counts once. An arrow that leaps on (chainArrow) drops it: its chained hits count nothing. Not saved.
         std::shared_ptr<bool> hitCredit;
+        // Its blast (Carnage) hurts the monsters it reaches without their hit reaction (no flinch, no knockback); the
+        // monster it strikes still flinches. A solo run's Multishot arrows, so a volley's blasts do not lock a group
+        // down (user, 2026-11-17). Not saved.
+        bool quietBlast = false;
         // An event's missile (evt.FireMissile): it passes the party, whose damage the event deals itself, and bursts
         // at its target when its flight time ends unless it strikes something first; saved.
         bool eventMissile = false;
@@ -232,11 +255,12 @@ public:
         int blastMaximumDamage = 0;
         // Its damage was a critical hit (ProjectileState::critical).
         bool critical = false;
-        // ProjectileState::chainLeft, chainShare, chainRadius and hitCredit.
+        // ProjectileState::chainLeft, chainShare, chainRadius, hitCredit and quietBlast.
         uint8_t chainCount = 0;
         float chainShare = 0.0f;
         float chainRadius = 0.0f;
         std::shared_ptr<bool> hitCredit;
+        bool quietBlast = false;
         // An event's missile (ProjectileState::eventMissile), reaching its target in flightSeconds (0: at the
         // object's speed).
         bool eventMissile = false;
@@ -490,6 +514,8 @@ public:
         // A destructible decoration the missile struck (an indoor entity index; kind World, no face).
         size_t worldEntityIndex = static_cast<size_t>(-1);
         size_t actorIndex = static_cast<size_t>(-1);
+        // For a hit on a party: the player whose party it is.
+        PlayerId partyPlayer = LocalPlayer;
         uint32_t actorId = 0;
         int targetArmorClass = 0;
         int damageMultiplier = 1;
@@ -845,6 +871,14 @@ public:
     // stepIndex (from 0) sees the party that far from its position at the previous frame to its position now, so a
     // missile homing on it steers the same at any frame rate (a lock tested per step would otherwise see two steps'
     // movement in one at 30 fps).
+    // Whether an area impact reaches a party standing at the point (its feet), as buildProjectileAreaImpact tests the
+    // world's own party: for a co-op session's other parties.
+    static bool areaImpactReachesParty(
+        const GameplayWorldPoint &partyFeet,
+        float partyCollisionRadius,
+        float partyCollisionHeight,
+        const GameplayWorldPoint &impact,
+        float impactRadius);
     static GameplayWorldPoint partyPositionAtStep(
         const GameplayWorldPoint &previousFrame,
         const GameplayWorldPoint &currentFrame,
@@ -1044,6 +1078,7 @@ private:
         const ProjectileHoming &homing,
         const std::function<bool(const ProjectileState &)> &fromSource);
 
+    PlayerId m_spawningPlayer = LocalPlayer;
     uint32_t m_nextProjectileId = 1;
     uint32_t m_nextProjectileImpactId = 1;
     uint32_t m_nextFireSpikeTrapId = 1;

@@ -722,6 +722,50 @@ TEST_CASE("outdoor fluid BModel floors do not drown the party")
     CHECK(partyRuntime.movementStatusText().empty());
 }
 
+TEST_CASE("a walker's deck over water is the model floor under its centre near its feet")
+{
+    // P2 F24 (X1 p1): the water rule kept walkers off water tiles unless their body's support state was a model
+    // face; a guard whose state on a humped bridge deck had turned airborne a hair under its surface was held on the
+    // deck as over water for good. The rule now asks the map: a non-fluid model floor under the point, from 32 under
+    // the feet to the given rise over them (a step's centre within a small reach, a standing body within its radius).
+    SyntheticOutdoorWaterBoundaryScenario scenario = createSyntheticOutdoorWaterBoundaryScenario();
+    constexpr int DeckZ = 48;
+    const int deckEastX = static_cast<int>(scenario.waterX);
+    const int deckY = static_cast<int>(scenario.waterY);
+    OpenYAMM::Game::OutdoorBModel deck = {};
+    deck.name = "deck_test";
+    deck.vertices = {
+        {deckEastX - 256, deckY - 128, DeckZ},
+        {deckEastX, deckY - 128, DeckZ},
+        {deckEastX, deckY + 128, DeckZ},
+        {deckEastX - 256, deckY + 128, DeckZ}
+    };
+    OpenYAMM::Game::OutdoorBModelFace face = {};
+    face.vertexIndices = {0, 1, 2, 3};
+    face.polygonType = 0x3;
+    deck.faces.push_back(face);
+    scenario.mapData.bmodels.push_back(std::move(deck));
+    OpenYAMM::Game::OutdoorMovementController movementController(
+        scenario.mapData,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt);
+    const float deckX = scenario.waterX - 64.0f;
+    const float pastEdgeX = scenario.waterX + 30.0f;
+    const float y = scenario.waterY;
+
+    // Feet a hair under the deck (the stuck guard) and on it.
+    CHECK(movementController.hasNonFluidBModelFloorUnder(deckX, y, DeckZ - 2.0f, 8.0f, 32.0f));
+    CHECK(movementController.hasNonFluidBModelFloorUnder(deckX, y, DeckZ + 1.0f, 8.0f, 32.0f));
+    // A step whose centre leaves the deck over the water has no floor, though a body's disc there still overlaps it.
+    CHECK_FALSE(movementController.hasNonFluidBModelFloorUnder(pastEdgeX, y, DeckZ + 1.0f, 8.0f, 32.0f));
+    CHECK(movementController.hasNonFluidBModelFloorUnder(pastEdgeX, y, DeckZ + 1.0f, 40.0f, 32.0f));
+    // A walker in the water under the deck, or one far over it, is not on it.
+    CHECK_FALSE(movementController.hasNonFluidBModelFloorUnder(deckX, y, DeckZ - 48.0f, 8.0f, 32.0f));
+    CHECK_FALSE(movementController.hasNonFluidBModelFloorUnder(deckX, y, DeckZ + 64.0f, 8.0f, 32.0f));
+}
+
 TEST_CASE("outdoor Levitate keeps the party off lava and water damage")
 {
     // The original MM8 skips both damages while any member levitates; Levitate here also gives Water Walk, so
@@ -793,6 +837,57 @@ TEST_CASE("outdoor running recovery penalty applies only while the party runs")
     input = {};
     input.forward = true;
     CHECK_FALSE(movementDriver.isRunningMovement(input));
+}
+
+TEST_CASE("outdoor falls of the same height land and hurt whichever step ends them")
+{
+    // D7's falls (Xeen, 2026-11-21): a step that stopped within the snap height above the ground ended the fall
+    // without its landing, so a fall from exactly 850 above did no damage while one from 858 did.
+    const SyntheticOutdoorWaterBoundaryScenario boundary = createSyntheticOutdoorWaterBoundaryScenario();
+    OpenYAMM::Game::OutdoorMovementController movementController(
+        boundary.mapData,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt);
+    const OpenYAMM::Game::OutdoorMoveState ground =
+        movementController.initializeState(boundary.landX, boundary.landY, 0.0f);
+
+    for (int offset = 0; offset < 32; ++offset)
+    {
+        CAPTURE(offset);
+        OpenYAMM::Game::OutdoorMovementDriver movementDriver(
+            boundary.mapData,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt);
+        OpenYAMM::Game::ItemTable itemTable = {};
+        OpenYAMM::Game::OutdoorPartyRuntime partyRuntime(std::move(movementDriver), itemTable);
+        partyRuntime.initialize(boundary.landX, boundary.landY, 0.0f, true);
+
+        OpenYAMM::Game::OutdoorPartyRuntime::Snapshot snapshot = partyRuntime.snapshot();
+        snapshot.movementState = ground;
+        snapshot.movementState.footZ = ground.footZ - 1.0f + 850.0f + static_cast<float>(offset) * 0.375f;
+        snapshot.movementState.airborne = true;
+        snapshot.movementState.verticalVelocity = 0.0f;
+        snapshot.movementState.fallStartZ = snapshot.movementState.footZ;
+        snapshot.partyMovementState = {};
+        partyRuntime.restoreSnapshot(snapshot);
+
+        const int initialHealth = partyRuntime.party().totalHealth();
+
+        for (int i = 0; i < 40 && partyRuntime.movementState().airborne; ++i)
+        {
+            partyRuntime.update(OpenYAMM::Game::OutdoorMovementInput{}, 0.1f);
+        }
+
+        partyRuntime.update(OpenYAMM::Game::OutdoorMovementInput{}, 0.1f);
+        CHECK_FALSE(partyRuntime.movementState().airborne);
+        CHECK(partyRuntime.movementState().footZ == doctest::Approx(ground.footZ));
+        CHECK_GT(partyRuntime.party().lastFallDamageDistance(), 840.0f);
+        CHECK_LT(partyRuntime.party().totalHealth(), initialHealth);
+    }
 }
 
 TEST_CASE("outdoor water landing still applies fall damage")
@@ -2781,6 +2876,38 @@ TEST_CASE("liquids scoped to a world override the shared ones there alone and sh
         "wade_speed: 0.6, match: {texture_names: [x]}}\n", error));
 }
 
+TEST_CASE("Xeen's mirror liquid is a reflecting face of that world alone")
+{
+    OpenYAMM::Engine::AssetFileSystem assetFileSystem;
+    REQUIRE(initializeTestAssetFileSystem(assetFileSystem));
+    const std::optional<std::string> liquidYaml = assetFileSystem.readTextFile("engine/liquids/liquids.yml");
+    REQUIRE(liquidYaml.has_value());
+    OpenYAMM::Game::LiquidTable shipped;
+    std::string error;
+    REQUIRE_MESSAGE(shipped.loadFromYaml(*liquidYaml, error), error);
+
+    const OpenYAMM::Game::LiquidDefinition *pMirror = shipped.forWorld("xeen").findMatch("xmirror", 0, false);
+    REQUIRE(pMirror != nullptr);
+    CHECK(pMirror->kind == OpenYAMM::Game::LiquidKind::Mirror);
+    CHECK(pMirror->reflects);
+    CHECK_FALSE(pMirror->shallow);
+    // The textured silvered glass of the dead mirrors stays a picture; other worlds have no mirror surfaces.
+    CHECK(shipped.forWorld("xeen").findMatch("xkmirror", 0, false) == nullptr);
+    for (const char *pWorld : {"mm6", "mm7", "mm8", "mm9"})
+    {
+        CHECK(shipped.forWorld(pWorld).findMatch("xmirror", 0, false) == nullptr);
+    }
+
+    // A mirror is an opaque, reflecting liquid of faces only.
+    OpenYAMM::Game::LiquidTable bad;
+    for (const char *pExtra : {"applies_to: [terrain]", "applies_to: [face], opacity: 0.5",
+             "applies_to: [face], depth: shallow", "applies_to: [face], reflections: false"})
+    {
+        CHECK_FALSE(bad.loadFromYaml(std::string("liquids:\n  - {id: m, kind: mirror, color: [1, 2, 3], ") + pExtra
+            + ", match: {texture_names: [m]}}\n", error));
+    }
+}
+
 TEST_CASE("liquid opacity defaults to opaque and makes see-through faces")
 {
     OpenYAMM::Engine::AssetFileSystem assetFileSystem;
@@ -4172,6 +4299,63 @@ TEST_CASE("artifacts count as hardened")
     CHECK(OpenYAMM::Game::ItemRuntime::isHardened(true, *pRegularWeapon));
 }
 
+TEST_CASE("break item candidates are regular equipment of every world's rows")
+{
+    // MM8 breaks its items 1-151 (weapons, armour, jewellery); the merged base's MM7 (803+) and MM6 (1603+) rows, which
+    // most loot in MM6, MM7 and Xeen comes from, are regular equipment too. Wands, potions and artifacts are not.
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    const auto regular = [&](uint32_t itemId)
+    {
+        const OpenYAMM::Game::ItemDefinition *pItem = gameData.itemTable.get(itemId);
+        REQUIRE(pItem != nullptr);
+        return OpenYAMM::Game::ItemRuntime::isRegularEquipment(*pItem);
+    };
+
+    CHECK(regular(1));
+    CHECK(regular(137));
+    CHECK(regular(151));
+    CHECK(regular(803));
+    CHECK(regular(1603));
+    CHECK_FALSE(regular(152));
+    CHECK_FALSE(regular(222));
+    CHECK_FALSE(regular(500));
+}
+
+TEST_CASE("monster break item breaks an MM6 row of the merged base")
+{
+    constexpr uint32_t ActorId = 83;
+    constexpr uint32_t Mm6LongswordId = 1603;
+
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+
+    OpenYAMM::Game::Party party = makeMonsterSpecialAttackTestParty();
+    party.setItemTable(&gameData.itemTable);
+    party.setItemEnchantTables(&gameData.standardItemEnchantTable, &gameData.specialItemEnchantTable);
+
+    OpenYAMM::Game::Character *pMember = party.member(0);
+    REQUIRE(pMember != nullptr);
+    pMember->inventory.clear();
+    pMember->equipment.mainHand = Mm6LongswordId;
+
+    MonsterSpecialAttackTestWorldRuntime world = {};
+    world.actorInfo = OpenYAMM::Game::GameplayCombatActorInfo{
+        .actorId = ActorId,
+        .monsterLevel = 100,
+        .attackBonus = 1000,
+        .specialAttackKind = OpenYAMM::Game::MonsterSpecialAttackKind::BreakAny,
+        .specialAttackLevel = 1,
+        .displayName = "Item Breaker",
+    };
+
+    OpenYAMM::Game::GameplayCombatController controller = {};
+    controller.recordMonsterMeleeImpact(ActorId, 0, 1000, OpenYAMM::Game::CombatDamageType::Physical,
+        OpenYAMM::Game::GameplayActorAttackAbility::Attack2);
+    OpenYAMM::Game::GameplayCombatController::PendingCombatEventContext context{party, &world, nullptr};
+    controller.handleAndClearPendingCombatEvents(context);
+
+    CHECK(pMember->equipmentRuntime.mainHand.broken);
+}
+
 TEST_CASE("dispel magic clears party and character buffs through shared party helper")
 {
     OpenYAMM::Game::Party party = {};
@@ -4296,6 +4480,22 @@ TEST_CASE("the party aims at a 3D model shorter than its collision height")
     // Below the feet counts from the feet; an unknown model keeps the collision height's rule.
     CHECK(GameMechanics::actorTargetHeight(300, -50.0f, 100.0f) == doctest::Approx(60.0f));
     CHECK(GameMechanics::actorTargetHeight(300, 0.0f, 0.0f) == doctest::Approx(180.0f));
+}
+
+TEST_CASE("a monster launches from its 3D model's body, not from the air above a shorter model (F4-R1)")
+{
+    using OpenYAMM::Game::GameMechanics;
+    // MM6's Air Elemental C: 240 tall on a 148 model, launched at 168 outdoors before (0.7 x 240); 0.7 x 148 now.
+    CHECK(GameMechanics::actorLaunchHeight(240, 0.7f, 148.0f) == doctest::Approx(103.6f));
+    // Its A and B (168 tall): 118 before, the same 104 now.
+    CHECK(GameMechanics::actorLaunchHeight(168, 0.7f, 148.0f) == doctest::Approx(103.6f));
+    // MM7's Elemental Water A: 180 tall on a 177 model, 126 before.
+    CHECK(GameMechanics::actorLaunchHeight(180, 0.7f, 177.0f) == doctest::Approx(123.9f));
+    // Indoors, a spell at half the body: 0.5 x 148.
+    CHECK(GameMechanics::actorLaunchHeight(240, 0.5f, 148.0f) == doctest::Approx(74.0f));
+    // A taller model, a sprite (no model) or models off keep the collision height's rule.
+    CHECK(GameMechanics::actorLaunchHeight(474, 0.7f, 524.0f) == doctest::Approx(331.8f));
+    CHECK(GameMechanics::actorLaunchHeight(240, 0.7f, 0.0f) == doctest::Approx(168.0f));
 }
 
 TEST_CASE("a party shot blocked low on its target aims higher where the line is clear")
@@ -8787,12 +8987,12 @@ TEST_CASE("event runtime queues qbit portrait fx only for visible quest entries"
     CHECK(runtimeState.pendingSounds.empty());
 
     OpenYAMM::Game::EventRuntime::addVariableValue(runtimeState, internalQbit, 777, &party, {0});
-    CHECK(party.hasQuestBit(777));
+    CHECK(party.campaign().hasQuestBit(777));
     CHECK(runtimeState.portraitFxRequests.empty());
     CHECK(runtimeState.pendingSounds.empty());
 
     OpenYAMM::Game::EventRuntime::subtractVariableValue(runtimeState, visibleQbit, 5, &party, {0});
-    CHECK_FALSE(party.hasQuestBit(5));
+    CHECK_FALSE(party.campaign().hasQuestBit(5));
     CHECK(runtimeState.portraitFxRequests.empty());
     CHECK(runtimeState.pendingSounds.empty());
 }
@@ -9365,7 +9565,7 @@ TEST_CASE("lua event runtime onload sees party quest bits")
 
     OpenYAMM::Game::Party party = {};
     party.seed(createRegressionPartySeed());
-    party.setQuestBit(36, true);
+    party.campaign().setQuestBit(36, true);
 
     OpenYAMM::Game::EventRuntime eventRuntime = {};
     OpenYAMM::Game::EventRuntimeState runtimeState = {};
@@ -9402,14 +9602,14 @@ TEST_CASE("lua event runtime onload sets party quest bits")
 
     OpenYAMM::Game::Party party = {};
     party.seed(createRegressionPartySeed());
-    party.setQuestBit(QBitId, false);
+    party.campaign().setQuestBit(QBitId, false);
 
     OpenYAMM::Game::EventRuntime eventRuntime = {};
     OpenYAMM::Game::EventRuntimeState runtimeState = {};
 
     REQUIRE(eventRuntime.executeOnLoadEvents(scriptedProgram, std::nullopt, runtimeState, &party, nullptr));
     CHECK_EQ(runtimeState.localOnLoadEventsExecuted, 1u);
-    CHECK(party.hasQuestBit(QBitId));
+    CHECK(party.campaign().hasQuestBit(QBitId));
 }
 
 TEST_CASE("dagger wound onload seeds starting roster quest bits")
@@ -9430,10 +9630,10 @@ TEST_CASE("dagger wound onload seeds starting roster quest bits")
         &party,
         nullptr));
     CHECK_EQ(runtimeState.localOnLoadEventsExecuted, 4u);
-    CHECK(party.hasQuestBit(226));
-    CHECK(party.hasQuestBit(306));
-    CHECK(party.hasQuestBit(401));
-    CHECK(party.hasQuestBit(407));
+    CHECK(party.campaign().hasQuestBit(226));
+    CHECK(party.campaign().hasQuestBit(306));
+    CHECK(party.campaign().hasQuestBit(401));
+    CHECK(party.campaign().hasQuestBit(407));
 }
 
 TEST_CASE("lua event runtime resolves MM8 invisible event variable alias")
@@ -9694,6 +9894,42 @@ TEST_CASE("dungeon transition dialog uses trans table title text icon and transi
     REQUIRE_EQ(dialog.actions.size(), 2u);
     CHECK_EQ(dialog.actions[0].kind, OpenYAMM::Game::EventDialogActionKind::MapTransitionConfirm);
     CHECK_EQ(dialog.actions[1].kind, OpenYAMM::Game::EventDialogActionKind::MapTransitionCancel);
+}
+
+TEST_CASE("transition dialog shows MMerge's destination text and keeps the house's title")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    OpenYAMM::Game::EventRuntimeState runtimeState = {};
+    OpenYAMM::Game::EventRuntimeState::PendingMapMove mapMove = {};
+    mapMove.mapName = std::string("oracle.blv");
+
+    // Free Haven's oracle door names house 451 (The Oracle), whose trans.txt line belongs to the Control Center.
+    OpenYAMM::Game::EventRuntimeState::PendingDialogueContext context = {};
+    context.kind = OpenYAMM::Game::DialogueContextKind::MapTransition;
+    context.transitionMapMove = mapMove;
+    context.transitionTextId = 451;
+    context.transitionImageId = 9;
+    runtimeState.pendingDialogueContext = context;
+
+    const OpenYAMM::Game::EventDialogContent dialog = OpenYAMM::Game::buildEventDialogContent(
+        runtimeState,
+        0,
+        true,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        &gameData.transitionTable,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        0.0f);
+
+    REQUIRE(dialog.isActive);
+    REQUIRE_FALSE(dialog.lines.empty());
+    CHECK(dialog.lines.front().find("The Oracle has provided") != std::string::npos);
+    CHECK(dialog.lines.front().find("Control Center") == std::string::npos);
 }
 
 TEST_CASE("merged dungeon transition dialog uses world house movie metadata before shared title fallback")
@@ -11820,7 +12056,7 @@ TEST_CASE("event reputation variable mutates runtime location reputation")
         targetMemberIndices);
     CHECK_EQ(runtimeState.currentLocationReputation, 12);
     CHECK_EQ(
-        party.eventVariableValue(
+        party.campaign().eventVariableValue(
             static_cast<uint16_t>(OpenYAMM::Game::EvtVariable::ReputationInCurrentLocation)),
         0);
 

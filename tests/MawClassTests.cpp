@@ -6,6 +6,7 @@
 #include "game/rules/maw/MawClassRules.h"
 #include "game/rules/maw/MawClassSpells.h"
 #include "game/rules/maw/MawCombatFormulas.h"
+#include "game/rules/maw/MawCombatRules.h"
 #include "game/rules/maw/MawPromotions.h"
 #include "game/rules/maw/MawRules.h"
 #include "game/tables/ClassMultiplierTable.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -209,7 +211,24 @@ TEST_CASE("MAW class perks feed the combat numbers")
     const MawAscension shamanCost = mawAscension(shaman, MawAscensionUse::Cost);
     CHECK(shamanCost.skill == doctest::Approx(60.0 / 7));
     CHECK_EQ(shamanCost.mastery, SkillMastery::Grandmaster);
-    CHECK(mawAscension(shaman, MawAscensionUse::Damage).skill == doctest::Approx(0));
+    CHECK(mawAscension(shaman, MawAscensionUse::Damage).skill == doctest::Approx(60.0 / 7));
+    CHECK(mawAscension(shaman, MawAscensionUse::CastTime).skill == doctest::Approx(0));
+    CHECK(mawAscension(shaman, MawAscensionUse::CrowdControl).skill == doctest::Approx(0));
+
+    // The spell book and the roll read the same dice: a Shaman's grow with the seven schools (DEVIATIONS 199).
+    SpellEntry fireBolt;
+    fireBolt.id = 2;
+    fireBolt.damageDiceMin = 1;
+    fireBolt.damageDiceSides = 30;
+    fireBolt.damageBase = 100;
+    const std::optional<MawSpellDice> shamanDice = mawCasterSpellDice(rules, shaman, fireBolt);
+    REQUIRE(shamanDice);
+    const MawSpellDice ascended = mawAscendedSpellDice({1, 30, 100}, 60.0 / 7);
+    const MawSpellDice plain = mawAscendedSpellDice({1, 30, 100}, 0);
+    CHECK_EQ(shamanDice->diceMax, ascended.diceMax);
+    CHECK_EQ(shamanDice->add, ascended.add);
+    CHECK_GT(shamanDice->diceMax, plain.diceMax);
+    CHECK_GT(shamanDice->add, plain.add);
 
     Character elementalist = member("Elementalist", 20);
     elementalist.skills["FireMagic"] = {"FireMagic", 9, SkillMastery::Expert};
@@ -342,13 +361,13 @@ TEST_CASE("MAW promotions follow the quest bits of every world")
     const MawClassRules &classRules = static_cast<const MawClassRules &>(rules.gameRules().classes);
 
     // A Seraphim's mid step comes from the first-tier bits of the Cleric line.
-    party.setQuestBit(1607, true);
+    party.campaign().setQuestBit(1607, true);
     classRules.updatePromotions(party);
     CHECK_EQ(party.members()[0].className, "Cleric");
     CHECK_EQ(party.members()[1].className, "Angel");
 
     // The Cleric kind's promotion on one world makes both final, one of the Cleric's two final classes.
-    party.setQuestBit(1609, true);
+    party.campaign().setQuestBit(1609, true);
     classRules.updatePromotions(party);
     const std::string cleric = party.members()[0].className;
     CHECK((cleric == "PriestLight" || cleric == "PriestDark"));
@@ -356,7 +375,7 @@ TEST_CASE("MAW promotions follow the quest bits of every world")
     CHECK_EQ(rules.promotionWorlds(2), 1);
 
     // The pick is fixed per character; a second world makes the final classes Elder.
-    party.setQuestBit(1546, true);
+    party.campaign().setQuestBit(1546, true);
     classRules.updatePromotions(party);
     CHECK_EQ(party.members()[0].className, cleric);
     CHECK_EQ(rules.promotionWorlds(2), 2);
@@ -390,12 +409,12 @@ TEST_CASE("MAW counts Chedian's promotion quests as a fourth world")
     const MawClassRules &classRules = static_cast<const MawClassRules &>(rules.gameRules().classes);
 
     // MM9's Healer quest (key 213) is the Seraphim's first step, as MM6's and MM7's first tiers are.
-    party.setQuestBit(90213, true);
+    party.campaign().setQuestBit(90213, true);
     classRules.updatePromotions(party);
     CHECK_EQ(party.members()[1].className, "Angel");
 
     // MM9's Priest quest (key 261) is the Cleric kind's promotion on Chedian: both lines final, one world.
-    party.setQuestBit(90261, true);
+    party.campaign().setQuestBit(90261, true);
     classRules.updatePromotions(party);
     CHECK_EQ(party.members()[0].className, "PriestLight");
     CHECK_EQ(party.members()[1].className, "Archangel");
@@ -410,7 +429,7 @@ TEST_CASE("MAW counts Chedian's promotion quests as a fourth world")
     priest.manaPerLevel = 4;
     for (uint32_t bit : {1649u, 1609u})
     {
-        party.setQuestBit(bit, true);
+        party.campaign().setQuestBit(bit, true);
     }
     classRules.updatePromotions(party);
     const auto perLevel = [&classRules, &priest]()
@@ -422,9 +441,75 @@ TEST_CASE("MAW counts Chedian's promotion quests as a fourth world")
     };
     CHECK_EQ(rules.promotionWorlds(2), 3);
     CHECK_EQ(perLevel(), 6);
-    party.setQuestBit(1546, true);
+    party.campaign().setQuestBit(1546, true);
     classRules.updatePromotions(party);
     CHECK_EQ(rules.promotionWorlds(2), 4);
+    CHECK_EQ(perLevel(), 7);
+}
+
+TEST_CASE("MAW counts Xeen's promotion quests as a fifth world, Supreme from any four")
+{
+    MawPromotionData promotions;
+    std::string error;
+    REQUIRE_MESSAGE(promotions.loadFromYaml("kinds:\n"
+                                            "  2: {mm6: [1649], mm7: [1609], mm8: 1546, mm8_award: 31, mm9: [90261], "
+                                            "xeen: [113127, 113462]}\n"
+                                            "  17: {mm6: [1649], mm7: [1609], mm8: 1546, mm8_award: 31, mm9: [90261], "
+                                            "xeen: [113127, 113462], mid: [1647, 1607, 90213, 112201]}\n",
+                        error),
+        error);
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, MawItemData{}, promotions);
+    ClassSkillTable classes;
+    REQUIRE(classes.loadClassMetadataFromRows({{"#", "Kind", "Step", "Note"}, {"4", "2", "0", "Cleric"},
+        {"5", "2", "1", "Priest"}, {"6", "2", "2", "Priest of the Light"}, {"53", "17", "0", "Seraphim"},
+        {"54", "17", "1", "Angel"}, {"55", "17", "2", "Archangel"}}));
+    PartySeed seed;
+    seed.members = {member("Cleric", 5), member("Seraphim", 5)};
+    Party party;
+    party.seed(seed);
+    party.setClassSkillTable(&classes);
+    const MawClassRules &classRules = static_cast<const MawClassRules &>(rules.gameRules().classes);
+
+    // Xeen's Seasons Relay (T1-C, q-c10.done) is the Seraphim's first step.
+    party.campaign().setQuestBit(112201, true);
+    classRules.updatePromotions(party);
+    CHECK_EQ(party.members()[0].className, "Cleric");
+    CHECK_EQ(party.members()[1].className, "Angel");
+
+    // Sandro's Heart (Priest of the Dark, q-d23.released) is the Cleric kind's promotion on Xeen: one world.
+    party.campaign().setQuestBit(113462, true);
+    classRules.updatePromotions(party);
+    CHECK_EQ(party.members()[0].className, "PriestLight");
+    CHECK_EQ(party.members()[1].className, "Archangel");
+    CHECK_EQ(rules.promotionWorlds(2), 1);
+
+    ClassMultiplierEntry priest = {};
+    priest.className = "PriestLight";
+    priest.classKind = 2;
+    priest.promotionStep = 2;
+    priest.healthPerLevel = 4;
+    priest.manaPerLevel = 4;
+    const auto perLevel = [&classRules, &priest]()
+    {
+        Character probe = member("PriestLight", 10);
+        const int at10 = *classRules.baseMaxHealth(probe, priest);
+        probe.level = 11;
+        return *classRules.baseMaxHealth(probe, priest) - at10;
+    };
+
+    // Any four of the five worlds make Supreme (x1.75): MM6, MM7, MM9 and Xeen without MM8.
+    for (uint32_t bit : {1649u, 1609u, 90261u})
+    {
+        party.campaign().setQuestBit(bit, true);
+    }
+    classRules.updatePromotions(party);
+    CHECK_EQ(rules.promotionWorlds(2), 4);
+    CHECK_EQ(perLevel(), 7);
+
+    // The fifth adds nothing: the factor stays x1.75.
+    party.campaign().setQuestBit(1546, true);
+    classRules.updatePromotions(party);
+    CHECK_EQ(rules.promotionWorlds(2), 5);
     CHECK_EQ(perLevel(), 7);
 }
 
@@ -600,7 +685,7 @@ TEST_CASE("MAW's Vampiric Aura and Fire Aura show on every member while held")
 
     // Empower Magic has no buff slot: the rules list it while it is held.
     CHECK(spells.heldAurasWithoutBuffSlot(party).empty());
-    rules.state().auraHolders[28] = 0;
+    party.rulesetState().auraHolders[28] = 0;
     CHECK_EQ(spells.heldAurasWithoutBuffSlot(party), std::vector<uint32_t>{28});
     CHECK(standardGameRules().spells.heldAurasWithoutBuffSlot(party).empty());
 }
@@ -765,4 +850,57 @@ TEST_CASE("MAW shows combo points and Elementalist stacks at the portraits and n
     CHECK_EQ(skills.skillDisplayName(dragon, "Dodging"), "Scales");
     CHECK_EQ(skills.skillDisplayName(knight, "Unarmed"), "Unarmed");
     CHECK_EQ(skills.skillDisplayName(member("Dragon", 20), "Unarmed"), "Unarmed");
+}
+
+TEST_CASE("MAW Enlightenment grows a Shaman's small pool by its share, floored (Discord, 2026-11-23)")
+{
+    // Shaman: 10 SP + 1 per level (MAW's Class HP SP.txt), Personality 14 (effect 0): 10 + 1 x 20 = 30 SP. Enlightenment
+    // adds 0.5/1/1.5/2 % of the pool per point (MawCore Formulas.enlightenmentManaPerSkill, zzMaw-Items.lua addMana),
+    // the pool counting Meditation x mastery x SP per level; the result is a whole number of spell points.
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    ClassMultiplierTable multipliers;
+    REQUIRE(multipliers.loadFromRows(
+        {{"Class", "HP base", "HP", "SP base", "SP", "Mode"}, {"Shaman", "25", "3", "10", "1", "Mixed"}}));
+    rules.setClassMultiplierTable(&multipliers);
+    const ClassMultiplierEntry *pShaman = multipliers.get("Shaman");
+    REQUIRE(pShaman != nullptr);
+
+    Character shaman = member("Shaman", 20);
+    shaman.personality = 14;
+    const int pool = rules.gameRules().classes.baseMaxSpellPoints(shaman, *pShaman).value_or(0);
+    REQUIRE_EQ(pool, 30);
+    const auto enlightened = [&](uint32_t level, SkillMastery mastery)
+    {
+        Character copy = shaman;
+        copy.maxSpellPoints = pool;
+        copy.skills["Enlightenment"] = {"Enlightenment", level, mastery};
+        rules.gameRules().skills.applyResourceBonuses(copy);
+        return copy.magicalBonuses.maxSpellPoints;
+    };
+
+    // Novice 5: 30 x 2.5 % = 0.75, floored to nothing; Expert 8: 2.4 -> 2; Master 12: 5.4 -> 5.
+    CHECK_EQ(enlightened(5, SkillMastery::Normal), 0);
+    CHECK_EQ(enlightened(8, SkillMastery::Expert), 2);
+    CHECK_EQ(enlightened(12, SkillMastery::Master), 5);
+
+    // Meditation 4 at Expert joins the base: (30 + 1 x 4 x 2) x 18 % = 6.84 -> 6.
+    shaman.skills["Meditation"] = {"Meditation", 4, SkillMastery::Expert};
+    CHECK_EQ(rules.classRules().enlightenmentMeditationMana(shaman), doctest::Approx(8));
+    CHECK_EQ(enlightened(12, SkillMastery::Master), 6);
+}
+
+TEST_CASE("MAW Shaman spell damage counts the items' Ascension on top of the schools (Discord, 2026-11-23)")
+{
+    // MAW's damage roll reads Learning with its item bonuses (zzMaw-Spells.lua:1978-1993); a Shaman has Learning only
+    // from items (Legendary 25: +10). Costs and heals keep the schools' share alone, as MAW's ascension() does.
+    Character shaman = member("Shaman", 20);
+    shaman.skills["FireMagic"] = {"FireMagic", 14, SkillMastery::Expert};
+    shaman.skills["BodyMagic"] = {"BodyMagic", 7, SkillMastery::Expert};
+    CHECK(mawAscension(shaman, MawAscensionUse::Damage).skill == doctest::Approx(3));
+
+    shaman.itemSkillBonuses["Learning"] = 10;
+    CHECK(mawAscension(shaman, MawAscensionUse::Damage).skill == doctest::Approx(13));
+    CHECK(mawAscension(shaman, MawAscensionUse::Cost).skill == doctest::Approx(3));
+    CHECK(mawAscension(shaman, MawAscensionUse::Heal).skill == doctest::Approx(3));
+    CHECK(mawAscension(shaman, MawAscensionUse::CastTime).skill == doctest::Approx(10));
 }

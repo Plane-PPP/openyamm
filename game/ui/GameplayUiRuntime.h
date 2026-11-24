@@ -400,6 +400,11 @@ public:
     // The doll a member shows: its character_data row, with the body and hands of its imported portrait where they
     // are installed (game/party/CustomPortraits.h).
     CharacterDollEntry characterDollEntry(const CharacterDollEntry &base, const Character &character) const;
+    // The resting face of a character known only by its portrait picture (another player of a co-op session).
+    static std::string portraitTextureNameForPicture(uint32_t pictureId);
+    // A character's resting face: its own portrait art where it names one (Character::portraitTextureName, as the
+    // characters of the selection table do), else the picture of its number.
+    static std::string restingPortraitTextureName(const std::string &portraitTextureName, uint32_t pictureId);
     bool triggerPortraitFxAnimation(const std::string &animationName, const std::vector<size_t> &memberIndices);
     void triggerPortraitSpellFx(const PartySpellCastResult &result);
     const PortraitFxEventEntry *findPortraitFxEvent(PortraitFxEventKind kind) const;

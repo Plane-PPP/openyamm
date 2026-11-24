@@ -451,7 +451,7 @@ TEST_CASE("MAW shows monster resistances as its damage reads them and held auras
     Party party;
     party.seed(seed);
     CHECK_FALSE(rules.gameRules().spells.heldBuffText(party, 86).has_value());
-    rules.state().auraHolders[86] = 0;
+    party.rulesetState().auraHolders[86] = 0;
     CHECK_EQ(rules.gameRules().spells.heldBuffText(party, 86).value_or(""), "Held by Ann");
     CHECK_FALSE(standardGameRules().spells.heldBuffText(party, 86).has_value());
 }
@@ -573,6 +573,45 @@ TEST_CASE("MAW skill popups fill every number for every class line and keep the 
         CHECK(text.size() > std::string("Table.").size());
     }
 
+    // The Attack popup's hit chance counts the attack Bless and items add, as a blow's roll does.
+    {
+        const auto hitChance = [&]()
+        {
+            const std::string text = withoutColor(skills.statTooltip(party, party.members()[0], "Attack", "Table."));
+            const size_t at = text.find("monsters: ");
+            REQUIRE_NE(at, std::string::npos);
+            return std::stod(text.substr(at + 10));
+        };
+        const auto levels = rules.state().continentLevels;
+        rules.state().continentLevels = {100, 0, 0, 0};
+        const double plain = hitChance();
+        CHECK_LT(plain, 100);
+        party.member(0)->magicalBonuses.meleeAttack += 60;
+        CHECK_GT(hitChance(), plain + 5);
+        party.member(0)->magicalBonuses.meleeAttack -= 60;
+        rules.state().continentLevels = levels;
+    }
+
+    // The Luck popup's critical chance counts legendary 14's 10 %, as a blow's roll does.
+    {
+        const auto critChance = [&]()
+        {
+            const std::string text = withoutColor(skills.statTooltip(party, party.members()[0], "Luck", "Table."));
+            const size_t at = text.find("monsters: ");
+            REQUIRE_NE(at, std::string::npos);
+            return std::stod(text.substr(at + 10));
+        };
+        const double plain = critChance();
+        Character &wearer = *party.member(0);
+        const uint32_t amulet = wearer.equipment.amulet;
+        const uint16_t affix = wearer.equipmentRuntime.amulet.rulesetFields.legendaryAffixId;
+        wearer.equipment.amulet = 1;
+        wearer.equipmentRuntime.amulet.rulesetFields.legendaryAffixId = 14;
+        CHECK(critChance() == doctest::Approx(plain + 10).epsilon(0.001));
+        wearer.equipment.amulet = amulet;
+        wearer.equipmentRuntime.amulet.rulesetFields.legendaryAffixId = affix;
+    }
+
     CHECK(skills.statTooltip(party, party.members()[0], "Might", "Table.").starts_with("Table.\n\nMelee and bow"));
     CHECK(skills.statTooltip(party, party.members()[0], "Intellect", "Table.").starts_with("Intellect represents"));
     // Monsters grow with the other worlds' levels, each world's bolster level shown (TXT-2-9); spell points wait on
@@ -609,6 +648,19 @@ TEST_CASE("MAW skill popups fill every number for every class line and keep the 
         CHECK_NE(withoutColor(skills.statTooltip(party, party.members()[0], "FireResistance", "Table."))
                 .find(std::string("takes ") + percent + " % off fire hits"), std::string::npos);
         party.member(0)->itemResistanceEnchants.fire = 0;
+
+        // MAW's own paragraph follows the table's text on every resistance row (zzMaw-Stats.lua:742-744).
+        for (const char *pStat : {"FireResistance", "AirResistance", "WaterResistance", "EarthResistance",
+                 "MindResistance", "BodyResistance"})
+        {
+            CAPTURE(pStat);
+            const std::string text = withoutColor(skills.statTooltip(party, party.members()[0], pStat, "Table."));
+            CHECK(text.starts_with("Table.\n\nDamage of this kind is reduced by the percent shown"));
+            CHECK_NE(text.find("Light damage is resisted by the lower of the Mind and Body resistances"),
+                std::string::npos);
+            CHECK_NE(text.find("Energy damage by the lowest resistance of all"), std::string::npos);
+        }
+
         CHECK_FALSE(skills.resistanceCut(party, party.members()[0], "Might"));
         CHECK_FALSE(standardSkillRules().resistanceCut(party, party.members()[0], "FireResistance"));
     }

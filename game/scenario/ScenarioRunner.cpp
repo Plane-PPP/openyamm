@@ -1,8 +1,10 @@
+#include "game/coop/CharacterFile.h"
 #include "game/items/ItemGenerator.h"
 #include "game/scenario/ScenarioRunner.h"
 
 #include "engine/AssetFileSystem.h"
 #include "game/content/NamedMods.h"
+#include "game/coop/CoopSession.h"
 #include "game/data/GameDataLoader.h"
 #include "game/debug/AiArena.h"
 #include "game/debug/GameplayDebugTrace.h"
@@ -10,6 +12,7 @@
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/MercenaryRecruitmentRuntime.h"
 #include "game/items/ItemRuntime.h"
@@ -35,6 +38,7 @@ extern "C"
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <utility>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -61,6 +65,18 @@ struct ScenarioExecutionContext
     Party party;
     std::unique_ptr<ScenarioRuntimeDriver> runtimeDriver;
     std::string currentMapFileName;
+    // The second game of a co-op scenario (coop_guest) while the first one's steps run, and the first while a step
+    // with `game: guest` runs: what of the context is one game's own (swapScenarioGames).
+    struct OtherGame
+    {
+        std::unique_ptr<ScenarioRuntimeDriver> runtimeDriver;
+        EventRuntimeState eventRuntimeState;
+        Party party;
+        std::string currentMapFileName;
+        bool eventRuntimeStateLoaded = false;
+        float gameMinutes = 9.0f * 60.0f;
+    };
+    std::optional<OtherGame> otherGame;
     std::filesystem::path basePath;
     // The folder of the scenario's own file (empty when unknown).
     std::filesystem::path documentDirectory;
@@ -1005,6 +1021,13 @@ bool assertDialogState(
         context,
         step,
         dialogNode,
+        "adventurers_inn",
+        boolText(actual.adventurersInn),
+        failures) && success;
+    success = assertDialogScalar(
+        context,
+        step,
+        dialogNode,
         "source_id",
         std::to_string(actual.sourceId),
         failures) && success;
@@ -1068,6 +1091,21 @@ bool assertDialogState(
         {
             failures.push_back(stepLocation(step) + ": " + phase + " dialog text \"" + actual.text
                 + "\" does not contain \"" + expected + "\"");
+            success = false;
+        }
+    }
+
+    // text_absent: a piece the dialog's text must not hold.
+    if (const YAML::Node absentNode = dialogNode["text_absent"]; absentNode && absentNode.IsScalar())
+    {
+        const std::string unwanted = absentNode.as<std::string>();
+        const bool found = actual.text.find(unwanted) != std::string::npos;
+        scenarioLogAssert(context, step, "dialog.text_absent", unwanted, found ? actual.text : "absent", !found);
+
+        if (found)
+        {
+            failures.push_back(stepLocation(step) + ": " + phase + " dialog text \"" + actual.text
+                + "\" contains \"" + unwanted + "\"");
             success = false;
         }
     }
@@ -1717,6 +1755,18 @@ bool syncRecordedGameTimeBeforeStep(
     }
 
     return true;
+}
+
+// Makes the other game of a co-op scenario the one the steps run on, and back.
+void swapScenarioGames(ScenarioExecutionContext &context)
+{
+    ScenarioExecutionContext::OtherGame &other = *context.otherGame;
+    std::swap(context.runtimeDriver, other.runtimeDriver);
+    std::swap(context.eventRuntimeState, other.eventRuntimeState);
+    std::swap(context.party, other.party);
+    std::swap(context.currentMapFileName, other.currentMapFileName);
+    std::swap(context.eventRuntimeStateLoaded, other.eventRuntimeStateLoaded);
+    std::swap(context.gameMinutes, other.gameMinutes);
 }
 
 bool ensureRuntimeDriver(
@@ -2772,10 +2822,12 @@ bool readScenarioRuleset(
     }
 
     std::string error;
-    const std::optional<RulesetDefinition> loaded = loadRulesetDefinition(
-        context.assetFileSystem,
-        node.IsScalar() ? text.substr(0, separator) : node["id"].as<std::string>(),
-        error);
+    const std::string id = node.IsScalar() ? text.substr(0, separator) : node["id"].as<std::string>();
+    // Standard rules are no package; "standard" names them for their options, as the New Game screen offers them
+    // ("standard:solo": a solo run under Standard rules).
+    const std::optional<RulesetDefinition> loaded = id == "standard"
+        ? std::optional<RulesetDefinition>(standardRulesetDefinition())
+        : loadRulesetDefinition(context.assetFileSystem, id, error);
 
     if (!loaded)
     {
@@ -3038,14 +3090,19 @@ bool assertRuleset(
         }
     }
 
-    // A dimension run: {map, power, affix_count, completed, min_family_actors (living actors of its families)}, or
-    // {map, none: true}; the Dimensional Maps quest: {tier, given, cleared, done}.
+    // The open rift, wherever the party is: {map, power, affix_count, completed, inside (the party is in it),
+    // min_family_actors (living actors of its families on the loaded map)}, or {map, none: true}; the Dimensional Maps
+    // quest: {tier, given, cleared, done}.
     MawRules *pMawRules = context.runtimeDriver->mawRules();
 
     if (node.IsMap() && node["dimension_run"] && pMawRules != nullptr)
     {
         const YAML::Node run = node["dimension_run"];
-        const MawDimensionRun *pRun = pMawRules->dimensionRun(run["map"].as<std::string>(""));
+        std::string runMap = run["map"].as<std::string>("");
+        std::transform(runMap.begin(), runMap.end(), runMap.begin(),
+            [](unsigned char character) { return char(std::tolower(character)); });
+        const std::pair<const std::string, MawDimensionRun> *pRift = pMawRules->rift();
+        const MawDimensionRun *pRun = pRift != nullptr && pRift->first == runMap ? &pRift->second : nullptr;
         std::string problem;
 
         if (run["none"].as<bool>(false))
@@ -3072,6 +3129,11 @@ bool assertRuleset(
                 {
                     ++familyActors;
                 }
+            }
+
+            if (run["inside"] && pMawRules->inRift() != run["inside"].as<bool>())
+            {
+                problem = pMawRules->inRift() ? "the party is in the rift" : "the party is not in the rift";
             }
 
             if (run["power"] && int(pRun->power) != run["power"].as<int>())
@@ -3218,7 +3280,43 @@ bool runNewGameFlow(
         return false;
     }
 
-    std::string startMap = "oute3.odm";
+    // The start: `start_map`, else the start map of the new-game continent `continent` names (its key, as the
+    // new-game screen's card starts it: continent_settings' death map 1), else the active world's (world.yml
+    // start.map).
+    std::string startMap;
+
+    if (!continent.empty())
+    {
+        const MergedCharacterSelectionContinent *pContinent = nullptr;
+
+        for (const MergedCharacterSelectionContinent &candidate :
+             context.gameDataLoader.getMergedCharacterSelectionTable().continents())
+        {
+            pContinent = candidate.key == continent ? &candidate : pContinent;
+        }
+
+        const MergedContinentSettingEntry *pSetting = pContinent != nullptr
+            ? context.gameDataLoader.getMergedContinentSettingTable().findById(pContinent->id) : nullptr;
+
+        if (pSetting == nullptr || pSetting->deathMap1.empty())
+        {
+            failures.push_back(stepLocation(step) + ": no new-game continent '" + continent + "' with a start map");
+            return false;
+        }
+
+        startMap = pSetting->deathMap1;
+    }
+    else
+    {
+        std::string manifestError;
+        startMap = loadActiveWorldManifestOrDefault(context.assetFileSystem, context.config.activeWorldId,
+                                                    manifestError).start.mapFileName;
+    }
+
+    if (startMap.empty())
+    {
+        startMap = "oute3.odm";
+    }
 
     if (!readScalarString(step, "start_map", startMap, failures, false))
     {
@@ -3255,6 +3353,16 @@ bool runNewGameFlow(
         }
 
         std::string failure;
+
+        // `party_pouches: true` plays with the Gameplay setting Party pouches on (Standard's quest and alchemy tabs).
+        if (!context.runtimeDriver->initialize(failure))
+        {
+            failures.push_back(stepLocation(step) + ": " + failure);
+            return false;
+        }
+
+        context.runtimeDriver->setPartyPouches(step.payload["party_pouches"].as<bool>(false));
+
         if (!context.runtimeDriver->startNewGame(
                 0, startMap, failure, hasExplicitParty ? &seed : nullptr, ruleset))
         {
@@ -3467,8 +3575,8 @@ bool runSetRuleset(
 // damage_actor: {actor_index, amount, tier, expect}: a party hit through the normal damage path (the actor turns on the
 // party), for combat scenarios on maps whose actors are friendly. tier (default physical): what the hit is to an energy
 // shield, physical, classic_blaster, kreegan_energy or spell. `all: true` instead of `actor_index` hits every living
-// actor, again until none lives (monsters summoned meanwhile count), for clearing a whole map. expect: refused passes
-// when the hit does nothing.
+// actor, again until none lives (monsters summoned meanwhile count), for clearing a whole map; `spare: N` leaves the
+// first N actors it would hit alone, for a map left almost cleared. expect: refused passes when the hit does nothing.
 bool runDamageActor(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -3509,12 +3617,14 @@ bool runDamageActor(
     {
         constexpr int MaximumPasses = 10;
         bool anyHit = true;
+        const size_t firstActorIndex = step.payload["spare"].as<size_t>(0);
 
         for (int pass = 0; pass < MaximumPasses && anyHit; ++pass)
         {
             anyHit = false;
 
-            for (size_t actorIndex = 0; actorIndex < context.runtimeDriver->mapActorCount(); ++actorIndex)
+            for (size_t actorIndex = firstActorIndex; actorIndex < context.runtimeDriver->mapActorCount();
+                 ++actorIndex)
             {
                 std::string ignored;
                 anyHit = context.runtimeDriver->damageActor(
@@ -3602,6 +3712,8 @@ bool runPartyAttack(ScenarioExecutionContext &context, const ScenarioStep &step,
     request.actorIndex = scenarioActorIndex(context, step.payload["actor_index"]);
     request.memberIndex = step.payload["member_index"].as<size_t>(0);
     request.count = step.payload["count"].as<int>(100);
+    request.player = PlayerId(step.payload["player"].as<int>(LocalPlayer));
+    request.kill = step.payload["kill"].as<bool>(false);
 
     if (step.payload["attack_spell"])
     {
@@ -3837,7 +3949,7 @@ bool runGrantItem(
     return true;
 }
 
-// ruleset_banks: {mm8, mm7, mm6, other}: the levels a MAW game has banked in each world, which size its monsters (as
+// ruleset_banks: {mm8, mm7, mm6, mm9, xeen}: the levels a MAW game has banked in each world, which size its monsters (as
 // the console's `ruleset banks`); for parties made at a high level.
 bool runRulesetBanks(
     ScenarioExecutionContext &context,
@@ -3849,8 +3961,8 @@ bool runRulesetBanks(
         return false;
     }
 
-    const std::array<double, 4> levels = {step.payload["mm8"].as<double>(0), step.payload["mm7"].as<double>(0),
-        step.payload["mm6"].as<double>(0), step.payload["mm9"].as<double>(0)};
+    const std::array<double, 5> levels = {step.payload["mm8"].as<double>(0), step.payload["mm7"].as<double>(0),
+        step.payload["mm6"].as<double>(0), step.payload["mm9"].as<double>(0), step.payload["xeen"].as<double>(0)};
     std::string failure;
 
     if (!context.runtimeDriver->setRulesetBanks(levels, failure))
@@ -3878,8 +3990,9 @@ bool runRulesetBanks(
     return true;
 }
 
-// console: {line, expect_contains}: runs a debug console line in the game as typed (`testparty apply mid newclasses`);
-// fails when the console reports an error, or its output lacks expect_contains.
+// console: {line, expect_contains, expect_not_contains}: runs a debug console line in the game as typed (`testparty
+// apply mid newclasses`); fails when the console reports an error, its output lacks expect_contains or holds
+// expect_not_contains.
 bool runConsoleCommand(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -3895,9 +4008,24 @@ bool runConsoleCommand(
     std::string failure;
     seedRuntimeDriverFromContext(context);
 
+    // expect_refusal: the line must fail, with this text in what the console says.
+    const std::string refusal = step.payload["expect_refusal"].as<std::string>("");
+
     if (!context.runtimeDriver->runConsoleLine(line, output, failure))
     {
+        if (!refusal.empty() && failure.find(refusal) != std::string::npos)
+        {
+            std::cout << "CONSOLE " << line << " refused: " << output << '\n';
+            return true;
+        }
+
         failures.push_back(stepLocation(step) + ": " + failure);
+        return false;
+    }
+
+    if (!refusal.empty())
+    {
+        failures.push_back(stepLocation(step) + ": the console line was not refused: " + output);
         return false;
     }
 
@@ -3908,6 +4036,164 @@ bool runConsoleCommand(
     if (!expected.empty() && output.find(expected) == std::string::npos)
     {
         failures.push_back(stepLocation(step) + ": console output lacks \"" + expected + "\": " + output);
+        return false;
+    }
+
+    const std::string unexpected = step.payload["expect_not_contains"].as<std::string>("");
+
+    if (!unexpected.empty() && output.find(unexpected) != std::string::npos)
+    {
+        failures.push_back(stepLocation(step) + ": console output holds \"" + unexpected + "\": " + output);
+        return false;
+    }
+
+    return true;
+}
+
+// coop_guest: makes the scenario's second game (devdocs/plans/MULTIPLAYER_LISTEN_SERVER_ARCHITECTURE.md, "The replica
+// as built"): another game in this process, which the steps marked `game: guest` run on. It has no map until such a
+// step gives it one (new_game_flow, load_map); both games take a frame for every frame either advances.
+bool runCoopGuest(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    if (context.otherGame)
+    {
+        failures.push_back(stepLocation(step) + ": the scenario already has a guest game");
+        return false;
+    }
+
+    if (!ensureRuntimeDriver(context, failures))
+    {
+        return false;
+    }
+
+    context.otherGame.emplace();
+    swapScenarioGames(context);
+    const bool created = ensureRuntimeDriver(context, failures);
+    swapScenarioGames(context);
+
+    if (!created)
+    {
+        return false;
+    }
+
+    context.runtimeDriver->setPeer(context.otherGame->runtimeDriver.get());
+    context.otherGame->runtimeDriver->setPeer(context.runtimeDriver.get());
+    return true;
+}
+
+// coop_network: {delay_ms, jitter_ms, loss_permille, seed}: makes the line between the two games bad both ways, from
+// now on and for a join that follows (Engine::NetFaults). Every message is late by delay_ms and up to jitter_ms more;
+// those sent to arrive at all still do, in order; those of which only the newest counts (places of monsters,
+// missiles and players) are lost loss_permille times in a thousand, and an overtaken one is dropped. An empty map
+// makes the line good again.
+bool runCoopNetwork(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    if (!context.otherGame || step.onGuestGame)
+    {
+        failures.push_back(stepLocation(step) + ": coop_network needs a guest game (coop_guest) and runs on the host");
+        return false;
+    }
+
+    Engine::NetFaults faults;
+
+    if (step.payload && step.payload.IsMap())
+    {
+        faults.delayMs = step.payload["delay_ms"].as<uint32_t>(0);
+        faults.jitterMs = step.payload["jitter_ms"].as<uint32_t>(0);
+        faults.lossPermille = step.payload["loss_permille"].as<uint32_t>(0);
+        faults.seed = step.payload["seed"].as<uint32_t>(1);
+    }
+
+    context.runtimeDriver->setCoopNetworkFaults(faults);
+    // The other end's losses fall on other messages.
+    faults.seed += 7919;
+    context.otherGame->runtimeDriver->setCoopNetworkFaults(faults);
+    return true;
+}
+
+// coop_join: {expect: joined | refused, timeout_runtime_seconds, character}: the first game hosts and the guest game
+// joins it with its character (or the character file named), through the transport that joins two games in one
+// process. Both games run until the guest has loaded the host's map (joined) or is back in its own game (refused).
+bool runCoopJoin(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    if (!context.otherGame || step.onGuestGame)
+    {
+        failures.push_back(stepLocation(step) + ": coop_join needs a guest game (coop_guest) and runs on the host");
+        return false;
+    }
+
+    ScenarioRuntimeDriver &host = *context.runtimeDriver;
+    ScenarioRuntimeDriver &guest = *context.otherGame->runtimeDriver;
+    const std::string expect = step.payload && step.payload.IsMap() ? step.payload["expect"].as<std::string>("joined")
+        : std::string("joined");
+    const float timeoutSeconds = step.payload && step.payload.IsMap()
+        ? step.payload["timeout_runtime_seconds"].as<float>(10.0f) : 10.0f;
+    std::string failure;
+
+    if (!guest.joinCoopHost(host, failure))
+    {
+        failures.push_back(stepLocation(step) + ": " + failure);
+        return false;
+    }
+
+    // character: <name>: the guest joins with that character file (saves/characters/<name>.oychar, written by
+    // `coop character save <name>`) and not with the character of its game.
+    if (step.payload && step.payload.IsMap() && step.payload["character"])
+    {
+        const std::optional<std::filesystem::path> path =
+            characterFilePath(step.payload["character"].as<std::string>());
+        std::optional<CharacterFile> file = path ? readCharacterFile(*path, failure) : std::nullopt;
+
+        if (!file)
+        {
+            failures.push_back(stepLocation(step) + ": coop_join character: "
+                + (failure.empty() ? std::string("no such character file") : failure));
+            return false;
+        }
+
+        guest.coopSession().setJoinCharacter(std::move(*file), *path);
+    }
+
+    float elapsedSeconds = 0.0f;
+
+    while (guest.coopSession().joining() && elapsedSeconds < timeoutSeconds)
+    {
+        if (!host.advanceRuntime(1.0f / 30.0f, failure))
+        {
+            failures.push_back(stepLocation(step) + ": " + failure);
+            return false;
+        }
+
+        elapsedSeconds += 1.0f / 30.0f;
+    }
+
+    // A moment more: the host learns that the guest's game has the map, and the first states go both ways.
+    if (guest.coopSession().joined() && !host.advanceRuntime(0.2f, failure))
+    {
+        failures.push_back(stepLocation(step) + ": " + failure);
+        return false;
+    }
+
+    syncContextFromRuntime(context);
+    swapScenarioGames(context);
+    syncContextFromRuntime(context);
+    swapScenarioGames(context);
+    const bool joined = guest.coopSession().joined();
+    std::cout << "COOP JOIN " << (joined ? "joined" : "not joined") << ": " << guest.coopSession().describe() << '\n';
+
+    if ((expect == "joined") != joined)
+    {
+        failures.push_back(stepLocation(step) + ": expected the guest game to be " + expect + ": "
+            + guest.coopSession().describe());
         return false;
     }
 
@@ -4054,6 +4340,10 @@ bool runWalkTo(
     }
     request.timeoutSeconds = step.payload["timeout_seconds"].as<float>(request.timeoutSeconds);
     request.clearHostilesRadius = step.payload["clear_hostiles"].as<float>(0.0f);
+    if (step.payload["clear_height"])
+    {
+        request.clearHostilesHeight = step.payload["clear_height"].as<float>();
+    }
     request.expectMap = step.payload["expect_map"].as<std::string>("");
     request.plan = step.payload["plan"].as<bool>(true);
     request.nodeLimit = step.payload["node_limit"].as<size_t>(request.nodeLimit);
@@ -4105,17 +4395,19 @@ bool runWalkTo(
 
 // play_lua: {source, max_seconds}: a player's reasoning over a puzzle or a game, in Lua, run in the scenario (not as a
 // map event), so it may wait and react: click(event_id) runs the map event a click on its prop runs; wait(seconds)
-// lets the world run; status() returns the status lines shown since the last call (" | " between them); qbit(id),
+// lets the world run; status() returns the status lines shown since its last call, in this step or an earlier one (a
+// walk_to's step plate, a move within the map), " | " between them; qbit(id),
 // has_item(item_id) and mapvar(name) read the state; held() is the item on the cursor (0: none), item_count(item_id) the packs' count of it and pack_items() every pack item ("id x count"), discard(item_id) drops one from the packs (a player making room), door_state(id) is a door's state (as seen);
 // take_chest() presses the open chest's Take All and close() Escape
-// (false when nothing was open); log(text) prints. A script should decide only from what the
+// (false when nothing was open); log(text) prints; pose(x, y, z, yaw, pitch) stands the party there looking that way,
+// interact() presses the interact key (returns whether something was used and the map event it ran) and
+// action(name[, seconds]) holds a gameplay key binding (attack ...). A script should decide only from what the
 // player sees (status lines, its own keys and items); mapvar is for checks. A Lua error or error() fails the step.
 struct ScenarioPlayContext
 {
     ScenarioExecutionContext *pContext = nullptr;
     float waited = 0.0f;
     float maxSeconds = 600.0f;
-    size_t statusIndex = 0;
 };
 
 ScenarioPlayContext &scenarioPlayContext(lua_State *pLuaState)
@@ -4183,25 +4475,7 @@ int scenarioPlayWait(lua_State *pLuaState)
 int scenarioPlayStatus(lua_State *pLuaState)
 {
     ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
-    const EventRuntimeState *pState = play.pContext->runtimeDriver->eventRuntimeState();
-    std::string text;
-
-    if (pState != nullptr)
-    {
-        if (play.statusIndex > pState->statusMessages.size())
-        {
-            play.statusIndex = 0;
-        }
-
-        for (size_t index = play.statusIndex; index < pState->statusMessages.size(); ++index)
-        {
-            text += (text.empty() ? "" : " | ") + pState->statusMessages[index];
-        }
-
-        play.statusIndex = pState->statusMessages.size();
-    }
-
-    lua_pushstring(pLuaState, text.c_str());
+    lua_pushstring(pLuaState, play.pContext->runtimeDriver->takeStatusLines().c_str());
     return 1;
 }
 
@@ -4209,7 +4483,30 @@ int scenarioPlayQBit(lua_State *pLuaState)
 {
     ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
     const Party *pParty = play.pContext->runtimeDriver->party();
-    lua_pushboolean(pLuaState, pParty != nullptr && pParty->hasQuestBit(uint32_t(luaL_checkinteger(pLuaState, 1))));
+    lua_pushboolean(
+        pLuaState,
+        pParty != nullptr && pParty->campaign().hasQuestBit(uint32_t(luaL_checkinteger(pLuaState, 1))));
+    return 1;
+}
+
+// journal_quest(qbit): the text of the quest note the party's journal shows under that qbit, else nil.
+int scenarioPlayJournalQuest(lua_State *pLuaState)
+{
+    ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
+    const Party *pParty = play.pContext->runtimeDriver->party();
+    const uint32_t qbitId = uint32_t(luaL_checkinteger(pLuaState, 1));
+    const JournalQuestTable &table = play.pContext->gameDataLoader.getJournalQuestTable();
+
+    for (const JournalQuestEntry &entry : table.entries())
+    {
+        if (pParty != nullptr && entry.qbitId == qbitId && table.isVisible(entry, *pParty))
+        {
+            lua_pushstring(pLuaState, entry.text.c_str());
+            return 1;
+        }
+    }
+
+    lua_pushnil(pLuaState);
     return 1;
 }
 
@@ -4222,15 +4519,47 @@ int scenarioPlayHasItem(lua_State *pLuaState)
     return 1;
 }
 
+// ground_items(item_id): how many of the item lie in the map (dropped, thrown or placed; on the way down too).
+int scenarioPlayGroundItems(lua_State *pLuaState)
+{
+    ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
+    const uint32_t itemId = uint32_t(luaL_checkinteger(pLuaState, 1));
+    lua_Integer count = 0;
+
+    const ScenarioRuntimeDriver &driver = *play.pContext->runtimeDriver;
+
+    if (const IGameplayWorldRuntime *pWorldRuntime = driver.worldRuntime())
+    {
+        std::vector<GameplayWorldItemPresentationState> items;
+        pWorldRuntime->collectWorldItemPresentationStates(items);
+        count = lua_Integer(std::count_if(items.begin(), items.end(),
+            [itemId](const GameplayWorldItemPresentationState &item) { return item.itemId == itemId; }));
+    }
+
+    lua_pushinteger(pLuaState, count);
+    return 1;
+}
+
 int scenarioPlayMapVar(lua_State *pLuaState)
 {
     ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
     const EventRuntimeState *pState = play.pContext->runtimeDriver->eventRuntimeState();
-    const std::string name = luaL_checkstring(pLuaState, 1);
     lua_Integer value = 0;
 
-    if (pState != nullptr)
+    // A number reads the map's numbered variable (the Map Studio's `MapVar(n)`: the project's ids.lock.yml map_vars
+    // give each name its number); a name, a variable named by a script.
+    if (lua_type(pLuaState, 1) == LUA_TNUMBER)
     {
+        const lua_Integer index = luaL_checkinteger(pLuaState, 1);
+
+        if (pState != nullptr && index >= 0 && static_cast<size_t>(index) < pState->mapVars.size())
+        {
+            value = pState->mapVars[static_cast<size_t>(index)];
+        }
+    }
+    else if (pState != nullptr)
+    {
+        const std::string name = luaL_checkstring(pLuaState, 1);
         const auto iterator = pState->namedMapVars.find(name);
         value = iterator != pState->namedMapVars.end() ? iterator->second : 0;
     }
@@ -4459,13 +4788,20 @@ int scenarioPlayClose(lua_State *pLuaState)
     return 1;
 }
 
-// clear_hostiles(radius): kills the party's enemies within the radius (the run's rule), returns how many.
+// clear_hostiles(radius[, height]): kills the party's enemies within the radius and height (the run's rule; height
+// defaults to less than a storey indoors), returns how many.
 int scenarioPlayClearHostiles(lua_State *pLuaState)
 {
     ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
     size_t killed = 0;
     std::string failure;
-    if (!play.pContext->runtimeDriver->killHostilesNear(float(luaL_optnumber(pLuaState, 1, 2048.0)), killed, failure))
+    std::optional<float> height;
+    if (!lua_isnoneornil(pLuaState, 2))
+    {
+        height = float(luaL_checknumber(pLuaState, 2));
+    }
+    if (!play.pContext->runtimeDriver->killHostilesNear(
+            float(luaL_optnumber(pLuaState, 1, 2048.0)), height, killed, failure))
     {
         return luaL_error(pLuaState, "clear_hostiles: %s", failure.c_str());
     }
@@ -4476,6 +4812,69 @@ int scenarioPlayClearHostiles(lua_State *pLuaState)
 int scenarioPlayLog(lua_State *pLuaState)
 {
     std::cout << "PLAY " << luaL_checkstring(pLuaState, 1) << '\n';
+    return 0;
+}
+
+// pose(x, y, z, yaw, pitch): the party stands there on the current map, looking that way (radians), as set_pose.
+int scenarioPlayPose(lua_State *pLuaState)
+{
+    ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
+    ScenarioPose pose = {};
+    pose.x = float(luaL_checknumber(pLuaState, 1));
+    pose.y = float(luaL_checknumber(pLuaState, 2));
+    pose.z = float(luaL_checknumber(pLuaState, 3));
+    pose.yawRadians = float(luaL_checknumber(pLuaState, 4));
+    pose.pitchRadians = float(luaL_checknumber(pLuaState, 5));
+    std::string failure;
+
+    if (!play.pContext->runtimeDriver->setPose(pose, failure))
+    {
+        return luaL_error(pLuaState, "pose: %s", failure.c_str());
+    }
+
+    return 0;
+}
+
+// interact(): the interact key, as press_interact (the crosshair's target, else the usable one nearest it); returns
+// whether it activated something and the map event it ran (0: none).
+int scenarioPlayInteract(lua_State *pLuaState)
+{
+    ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
+    std::string failure;
+    const ScenarioInteractionResult interaction = play.pContext->runtimeDriver->pressKeyboardInteract(failure);
+    lua_pushboolean(pLuaState, interaction.activated);
+    // A face's triggered event, else a decoration's own (its secondary event id).
+    const std::optional<GameplayEventTargetHit> &target = interaction.hit.eventTarget;
+    lua_pushinteger(pLuaState,
+        !target ? 0 : target->triggeredEventId != 0 ? target->triggeredEventId : target->eventIdSecondary);
+    return 2;
+}
+
+// action(name[, seconds]): holds a gameplay key binding by its settings name (attack, quick_cast ...) for one frame
+// or the seconds, as press_action.
+int scenarioPlayAction(lua_State *pLuaState)
+{
+    ScenarioPlayContext &play = scenarioPlayContext(pLuaState);
+    const std::string action = luaL_checkstring(pLuaState, 1);
+    const float seconds = float(luaL_optnumber(pLuaState, 2, 1.0 / 30.0));
+    const auto binding = std::find_if(keyboardBindingDefinitions().begin(), keyboardBindingDefinitions().end(),
+        [&action](const KeyboardBindingDefinition &definition)
+        {
+            return definition.iniKey == action;
+        });
+
+    if (binding == keyboardBindingDefinitions().end())
+    {
+        return luaL_error(pLuaState, "action: unknown key binding %s", action.c_str());
+    }
+
+    std::string failure;
+
+    if (!play.pContext->runtimeDriver->holdGameplayAction(binding->action, seconds, failure))
+    {
+        return luaL_error(pLuaState, "action(%s): %s", action.c_str(), failure.c_str());
+    }
+
     return 0;
 }
 
@@ -4494,11 +4893,6 @@ bool runPlayLua(
     play.pContext = &context;
     play.maxSeconds = step.payload["max_seconds"].as<float>(play.maxSeconds);
 
-    if (const EventRuntimeState *pState = context.runtimeDriver->eventRuntimeState())
-    {
-        play.statusIndex = pState->statusMessages.size();
-    }
-
     std::unique_ptr<lua_State, decltype(&lua_close)> state(luaL_newstate(), &lua_close);
     lua_State *pLuaState = state.get();
     luaL_requiref(pLuaState, "_G", luaopen_base, 1);
@@ -4506,7 +4900,7 @@ bool runPlayLua(
     luaL_requiref(pLuaState, LUA_TABLIBNAME, luaopen_table, 1);
     luaL_requiref(pLuaState, LUA_MATHLIBNAME, luaopen_math, 1);
     lua_settop(pLuaState, 0);
-    const std::array<std::pair<const char *, lua_CFunction>, 23> functions = {{
+    const std::array<std::pair<const char *, lua_CFunction>, 28> functions = {{
         {"clear_hostiles", scenarioPlayClearHostiles}, {"party", scenarioPlayParty}, {"held", scenarioPlayHeld},
         {"stow", scenarioPlayStow}, {"conditions", scenarioPlayConditions},
         {"item_count", scenarioPlayItemCount}, {"pack_items", scenarioPlayPackItems},
@@ -4514,8 +4908,11 @@ bool runPlayLua(
         {"remember", scenarioPlayRemember}, {"recall", scenarioPlayRecall},
         {"discard", scenarioPlayDiscard}, {"door_state", scenarioPlayDoorState},
         {"click", scenarioPlayClick}, {"wait", scenarioPlayWait}, {"status", scenarioPlayStatus},
-        {"qbit", scenarioPlayQBit}, {"has_item", scenarioPlayHasItem}, {"mapvar", scenarioPlayMapVar},
-        {"take_chest", scenarioPlayTakeChest}, {"close", scenarioPlayClose}, {"log", scenarioPlayLog}}};
+        {"qbit", scenarioPlayQBit}, {"journal_quest", scenarioPlayJournalQuest}, {"has_item", scenarioPlayHasItem},
+        {"mapvar", scenarioPlayMapVar},
+        {"ground_items", scenarioPlayGroundItems},
+        {"take_chest", scenarioPlayTakeChest}, {"close", scenarioPlayClose}, {"log", scenarioPlayLog},
+        {"pose", scenarioPlayPose}, {"interact", scenarioPlayInteract}, {"action", scenarioPlayAction}}};
 
     for (const auto &[pName, function] : functions)
     {
@@ -4528,7 +4925,8 @@ bool runPlayLua(
     // (a click while it moves does nothing): wait until it stops, click its event if it is shut, wait until it opens.
     // A monster in its swing holds an opening door, so the party's enemies near it are killed while it waits.
     // loot_chest(event_id): opens a chest and takes all; a trap the party cannot disarm goes off on the first click
-    // and leaves the chest shut, so it clicks again, as a player does.
+    // and leaves the chest shut, so it clicks again, as a player does. It leaves no window open (a message the
+    // chest's event showed over it closes first, then the chest).
     static constexpr std::string_view PlayPreludeSource = R"lua(
 local function settledDoor(door)
   for _ = 1, 120 do
@@ -4546,7 +4944,11 @@ end
 function loot_chest(event)
   for _ = 1, 3 do
     click(event); wait(1)
-    if take_chest() then close(); return end
+    if take_chest() then
+      -- An event's message over the chest closes first, then the chest: close until nothing is left open.
+      for _ = 1, 3 do if not close() then break end end
+      return
+    end
   end
   error("chest event " .. event .. " never opened: " .. status(), 2)
 end
@@ -4732,8 +5134,9 @@ bool runClimb(
     return true;
 }
 
-// pick_up: {item_id, reach}: takes an item lying in the map as a player does (ScenarioRuntimeDriver::pickUpWorldItem):
-// within reach (default 400) of the party's eye, the camera turned at it, the use key; the item must reach the party.
+// pick_up: {item_id, reach, gained}: takes an item lying in the map as a player does
+// (ScenarioRuntimeDriver::pickUpWorldItem): within reach (default 400) of the party's eye, the camera turned at it,
+// the use key; the item must reach the party, or with `gained: false` must not.
 bool runPickUp(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -4760,16 +5163,21 @@ bool runPickUp(
     std::cout << "PICKUP " << log << '\n';
     const Party *pParty = context.runtimeDriver->party();
 
-    if (pParty == nullptr || !pParty->hasItemAnywhere(itemId))
+    // gained: false is a take the world refuses (in co-op, an item another player took a moment before).
+    const bool gained = step.payload["gained"].as<bool>(true);
+
+    if (pParty == nullptr || pParty->hasItemAnywhere(itemId) != gained)
     {
-        failures.push_back(stepLocation(step) + ": pick_up: item " + std::to_string(itemId) + " did not reach the party");
+        failures.push_back(stepLocation(step) + ": pick_up: item " + std::to_string(itemId)
+            + (gained ? " did not reach the party" : " reached the party, which it should not have"));
         return false;
     }
 
     return true;
 }
 
-// clear_hostiles: {radius, min}: kills the party's enemies near it (an immortal playthrough does not test combat).
+// clear_hostiles: {radius, height, min}: kills the party's enemies near it (an immortal playthrough does not test
+// combat); height above or below the party's feet defaults to less than a storey indoors, the radius outdoors.
 bool runClearHostiles(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -4783,7 +5191,13 @@ bool runClearHostiles(
     size_t killed = 0;
     std::string failure;
 
-    if (!context.runtimeDriver->killHostilesNear(step.payload["radius"].as<float>(2048.0f), killed, failure))
+    std::optional<float> height;
+    if (step.payload["height"])
+    {
+        height = step.payload["height"].as<float>();
+    }
+
+    if (!context.runtimeDriver->killHostilesNear(step.payload["radius"].as<float>(2048.0f), height, killed, failure))
     {
         failures.push_back(stepLocation(step) + ": " + failure);
         return false;
@@ -4796,6 +5210,52 @@ bool runClearHostiles(
     {
         failures.push_back(stepLocation(step) + ": clear_hostiles killed " + std::to_string(killed) + ", expected at least "
             + std::to_string(step.payload["min"].as<size_t>(0)));
+        return false;
+    }
+
+    return true;
+}
+
+// heal_at_temple: {house, min}: the temple's Heal for every member it can treat (each selected in turn, as a player
+// clicks the portraits at the counter), at its prices; fails when fewer than `min` were treated. For a playthrough
+// segment whose party came out of a fight Weak, Petrified or worse.
+bool runHealAtTemple(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    if (!payloadIsMap(step, failures) || !ensureRuntimeDriver(context, failures))
+    {
+        return false;
+    }
+
+    if (!step.payload["house"] || !step.payload["house"].IsScalar())
+    {
+        failures.push_back(stepLocation(step) + ": heal_at_temple requires `house`, the temple's house id");
+        return false;
+    }
+
+    size_t healed = 0;
+    std::vector<std::string> lines;
+    std::string failure;
+
+    if (!context.runtimeDriver->healAtTemple(step.payload["house"].as<uint32_t>(), healed, lines, failure))
+    {
+        failures.push_back(stepLocation(step) + ": " + failure);
+        return false;
+    }
+
+    syncContextFromRuntime(context);
+
+    for (const std::string &line : lines)
+    {
+        std::cout << "HEAL " << line << '\n';
+    }
+
+    if (healed < step.payload["min"].as<size_t>(0))
+    {
+        failures.push_back(stepLocation(step) + ": heal_at_temple treated " + std::to_string(healed)
+            + " members, expected at least " + std::to_string(step.payload["min"].as<size_t>(0)));
         return false;
     }
 
@@ -4826,6 +5286,40 @@ bool runUseItem(
 
     syncContextFromRuntime(context);
     return checkExpectedOutcome(step, "use_item", used, failures);
+}
+
+// equip_item: {item_id, member_index, slot}: the first pack item of the id any member carries, worn by the member in
+// the slot under the game's wearing rules (as dropped on the paperdoll); what it displaces goes to the packs.
+bool runEquipItem(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    std::vector<std::string> &failures)
+{
+    if (!payloadIsMap(step, failures) || !ensureRuntimeDriver(context, failures))
+    {
+        return false;
+    }
+
+    const std::optional<EquipmentSlot> slot = parseScenarioEquipmentSlot(step.payload["slot"].as<std::string>(""));
+
+    if (!slot)
+    {
+        failures.push_back(stepLocation(step) + ": equip_item needs a known slot (main_hand, armor, ...)");
+        return false;
+    }
+
+    seedRuntimeDriverFromContext(context);
+    std::string failure;
+
+    if (!context.runtimeDriver->equipCarriedItem(
+            step.payload["member_index"].as<size_t>(0), step.payload["item_id"].as<uint32_t>(0), *slot, failure))
+    {
+        failures.push_back(stepLocation(step) + ": " + failure);
+        return false;
+    }
+
+    syncContextFromRuntime(context);
+    return true;
 }
 
 // right_click_portrait: {item_id, carrier_index, member_index, inventory, release, expect}: right-clicks the member's
@@ -4913,11 +5407,12 @@ bool runPartyCharge(
     return success;
 }
 
-// cast_spell: {member_index, spell_id, skill, mastery (1-4), actor_index, target_member, scroll, expect,
-// expect_status}: the member casts the spell with full mana through the party's spell system; skill and mastery set
+// cast_spell: {member_index, spell_id, skill, mastery (1-4), actor_index, target_member, telekinesis_chest, scroll,
+// expect, expect_status}: the member casts the spell with full mana through the party's spell system; skill and mastery set
 // the spell's school first (with `scroll`: the scroll's power instead). Projectiles fly on with advance_runtime.
 // expect_status names the outcome when "refused" is not precise enough: succeeded, failed (the spell failed) or
-// needs_window (Town Portal and Lloyd's Beacon before their window is used).
+// needs_window (Town Portal and Lloyd's Beacon before their window is used); expect_status_text a text the cast's
+// status line holds (a no-spell map's "Spells do not work here").
 bool runCastSpell(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -4946,6 +5441,18 @@ bool runCastSpell(
         request.targetMemberIndex = step.payload["target_member"].as<size_t>();
     }
 
+    request.player = PlayerId(step.payload["player"].as<int>(LocalPlayer));
+
+    if (step.payload["target_player"])
+    {
+        request.targetPlayer = PlayerId(step.payload["target_player"].as<int>());
+    }
+
+    if (step.payload["telekinesis_chest"])
+    {
+        request.telekinesisChest = step.payload["telekinesis_chest"].as<size_t>();
+    }
+
     if (const YAML::Node pointNode = step.payload["target_point"])
     {
         if (!pointNode.IsSequence() || pointNode.size() != 3)
@@ -4959,9 +5466,10 @@ bool runCastSpell(
     }
 
     PartySpellCastStatus status = PartySpellCastStatus::Failed;
+    std::string statusText;
     std::string failure;
 
-    if (!context.runtimeDriver->castSpell(request, status, failure))
+    if (!context.runtimeDriver->castSpell(request, status, statusText, failure))
     {
         failures.push_back(stepLocation(step) + ": " + failure);
         return false;
@@ -4989,6 +5497,14 @@ bool runCastSpell(
             failures.push_back(stepLocation(step) + ": cast_spell expected " + expected + " but was " + actual);
             return false;
         }
+    }
+
+    if (const YAML::Node textNode = step.payload["expect_status_text"];
+        textNode && statusText.find(textNode.as<std::string>()) == std::string::npos)
+    {
+        failures.push_back(stepLocation(step) + ": cast_spell expected a status line with \""
+            + textNode.as<std::string>() + "\" but it was \"" + statusText + "\"");
+        return false;
     }
 
     return checkExpectedOutcome(step, "cast_spell", status == PartySpellCastStatus::Succeeded, failures);
@@ -5086,7 +5602,9 @@ bool runSpawnActor(
         return false;
     }
 
-    const bool nearParty = step.payload["near_party"].as<bool>(false);
+    // near_player: N puts the actor beside a co-op session's guest as near_party puts it beside the party.
+    const bool nearPlayer = step.payload["near_player"].IsDefined();
+    const bool nearParty = step.payload["near_party"].as<bool>(false) || nearPlayer;
 
     for (const char *pField : {"monster_id", "x", "y", "z"})
     {
@@ -5105,7 +5623,24 @@ bool runSpawnActor(
 
     seedRuntimeDriverFromContext(context);
     std::string failure;
-    const ScenarioPose pose = context.runtimeDriver->currentPose();
+    ScenarioPose pose = context.runtimeDriver->currentPose();
+
+    if (nearPlayer)
+    {
+        const std::optional<GameplayPlayerBody> body =
+            context.runtimeDriver->guestPlayerBody(PlayerId(step.payload["near_player"].as<int>(1)));
+
+        if (!body)
+        {
+            failures.push_back(stepLocation(step) + ": spawn_actor: near_player names no guest player");
+            return false;
+        }
+
+        pose.x = body->x;
+        pose.y = body->y;
+        pose.z = body->footZ;
+    }
+
     const float x = nearParty ? pose.x + 200.0f : step.payload["x"].as<float>();
     const float y = nearParty ? pose.y : step.payload["y"].as<float>();
     const float z = nearParty ? pose.z : step.payload["z"].as<float>();
@@ -5364,7 +5899,8 @@ bool runLuaEvent(
     seedRuntimeDriverFromContext(context);
     std::string failure;
 
-    if (!context.runtimeDriver->runLuaEvent(step.payload["source"].as<std::string>(), failure))
+    if (!context.runtimeDriver->runLuaEvent(
+            step.payload["source"].as<std::string>(), PlayerId(step.payload["player"].as<int>(LocalPlayer)), failure))
     {
         failures.push_back(stepLocation(step) + ": " + failure);
         return false;
@@ -5579,7 +6115,7 @@ bool assertCharges(
 // assert projectiles: {source, source_monster_id, min_count, max_count, homing, toward_party_within_degrees, report}:
 // the live projectiles fired by actors (of that monster when given), or by the party with `source: party`. homing:
 // every one of them homes (true) or none does (false); toward_party_within_degrees: each one flies within that angle of
-// the party.
+// the party; max_source_rise with source_actor_index: each one was launched at most that high above that actor's feet.
 bool assertProjectiles(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -5620,6 +6156,28 @@ bool assertProjectiles(
     const ProjectileState::SourceKind sourceKind =
         source == "party" ? ProjectileState::SourceKind::Party : ProjectileState::SourceKind::Actor;
     const ScenarioPose pose = context.runtimeDriver->currentPose();
+    std::optional<float> sourceActorZ;
+
+    if (node["max_source_rise"])
+    {
+        GameplayActorInspectState inspectState = {};
+        GameplayRuntimeActorState runtimeState = {};
+        bool hasRuntimeState = false;
+        std::string failure;
+
+        if (!node["source_actor_index"]
+            || !context.runtimeDriver->actorInspectState(scenarioActorIndex(context, node["source_actor_index"]),
+                inspectState, runtimeState, hasRuntimeState, failure)
+            || !hasRuntimeState)
+        {
+            failures.push_back(stepLocation(step) + ": projectiles max_source_rise needs a live source_actor_index "
+                + failure);
+            return false;
+        }
+
+        sourceActorZ = runtimeState.preciseZ;
+    }
+
     std::vector<const ProjectileState *> matching;
 
     for (const ProjectileState &projectile : pProjectiles->projectiles())
@@ -5658,6 +6216,7 @@ bool assertProjectiles(
             std::ostringstream message;
             message << "PROJECTILE id=" << pProjectile->projectileId << " monster=" << pProjectile->sourceMonsterId
                     << " position=" << pProjectile->x << ',' << pProjectile->y << ',' << pProjectile->z
+                    << " source_z=" << pProjectile->sourceZ
                     << " speed=" << speed << " homing=" << (homing ? "true" : "false")
                     << " degrees_off_party=" << degreesOff;
             scenarioLog(context, ScenarioLogColor::Cyan, message.str());
@@ -5666,6 +6225,12 @@ bool assertProjectiles(
         if (node["homing"] && node["homing"].as<bool>() != homing)
         {
             fail("id " + std::to_string(pProjectile->projectileId) + " homing=" + (homing ? "true" : "false"));
+        }
+
+        if (sourceActorZ && pProjectile->sourceZ - *sourceActorZ > node["max_source_rise"].as<float>())
+        {
+            fail("id " + std::to_string(pProjectile->projectileId) + " launched "
+                + std::to_string(pProjectile->sourceZ - *sourceActorZ) + " above its source's feet");
         }
 
         if (node["toward_party_within_degrees"]
@@ -6065,7 +6630,19 @@ bool assertSpritesHidden(
         {
             const uint32_t cog = cogNode.as<uint32_t>();
             const auto found = state.spriteOverrides.find(cog);
-            const bool hidden = found != state.spriteOverrides.end() && found->second.hidden;
+            bool hidden = found != state.spriteOverrides.end() && found->second.hidden;
+
+            // No event switched it yet: the map's invisible flag (a studio decoration with `hidden: true`, whose cog is
+            // its entity index).
+            const IGameplayWorldRuntime *pWorld = std::as_const(*context.runtimeDriver).worldRuntime();
+
+            if (found == state.spriteOverrides.end() && pWorld != nullptr)
+            {
+                const MapDeltaData *pDelta = pWorld->mapDeltaData();
+                hidden = pDelta != nullptr && cog < pDelta->decorationFlags.size()
+                    && (pDelta->decorationFlags[cog] & LevelDecorationInvisible) != 0;
+            }
+
             scenarioLogAssert(context, step, std::string(pKey) + "[" + std::to_string(cog) + "]", "true",
                 hidden == expectHidden ? "true" : "false", hidden == expectHidden);
 
@@ -6258,7 +6835,7 @@ bool assertAutonote(
     syncContextFromRuntime(context);
     const uint32_t id = node["id"].as<uint32_t>();
     const bool expected = node["present"].as<bool>(true);
-    const bool actual = context.party.hasAutonote(id);
+    const bool actual = context.party.campaign().hasAutonote(id);
     scenarioLogAssert(context, step, "autonote", std::to_string(id) + (expected ? "" : " absent"),
         actual ? "present" : "absent", actual == expected);
 
@@ -6332,7 +6909,7 @@ bool assertJournalMapNote(
     const std::string map = lowerAscii(node["map"].as<std::string>());
     const uint32_t id = node["id"].as<uint32_t>();
     const bool expectedPresent = node["present"].as<bool>(true);
-    const JournalMapNote *pNote = context.party.findJournalMapNote(map, id);
+    const JournalMapNote *pNote = context.party.campaign().findJournalMapNote(map, id);
     bool success = (pNote != nullptr) == expectedPresent;
 
     if (success && pNote != nullptr && node["text"])
@@ -6540,13 +7117,20 @@ bool assertTurnBased(
                 : effect == "paralyze"   ? std::optional<float>(inspectState.paralyzeRemainingSeconds)
                 : effect == "fear"       ? std::optional<float>(inspectState.fearRemainingSeconds)
                 : effect == "control"    ? std::optional<float>(inspectState.controlRemainingSeconds)
-                                         : std::nullopt;
+                // A solo run's talents: Challenge, Hamstring, Demoralizing Shout; `exposed` is Expose Weakness's
+                // percent.
+                : effect == "silence"    ? std::optional<float>(inspectState.silenceRemainingSeconds)
+                : effect == "move_slow"  ? std::optional<float>(inspectState.moveSlowRemainingSeconds)
+                : effect == "demoralize" ? std::optional<float>(inspectState.demoralizeRemainingSeconds)
+                : effect == "exposed" && hasRuntimeState
+                    ? std::optional<float>(runtimeState.rulesetFacts.exposedPercent)
+                    : std::nullopt;
         }
 
         if (!remaining)
         {
             failures.push_back(stepLocation(step) + ": turn_based actor_effect needs an actor and slow, stun, "
-                "paralyze, fear or control");
+                "paralyze, fear, control, silence, move_slow, demoralize or exposed");
             return false;
         }
 
@@ -9056,7 +9640,9 @@ bool runLoadGame(
         return false;
     }
 
-    const auto saveIt = context.saveGamePaths.find(name);
+    // An explicit path wins over a save remembered by name: two files of one stem (a checkpoint of the normal and the
+    // reload run) are two saves, and the second load used to take the first file again.
+    const auto saveIt = path.empty() ? context.saveGamePaths.find(name) : context.saveGamePaths.end();
 
     if (saveIt != context.saveGamePaths.end())
     {
@@ -10399,6 +10985,25 @@ bool assertActorVisible(
         success = false;
     }
 
+    // The monster is (true) or is not (false) playing its hit reaction, the flinch a hit starts.
+    if (actorNode["got_hit"])
+    {
+        success = hasRuntimeState
+            && checkRuntimeField(
+                "got_hit", boolText(runtimeState.animationState == ActorAiAnimationState::GotHit))
+            && success;
+    }
+
+    // The walker's centre stands (true) or does not stand (false) over deep water with no deck under it, as the
+    // outdoor water rule tests it (a bridge or a dock is land).
+    if (actorNode["over_water"])
+    {
+        const IGameplayWorldRuntime *pWorldRuntime = std::as_const(*context.runtimeDriver).worldRuntime();
+        success = pWorldRuntime != nullptr
+            && checkRuntimeField("over_water", boolText(pWorldRuntime->actorStandsOverWater(actorIndex)))
+            && success;
+    }
+
     if (actorNode["shield_raised"])
     {
         success = hasRuntimeState && runtimeState.shield.present
@@ -11011,8 +11616,9 @@ bool assertChestView(
     return true;
 }
 
-// party_position: {x, y, radius, z_min, z_max}: the party stands within `radius` (default 64) of (x, y), its feet
-// between z_min and z_max when given.
+// party_position: {x, y, radius, z_min, z_max, facing, facing_within}: the party stands within `radius` (default 64)
+// of (x, y), its feet between z_min and z_max when given, and with `facing` (the game's direction units, 0 east, 512
+// north, 2048 a full turn, as an arrival's facing) it faces within `facing_within` (default 64) of it.
 bool assertPartyPosition(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -11035,11 +11641,24 @@ bool assertPartyPosition(
     const float dx = pose.x - node["x"].as<float>();
     const float dy = pose.y - node["y"].as<float>();
     const float radius = node["radius"].as<float>(64.0f);
+    constexpr float FullTurnRadians = 6.28318530718f;
+    const float facingUnits = std::fmod(std::fmod(pose.yawRadians * 2048.0f / FullTurnRadians, 2048.0f) + 2048.0f,
+        2048.0f);
+    bool facingRight = true;
+
+    if (node["facing"])
+    {
+        const float wanted = std::fmod(std::fmod(node["facing"].as<float>(), 2048.0f) + 2048.0f, 2048.0f);
+        const float apart = std::fabs(facingUnits - wanted);
+        facingRight = std::min(apart, 2048.0f - apart) <= node["facing_within"].as<float>(64.0f);
+    }
+
     const bool inside = dx * dx + dy * dy <= radius * radius
         && (!node["z_min"] || pose.z >= node["z_min"].as<float>())
-        && (!node["z_max"] || pose.z <= node["z_max"].as<float>());
+        && (!node["z_max"] || pose.z <= node["z_max"].as<float>()) && facingRight;
     const std::string actual =
-        "(" + std::to_string(pose.x) + ", " + std::to_string(pose.y) + ", " + std::to_string(pose.z) + ")";
+        "(" + std::to_string(pose.x) + ", " + std::to_string(pose.y) + ", " + std::to_string(pose.z) + ") facing "
+        + std::to_string(int(std::lround(facingUnits)));
     scenarioLogAssert(
         context,
         step,
@@ -11052,7 +11671,7 @@ bool assertPartyPosition(
     {
         failures.push_back(stepLocation(step) + ": party at " + actual + ", expected within "
             + std::to_string(radius) + " of (" + node["x"].as<std::string>() + ", " + node["y"].as<std::string>()
-            + ")");
+            + ")" + (node["facing"] ? " facing " + node["facing"].as<std::string>() : std::string()));
         return false;
     }
 
@@ -11560,7 +12179,7 @@ bool assertQuestBits(
         }
 
         const uint32_t qbitId = entryNode.as<uint32_t>();
-        const bool actualValue = context.party.hasQuestBit(qbitId);
+        const bool actualValue = context.party.campaign().hasQuestBit(qbitId);
         scenarioLogAssert(
             context,
             step,
@@ -11579,7 +12198,7 @@ bool assertQuestBits(
                 continue;
             }
 
-            context.party.setQuestBit(qbitId, expectedValue);
+            context.party.campaign().setQuestBit(qbitId, expectedValue);
         }
     }
 
@@ -11898,14 +12517,14 @@ bool runSetupShortcut(
         }
 
         const bool value = !step.payload["value"] || step.payload["value"].as<bool>();
-        context.party.setQuestBit(step.payload["id"].as<uint32_t>(), value);
+        context.party.campaign().setQuestBit(step.payload["id"].as<uint32_t>(), value);
 
         // A loaded map runs on the runtime driver's party: set it there too, so the next runtime step keeps it.
         if (context.runtimeDriver)
         {
             if (Party *pRuntimeParty = context.runtimeDriver->party())
             {
-                pRuntimeParty->setQuestBit(step.payload["id"].as<uint32_t>(), value);
+                pRuntimeParty->campaign().setQuestBit(step.payload["id"].as<uint32_t>(), value);
             }
         }
 
@@ -12139,6 +12758,52 @@ bool runSetupShortcut(
 }
 }
 
+namespace
+{
+// D-82: a playthrough or side-quest scenario (tags `playthrough`, `side_quest`) fails at a step that leaves nobody in
+// the party able to act: the game would run its defeat there (GameApplication::shouldTriggerPartyDefeat, which headless
+// runs never call), so the story did not go on by the game's rules. Every step but `party_defeat`; other scenarios,
+// those that test a defeat among them, are not checked. Empty when the party can act.
+std::string partyDownFailure(
+    ScenarioExecutionContext &context,
+    const ScenarioDocument &document,
+    const ScenarioStep &step)
+{
+    const bool checked = std::any_of(document.tags.begin(), document.tags.end(),
+        [](const std::string &tag) { return tag == "playthrough" || tag == "side_quest"; });
+
+    if (!checked || step.kind == ScenarioStepKind::PartyDefeat || !context.runtimeDriver)
+    {
+        return {};
+    }
+
+    const Party *pParty = context.runtimeDriver->party();
+
+    if (pParty == nullptr || pParty->members().empty() || pParty->hasActableMember())
+    {
+        return {};
+    }
+
+    std::string text =
+        "PARTY DOWN after step " + std::to_string(step.stepIndex) + " (the game would run its defeat here):";
+
+    for (size_t memberIndex = 0; memberIndex < pParty->members().size(); ++memberIndex)
+    {
+        text += std::string(memberIndex == 0 ? " " : " | ") + "member " + std::to_string(memberIndex);
+
+        for (const auto &[pName, condition] : CharacterConditionNames)
+        {
+            if (pParty->members()[memberIndex].conditions.test(size_t(condition)))
+            {
+                text += " " + std::string(pName);
+            }
+        }
+    }
+
+    return text;
+}
+}
+
 ScenarioRunResult ScenarioRunner::run(
     const std::filesystem::path &basePath,
     const Engine::ApplicationConfig &config,
@@ -12200,7 +12865,7 @@ ScenarioRunResult ScenarioRunner::run(
     // copied into a folder of the run, or the user data's mods folder); the game mounts the named mods among them that
     // are on (GameApplication::loadGameData).
     Engine::InstalledContentOptions scenarioContent;
-    scenarioContent.extraMountRoot = scenarioConfig.installedContent.extraMountRoot;
+    scenarioContent.extraMountRoots = scenarioConfig.installedContent.extraMountRoots;
     std::filesystem::path scenarioModsCopy;
 
     if (document.mods && document.mods->userData)
@@ -12293,12 +12958,33 @@ ScenarioRunResult ScenarioRunner::run(
         bool stepSuccess = false;
         const size_t failureCountBeforeStep = result.failures.size();
 
-        if (!syncRecordedGameTimeBeforeStep(context, step, result.failures))
+        // A step of the guest's game runs with that game as the context's.
+        const bool onGuestGame = step.onGuestGame && context.otherGame.has_value();
+
+        if (onGuestGame)
+        {
+            swapScenarioGames(context);
+        }
+
+        if (step.onGuestGame && !context.otherGame)
+        {
+            result.failures.push_back(stepLocation(step) + ": `game: guest` needs a guest game (coop_guest)");
+        }
+        else if (!syncRecordedGameTimeBeforeStep(context, step, result.failures))
         {
             stepSuccess = false;
         }
         else switch (step.kind)
         {
+        case ScenarioStepKind::CoopGuest:
+            stepSuccess = runCoopGuest(context, step, result.failures);
+            break;
+        case ScenarioStepKind::CoopJoin:
+            stepSuccess = runCoopJoin(context, step, result.failures);
+            break;
+        case ScenarioStepKind::CoopNetwork:
+            stepSuccess = runCoopNetwork(context, step, result.failures);
+            break;
         case ScenarioStepKind::NewGameFlow:
             stepSuccess = runNewGameFlow(context, step, result.failures);
             break;
@@ -12364,6 +13050,9 @@ ScenarioRunResult ScenarioRunner::run(
         case ScenarioStepKind::ClearHostiles:
             stepSuccess = runClearHostiles(context, step, result.failures);
             break;
+        case ScenarioStepKind::HealAtTemple:
+            stepSuccess = runHealAtTemple(context, step, result.failures);
+            break;
         case ScenarioStepKind::ConsoleCommand:
             stepSuccess = runConsoleCommand(context, step, result.failures);
             break;
@@ -12375,6 +13064,9 @@ ScenarioRunResult ScenarioRunner::run(
             break;
         case ScenarioStepKind::UseItem:
             stepSuccess = runUseItem(context, step, result.failures);
+            break;
+        case ScenarioStepKind::EquipItem:
+            stepSuccess = runEquipItem(context, step, result.failures);
             break;
         case ScenarioStepKind::TurnBasedTurns:
             stepSuccess = runTurnBasedTurns(context, step, result.failures);
@@ -12469,6 +13161,33 @@ ScenarioRunResult ScenarioRunner::run(
         case ScenarioStepKind::LoadGame:
             stepSuccess = runLoadGame(context, step, result.failures);
             break;
+        }
+
+        if (onGuestGame)
+        {
+            swapScenarioGames(context);
+        }
+
+        // Two games run side by side: a step of one changes the other too (the host's world, a guest's character), so
+        // what the context holds of each is taken anew, or the next step would put an old state back.
+        if (context.otherGame && context.otherGame->runtimeDriver
+            && context.otherGame->runtimeDriver->party() != nullptr)
+        {
+            syncContextFromRuntime(context);
+            swapScenarioGames(context);
+            syncContextFromRuntime(context);
+            swapScenarioGames(context);
+        }
+
+        if (stepSuccess)
+        {
+            const std::string partyDown = partyDownFailure(context, document, step);
+
+            if (!partyDown.empty())
+            {
+                result.failures.push_back(stepLocation(step) + ": " + partyDown);
+                stepSuccess = false;
+            }
         }
 
         if (!stepSuccess)

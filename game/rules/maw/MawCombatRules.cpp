@@ -28,6 +28,8 @@
 #include <array>
 #include <bitset>
 #include <cmath>
+#include <functional>
+#include <limits>
 #include <optional>
 #include <random>
 #include <string>
@@ -36,8 +38,63 @@
 
 namespace OpenYAMM::Game
 {
+// The draws a MAW damage roll makes, so one formula gives both the roll and the spell inspect window's range
+// (MawCombatRules::spellDamagePreview): `pick` a whole number in [low, high] (a die, a weapon's roll, an enchantment's
+// roll; their mean for the average), `unit` a spread in [0, 1], `critDraw` what a crit chance is measured against
+// (below the chance, a crit).
+struct MawDraws
+{
+    std::function<double(int, int)> pick;
+    std::function<double()> unit;
+    std::function<double()> critDraw;
+};
+
 namespace
 {
+MawDraws rolledDraws(std::mt19937 &rng)
+{
+    MawDraws draws;
+    draws.pick = [&rng](int low, int high)
+    {
+        return double(std::uniform_int_distribution<int>(low, std::max(low, high))(rng));
+    };
+    draws.unit = [&rng]()
+    {
+        return std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+    };
+    draws.critDraw = draws.unit;
+    return draws;
+}
+
+// Every draw at its least, its mean or its most, and never a crit.
+enum class MawDrawBound
+{
+    Least,
+    Mean,
+    Most,
+};
+
+MawDraws boundDraws(MawDrawBound bound)
+{
+    MawDraws draws;
+    draws.pick = [bound](int low, int high)
+    {
+        const int top = std::max(low, high);
+        return bound == MawDrawBound::Least ? double(low)
+            : bound == MawDrawBound::Most   ? double(top)
+                                            : (low + top) / 2.0;
+    };
+    draws.unit = [bound]()
+    {
+        return bound == MawDrawBound::Least ? 0.0 : bound == MawDrawBound::Most ? 1.0 : 0.5;
+    };
+    draws.critDraw = []()
+    {
+        return std::numeric_limits<double>::infinity();
+    };
+    return draws;
+}
+
 // A solo talent's extra blow (Cleave's other monsters, Sweeping Blows; user, 2026-11-15): its leech and on-hit gains
 // are a third as strong, and the special on-hit effects (stuns, paralysis, slows, pushes, artifact spells, Death
 // Grasp, Retaliation's stacks) are the main blow's alone. Only a solo run's talents make extra blows; any other game
@@ -364,13 +421,13 @@ double dragonBreathDamage(
     int maximum,
     int referenceLevel,
     double share,
-    std::mt19937 &rng,
-    bool &critical)
+    const MawDraws &draws,
+    bool &critical,
+    MawCrit *pCrit = nullptr)
 {
-    std::uniform_real_distribution<double> unit(0.0, 1.0);
-    std::uniform_int_distribution<int> roll(minimum, std::max(minimum, maximum));
-    const int first = roll(rng);
-    double damage = mawAverageOfTwoRolls(first, roll(rng)) * share;
+    // The mean of two rolls, rounded (mawAverageOfTwoRolls).
+    const double first = draws.pick(minimum, maximum);
+    double damage = mawRound((first + draws.pick(minimum, maximum)) / 2) * share;
     MawCritInputs critInputs;
     critInputs.overcrit = mawWearsLegendaryAffix(dragon, LegendaryOvercrit);
     critInputs.luck = sheet.luck.actual;
@@ -381,10 +438,17 @@ double dragonBreathDamage(
     critInputs.madness = rules.options().challengeMode == RulesetChallengeMode::BeyondMadness;
     addMapCritAffixes(rules, critInputs);
     const MawCrit crit = mawCrit(critInputs);
-    const double draw = unit(rng);
+    const double draw = draws.critDraw();
     damage *= critFactor(crit, critInputs, draw);
     critical = draw < crit.chance;
-    return damage * (0.75 + 0.25 * unit(rng) + 0.25 * unit(rng));
+
+    if (pCrit != nullptr)
+    {
+        *pCrit = crit;
+    }
+
+    const double firstSpread = draws.unit();
+    return damage * (0.75 + 0.25 * firstSpread + 0.25 * draws.unit());
 }
 
 // calcPowerVitality (COMBAT_SPEC.md §7.3) against the party's banked level: melee damage per second, and maximum HP
@@ -421,12 +485,13 @@ std::pair<double, double> powerAndVitality(
     critInputs.fateSkill = rules.auraSkill(47);
     critInputs.buffScale = rules.buffScale();
     critInputs.madness = rules.options().challengeMode == RulesetChallengeMode::BeyondMadness;
+    critInputs.overcrit = mawWearsLegendaryAffix(character, LegendaryOvercrit);
     addMapCritAffixes(rules, critInputs);
     const MawCrit crit = mawCrit(critInputs);
     const double average = (rows.meleeMinimumDamage + rows.meleeMaximumDamage) / 2.0
         * (1 + std::min(crit.chance, 1.0) * (crit.multiplier - 1));
     const double power = mawRound(average / (std::max(1, delay.delay) / 60.0)
-        * mawPartyHitChance(rows.meleeAttack, reference, rules.blessHitSkill(character), model)
+        * mawPartyHitChance(mawFullMeleeAttack(character, rows), reference, rules.blessHitSkill(character), model)
         * delay.damageMultiplier * std::max(crit.chance, 1.0));
 
     double fullHealth = character.maxHealth;
@@ -636,8 +701,8 @@ double enchantPace(
     return hands.empty() ? 100 : total / double(hands.size());
 }
 
-// A weapon's damage enchantment on one hit before resistance (calcEnchantDamage, IT:2125-2155): a roll in its range
-// (the average without a generator), x 1.5 with Legendary 19, at the hands' base pace.
+// A weapon's damage enchantment on one hit before resistance (calcEnchantDamage, IT:2125-2155): a draw in its range
+// (the average without draws), x 1.5 with Legendary 19, at the hands' base pace.
 std::optional<std::pair<CombatDamageType, double>> weaponEnchantDamage(
     MawRules &rules,
     const Character &character,
@@ -645,7 +710,7 @@ std::optional<std::pair<CombatDamageType, double>> weaponEnchantDamage(
     const HeldWeapon &weapon,
     bool spell,
     int partyCount,
-    std::mt19937 *pRng)
+    const MawDraws *pDraws)
 {
     const MawDamageEnchant *pEnchant = mawDamageEnchant(weapon.pState->specialEnchantId);
 
@@ -658,10 +723,9 @@ std::optional<std::pair<CombatDamageType, double>> weaponEnchantDamage(
         pEnchant->minimum, pEnchant->maximum, pEnchant->coefficient, isTwoHanded(*weapon.pItem));
     double damage = (range.minimum + range.maximum) / 2;
 
-    if (pRng != nullptr)
+    if (pDraws != nullptr)
     {
-        const int low = int(mawRound(range.minimum));
-        damage = std::uniform_int_distribution<int>(low, std::max(low, int(mawRound(range.maximum))))(*pRng);
+        damage = pDraws->pick(int(mawRound(range.minimum)), int(mawRound(range.maximum)));
     }
 
     damage *= mawWearsLegendaryAffix(character, EnchantDamageLegendary) ? 1.5 : 1;
@@ -866,18 +930,15 @@ MawCombatRules::MawCombatRules(MawRules &rules)
 
             // Dimension affix 12 raises the resistances of unnamed monsters (zzMaw-Monsters.lua:600-605).
             const int bonus = mawMonsterResistanceBonus(m_rules, hit.targetFacts);
-
-            // An Assassin's Mass Distortion, a weapon blow, takes Earth's resistance twice; stage_assassinAttack
-            // replaces the result after Mass Distortion's scale, so the scale does not apply (DM:822-866, CMB-4).
-            constexpr uint32_t MassDistortion = 44;
-
-            if (hit.pMissileAttacker != nullptr && hit.missileSpellId == MassDistortion
-                && mawClassSpell(hit.pMissileAttacker->className, MassDistortion) != nullptr)
+            // A solo run's Breach talent: the caster's spells count less of the monster's resistance.
+            const bool soloSpell =
+                m_rules.options().soloRun && hit.pMissileAttacker != nullptr && hit.missileSpellId != 0;
+            const double breach = soloSpell ? MawSoloTalents::breachShare(*hit.pMissileAttacker) : 0.0;
+            const auto breached = [breach, bonus](double damage, int resistance)
             {
-                const double once = resisted(hit.amount, hit.resistance, bonus);
-                hit.amount = int(std::ceil(resisted(once, hit.resistances.earth, bonus)));
-                return;
-            }
+                const int capped = mawCappedMonsterResistance(resistance, bonus);
+                return damage / mawMonsterResistanceDivisor(int(mawRound(capped * (1.0 - breach))));
+            };
 
             // A dragon's breath and Flame Blast take the monster's lowest resistance (DM:657-664).
             if (hit.pMissileAttacker != nullptr && (hit.missileSpellId == 97 || hit.missileSpellId == 123)
@@ -890,13 +951,13 @@ MawCombatRules::MawCombatRules(MawRules &rules)
                     {
                         return mawCappedMonsterResistance(left) < mawCappedMonsterResistance(right);
                     });
-                hit.amount = int(std::ceil(resisted(hit.amount, lowest, bonus)));
+                hit.amount = int(std::ceil(breached(hit.amount, lowest)));
                 return;
             }
 
             if (!hit.weaponElements)
             {
-                hit.amount = int(std::ceil(resisted(hit.amount, hit.resistance, bonus)));
+                hit.amount = int(std::ceil(breached(hit.amount, hit.resistance)));
                 return;
             }
 
@@ -1046,6 +1107,47 @@ MawCombatRules::MawCombatRules(MawRules &rules)
             hit.amount = int(mawRound(hit.amount * (1 + taken / 100)));
         });
     m_damageToMonster.add(
+        "solo-talents",
+        [this](MonsterDamageHit &hit)
+        {
+            // A solo run's talents on the character's own hits (devdocs/solo_action/ARCHETYPES_BUILD.md): Battle
+            // Frenzy on a melee blow, Long Shot on an arrow, and on a spell Spell Surge, Overload and Opening Volley,
+            // which add to one another. Expose Weakness is on the monster, for every hit.
+            if (!m_rules.options().soloRun || hit.amount <= 0 || hit.attackerFacts.level > 0)
+            {
+                return;
+            }
+
+            double scale = 1.0;
+
+            if (hit.pMeleeAttacker != nullptr)
+            {
+                scale *= MawSoloTalents::battleFrenzyScale(*hit.pMeleeAttacker, m_rules.battleFrenzyMonsters());
+            }
+            else if (hit.pMissileAttacker != nullptr && hit.missileSpellId == 0)
+            {
+                scale *= MawSoloTalents::longShotScale(*hit.pMissileAttacker, hit.missileFlightDistance);
+            }
+            else if (hit.pMissileAttacker != nullptr)
+            {
+                // A blast knows the monsters it damaged; a spell that named its target counted the crowd round it at
+                // the cast.
+                const int blast = hit.blastMonsters > 0                  ? hit.blastMonsters
+                    : m_soloCastSpellId == hit.missileSpellId ? m_soloCastMonsters
+                                                              : 0;
+                const bool fullHealth = hit.targetFacts.maxHp > 0 && hit.targetCurrentHp >= hit.targetFacts.maxHp;
+                scale *= 1.0 + MawSoloTalents::spellDamageBonus(
+                    *hit.pMissileAttacker, isAreaSpell(hit.missileSpellId), blast, fullHealth);
+            }
+
+            if (hit.targetFacts.exposedPercent > 0.0f && m_gameMinutes < hit.targetFacts.exposedUntilGameMinutes)
+            {
+                scale *= 1.0 + hit.targetFacts.exposedPercent / 100.0;
+            }
+
+            hit.amount = int(mawRound(hit.amount * scale));
+        });
+    m_damageToMonster.add(
         "map-affixes",
         [this](MonsterDamageHit &hit)
         {
@@ -1073,7 +1175,10 @@ MawCombatRules::MawCombatRules(MawRules &rules)
             // A solo run's early monster cut, the HP half: the party's hits count for more, which is the monster's HP
             // divided by the cut without touching its HP, experience or loot (POWER_CURVE_DIRECTION.md §8). Last, so
             // it scales everything the other stages added.
-            const double cut = m_rules.options().soloRun ? m_rules.soloMonsterCut() : 1.0;
+            const Character *pAttacker = hit.pMeleeAttacker != nullptr ? hit.pMeleeAttacker : hit.pMissileAttacker;
+            const double cut = !m_rules.options().soloRun ? 1.0
+                : pAttacker != nullptr ? MawSoloTalents::earlyMonsterCut(*pAttacker)
+                : m_rules.soloMonsterCut();
 
             if (cut > 1.0 && hit.attackerFacts.level <= 0 && hit.amount > 0)
             {
@@ -1136,7 +1241,9 @@ MawCombatRules::MawCombatRules(MawRules &rules)
         {
             // A solo run's early monster cut, the damage half: a monster's hit is divided before armour, resistances
             // and the class's flat cut see it, as if the monster were that much weaker. Falls and traps are not cut.
-            const double cut = m_rules.options().soloRun ? m_rules.soloMonsterCut() : 1.0;
+            const double cut = !m_rules.options().soloRun ? 1.0
+                : hit.pCharacter != nullptr ? MawSoloTalents::earlyMonsterCut(*hit.pCharacter)
+                : m_rules.soloMonsterCut();
 
             if (cut > 1.0 && mawMonsterHit(hit) && hit.amount > 0)
             {
@@ -1306,14 +1413,21 @@ MawCombatRules::MawCombatRules(MawRules &rules)
             hit.amount = int(mawRound(amount));
         });
     m_damageToCharacter.add(
-        "solo-spell-suppression",
+        "solo-talent-cuts",
         [this](CharacterDamageHit &hit)
         {
-            // A solo run's Spell Suppression: the last cut of a hit that is not physical, from a monster, a trap or
-            // anything else, after the 90 % cap of armour and resistances (user, 2026-11-16).
-            if (m_rules.options().soloRun && hit.amount > 0 && hit.type != CombatDamageType::Physical)
+            // A solo run's own cuts, last of all, after the 90 % cap of armour and resistances: Spell Suppression (a
+            // hit that is not physical, from a monster, a trap or anything else; user, 2026-11-16), Vanguard,
+            // Outnumbered, Nimble and Phase (user, 2026-11-18). Together they leave at least the table's damage_floor.
+            if (m_rules.options().soloRun && hit.amount > 0)
             {
-                hit.amount = int(mawRound(hit.amount * MawSoloTalents::nonPhysicalDamageScale(*hit.pCharacter)));
+                MawSoloTalents::IncomingHit incoming;
+                incoming.physical = hit.type == CombatDamageType::Physical;
+                incoming.monsterAttack = mawMonsterHit(hit);
+                incoming.missile = hit.missile;
+                incoming.firedFromDistance = hit.firedFromDistance;
+                incoming.nearbyMonsters = m_rules.outnumberedMonsters();
+                hit.amount = int(mawRound(hit.amount * MawSoloTalents::incomingDamageScale(*hit.pCharacter, incoming)));
             }
         });
 }
@@ -1630,7 +1744,7 @@ void MawCombatRules::resolveCharacterAttack(
             : int(mawRound(m_rules.state().totalLevel()));
         bool critical = false;
         attack.damage = std::max(0, int(mawRound(dragonBreathDamage(m_rules, dragon, sheet, context.minimumDamage,
-            context.maximumDamage, referenceLevel, 1.0, *context.pRng, critical))));
+            context.maximumDamage, referenceLevel, 1.0, rolledDraws(*context.pRng), critical))));
         attack.criticalDamage = critical;
         return;
     }
@@ -1737,11 +1851,12 @@ void MawCombatRules::resolveCharacterAttack(
         // Each hand's damage enchantment and Fire Aura, each resisted by its own element (Damage.lua stage 27); they
         // replace the table's elemental weapon damage.
         attack.rulesWeaponElements = true;
+        const MawDraws enchantDraws = rolledDraws(*context.pRng);
 
         for (const HeldWeapon &weapon : heldWeapons(character, *context.pItemTable, true, false))
         {
             if (const std::optional<std::pair<CombatDamageType, double>> enchant = weaponEnchantDamage(
-                    m_rules, character, *context.pItemTable, weapon, false, context.partyCount, context.pRng))
+                    m_rules, character, *context.pItemTable, weapon, false, context.partyCount, &enchantDraws))
             {
                 addElement(attack.rulesElementalDamage, enchant->first, int(enchant->second * enchantCrit()));
             }
@@ -1906,6 +2021,7 @@ MawPowerReport mawPowerReport(
     critInputs.fateSkill = rules.auraSkill(47);
     critInputs.buffScale = rules.buffScale();
     critInputs.madness = rules.options().challengeMode == RulesetChallengeMode::BeyondMadness;
+    critInputs.overcrit = mawWearsLegendaryAffix(character, LegendaryOvercrit);
     addMapCritAffixes(rules, critInputs);
     const MawCrit crit = mawCrit(critInputs);
 
@@ -1941,14 +2057,15 @@ MawPowerReport mawPowerReport(
         return damage;
     };
 
-    report.melee = blowPower(rows.meleeMinimumDamage, rows.meleeMaximumDamage, rows.meleeAttack,
+    report.melee = blowPower(rows.meleeMinimumDamage, rows.meleeMaximumDamage, mawFullMeleeAttack(character, rows),
         mawCharacterAttackDelay(rules, character, itemTable, CharacterAttackMode::Melee, sheet.speed.actual,
             rules.auraSkill(5, &character)),
         weaponExtra(heldWeapons(character, itemTable, true, false)));
 
     // A Master bowman looses two arrows.
     const double arrows = skillMastery(character, "Bow") >= SkillMastery::Master ? 2 : 1;
-    report.ranged = blowPower(rows.rangedMinimumDamage * arrows, rows.rangedMaximumDamage * arrows, rows.rangedAttack,
+    report.ranged = blowPower(rows.rangedMinimumDamage * arrows, rows.rangedMaximumDamage * arrows,
+        mawFullRangedAttack(character, rows),
         mawCharacterAttackDelay(rules, character, itemTable, CharacterAttackMode::Bow, sheet.speed.actual,
             rules.auraSkill(5, &character)),
         weaponExtra(heldWeapons(character, itemTable, false, true)));
@@ -2224,7 +2341,8 @@ std::optional<int> MawCombatRules::spellDamageOnTarget(const CharacterSpellCast 
         return std::nullopt;
     }
 
-    // An Assassin's Mass Distortion is a weapon blow (classSpellDamage); the resistance stage scales it.
+    // An Assassin's Mass Distortion is a weapon blow (classSpellDamage) without this scale; the resistance stage
+    // divides it by Earth's resistance once, as any spell (MAW 21275f61; twice before, DM:826-871, CMB-4).
     if (mawClassSpell(cast.pCaster->className, uint32_t(MassDistortion)) != nullptr)
     {
         return std::nullopt;
@@ -2249,39 +2367,75 @@ std::optional<SkillMastery> MawCombatRules::spellChainMastery(int spellId, Skill
 
 int MawCombatRules::rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical) const
 {
-    const int damage = rollSpellDamageBeforeTalents(cast, pCritical);
-
-    // A solo run's Spell Surge talent, and Overload on an area spell into a crowd.
-    if (m_rules.options().soloRun && cast.pCaster != nullptr && damage > 0)
-    {
-        const double overload = cast.pSpell != nullptr && isAreaSpell(uint32_t(cast.pSpell->id))
-            ? MawSoloTalents::overloadScale(*cast.pCaster, cast.monstersNearTarget)
-            : 1.0;
-        return int(std::lround(damage * MawSoloTalents::spellDamageScale(*cast.pCaster) * overload));
-    }
-
-    return damage;
+    // A solo run's spell talents act where the spell lands (the "solo-talents" stage): a spell that names its target
+    // leaves the crowd it counted round it for Overload there.
+    m_soloCastSpellId = cast.pSpell != nullptr ? uint32_t(cast.pSpell->id) : 0;
+    m_soloCastMonsters = cast.monstersNearTarget;
+    return rollSpellDamageBeforeTalents(cast, pCritical);
 }
 
 int MawCombatRules::rollSpellDamageBeforeTalents(const CharacterSpellCast &cast, bool *pCritical) const
 {
+    static thread_local std::mt19937 rng(std::random_device{}());
     bool critical = false;
-    const auto reportCritical = [pCritical, &critical](int damage)
-    {
-        if (pCritical != nullptr)
-        {
-            *pCritical = critical;
-        }
+    const std::optional<double> damage = drawSpellDamage(cast, rolledDraws(rng), critical, nullptr);
 
-        return damage;
-    };
+    if (!damage)
+    {
+        return CombatRules::rollSpellDamage(cast, pCritical);
+    }
+
+    if (pCritical != nullptr)
+    {
+        *pCritical = critical;
+    }
+
+    return std::max(0, int(mawRound(*damage)));
+}
+
+std::optional<SpellDamagePreview> MawCombatRules::spellDamagePreview(const CharacterSpellCast &cast) const
+{
+    if (cast.pCaster == nullptr || cast.pSpell == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    // Mass Distortion takes a share of its target's hit points (spellDamageOnTarget), a class's own excepted.
+    if (cast.pSpell->id == int(SpellId::MassDistortion)
+        && mawClassSpell(cast.pCaster->className, uint32_t(cast.pSpell->id)) == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    bool critical = false;
+    MawCrit crit;
+    const std::optional<double> least = drawSpellDamage(cast, boundDraws(MawDrawBound::Least), critical, &crit);
+    const std::optional<double> mean = drawSpellDamage(cast, boundDraws(MawDrawBound::Mean), critical, nullptr);
+    const std::optional<double> most = drawSpellDamage(cast, boundDraws(MawDrawBound::Most), critical, nullptr);
+
+    if (!least || !mean || !most)
+    {
+        return CombatRules::spellDamagePreview(cast);
+    }
+
+    SpellDamagePreview preview;
+    preview.minimum = std::max(0, int(mawRound(*least)));
+    preview.maximum = std::max(preview.minimum, int(mawRound(*most)));
+    preview.average = std::clamp(int(mawRound(*mean)), preview.minimum, preview.maximum);
+    preview.criticalChance = crit.chance;
+    preview.criticalMultiplier = crit.multiplier;
+    return preview;
+}
+
+std::optional<double> MawCombatRules::drawSpellDamage(
+    const CharacterSpellCast &cast, const MawDraws &draws, bool &critical, MawCrit *pCrit) const
+{
     const SpellEntry &spell = *cast.pSpell;
     const MawClassSpell *pClassSpell = mawClassSpell(cast.pCaster->className, uint32_t(spell.id));
 
     if (pClassSpell != nullptr && pClassSpell->damage[0] > 0 && cast.pItemTable != nullptr)
     {
-        const int damage = classSpellDamage(cast, *pClassSpell, critical);
-        return reportCritical(damage);
+        return classSpellDamage(cast, *pClassSpell, draws, critical, pCrit);
     }
 
     // A dragon's Flame Blast is its breath at 70 % (Novice and Expert), 85 % (Master) or all of it, with the breath's
@@ -2293,32 +2447,27 @@ int MawCombatRules::rollSpellDamageBeforeTalents(const CharacterSpellCast &cast,
             *cast.pCaster, cast.pItemTable, cast.pStandardItemEnchantTable, cast.pSpecialItemEnchantTable);
         const CharacterCombatRows rows = mawCombatRows(m_rules, *cast.pCaster, *cast.pItemTable,
             {sheet.might.actual, sheet.accuracy.actual, sheet.luck.actual});
-        static thread_local std::mt19937 rng(std::random_device{}());
-        const int damage = int(mawRound(dragonBreathDamage(m_rules, *cast.pCaster, sheet, rows.rangedMinimumDamage,
-            rows.rangedMaximumDamage, int(mawRound(m_rules.state().totalLevel())),
-            Share[size_t(std::clamp(int(cast.mastery), 1, 4)) - 1], rng, critical)));
-        return reportCritical(damage);
+        return dragonBreathDamage(m_rules, *cast.pCaster, sheet, rows.rangedMinimumDamage, rows.rangedMaximumDamage,
+            int(mawRound(m_rules.state().totalLevel())), Share[size_t(std::clamp(int(cast.mastery), 1, 4)) - 1],
+            draws, critical, pCrit);
     }
 
     const std::optional<MawSpellDice> casterDice = mawCasterSpellDice(m_rules, *cast.pCaster, spell);
 
     if (!casterDice)
     {
-        return CombatRules::rollSpellDamage(cast, pCritical);
+        return std::nullopt;
     }
 
     const Character &caster = *cast.pCaster;
     const MawSpellDice dice = *casterDice;
-    static thread_local std::mt19937 rng(std::random_device{}());
     double damage = dice.add;
 
     if (dice.diceMin != dice.diceMax)
     {
-        std::uniform_int_distribution<int> roll(dice.diceMin, std::max(dice.diceMin, dice.diceMax));
-
         for (uint32_t point = 0; point < cast.skillLevel; ++point)
         {
-            damage += roll(rng);
+            damage += draws.pick(dice.diceMin, dice.diceMax);
         }
     }
     else
@@ -2350,13 +2499,18 @@ int MawCombatRules::rollSpellDamageBeforeTalents(const CharacterSpellCast &cast,
     addMapCritAffixes(m_rules, critInputs);
     critInputs.overcrit = mawWearsLegendaryAffix(caster, LegendaryOvercrit);
     const MawCrit crit = mawCrit(critInputs);
-    const double critDraw = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+    const double critDraw = draws.critDraw();
     damage *= critFactor(crit, critInputs, critDraw);
     critical = critDraw < crit.chance;
+
+    if (pCrit != nullptr)
+    {
+        *pCrit = crit;
+    }
+
     const auto enchantCrit = [&]()
     {
-        return mawWearsLegendaryAffix(caster, LegendaryEnchantCrits)
-                && std::uniform_real_distribution<double>(0.0, 1.0)(rng) < crit.chance
+        return mawWearsLegendaryAffix(caster, LegendaryEnchantCrits) && draws.critDraw() < crit.chance
             ? crit.multiplier
             : 1.0;
     };
@@ -2373,7 +2527,7 @@ int MawCombatRules::rollSpellDamageBeforeTalents(const CharacterSpellCast &cast,
             double weaponDamage = weaponFireAuraDamage(m_rules, caster, weapon, false, cast.partyCount) * enchantCrit();
 
             if (const std::optional<std::pair<CombatDamageType, double>> enchant = weaponEnchantDamage(
-                    m_rules, caster, *cast.pItemTable, weapon, true, cast.partyCount, &rng))
+                    m_rules, caster, *cast.pItemTable, weapon, true, cast.partyCount, &draws))
             {
                 weaponDamage += enchant->second * enchantCrit();
             }
@@ -2382,10 +2536,12 @@ int MawCombatRules::rollSpellDamageBeforeTalents(const CharacterSpellCast &cast,
         }
     }
 
-    return reportCritical(std::max(0, int(mawRound(damage))));
+    return damage;
 }
 
-int MawCombatRules::classSpellDamage(const CharacterSpellCast &cast, const MawClassSpell &spell, bool &critical) const
+double MawCombatRules::classSpellDamage(
+    const CharacterSpellCast &cast, const MawClassSpell &spell, const MawDraws &draws, bool &critical, MawCrit *pCrit)
+    const
 {
     // A weapon blow of the caster: its roll and crit plus both hands' Fire Aura and average enchantment damage, the
     // weapon's speed multiplier, halved when Weak, times the spell's share at its school's mastery; no Intellect or
@@ -2397,12 +2553,9 @@ int MawCombatRules::classSpellDamage(const CharacterSpellCast &cast, const MawCl
     const CharacterCombatRows rows = mawCombatRows(m_rules, caster, *cast.pItemTable, stats);
     const MawAttackDelay delay = mawCharacterAttackDelay(m_rules, caster, *cast.pItemTable,
         CharacterAttackMode::Melee, sheet.speed.actual, m_rules.auraSkill(5, &caster));
-    static thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> roll(rows.meleeMinimumDamage, std::max(rows.meleeMinimumDamage,
-        rows.meleeMaximumDamage));
     // rollDice: the mean of two rolls (DM:32-34).
-    const int first = roll(rng);
-    double damage = mawAverageOfTwoRolls(first, roll(rng));
+    const double first = draws.pick(rows.meleeMinimumDamage, rows.meleeMaximumDamage);
+    double damage = mawRound((first + draws.pick(rows.meleeMinimumDamage, rows.meleeMaximumDamage)) / 2);
 
     // An Assassin's crowd takes back its share of the Assassination bonus, a spell's at half (MCC:414-427; spells
     // pay no energy for it).
@@ -2424,9 +2577,14 @@ int MawCombatRules::classSpellDamage(const CharacterSpellCast &cast, const MawCl
     addMapCritAffixes(m_rules, critInputs);
     critInputs.overcrit = mawWearsLegendaryAffix(caster, LegendaryOvercrit);
     const MawCrit crit = mawCrit(critInputs);
-    const double critDraw = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+    const double critDraw = draws.critDraw();
     damage *= critFactor(crit, critInputs, critDraw);
     critical = critDraw < crit.chance;
+
+    if (pCrit != nullptr)
+    {
+        *pCrit = crit;
+    }
 
     for (const HeldWeapon &weapon : heldWeapons(caster, *cast.pItemTable, true, false))
     {
@@ -2447,7 +2605,7 @@ int MawCombatRules::classSpellDamage(const CharacterSpellCast &cast, const MawCl
     }
 
     damage *= spell.damage[size_t(std::clamp(int(cast.mastery), 1, 4)) - 1];
-    return std::max(0, int(mawRound(damage)));
+    return damage;
 }
 
 int MawCombatRules::environmentDamage(
@@ -2511,7 +2669,8 @@ int MawCombatRules::trapDamage(
 }
 
 void MawCombatRules::summonBossFamilyMember(
-    IGameplayWorldRuntime &world, const GameplayRuntimeActorState &summonerState, std::mt19937 &rng) const
+    IGameplayWorldRuntime &world, const GameplayRuntimeActorState &summonerState,
+    const GameplayWorldPoint &partyFeet, std::mt19937 &rng) const
 {
     if (summonerState.monsterId <= 0)
     {
@@ -2524,9 +2683,9 @@ void MawCombatRules::summonBossFamilyMember(
     // Halfway to the party, at MAW's summon speed 350.
     GameplayMonsterSpawnRequest request;
     request.monsterId = monsterId;
-    request.x = (summonerState.preciseX + world.partyX()) / 2;
-    request.y = (summonerState.preciseY + world.partyY()) / 2;
-    request.z = (summonerState.preciseZ + world.partyFootZ()) / 2;
+    request.x = (summonerState.preciseX + partyFeet.x) / 2;
+    request.y = (summonerState.preciseY + partyFeet.y) / 2;
+    request.z = (summonerState.preciseZ + partyFeet.z) / 2;
     request.radius = 1.0f;
     request.moveSpeed = 350;
     request.seed = rng();
@@ -2664,9 +2823,11 @@ int MawCombatRules::absorbCharacterDamage(Party &party, size_t memberIndex, int 
     // Mana Shield first, then legendary 15 on what is left, then Divine Protection (DM:1866-1903).
     if (pMember->hasSkill("ManaShield") && !pMember->rulesetState.manaShieldDisabled)
     {
-        const MawManaShieldResult shielded = mawManaShield(
-            damage, pMember->spellPoints, skillLevel(*pMember, "ManaShield"), skillMastery(*pMember, "ManaShield"));
-        pMember->spellPoints -= shielded.spellPointsSpent;
+        // A solo run's Arcane Ward: the shield spends a share of the SP, so the same pool absorbs more.
+        const double cost = m_rules.options().soloRun ? MawSoloTalents::manaShieldCostScale(*pMember) : 1.0;
+        const MawManaShieldResult shielded = mawManaShield(damage, int(pMember->spellPoints / cost),
+            skillLevel(*pMember, "ManaShield"), skillMastery(*pMember, "ManaShield"));
+        pMember->spellPoints -= std::min(pMember->spellPoints, int(std::ceil(shielded.spellPointsSpent * cost)));
         damage = std::max(0, shielded.damage);
     }
 
@@ -2685,6 +2846,13 @@ int MawCombatRules::absorbCharacterDamage(Party &party, size_t memberIndex, int 
         }
 
         damage = left;
+    }
+
+    // A solo run's rage: the share of the member's bar the hit took.
+    if (m_rules.options().soloRun && damage > 0)
+    {
+        const int fullHealth = std::max(1, Party::effectiveMaximumHealth(*pMember));
+        MawSoloTalents::gainRageFromHit(*pMember, double(damage) / fullHealth);
     }
 
     return damage;
@@ -2973,24 +3141,47 @@ void MawCombatRules::updateArtifacts(Party &party, IGameplayWorldRuntime &world)
     }
 }
 
-void MawCombatRules::updateCombat(Party &party, IGameplayWorldRuntime &world, float deltaSeconds) const
+void MawCombatRules::countMonstersNear(const IGameplayWorldRuntime &world, float x, float y) const
 {
-    m_gameMinutes = world.gameMinutes();
-    updateArtifacts(party, world);
     int nearbyMonsters = 0;
+    // The solo run's pack talents count by their own reach (talents.yml), wider than the legendaries' 512.
+    const bool solo = m_rules.options().soloRun;
+    const float outnumberedReach = solo ? MawSoloTalents::packReach("outnumbered") : 0.0f;
+    const float battleFrenzyReach = solo ? MawSoloTalents::packReach("battle_frenzy") : 0.0f;
+    int outnumberedMonsters = 0;
+    int battleFrenzyMonsters = 0;
 
     for (size_t actorIndex = 0; actorIndex < world.mapActorCount(); ++actorIndex)
     {
         GameplayActorRulesView state;
 
-        if (world.actorRulesView(actorIndex, state) && !state.isDead && state.hostileToParty
-            && std::hypot(state.preciseX - world.partyX(), state.preciseY - world.partyY()) - state.radius <= 512)
+        if (!world.actorRulesView(actorIndex, state) || state.isDead || !state.hostileToParty)
         {
-            ++nearbyMonsters;
+            continue;
         }
+
+        const float distance = std::hypot(state.preciseX - x, state.preciseY - y) - state.radius;
+        nearbyMonsters += distance <= 512 ? 1 : 0;
+        outnumberedMonsters += solo && distance <= outnumberedReach ? 1 : 0;
+        battleFrenzyMonsters += solo && distance <= battleFrenzyReach ? 1 : 0;
     }
 
     m_rules.setNearbyMonsters(nearbyMonsters);
+    m_rules.setSoloPackMonsters(outnumberedMonsters, battleFrenzyMonsters);
+}
+
+void MawCombatRules::observeRemoteParty(const Party &party, const IGameplayWorldRuntime &world, float x, float y) const
+{
+    countMonstersNear(world, x, y);
+    m_rules.setActiveAuras(m_rules.spellRules().auraSources(party));
+    m_rules.setPartyStaffResistance(m_rules.spellRules().staffResistance(party));
+}
+
+void MawCombatRules::updateCombat(Party &party, IGameplayWorldRuntime &world, float deltaSeconds) const
+{
+    m_gameMinutes = world.gameMinutes();
+    updateArtifacts(party, world);
+    countMonstersNear(world, world.partyX(), world.partyY());
     EventRuntimeState *pRuntimeState = world.eventRuntimeState();
 
     // Real-time poison, once a second.
@@ -3206,30 +3397,77 @@ void MawCombatRules::applyPartyHitEffects(Party &party, const PartyHitOnMonster 
         return;
     }
 
-    // A solo run's Onslaught talent: a kill adds an attack-speed stack.
-    if (hit.killed && m_rules.options().soloRun)
+    // A solo run's talents (devdocs/solo_action/ARCHETYPES_BUILD.md).
+    if (m_rules.options().soloRun)
     {
-        MawSoloTalents::noteKill(*party.member(hit.memberIndex));
+        Character &member = *party.member(hit.memberIndex);
+
+        // A kill adds an Onslaught stack and takes the cooldown_per_kill off (Charge).
+        if (hit.killed)
+        {
+            MawSoloTalents::noteKill(member);
+        }
+
+        // Rage: a melee blow gives for its recovery and for the share of the monster's bar it took.
+        if (hit.melee)
+        {
+            const int monsterHealth = std::max(1, hit.pTarget->maxHp);
+            MawSoloTalents::gainRageFromBlow(member, double(hit.damage) / monsterHealth, hit.recoverySeconds,
+                hit.extraBlow);
+        }
+
+        // A damaging spell that hit takes Spell Surge's cooldown_per_cast off, once for the cast.
+        if (hit.spellId != 0)
+        {
+            MawSoloTalents::noteSpellHit(member);
+        }
+
+        // A critical bow hit exposes the monster (Expose Weakness) and slows its movement (Hamstring).
+        if (!hit.melee && hit.spellId == 0 && hit.critical && hit.pWorld != nullptr && hit.targetActorIndex)
+        {
+            constexpr float GameMinutesPerSecond = 0.5f;
+
+            if (const float percent = MawSoloTalents::exposeWeaknessPercent(member); percent > 0.0f)
+            {
+                ActorHitMarks marks;
+                marks.exposedPercent = percent;
+                marks.exposedGameMinutes = MawSoloTalents::exposeWeaknessSeconds() * GameMinutesPerSecond;
+                hit.pWorld->addActorHitMarks(*hit.targetActorIndex, marks);
+            }
+
+            if (const float percent = MawSoloTalents::hamstringPercent(member); percent > 0.0f)
+            {
+                hit.pWorld->debuffActor(*hit.targetActorIndex, GameplayActorHitDebuff::MoveSlow,
+                    MawSoloTalents::hamstringSeconds(), 1.0f / std::max(0.05f, 1.0f - percent / 100.0f));
+            }
+        }
     }
 
     // A Grandmaster spear blow stacks more physical damage on its target until it dies (DM:546-583).
     if (hit.melee && hit.type == CombatDamageType::Physical && hit.pWorld != nullptr && hit.targetActorIndex
         && party.itemTable() != nullptr)
     {
-        if (ActorRulesetFacts *pFacts = hit.pWorld->mutableActorRulesetFacts(*hit.targetActorIndex))
+        if (const float stack = float(spearStack(m_rules, *pMember, *party.itemTable())); stack > 0.0f)
         {
-            pFacts->spearDamageTaken += float(spearStack(m_rules, *pMember, *party.itemTable()));
+            ActorHitMarks marks;
+            marks.spearDamage = stack;
+            hit.pWorld->addActorHitMarks(*hit.targetActorIndex, marks);
         }
     }
 
-    // A Regenerating boss counts the party's hits: it regenerates once hit, slower with each (Damage.lua:944-954,
-    // FCOR-2-6).
+    // A Regenerating boss counts the party's damage as a share of its health: it regenerates once hit, slower the
+    // more it took. MAW counts hits (Damage.lua:944-954, FCOR-2-6); here a blow of 1 % weakens it as one hit did there
+    // (DEVIATIONS 201). Any blow counts at least a hundredth of a percent, so the first one starts the regeneration.
     if (hasAffix(*hit.pTarget, MawBossAffix::Regenerating) && hit.pWorld != nullptr && hit.targetActorIndex)
     {
-        if (ActorRulesetFacts *pFacts = hit.pWorld->mutableActorRulesetFacts(*hit.targetActorIndex))
-        {
-            pFacts->regeneratingHits = uint16_t(std::min(pFacts->regeneratingHits + 1, 65535));
-        }
+        // Its health on the map (with the co-op players' share), as its regeneration reads it.
+        GameplayRuntimeActorState target = {};
+        const int maxHp =
+            hit.pWorld->actorRuntimeState(*hit.targetActorIndex, target) ? target.maxHp : hit.pTarget->maxHp;
+        const double share = double(hit.damage) / double(std::max(1, maxHp));
+        ActorHitMarks marks;
+        marks.regeneratingDamage = uint16_t(std::clamp(std::lround(share * 10000.0), 1L, 10000L));
+        hit.pWorld->addActorHitMarks(*hit.targetActorIndex, marks);
     }
 
     // A dragon's bite throws its target along the blow once Dragon Ability reaches Fangs: 800 × fang / level^0.75
@@ -3271,10 +3509,9 @@ void MawCombatRules::applyPartyHitEffects(Party &party, const PartyHitOnMonster 
     if (mawWearsLegendaryAffix(*pMember, LegendaryDamageTaken) && hit.pWorld != nullptr && hit.targetActorIndex
         && (!isAreaSpell(hit.spellId) || unitDraw(m_legendaryRng) < 0.4))
     {
-        if (ActorRulesetFacts *pFacts = hit.pWorld->mutableActorRulesetFacts(*hit.targetActorIndex))
-        {
-            pFacts->legendaryDamageTaken += 1;
-        }
+        ActorHitMarks marks;
+        marks.legendaryDamage = 1.0f;
+        hit.pWorld->addActorHitMarks(*hit.targetActorIndex, marks);
     }
 
     // Snake and Finality cast Slow on the monster they strike, at the wielder's Sword skill (zzzMaw_Artifacts.lua:124-138).
@@ -3875,9 +4112,15 @@ void MawCombatRules::applyMonsterHitEffects(
     if (hasAffix(attacker, MawBossAffix::Summoner) && attackerIndex
         && (type == CombatDamageType::Physical || std::uniform_real_distribution<double>(0, 1)(rng) < 0.4))
     {
-        summonBossFamilyMember(*pWorld, attackerState, rng);
+        // The party the boss fights, which with several players need not be the local one.
+        summonBossFamilyMember(*pWorld, attackerState,
+            attackerIndex ? pWorld->actorPartyFeet(*attackerIndex)
+                          : GameplayWorldPoint{pWorld->partyX(), pWorld->partyY(), pWorld->partyFootZ()},
+            rng);
     }
 
+    // A Venomous, Plagueborn or Fixator boss's condition goes past Protection from Magic, as in MAW, which writes it
+    // directly; a member immune to it is spared (DEVIATIONS 10).
     if (hasAffix(attacker, MawBossAffix::Venomous) && special)
     {
         party.applyMemberCondition(memberIndex, CharacterCondition::PoisonSevere);
@@ -3906,13 +4149,17 @@ void MawCombatRules::applyMonsterHitEffects(
 
     // A Swapper trades places with the party; a Puller jumps the party at itself (evt.Jump: ZAngle 128 of a 2048-step
     // turn, speed 1000).
-    if (hasAffix(attacker, MawBossAffix::Swapper) && attackerIndex)
+    // Both move the body of the party that was struck. In a co-op host's game that is the host's own body only:
+    // another player's is its own game's to move, and struck there the host's party is not moved in its place.
+    const bool ownBodyStruck = pWorld->party() == &party;
+
+    if (hasAffix(attacker, MawBossAffix::Swapper) && attackerIndex && ownBodyStruck)
     {
         pWorld->swapActorPlaces(*attackerIndex, std::nullopt);
         pWorld->actorRuntimeState(*attackerIndex, attackerState);
     }
 
-    if (hasAffix(attacker, MawBossAffix::Puller) && attackerIndex)
+    if (hasAffix(attacker, MawBossAffix::Puller) && attackerIndex && ownBodyStruck)
     {
         constexpr float PullSpeed = 1000.0f;
         constexpr float PullElevation = 128.0f / 2048.0f * 2.0f * 3.14159265f;

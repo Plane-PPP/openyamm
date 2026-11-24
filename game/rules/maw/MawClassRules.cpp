@@ -177,8 +177,9 @@ std::string mawClassLine(const std::string &className)
 
 double MawClassRules::promotionFactor(const ClassMultiplierEntry &entry) const
 {
-    // Two or three worlds' promotions completed make the kind's final classes Elder or Ultimate (CL:62-108); all four
-    // (Chedian's too) make them Supreme, x1.75 (ours, the user 2026-11-09: DEVIATIONS 183).
+    // Two or three worlds' promotions completed make the kind's final classes Elder or Ultimate (CL:62-108); four
+    // (Chedian's too) make them Supreme, x1.75 (ours, the user 2026-11-09: DEVIATIONS 183). Xeen is a fifth world: any
+    // four of the five make Supreme, and the fifth adds nothing (devdocs/maw/XEEN_SUPPORT.md).
     const int worlds = entry.promotionStep == 2 ? std::min(m_rules.promotionWorlds(entry.classKind), 4) : 0;
     return worlds >= 2 ? 0.75 + 0.25 * worlds : 1.0;
 }
@@ -241,6 +242,14 @@ double MawClassRules::enlightenmentMeditationMana(const Character &character) co
 bool mawIsDragon(const Character &character)
 {
     return character.raceId == Dragon;
+}
+
+void MawClassRules::applyPrimaryStatBonuses(Character &member) const
+{
+    if (m_rules.options().soloRun)
+    {
+        MawSoloTalents::applyStatPassives(member);
+    }
 }
 
 void MawClassRules::applyClassBonuses(Character &member) const
@@ -317,13 +326,6 @@ void MawClassRules::applyClassBonuses(Character &member) const
     {
         const CharacterSkill *pAssassination = member.findSkill("EarthMagic");
         member.magicalBonuses.maxSpellPoints = 10 * (pAssassination != nullptr ? int(pAssassination->mastery) : 0);
-    }
-
-    // A solo run's passive talents (devdocs/solo_action/TALENTS.md), after the class's own bonuses.
-    if (m_rules.options().soloRun)
-    {
-        MawSoloTalents::applyPassives(member);
-        m_rules.setSoloMonsterCut(MawSoloTalents::earlyMonsterCut(member));
     }
 }
 
@@ -422,7 +424,7 @@ void MawClassRules::update(Party &party, const IGameplayWorldRuntime &world, flo
     m_pendingSeconds = 0;
     updatePromotions(party);
 
-    // A solo run's talents: cooldowns, timed effects, Onslaught, Cheat Death, Steady Aim, Quickfoot.
+    // A solo run's talents: cooldowns, timed effects, Onslaught, Cheat Death, Steady Aim, Quickfoot, rage.
     if (m_rules.options().soloRun)
     {
         MawSoloTalents::update(party, world.partyX(), world.partyY(), !partyHasYellowAlert(world), deltaSeconds);
@@ -684,7 +686,7 @@ void MawClassRules::updatePromotions(Party &party) const
 
     const auto hasQuestBit = [&party](uint32_t bit)
     {
-        return party.hasQuestBit(bit);
+        return party.campaign().hasQuestBit(bit);
     };
     const auto hasAward = [&party](uint32_t award)
     {
@@ -953,12 +955,17 @@ MawAscension mawAscension(const Character &caster, MawAscensionUse use)
         return {floored ? std::floor(sum) : sum, SkillMastery::Grandmaster};
     }
 
-    if (line == "shaman" && (use == MawAscensionUse::Cost || use == MawAscensionUse::Heal))
+    // MAW's damage roll forgets the Shaman though its texts and spell book promise it (DEVIATIONS 199).
+    if (line == "shaman"
+        && (use == MawAscensionUse::Cost || use == MawAscensionUse::Heal || use == MawAscensionUse::Damage))
     {
         const double sum = baseSum({"FireMagic", "AirMagic", "WaterMagic", "EarthMagic", "SpiritMagic", "MindMagic",
                                "BodyMagic"})
             / 7;
-        return {sum, SkillMastery::Grandmaster};
+        // MAW's damage roll reads the Learning skill with its item bonuses (Legendary 25, artifact 1324), which a
+        // Shaman can only have from items: they still count on top of the schools' share.
+        const double itemAscension = use == MawAscensionUse::Damage ? caster.skillBonus("Learning") : 0;
+        return {sum + itemAscension, SkillMastery::Grandmaster};
     }
 
     const CharacterSkill *pLearning = caster.findSkill("Learning");

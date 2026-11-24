@@ -865,12 +865,12 @@ TEST_CASE("Minotaur frozen 2.3 v180 preserves the Roguelike run when migrated to
     CHECK(summary->ruleset == original->ruleset);
     CHECK(summary->mapFileName == original->mapFileName);
 
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "minotaur-v180-to-v194.oysav";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "minotaur-v180-to-v202.oysav";
     REQUIRE_MESSAGE(saveGameDataToPath(path, *original, error), error);
     const std::optional<GameSaveData> restored = loadGameDataFromPath(path, error);
     REQUIRE_MESSAGE(restored, error);
-    // This version writes OYMINO1/v194, upstream 2.7's schema 193.
-    CHECK(restored->sourceSaveVersion == 193);
+    // This version writes OYMINO1/v202, upstream 3.2's schema 201.
+    CHECK(restored->sourceSaveVersion == 201);
     CHECK(restored->namedGlobalVars == original->namedGlobalVars);
     CHECK(restored->ruleset == original->ruleset);
     CHECK(restored->randomRootSeed == original->randomRootSeed);

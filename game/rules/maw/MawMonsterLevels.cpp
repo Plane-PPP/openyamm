@@ -59,6 +59,11 @@ bool MawMapLevels::loadFromYaml(const std::string &text, std::string &errorMessa
             m_horizontalStarterMaps.insert(lowerCopy(map.as<std::string>()));
         }
 
+        for (const YAML::Node &map : root["ranged_free_maps"])
+        {
+            m_rangedFreeMaps.insert(lowerCopy(map.as<std::string>()));
+        }
+
         for (const YAML::Node &map : root["madness"]["starting_maps"])
         {
             m_madnessStartingMaps.insert(lowerCopy(map.as<std::string>()));
@@ -170,6 +175,11 @@ bool MawMapLevels::loadWorldBalance(const std::string &text, std::string &errorM
             if (map["madness_start"].as<bool>(false))
             {
                 m_madnessStartingMaps.insert(mapFileName);
+            }
+
+            if (map["ranged_free"].as<bool>(false))
+            {
+                m_rangedFreeMaps.insert(mapFileName);
             }
 
             if (const int level = map["madness_level"].as<int>(0); level > 0)
@@ -332,6 +342,11 @@ bool MawMapLevels::isMadnessStartingMap(const std::string &mapFileName) const
     return m_madnessStartingMaps.contains(lowerCopy(mapFileName));
 }
 
+bool MawMapLevels::isRangedFreeMap(const std::string &mapFileName) const
+{
+    return m_rangedFreeMaps.contains(lowerCopy(mapFileName));
+}
+
 int MawMapLevels::madnessLevel(const std::string &mapFileName) const
 {
     const auto level = m_madnessLevels.find(lowerCopy(mapFileName));
@@ -398,7 +413,43 @@ MawMonsterFamily mawMonsterFamily(const MonsterTable *pMonsterTable, int monster
 bool mawArenaMap(const std::string &mapFileName)
 {
     const std::string file = lowerCopy(mapFileName);
-    return file == "d42.blv" || file == "7d05.blv" || file == "zarena.blv" || file == "thearena.blv";
+    return file == "d42.blv" || file == "7d05.blv" || file == "zarena.blv" || file == "thearena.blv"
+        || file == "xeen_xd20.blv";
+}
+
+std::vector<const MonsterTable::MonsterStatsEntry *> mawArenaFamilies(const MonsterTable &monsterTable)
+{
+    std::vector<const MonsterTable::MonsterStatsEntry *> families;
+
+    for (int monsterId = 3; monsterId <= MawMonsterRows; monsterId += 3)
+    {
+        const MonsterTable::MonsterStatsEntry *pStats = monsterTable.findStatsById(int16_t(monsterId));
+
+        if (pStats != nullptr && pStats->aiType != MonsterTable::MonsterAiType::Wimp && monsterId != 462
+            && monsterId != 579)
+        {
+            families.push_back(pStats);
+        }
+    }
+
+    std::stable_sort(families.begin(), families.end(),
+        [](const MonsterTable::MonsterStatsEntry *pLeft, const MonsterTable::MonsterStatsEntry *pRight)
+        {
+            return pLeft->level < pRight->level;
+        });
+    return families;
+}
+
+int mawArenaWaveMonster(int wave, const MonsterTable &monsterTable)
+{
+    const std::vector<const MonsterTable::MonsterStatsEntry *> families = mawArenaFamilies(monsterTable);
+
+    if (families.empty() || wave <= 0)
+    {
+        return 0;
+    }
+
+    return families[size_t(wave - 1) % families.size()]->id - 1;
 }
 
 double mawMapBolster(const MawMapLevels &mapLevels, const MawMonsterLevelInputs &inputs)
@@ -505,6 +556,11 @@ std::unordered_map<int, int> resolveMawMonsterLevels(
     const double mean = (low + mid + high) / 3;
     const double adjustMult = inputs.madness ? 1 : 1.5;
     const bool starterMap = mapLevels.isHorizontalStarterMap(inputs.mapFileName);
+    // The Endless Arena (d42): the families of the level's second and third wave.
+    const bool endlessArena = inputs.mapFileName == "d42.blv";
+    const int arenaLevel = std::max(inputs.arenaLevel, 1);
+    const int arenaSecondFamily = endlessArena ? mawArenaWaveMonster(arenaLevel * 3 - 1, monsterTable) : 0;
+    const int arenaThirdFamily = endlessArena ? mawArenaWaveMonster(arenaLevel * 3, monsterTable) : 0;
     std::unordered_map<int, int> levels;
 
     for (int monsterId : monsterIds)
@@ -578,11 +634,25 @@ std::unordered_map<int, int> resolveMawMonsterLevels(
             level = std::max(fixed, 5.0);
         }
 
-        // The Arena (d42), where the Endless Arena brings every family: six times the base level, the tiers closer
-        // together (zzMaw-Monsters.lua:577-589).
-        if (inputs.mapFileName == "d42.blv")
+        // The Arena (d42), where the Endless Arena brings every family: a B row sits at 6 levels (8 in Beyond
+        // Madness) for each arena level and 6 (8) more, the level's second family 2 higher and its third 4; the A
+        // and C rows 1.2 times their table distance from it (zzMaw-Monsters.lua:577-589, MAW 2f172096).
+        if (endlessArena)
         {
-            level = std::max(base * 6 - (base - familyLevel) * 6 * 0.8 + adjust * 2, 5.0);
+            const double step = inputs.madness ? 8 : 6;
+            double levelB = step + arenaLevel * step;
+
+            if (arenaSecondFamily != 0 && family.row(2) == arenaSecondFamily)
+            {
+                levelB += 2;
+            }
+
+            if (arenaThirdFamily != 0 && family.row(2) == arenaThirdFamily)
+            {
+                levelB += 4;
+            }
+
+            level = std::max(levelB + (base - familyLevel) * 1.2, 5.0);
         }
 
         if (inputs.bountyLevel)

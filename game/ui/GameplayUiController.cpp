@@ -79,6 +79,21 @@ bool GameplayUiController::characterScreenSupportsInspection(const CharacterScre
     return screen.open;
 }
 
+bool GameplayUiController::houseShopCoversDialogueBody(
+    const HouseShopOverlayState &shop, const InventoryNestedOverlayState &nested)
+{
+    if (shop.active && shop.mode != HouseShopMode::None)
+    {
+        return true;
+    }
+
+    return nested.active
+        && (nested.mode == InventoryNestedOverlayMode::ShopDisplay
+            || nested.mode == InventoryNestedOverlayMode::ShopSell
+            || nested.mode == InventoryNestedOverlayMode::ShopIdentify
+            || nested.mode == InventoryNestedOverlayMode::ShopRepair);
+}
+
 bool GameplayUiController::houseShopModeSupportsItemInspection(HouseShopMode mode)
 {
     switch (mode)
@@ -696,6 +711,16 @@ void GameplayUiController::setStatusBarEvent(
     state.statusBar.eventText = Engine::localize(text);
     state.statusBar.eventRemainingSeconds = std::max(0.0f, durationSeconds);
     state.statusBar.eventPriority = priority;
+
+    if (m_pStatusBarEventLog != nullptr)
+    {
+        m_pStatusBarEventLog->push_back(state.statusBar.eventText);
+    }
+}
+
+void GameplayUiController::setStatusBarEventLog(std::vector<std::string> *pLog)
+{
+    m_pStatusBarEventLog = pLog;
 }
 
 bool GameplayUiController::statusBarEventActive() const

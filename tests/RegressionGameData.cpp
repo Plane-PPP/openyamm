@@ -462,6 +462,20 @@ bool loadRegressionGameData(RegressionGameData &data, std::string &failure)
         return false;
     }
 
+    std::vector<std::vector<std::string>> transitionMapTextRows;
+
+    if (!loadTextTableRows(
+            assetFileSystem, engineDataTablePath("transition_map_texts.txt"), transitionMapTextRows, failure))
+    {
+        return false;
+    }
+
+    if (!data.transitionTable.loadMapTextsFromRows(transitionMapTextRows))
+    {
+        failure = "could not load transition map text table for regression tests";
+        return false;
+    }
+
     std::vector<std::vector<std::string>> monsterRelationRows;
 
     if (!loadTextTableRows(assetFileSystem, engineDataTablePath("hostile.txt"), monsterRelationRows, failure))
@@ -715,7 +729,22 @@ bool loadRegressionGameData(RegressionGameData &data, std::string &failure)
         return false;
     }
 
-    if (!data.houseTable.applyHouseRules(houseRules, transportLocations, mapStats))
+    std::vector<std::vector<std::string>> transportIndexRows;
+
+    if (!loadTextTableRows(assetFileSystem, engineDataTablePath("transport_index.txt"), transportIndexRows, failure))
+    {
+        return false;
+    }
+
+    Game::MergedTransportIndexTable transportIndex = {};
+
+    if (!transportIndex.loadFromRows(transportIndexRows))
+    {
+        failure = "could not load merged transport index for regression tests";
+        return false;
+    }
+
+    if (!data.houseTable.applyHouseRules(houseRules, transportIndex, transportLocations, mapStats))
     {
         failure = "could not apply merged house rules for regression tests";
         return false;

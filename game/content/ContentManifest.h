@@ -17,6 +17,8 @@ class Node;
 
 namespace OpenYAMM::Game
 {
+class MergedContinentSettingTable;
+
 struct WorldStartDefinition
 {
     std::string mapFileName;
@@ -248,6 +250,11 @@ struct WorldManifest
     // groups are its maps' script groups and whose actors talk only through their RUDE ids and use events (a dog or a
     // townsperson without DoRude says nothing); default true.
     bool streetNpcs = true;
+    // world.yml streetNpcGroupNews: false keeps the street NPCs (streetNpcs: generated peasants with their professions'
+    // talk) but gives them none of npc_group.txt's group news, MMerge's lines for MM6-MM8's groups (group 1: "If the
+    // pirates make it through our warriors..."). Xeen, whose actor groups are its maps' own; the news a script sets with
+    // evt.SetNPCGroupNews still speaks. Default true.
+    bool streetNpcGroupNews = true;
     // world.yml friendlyActorsBlockParty: true makes friendly actors (townsfolk, NPCs, animals) solid to the party as
     // hostile ones are. MM9, whose NPCs block the player; default false, MM6-MM8's walk-through rule.
     bool friendlyActorsBlockParty = false;
@@ -263,6 +270,11 @@ struct WorldManifest
     // world.yml combatLog: false hides the combat log in this world unless its setting is On (MM9, the user
     // 2026-11-06: the row under the minimap is the hireling rail's and the formation button's).
     bool combatLog = true;
+    // world.yml surfaceGlowContent: true makes the glow of this world's face textures content, not a quality option
+    // (D-55): with Settings' "Surface materials" off its maps still load the normal maps of the textures that glow
+    // and draw their glow channel on the ordinary shading (MapCompanionLoadOptions::surfaceGlowWorlds). Xeen; default
+    // false, so MM6-MM9 draw no glow with the setting off.
+    bool surfaceGlowContent = false;
     // world.yml chestArtifactsOnly: true gives this world's random artifacts and relics only from level-7 chest slots
     // (no 5% roll on level-6 loot), and a level-7 slot with none left gives gold and a level-6 item instead of
     // nothing. MM9, whose black chests hold them (the user, 2026-11-06); default false.
@@ -313,4 +325,20 @@ bool loadMountedWorldManifests(
     const Engine::AssetFileSystem &assetFileSystem,
     std::vector<WorldManifest> &manifests,
     std::string &errorMessage);
+
+// The worlds whose glow lists a map's face textures read (MapCompanionLoadOptions::surfaceGlowWorlds, D-55): every
+// mounted world, when Surface materials is off and the map's world declares surfaceGlowContent; else none.
+std::vector<std::string> surfaceGlowListWorlds(
+    const std::vector<WorldManifest> &mountedWorlds,
+    const std::string &mapWorldId,
+    bool surfaceMaterials);
+
+// The full-screen loading pages for a map of the world (icon names, one picked at random; empty: the engine's own).
+// A map on one of the world's own continents (its `continents` id range) shows its continent_settings row's pages
+// ("Loading pics", extensions dropped); a map whose continent is not known yet (a save being read) any of the world's
+// continents' pages; otherwise, or when those rows name none, world.yml loadingScreens.
+std::vector<std::string> worldLoadingPages(
+    const WorldManifest &world,
+    const MergedContinentSettingTable &continents,
+    std::optional<uint32_t> mapContinentId);
 }

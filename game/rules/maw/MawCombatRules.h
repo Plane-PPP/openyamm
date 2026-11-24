@@ -12,9 +12,12 @@
 
 namespace OpenYAMM::Game
 {
+struct GameplayWorldPoint;
 class MawRules;
 struct RulesetOptions;
 struct MawClassSpell;
+struct MawCrit;
+struct MawDraws;
 struct GameplayRuntimeActorState;
 
 // MAW's combat (devdocs/maw/COMBAT_SPEC.md §5, §7). Monster attacks: every attack rolls against the target's Speed
@@ -55,6 +58,8 @@ public:
         CombatDamageType type,
         bool indoor) const override;
     int rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical = nullptr) const override;
+    // The least and the most of the roll below without a crit, and the spell crit (the class spells' blow crit).
+    std::optional<SpellDamagePreview> spellDamagePreview(const CharacterSpellCast &cast) const override;
     // Mass Distortion: 15 % + 0.5 % per point of the target's hit points, less on harder difficulties and bosses, more
     // on monsters above level 250 (SP:1714-1718, 1819-1850).
     std::optional<int> spellDamageOnTarget(const CharacterSpellCast &cast, const SpellTargetState &target) const override;
@@ -85,6 +90,7 @@ public:
     // while an enemy is in melee range and, with the preference on, dismiss a member left below -10 x full HP
     // (SP:3849-3857, DM:1923-1932).
     void updateCombat(Party &party, IGameplayWorldRuntime &world, float deltaSeconds) const override;
+    void observeRemoteParty(const Party &party, const IGameplayWorldRuntime &world, float x, float y) const override;
     // A poisoning sets the poison's time to 25 seconds, or adds 5 up to 50.
     void characterConditionApplied(Party &party, size_t memberIndex, CharacterCondition condition) const override;
     void characterDamaged(Party &party, size_t memberIndex) const override;
@@ -127,6 +133,11 @@ public:
 private:
     // rollSpellDamage before a solo run's talents scale it.
     int rollSpellDamageBeforeTalents(const CharacterSpellCast &cast, bool *pCritical) const;
+    // A damage spell's damage before rounding with its draws made by `draws` (rolled, or their least or most for
+    // spellDamagePreview); nothing for a spell MAW leaves to the engine. `critical` learns whether it crit, `pCrit` the
+    // crit chance and multiplier.
+    std::optional<double> drawSpellDamage(
+        const CharacterSpellCast &cast, const MawDraws &draws, bool &critical, MawCrit *pCrit) const;
     // A spell an artifact casts on the monster its wielder struck, cast on the next update.
     struct ArtifactCast
     {
@@ -137,10 +148,13 @@ private:
         size_t actorIndex = 0;
     };
 
+    // partyFeet: the party the summoner fights (halfway to it the new monster appears).
     void summonBossFamilyMember(IGameplayWorldRuntime &world, const GameplayRuntimeActorState &summoner,
-        std::mt19937 &rng) const;
+        const GameplayWorldPoint &partyFeet, std::mt19937 &rng) const;
     // MAW's artifact effects on the regeneration tick (every 5 game minutes) and its 2-second buff refresh.
     void updateArtifacts(Party &party, IGameplayWorldRuntime &world) const;
+    // Counts the living hostile monsters around a place for the party in play (MawPartyRuntime).
+    void countMonstersNear(const IGameplayWorldRuntime &world, float x, float y) const;
     // The full HP the Nightmare death thresholds count in: the member's, or Legendary 30's SP x Mana Shield efficiency.
     int deathThreshold(const Character &member) const;
     int legendaryProtection(Party &party, size_t memberIndex, int damage) const;
@@ -164,7 +178,9 @@ private:
         CombatDamageType type,
         int partyCount) const;
     // A Death Knight's or Assassin's damage spell: a share of a weapon blow.
-    int classSpellDamage(const CharacterSpellCast &cast, const MawClassSpell &spell, bool &critical) const;
+    double classSpellDamage(
+        const CharacterSpellCast &cast, const MawClassSpell &spell, const MawDraws &draws, bool &critical,
+        MawCrit *pCrit) const;
     void applyLeech(Party &party, const PartyHitOnMonster &hit) const;
     void applyClassHitEffects(Party &party, const PartyHitOnMonster &hit) const;
     void applyAssassinHit(Party &party, const PartyHitOnMonster &hit, bool arrow) const;
@@ -178,6 +194,9 @@ private:
     // The world's clock (game minutes) as of the last update, for Divine Protection, and what the rules tell the player
     // there next.
     mutable float m_gameMinutes = 0;
+    // A solo run's last damage spell cast and the monsters it counted round its named target (Overload).
+    mutable uint32_t m_soloCastSpellId = 0;
+    mutable int m_soloCastMonsters = 0;
     mutable std::vector<std::string> m_statusMessages;
     // Sounds by name the combat rules ask for (a solo's Cheat Death), played with the status messages.
     mutable std::vector<std::string> m_soundNames;

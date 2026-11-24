@@ -1,13 +1,48 @@
 #include "game/rules/MonsterRules.h"
+
 #include "engine/Localization.h"
 
 #include "game/tables/MapStats.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace OpenYAMM::Game
 {
 GameplayMonsterBolsterResult MonsterRules::resolveMonster(
+    const GameplayBolsterRuntimeContext &context,
+    const MonsterTable::MonsterStatsEntry &stats,
+    const MonsterEntry *pMonsterEntry) const
+{
+    GameplayMonsterBolsterResult result = resolveMonsterByRules(context, stats, pMonsterEntry);
+    result.maxHp = healthForPlayers(context.playerCount, result.maxHp);
+    result.rulesetFacts.maxHp = healthForPlayers(context.playerCount, result.rulesetFacts.maxHp);
+    return result;
+}
+
+float MonsterRules::playerHealthFactor(size_t playerCount)
+{
+    // None since 2026-11-21 (the user's decision): MAW's own multiplayer does not change monster health by the
+    // number of players (its getMonsterHealth reads level, difficulty and boss multipliers only), and neither does
+    // this game. It was half as much again per extra player. The sizing stays in place for a number to be tried.
+    constexpr float HealthPerExtraPlayer = 0.0f;
+    return 1.0f + HealthPerExtraPlayer * float(std::max<size_t>(1, playerCount) - 1);
+}
+
+int MonsterRules::healthForPlayers(size_t playerCount, int maxHp)
+{
+    // Rounded up, so that healthWithoutPlayers gives the ruleset's own number back.
+    const float factor = playerHealthFactor(playerCount);
+    return factor != 1.0f ? int(std::ceil(float(maxHp) * factor)) : maxHp;
+}
+
+int MonsterRules::healthWithoutPlayers(size_t playerCount, int maxHp)
+{
+    const float factor = playerHealthFactor(playerCount);
+    return factor != 1.0f ? int(std::lround(float(maxHp) / factor)) : maxHp;
+}
+
+GameplayMonsterBolsterResult MonsterRules::resolveMonsterByRules(
     const GameplayBolsterRuntimeContext &context,
     const MonsterTable::MonsterStatsEntry &stats,
     const MonsterEntry *pMonsterEntry) const
@@ -28,18 +63,46 @@ void MonsterRules::enterMap(MapStatsEntry &, MonsterTable &) const
 {
 }
 
+uint64_t MonsterRules::mapAssetVariant(const std::string &) const
+{
+    return 0;
+}
+
 char MonsterRules::spawnTier(const MapStatsEntry &, char tier, uint32_t) const
 {
     return tier;
 }
 
-std::optional<std::string> MonsterRules::rulesTopic(const std::string &, Party &) const
+std::optional<RulesTopicReply> MonsterRules::rulesTopic(
+    const std::string &, Party &, const IGameplayWorldRuntime *) const
 {
     return std::nullopt;
 }
 
 void MonsterRules::updateMonsters(IGameplayWorldRuntime &, float) const
 {
+}
+
+std::vector<std::pair<std::string, std::string>> MonsterRules::liveMapInstances() const
+{
+    return {};
+}
+
+MapInstanceExit MonsterRules::mapInstanceExit(const std::string &, bool sameMap, const std::string &) const
+{
+    MapInstanceExit exit;
+    exit.kind = sameMap ? MapInstanceExit::Kind::Stay : MapInstanceExit::Kind::Leave;
+    return exit;
+}
+
+std::optional<std::string> MonsterRules::mapTravelRefusal() const
+{
+    return std::nullopt;
+}
+
+std::optional<std::string> MonsterRules::lloydsBeaconRefusal() const
+{
+    return std::nullopt;
 }
 
 std::string MonsterRules::teleportBlockedText(bool) const
@@ -97,6 +160,16 @@ double MonsterRules::packDensityFactor(const MapStatsEntry &) const
 bool MonsterRules::keepsUsedBarrelsThroughRefill() const
 {
     return false;
+}
+
+bool MonsterRules::monstersFlee() const
+{
+    return true;
+}
+
+bool MonsterRules::reputationCounts() const
+{
+    return true;
 }
 
 void MonsterRules::leaveMap(IGameplayWorldRuntime &) const

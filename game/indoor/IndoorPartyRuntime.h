@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/indoor/IndoorMovementController.h"
+#include "game/indoor/IndoorTouchContacts.h"
 #include "game/indoor/IndoorWater.h"
 #include "game/party/Party.h"
 
@@ -64,6 +65,8 @@ public:
     // Fly Up/Fly Down while on a ladder: +1, -1 or 0 (devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md, "Ladders").
     void setLadderVerticalInput(int verticalInput);
     bool climbingLadder() const;
+    // A special jump (the event Jump, a MAW Puller's hit) waits for its first step or still carries the party.
+    bool specialJumpActive() const;
     // Swimming (scene `water_volumes`, devdocs/mm9_rework/MM9_WATER_SWIMMING_DESIGN.md): the look direction and the
     // movement keys for the next update; ignored on a map without water volumes.
     void setSwimInput(const IndoorSwimInput &input);
@@ -91,6 +94,9 @@ public:
     // Moves out the floor faces stood on during movement steps since the last call, in order, so pressure plates
     // see every face crossed instead of only the frame's final one.
     void takeSteppedFloorFaces(std::vector<size_t> &faces);
+    // Moves out the walls the party came into contact with since the last call (each once per contact; only on a map
+    // whose touch faces run, IndoorMapData::partyTouchFacesRun).
+    void takeNewTouchFaces(std::vector<size_t> &faces);
     const Party &party() const;
     Party &party();
     const std::string &movementStatusText() const;
@@ -190,6 +196,8 @@ private:
     float m_burningDamageTimerSeconds = 0.0f;
     std::string m_movementStatusText;
     std::vector<size_t> m_steppedFloorFaces;
+    IndoorTouchContacts m_touchContacts;
+    std::vector<size_t> m_newTouchFaces;
     // Water (runtime only: a save under water loads with full breath, the state derived again from the position).
     IndoorSwimInput m_swimInput = {};
     IndoorSwimMemory m_swimMemory = {};

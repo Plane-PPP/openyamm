@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/events/EventRuntime.h"
+#include "game/gameplay/PlayerId.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayActorShields.h"
 #include "game/gameplay/GameplayWorldInteraction.h"
@@ -12,11 +13,13 @@
 #include "game/tables/MonsterTable.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -368,6 +371,10 @@ struct GameplayActorInspectState
     float fearRemainingSeconds = 0.0f;
     float shrinkRemainingSeconds = 0.0f;
     float darkGraspRemainingSeconds = 0.0f;
+    // A solo run's talents (GameplayActorSpellEffectState): cannot shoot or cast, movement alone slowed, deals less.
+    float silenceRemainingSeconds = 0.0f;
+    float moveSlowRemainingSeconds = 0.0f;
+    float demoralizeRemainingSeconds = 0.0f;
     // How long the actor's charm, berserk or enslavement (controlMode) still holds.
     float controlRemainingSeconds = 0.0f;
     float dayOfProtectionRemainingSeconds = 0.0f;
@@ -402,6 +409,13 @@ struct GameplayActorSpellEffectState
     float shrinkArmorClassMultiplier = 1.0f;
     float armorClassHalvedRemainingSeconds = 0.0f;
     float darkGraspRemainingSeconds = 0.0f;
+    // A solo run's talents (devdocs/solo_action/ARCHETYPES_BUILD.md): the actor cannot shoot or cast (Challenge), walks
+    // slower while its attacks keep their pace (Hamstring), and deals less as under Shrinking Ray or Dark Grasp
+    // (Demoralizing Shout).
+    float silenceRemainingSeconds = 0.0f;
+    float moveSlowRemainingSeconds = 0.0f;
+    float moveSlowMultiplier = 1.0f;
+    float demoralizeRemainingSeconds = 0.0f;
     float dayOfProtectionRemainingSeconds = 0.0f;
     int dayOfProtectionPower = 0;
     float hourOfPowerRemainingSeconds = 0.0f;
@@ -456,6 +470,8 @@ struct GameplayActorAttackConstraintState
     bool attack2IsRanged = false;
     bool blindActive = false;
     bool darkGraspActive = false;
+    // A solo run's Challenge talent: the actor may not shoot or cast.
+    bool silenced = false;
     bool rangedCommitAllowed = true;
 };
 
@@ -480,6 +496,11 @@ struct GameplayPartySpellProjectileRequest
     std::optional<size_t> targetActorIndex;
     // Its damage was a critical hit (the status line and combat log say so where it lands).
     bool critical = false;
+    // A solo run's Arc talent: the missile leaps on from the monster it strikes to this many more, each within
+    // chainRadius of the one before and struck at chainShare of its damage (ProjectileState::chainLeft).
+    uint8_t chainCount = 0;
+    float chainShare = 0.0f;
+    float chainRadius = 0.0f;
 };
 
 enum class GameplayProjectileVisualMode
@@ -610,6 +631,12 @@ enum class GameplayActorHitDebuff : uint8_t
 {
     DarkGrasp,
     Slow,
+    // A solo run's talents: no missile or spell attacks (Challenge); movement divided by the power while attacks keep
+    // their pace (Hamstring); damage dealt cut as under Shrinking Ray (Demoralizing Shout). The stronger, longer one
+    // holds: none stacks.
+    Silence,
+    MoveSlow,
+    Demoralize,
 };
 
 struct GameplayCombatActorInfo
@@ -688,6 +715,8 @@ struct GameplayPartyAttackProjectileRequest
     // A solo run's ordinary bow attack: one credit its arrows share, spent by the first of them to hit a monster
     // (ProjectileState::hitCredit).
     std::shared_ptr<bool> hitCredit;
+    // ProjectileState::quietBlast (Multishot's arrows).
+    bool quietBlast = false;
 };
 
 struct GameplayPartyAttackFallbackQuery
@@ -716,6 +745,120 @@ enum class GameplayInteractionMethod
 {
     Keyboard,
     Mouse,
+};
+
+// Where a player's party stands in the map.
+struct GameplayPlayerBody
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    float footZ = 0.0f;
+    float yawRadians = 0.0f;
+    // In the air by the Fly spell (a flier comes to meet it; one that stands on the ground is hovered over).
+    bool flying = false;
+};
+
+// Another player's party in the world (IGameplayWorldRuntime::setGuestBodies).
+struct GameplayGuestBody
+{
+    PlayerId player = LocalPlayer;
+    Party *pParty = nullptr;
+    GameplayPlayerBody body = {};
+};
+
+// Where a monster is and what it is doing, as a co-op host sends it to its guests' replicas many times a second
+// (game/coop/CoopSession.h). The rest of a monster travels as its saved record, when that changes.
+struct ReplicaActorPose
+{
+    enum Flag : uint8_t
+    {
+        Dead = 1 << 0,
+        Invisible = 1 << 1,
+        HostileToParty = 1 << 2,
+        DetectedParty = 1 << 3,
+        AttackImpactTriggered = 1 << 4,
+    };
+
+    uint16_t actorIndex = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float yawRadians = 0.0f;
+    float velocityX = 0.0f;
+    float velocityY = 0.0f;
+    float velocityZ = 0.0f;
+    float intendedSpeed = 0.0f;
+    float animationTimeTicks = 0.0f;
+    float actionSeconds = 0.0f;
+    float skirmishSeconds = 0.0f;
+    int32_t hp = 0;
+    // The world runtime's own values: its animation, its AI state, the attack the monster has chosen and its
+    // skirmish phase.
+    uint8_t animation = 0;
+    uint8_t aiState = 0;
+    uint8_t attackAbility = 0;
+    uint8_t skirmishPhase = 0;
+    uint8_t flags = 0;
+};
+
+// A place the local party stepped on that runs an event (a pressure plate): a replica names it to its host, which
+// runs the event for that player.
+struct ReplicaPositionTrigger
+{
+    enum class Kind : uint8_t
+    {
+        OutdoorFace,
+        IndoorFace,
+        // A wall walked into that runs by touch (IndoorMapData::partyTouchFacesRun).
+        IndoorTouchFace,
+    };
+
+    Kind kind = Kind::OutdoorFace;
+    // Outdoors the model and its face; indoors the face.
+    uint32_t first = 0;
+    uint32_t second = 0;
+};
+
+// A replica's monster between two of its host's messages: it moves on as it last did, and where a message puts it
+// elsewhere, the difference fades instead of showing as a jump.
+struct ReplicaActorSmoothing
+{
+    float errorX = 0.0f;
+    float errorY = 0.0f;
+    float errorZ = 0.0f;
+
+    // The host says the monster shown at (x, y, z) is at its own place: the difference is kept, to fade. One too
+    // large to fade (a teleport) is taken at once.
+    void correct(float &x, float &y, float &z, float hostX, float hostY, float hostZ)
+    {
+        constexpr float SnapDistance = 384.0f;
+        errorX = x - hostX;
+        errorY = y - hostY;
+        errorZ = z - hostZ;
+
+        if (errorX * errorX + errorY * errorY + errorZ * errorZ > SnapDistance * SnapDistance)
+        {
+            errorX = 0.0f;
+            errorY = 0.0f;
+            errorZ = 0.0f;
+            x = hostX;
+            y = hostY;
+            z = hostZ;
+        }
+    }
+
+    // A frame: the monster moves on at its last speed, and a part of the difference goes.
+    void advance(float &x, float &y, float &z, float velocityX, float velocityY, float velocityZ, float deltaSeconds)
+    {
+        constexpr float FadeSeconds = 0.1f;
+        const float keep = std::exp(-deltaSeconds / FadeSeconds);
+        x += velocityX * deltaSeconds - errorX * (1.0f - keep);
+        y += velocityY * deltaSeconds - errorY * (1.0f - keep);
+        z += velocityZ * deltaSeconds - errorZ * (1.0f - keep);
+        errorX *= keep;
+        errorY *= keep;
+        errorZ *= keep;
+    }
 };
 
 class IGameplayWorldRuntime
@@ -777,6 +920,11 @@ public:
     {
         return true;
     }
+    // An outdoor map under water (its environment's underwater flag): MM7's Shoals, MM8's Plane of Water.
+    virtual bool isUnderwaterMap() const
+    {
+        return false;
+    }
     virtual float gameMinutes() const = 0;
     virtual int currentHour() const = 0;
     virtual const std::vector<uint8_t> *journalMapFullyRevealedCells() const = 0;
@@ -788,10 +936,33 @@ public:
     }
     // Resolves the living actors' ruleset numbers again (a difficulty change).
     virtual void refreshRulesetMonsters() = 0;
+    // The number of players the map's monsters are sized for (MonsterRules::playerHealthFactor), kept with the
+    // map's state. resizeMonstersForPlayers sizes the living ones again, each keeping its share of health.
+    virtual size_t monsterHealthPlayerCount() const
+    {
+        return 1;
+    }
+    virtual void resizeMonstersForPlayers(size_t playerCount)
+    {
+        static_cast<void>(playerCount);
+    }
     // Restores up to `amount` HP of a living actor (ruleset effects such as MAW's Regenerating bosses).
     virtual bool healMapActor(size_t actorIndex, int amount) = 0;
     // The ruleset facts of a living actor for rules that change them as it is hit (MAW's Spear stacks), or null.
     virtual ActorRulesetFacts *mutableActorRulesetFacts(size_t actorIndex) = 0;
+    // What a blow leaves on the living monster it struck (ActorHitMarks). A replica asks its host.
+    virtual bool addActorHitMarks(size_t actorIndex, const ActorHitMarks &marks)
+    {
+        ActorRulesetFacts *pFacts = mutableActorRulesetFacts(actorIndex);
+
+        if (pFacts == nullptr)
+        {
+            return false;
+        }
+
+        applyActorHitMarks(*pFacts, marks, gameMinutes());
+        return true;
+    }
     virtual int currentLocationReputation() const = 0;
     virtual void setCurrentLocationReputation(int reputation) = 0;
     virtual void applyEventRuntimeState(bool syncPersistentHostilityMasks = false)
@@ -806,6 +977,120 @@ public:
     }
     virtual Party *party() = 0;
     virtual const Party *party() const = 0;
+    // A co-op session's other players' parties in this map (GameSession's guests), given anew whenever they change or
+    // move. Monsters turn to the nearest player's party, and missiles hit whichever they meet. A world without
+    // monsters of its own keeps none.
+    virtual void setGuestBodies(std::vector<GameplayGuestBody> bodies)
+    {
+        static_cast<void>(bodies);
+    }
+    // Whether other players play in this world (a co-op session with a guest in it, on either side): the clock is
+    // then everyone's, and a service that would skip days for one party (training) takes no time.
+    virtual bool sharedWithOtherPlayers() const
+    {
+        return false;
+    }
+    // Makes another player's party the one party() answers with while that player's command runs
+    // (PlayerCommands), and returns the party it replaced, which the caller puts back. The world's party is the local
+    // player's at every other moment.
+    virtual Party *swapActingParty(Party *pParty)
+    {
+        return pParty;
+    }
+    // A co-op guest's replica of the host's map (GameSession::coopReplica): nothing here decides what the map does.
+    // Monsters, missiles, things on the ground, doors and the clock take their state from the host (game/coop) and
+    // only animate between its messages; map timers and events do not run. The local party still moves here.
+    virtual void setReplica(bool replica)
+    {
+        static_cast<void>(replica);
+    }
+    virtual bool replica() const
+    {
+        return false;
+    }
+    // What a host reads of its map for the guests, and what a replica takes from its host. A monster's record is its
+    // saved state (SaveSections.h); its signature changes when the record has to be sent again, which its pose,
+    // sent all the time, never causes. A record for the index one past the last adds a monster.
+    virtual bool captureReplicaActorPose(size_t actorIndex, ReplicaActorPose &pose) const
+    {
+        static_cast<void>(actorIndex);
+        static_cast<void>(pose);
+        return false;
+    }
+    virtual uint64_t replicaActorSignature(size_t actorIndex) const
+    {
+        static_cast<void>(actorIndex);
+        return 0;
+    }
+    virtual std::vector<uint8_t> encodeReplicaActor(size_t actorIndex) const
+    {
+        static_cast<void>(actorIndex);
+        return {};
+    }
+    virtual bool applyReplicaActor(size_t actorIndex, std::span<const uint8_t> record)
+    {
+        static_cast<void>(actorIndex);
+        static_cast<void>(record);
+        return false;
+    }
+    virtual void applyReplicaActorPose(const ReplicaActorPose &pose)
+    {
+        static_cast<void>(pose);
+    }
+    // What lies on the ground, as the save holds it: a host's list, and a replica taking it whole.
+    virtual std::vector<uint8_t> encodeReplicaWorldItems() const
+    {
+        return {};
+    }
+    virtual bool applyReplicaWorldItems(std::span<const uint8_t> bytes)
+    {
+        static_cast<void>(bytes);
+        return false;
+    }
+    // The chest and the corpse the host opened for the local player: a replica shows them, and what its player takes
+    // out or puts in goes back to the host.
+    virtual void setReplicaLootViews(
+        std::optional<GameplayChestViewState> chestView,
+        std::optional<GameplayCorpseViewState> corpseView)
+    {
+        static_cast<void>(chestView);
+        static_cast<void>(corpseView);
+    }
+    // The host's clock, which a replica shows and does not advance.
+    virtual void setReplicaGameMinutes(float gameMinutes)
+    {
+        static_cast<void>(gameMinutes);
+    }
+    // What the local player's blows, shots and talents would do to the map, kept for the host since the last call
+    // (game/coop/ReplicaWorldCalls.h). While a dry run lasts nothing is kept: a spell is tried here to see what it
+    // needs and what it would show, and cast by the host.
+    virtual std::vector<std::vector<uint8_t>> takeReplicaWorldCalls()
+    {
+        return {};
+    }
+    virtual void setReplicaDryRun(bool dryRun)
+    {
+        static_cast<void>(dryRun);
+    }
+    // The places the local party stepped on since the last call that run an event, for the host to run them.
+    virtual std::vector<ReplicaPositionTrigger> takeReplicaPositionTriggers()
+    {
+        return {};
+    }
+    // A host runs the event of a place a guest's party stepped on, for the party the world acts with; false when
+    // the place has none.
+    virtual bool executeReplicaPositionTrigger(const ReplicaPositionTrigger &trigger, const GameplayPlayerBody &body)
+    {
+        static_cast<void>(trigger);
+        static_cast<void>(body);
+        return false;
+    }
+    // Where the world put the acting party while it was another player's (teleportParty under swapActingParty): that
+    // player's own game moves it there. None when nothing moved it since the last call.
+    virtual std::optional<GameplayPlayerBody> takeActingBodyOrder()
+    {
+        return std::nullopt;
+    }
     virtual float partyX() const = 0;
     virtual float partyY() const = 0;
     virtual float partyFootZ() const = 0;
@@ -833,6 +1118,13 @@ public:
     virtual float partyHitReach() const
     {
         return 5120.0f;
+    }
+    // The feet of the party a monster fights: the local party's, or with several players (co-op) the party of the
+    // player it has turned on.
+    virtual GameplayWorldPoint actorPartyFeet(size_t actorIndex) const
+    {
+        static_cast<void>(actorIndex);
+        return GameplayWorldPoint{partyX(), partyY(), partyFootZ()};
     }
     virtual float gameplayCameraYawRadians() const
     {
@@ -999,6 +1291,12 @@ public:
     }
     virtual size_t mapActorCount() const = 0;
     virtual bool actorRuntimeState(size_t actorIndex, GameplayRuntimeActorState &state) const = 0;
+    // A walker's centre over deep water with no deck under its body (the outdoor water rule's test; scenario checks).
+    virtual bool actorStandsOverWater(size_t actorIndex) const
+    {
+        (void)actorIndex;
+        return false;
+    }
     // The actor as the rules read it; a world may answer it without building the full runtime state.
     virtual bool actorRulesView(size_t actorIndex, GameplayActorRulesView &view) const
     {
@@ -1153,6 +1451,21 @@ public:
     virtual void collectWorldItemPresentationStates(std::vector<GameplayWorldItemPresentationState> &items) const
     {
         items.clear();
+    }
+
+    // A lying item's key (GameplayWorldItemPresentationState::key), which is its own for as long as it lies there,
+    // and the item of a key. An item's index is only its place in the list now: another game's index for the
+    // same item may be older than this game's list.
+    virtual std::optional<uint32_t> worldItemKey(size_t worldItemIndex) const
+    {
+        (void)worldItemIndex;
+        return std::nullopt;
+    }
+
+    virtual std::optional<size_t> worldItemIndexOfKey(uint32_t key) const
+    {
+        (void)key;
+        return std::nullopt;
     }
     // Armed party Fire Spike traps, as settled projectiles (their models lie on the ground). None by default.
     virtual void collectFireSpikeTrapPresentationStates(std::vector<GameplayProjectilePresentationState> &traps) const
@@ -1412,6 +1725,7 @@ public:
     // shieldTier: what the blow is to an energy shield (GameplayActorShields); shieldModifiers: what the weapon's tech
     // skill adds to it. hitReaction false: the monster neither flinches nor is knocked back (a solo run's Sweeping
     // Blows and an arrow's Chaining Arrows leaps).
+    // weaponItemId: the striking member's weapon, for an indoor map's MonsterDamage hook (E11; 0: none known).
     virtual bool applyPartyAttackMeleeDamage(
         size_t actorIndex,
         int damage,
@@ -1419,7 +1733,8 @@ public:
         ShieldAttackTier shieldTier,
         const ShieldHitModifiers &shieldModifiers = {},
         bool critical = false,
-        bool hitReaction = true) = 0;
+        bool hitReaction = true,
+        uint32_t weaponItemId = 0) = 0;
     virtual bool debugSetActorHealth(size_t actorIndex, int health)
     {
         (void)actorIndex;

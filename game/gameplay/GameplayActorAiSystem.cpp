@@ -16,6 +16,12 @@ namespace OpenYAMM::Game
 {
 namespace
 {
+// The party an actor deals with: its own (a co-op session's nearest player) or the frame's.
+const ActorPartyFacts &partyFor(const ActorAiFacts &actor, const ActorAiFrameFacts &frame)
+{
+    return actor.party ? *actor.party : frame.party;
+}
+
 constexpr float ActorAiTicksPerSecond = 128.0f;
 constexpr float ActorAiUpdateStepSeconds = 1.0f / ActorAiTicksPerSecond;
 constexpr float Pi = 3.14159265358979323846f;
@@ -1202,7 +1208,8 @@ GameplayActorAttackAbility resolveAttackAbilityConstraints(
         return chosenAbility;
     }
 
-    if (constraints.blindActive || constraints.darkGraspActive || !constraints.rangedCommitAllowed)
+    if (constraints.blindActive || constraints.darkGraspActive || constraints.silenced
+        || !constraints.rangedCommitAllowed)
     {
         return fallbackMeleeAttackAbility(chosenAbility, constraints, attack2Chance);
     }
@@ -1303,16 +1310,14 @@ CombatAbilityChoiceResult chooseCombatAbility(const CombatAbilityChoiceInput &in
 
     GameplayActorAttackConstraintState constraintState = input.constraintState;
 
-    if (!input.inMeleeRange && !attackAbilityIsRanged(chosenAbility, constraintState))
+    // Out of reach a monster whose first attack is a missile shoots it instead of a rolled blow. A rolled blow of a
+    // melee monster with a missile second attack stays a blow: it closes in, and shoots only when the roll picks the
+    // missile by its chance (the original's ability roll, OpenEnroth Actor::special_ability_use_check and
+    // Actor::UpdateActorAI), so a mixed monster (MM6's goblins, MAW's Hell missiles) is not an archer.
+    if (!input.inMeleeRange && !attackAbilityIsRanged(chosenAbility, constraintState)
+        && constraintState.attack1IsRanged)
     {
-        if (constraintState.attack1IsRanged)
-        {
-            chosenAbility = GameplayActorAttackAbility::Attack1;
-        }
-        else if (input.attack2Chance > 0 && constraintState.attack2IsRanged)
-        {
-            chosenAbility = GameplayActorAttackAbility::Attack2;
-        }
+        chosenAbility = GameplayActorAttackAbility::Attack1;
     }
 
     // Out of reach blocks a ranged ability outright: a monster with no blow to fall back on (a Great Wyrm) would
@@ -1320,6 +1325,7 @@ CombatAbilityChoiceResult chooseCombatAbility(const CombatAbilityChoiceInput &in
     const bool hardRangedAbilityBlocked =
         input.constraintState.darkGraspActive
         || input.constraintState.blindActive
+        || input.constraintState.silenced
         || !input.constraintState.rangedCommitAllowed
         || (!input.forceRangedCommit && input.targetEdgeDistance >= input.rangedAttackReach);
 
@@ -1471,10 +1477,10 @@ bool resolvePartyProximity(
 {
     return actorService.partyIsVeryNearActor(
         actor.movement.distanceToParty,
-        frame.party.position.z - actor.movement.position.z,
+        partyFor(actor, frame).position.z - actor.movement.position.z,
         actor.stats.radius,
         actor.stats.height,
-        frame.party.collisionRadius);
+        partyFor(actor, frame).collisionRadius);
 }
 
 ActorEngagementState resolveActorEngagement(
@@ -1491,13 +1497,14 @@ ActorEngagementState resolveActorEngagement(
     result.hasCombatTarget = combatTarget.kind != ActorAiTargetKind::None;
     result.targetIsParty = combatTarget.kind == ActorAiTargetKind::Party;
     result.targetIsActor = combatTarget.kind == ActorAiTargetKind::Actor;
-    const bool invisiblePartyTarget = result.targetIsParty && frame.party.invisible;
+    const bool invisiblePartyTarget = result.targetIsParty && partyFor(actor, frame).invisible;
     result.shouldEngageTarget = result.hasCombatTarget && combatTarget.canSense && !invisiblePartyTarget;
     result.inMeleeRange =
         combatTarget.edgeDistance <= meleeRangeForTarget(actor, &frame)
         && combatTarget.attackLineOfSight
         && (!result.targetIsParty || GameplayActorService::meleeReachesVertically(frame.meleeVerticalReach,
-            actor.movement.position.z, float(actor.stats.height), frame.party.position.z, frame.party.collisionHeight));
+            actor.movement.position.z, float(actor.stats.height), partyFor(actor, frame).position.z,
+            partyFor(actor, frame).collisionHeight));
 
     if (result.targetIsActor)
     {
@@ -1546,6 +1553,7 @@ ActorEngagementState resolveActorEngagement(
         result.shouldFlee = actor.status.forceFleeFromParty
             || (result.shouldEngageTarget
                 && combatTarget.distanceToTarget <= HostilityLongRange
+                && !actor.status.neverFlees
                 && actorService.shouldFleeForAiType(actor.stats.aiType, actor.stats.currentHp, actor.stats.maxHp)
                 && !(actor.status.suppressLowHealthFlee && actor.stats.aiType != GameplayActorAiType::Wimp));
     }
@@ -2766,7 +2774,7 @@ std::optional<ActorTargetCandidateFacts> chooseTarget(const ActorAiFacts &actor,
         target.currentHp = actor.target.currentHp;
         target.position =
             actor.target.currentKind == ActorAiTargetKind::Party
-            ? frame.party.position
+            ? partyFor(actor, frame).position
             : actor.target.currentPosition;
         target.audioPosition = actor.target.currentAudioPosition;
         target.hasLineOfSight = actor.target.currentHasAttackLineOfSight;
@@ -3606,8 +3614,8 @@ void skirmishTargetVelocity(const ActorAiFacts &actor, const ActorAiFrameFacts &
     float &velocityY)
 {
     const bool party = actor.target.currentKind == ActorAiTargetKind::Party;
-    velocityX = party ? frame.party.velocityX : actor.target.currentVelocityX;
-    velocityY = party ? frame.party.velocityY : actor.target.currentVelocityY;
+    velocityX = party ? partyFor(actor, frame).velocityX : actor.target.currentVelocityX;
+    velocityY = party ? partyFor(actor, frame).velocityY : actor.target.currentVelocityY;
 }
 
 bool skirmishTargetMoving(const ActorAiFacts &actor, const ActorAiFrameFacts &frame)
@@ -4637,7 +4645,8 @@ ActorAiDecision mm9Decision(ActorAiDecisionKind kind, ActorAiTargetKind targetKi
 // Its edge distance to its target as MM9 measures it: edge to edge, so the party's radius too.
 float mm9EdgeDistance(const ActorAiFacts &actor, const ActorAiFrameFacts &frame)
 {
-    const float partyRadius = actor.target.currentKind == ActorAiTargetKind::Party ? frame.party.collisionRadius : 0.0f;
+    const float partyRadius =
+        actor.target.currentKind == ActorAiTargetKind::Party ? partyFor(actor, frame).collisionRadius : 0.0f;
     return std::max(0.0f, actor.target.currentEdgeDistance - partyRadius);
 }
 
@@ -4674,9 +4683,9 @@ std::optional<GameplayActorAttackAbility> mm9RangedAbility(
     }
 
     const bool spell1 = actor.stats.hasSpell1 && actor.stats.spell1CastSupported && actor.stats.spell1UseChance > 0
-        && monsterSpellIsOkToCast(actor.stats.spell1Name, actor.stats, actor.status, frame.party);
+        && monsterSpellIsOkToCast(actor.stats.spell1Name, actor.stats, actor.status, partyFor(actor, frame));
     const bool spell2 = actor.stats.hasSpell2 && actor.stats.spell2CastSupported && actor.stats.spell2UseChance > 0
-        && monsterSpellIsOkToCast(actor.stats.spell2Name, actor.stats, actor.status, frame.party);
+        && monsterSpellIsOkToCast(actor.stats.spell2Name, actor.stats, actor.status, partyFor(actor, frame));
     const int spellSlot = mm9RangedSpellSlot(
         spell1 ? actor.stats.spell1UseChance : 0, spell2 ? actor.stats.spell2UseChance : 0, spellRoll);
 
@@ -5112,7 +5121,7 @@ bool mm9StillRuns(const ActorAiFacts &actor, const ActorAiFrameFacts &frame, boo
 
     const Mm9AiPlacement placement = actor.movement.mm9Placement.value_or(Mm9AiPlacement{});
     Mm9RunAwayInput input = {};
-    input.runner = mm9IsRunner(actor.actorId, placement.runawayChance);
+    input.runner = !actor.status.neverFlees && mm9IsRunner(actor.actorId, placement.runawayChance);
     input.hasHidingPlace = mm9UnseenHidingPlace(actor) >= 0;
     input.currentHp = actor.stats.currentHp;
     input.largestHit = world.largestHit;
@@ -5844,7 +5853,7 @@ Mm9PreludeResult AI_Mm9Prelude(ActorAiFacts &actor, const ActorAiFrameFacts &fra
         else
         {
             Mm9RunAwayInput input = {};
-            input.runner = mm9IsRunner(actor.actorId, placement.runawayChance);
+            input.runner = !actor.status.neverFlees && mm9IsRunner(actor.actorId, placement.runawayChance);
             input.hasHidingPlace = mm9UnseenHidingPlace(actor) >= 0;
             input.currentHp = actor.stats.currentHp;
             input.largestHit = world.largestHit;
@@ -8538,9 +8547,16 @@ bool AI_AttackOrPursue(ActorAiCommandContext &ai)
         return AI_Mm9Engage(ai, engagement);
     }
 
+    // A pursuit under way keeps the ability rolled as it began (the roll before the stored count): MM8 decides only
+    // when an action ends, so a monster that rolled its blow walks into reach instead of stopping to shoot or cast at
+    // each recovery, and one that rolled its missile circles and shoots as it is ready.
+    const bool pursuitUnderWay = actor.runtime.motionState == ActorAiMotionState::Pursuing
+        && actor.runtime.actionSeconds > 0.0f
+        && (std::abs(actor.movement.moveDirectionX) > 0.001f || std::abs(actor.movement.moveDirectionY) > 0.001f);
     CombatAbilityChoiceInput abilityInput = {};
     abilityInput.actorId = actor.actorId;
-    abilityInput.attackDecisionCount = actor.runtime.attackDecisionCount;
+    abilityInput.attackDecisionCount =
+        pursuitUnderWay ? actor.runtime.attackDecisionCount - 1 : actor.runtime.attackDecisionCount;
     abilityInput.hasSpell1 = actor.stats.hasSpell1;
     abilityInput.spell1IsOkToCast =
         actor.stats.spell1CastSupported
@@ -8590,7 +8606,11 @@ bool AI_AttackOrPursue(ActorAiCommandContext &ai)
 
     ai.setMeleePursuitActive(engagePlan.meleePursuitActive);
     ai.resetAnimationOnChange();
-    ai.setAttackDecisionCount(abilityChoice.nextAttackDecisionCount);
+
+    if (!pursuitUnderWay)
+    {
+        ai.setAttackDecisionCount(abilityChoice.nextAttackDecisionCount);
+    }
 
     if (skirmishActive(actor, pFrame) && AI_SkirmishBeforeEngage(ai, engagement, engagePlan.action))
     {
@@ -9550,11 +9570,22 @@ void appendActorUpdate(ActorAiFrameResult &result, const ActorAiUpdate &update)
     }
 }
 
+// A post's leash travels with the step to the world (keepStepOnLeash), which steers last; a script's walk is free of it.
+void attachPostLeash(const ActorAiFacts &actor, ActorAiUpdate &update)
+{
+    if (actor.tactics.holdPost && actor.tactics.postLeashRadius > 0.0f && !actor.movement.scriptedMoveTarget)
+    {
+        update.movementIntent.leashRadius = actor.tactics.postLeashRadius;
+        update.movementIntent.leashHome = actor.movement.homePosition;
+    }
+}
+
 void updateBackgroundActors(const ActorAiFrameFacts &facts, ActorAiFrameResult &result)
 {
     for (const ActorAiFacts &actor : facts.backgroundActors)
     {
         ActorAiUpdate update = updateBackgroundActor(actor, facts);
+        attachPostLeash(actor, update);
 
         // A dead MM9 monster asks to be raised (AI_Mm9Corpse); a spawned one may spawn its successor.
         if (mm9LoopActive(actor, &facts) && isDeadOrDying(actor))
@@ -9572,7 +9603,9 @@ void updateActiveActors(const ActorAiFrameFacts &facts, ActorAiFrameResult &resu
     for (const ActorAiFacts &actor : facts.activeActors)
     {
         result.activeActorIndices.push_back(actor.actorIndex);
-        appendActorUpdate(result, updateActor(actor, facts));
+        ActorAiUpdate update = updateActor(actor, facts);
+        attachPostLeash(actor, update);
+        appendActorUpdate(result, update);
     }
 }
 
@@ -9636,5 +9669,27 @@ ActorAiFrameResult GameplayActorAiSystem::updateActors(const ActorAiFrameFacts &
 ActorAiUpdate GameplayActorAiSystem::updateActorAfterWorldMovement(const ActorAiFacts &facts) const
 {
     return updateActorAfterWorldMovementInternal(facts);
+}
+
+void keepStepOnLeash(float leashRadius, const GameplayWorldPoint &home, float positionX, float positionY,
+    float &directionX, float &directionY)
+{
+    if (leashRadius <= 0.0f)
+    {
+        return;
+    }
+
+    const float fromHomeX = positionX - home.x;
+    const float fromHomeY = positionY - home.y;
+    const float fromHomeSquared = fromHomeX * fromHomeX + fromHomeY * fromHomeY;
+    const float outward = fromHomeX * directionX + fromHomeY * directionY;
+
+    if (fromHomeSquared < leashRadius * leashRadius || outward <= 0.0f)
+    {
+        return;
+    }
+
+    directionX -= fromHomeX * outward / fromHomeSquared;
+    directionY -= fromHomeY * outward / fromHomeSquared;
 }
 }

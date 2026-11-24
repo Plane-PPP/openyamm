@@ -1005,52 +1005,52 @@ class_skills:
         current hit points (0.1 % per point, at least 1 damage per point).
 
         Every point in any of the seven schools also adds 0.5 % to a Shaman's spell damage and 0.25 % to
-        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell costs
-        and healing.
+        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell damage,
+        healing and costs.
     AirMagic:
       append: >-
         Shaman: all damage you take is reduced by <good>{school_cut:1}</> %.
 
         Every point in any of the seven schools also adds 0.5 % to a Shaman's spell damage and 0.25 % to
-        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell costs
-        and healing.
+        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell damage,
+        healing and costs.
     WaterMagic:
       append: >-
         Shaman: every hit you take is reduced by a further <good>{school_flat_cut}</> damage after
         resistances.
 
         Every point in any of the seven schools also adds 0.5 % to a Shaman's spell damage and 0.25 % to
-        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell costs
-        and healing.
+        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell damage,
+        healing and costs.
     EarthMagic:
       append: >-
         Shaman: your melee blows deal 0.5, 1, 1.5 or 2 extra damage per point at Novice, Expert, Master or
         Grandmaster.
 
         Every point in any of the seven schools also adds 0.5 % to a Shaman's spell damage and 0.25 % to
-        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell costs
-        and healing.
+        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell damage,
+        healing and costs.
     SpiritMagic:
       append: >-
         Shaman: your melee damage is raised by <good>{school_percent:1}</> % (1 % per point).
 
         Every point in any of the seven schools also adds 0.5 % to a Shaman's spell damage and 0.25 % to
-        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell costs
-        and healing.
+        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell damage,
+        healing and costs.
     MindMagic:
       append: >-
         Shaman: each of your melee blows restores <mana>{mind_sp}</> spell points.
 
         Every point in any of the seven schools also adds 0.5 % to a Shaman's spell damage and 0.25 % to
-        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell costs
-        and healing.
+        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell damage,
+        healing and costs.
     BodyMagic:
       append: >-
         Shaman: each of your melee blows restores <good>{body_hp}</> hit points.
 
         Every point in any of the seven schools also adds 0.5 % to a Shaman's spell damage and 0.25 % to
-        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell costs
-        and healing.
+        healing, and every 7 points across the seven schools count as 1 point of Ascension for spell damage,
+        healing and costs.
   seraphim:
     SpiritMagic:
       append: >-
@@ -1129,9 +1129,10 @@ class_skills:
 #   avoid_chance              the chance a physical blow misses because of Speed
 #   hit_chance                the chance a melee blow lands
 #   physical_cut, total_cut   the percent of a physical blow armour takes off, and with avoiding blows
-#   fire_cut ... body_cut     the percent each resistance takes off a hit
+#   fire_cut ... body_cut     the percent each resistance takes off a hit (the resistances' first paragraph is MAW's
+#                             note on stats 19-24, zzMaw-Stats.lua:742-744)
 #   hp_regen, sp_regen        hit points and spell points regained per second (faster out of combat)
-#   levels_mm6, levels_mm7, levels_mm8, levels_mm9, levels_total   the levels banked in each world
+#   levels_mm6, levels_mm7, levels_mm8, levels_mm9, levels_xeen, levels_total   the levels banked in each world
 stats:
   Might:
     append: "Melee and bow damage +<good>{might_bonus:1}</> %."
@@ -1176,21 +1177,39 @@ stats:
   Level:
     append: >-
       Levels banked: <value>{levels_total:1}</> in all; <value>{levels_mm6:1}</> in Enroth, <value>{levels_mm7:1}</> in Antagarich, <value>{levels_mm8:1}</>
-      in Jadame, <value>{levels_mm9:1}</> in Chedian. Monsters grow with the levels banked in the other worlds: bolster
-      level <value>{bolster_mm6}</> in Enroth, <value>{bolster_mm7}</> in Antagarich, <value>{bolster_mm8}</> in Jadame,
-      <value>{bolster_mm9}</> in Chedian.
+      in Jadame, <value>{levels_mm9:1}</> in Chedian, <value>{levels_xeen:1}</> in Xeen. Monsters grow with the levels
+      banked in the other worlds: bolster level <value>{bolster_mm6}</> in Enroth, <value>{bolster_mm7}</> in Antagarich,
+      <value>{bolster_mm8}</> in Jadame, <value>{bolster_mm9}</> in Chedian, <value>{bolster_xeen}</> in Xeen.
   FireResistance:
-    append: "Against level <value>{reference_level}</> monsters it takes <good>{fire_cut:1}</> % off fire hits."
+    append: "Damage of this kind is reduced by the percent shown beside the resistance. Light damage is
+      resisted by the lower of the Mind and Body resistances, Dark damage by the lowest elemental resistance
+      and Energy damage by the lowest resistance of all.\n\nAgainst level <value>{reference_level}</> monsters
+      it takes <good>{fire_cut:1}</> % off fire hits."
   AirResistance:
-    append: "Against level <value>{reference_level}</> monsters it takes <good>{air_cut:1}</> % off air hits."
+    append: "Damage of this kind is reduced by the percent shown beside the resistance. Light damage is
+      resisted by the lower of the Mind and Body resistances, Dark damage by the lowest elemental resistance
+      and Energy damage by the lowest resistance of all.\n\nAgainst level <value>{reference_level}</> monsters
+      it takes <good>{air_cut:1}</> % off air hits."
   WaterResistance:
-    append: "Against level <value>{reference_level}</> monsters it takes <good>{water_cut:1}</> % off water hits."
+    append: "Damage of this kind is reduced by the percent shown beside the resistance. Light damage is
+      resisted by the lower of the Mind and Body resistances, Dark damage by the lowest elemental resistance
+      and Energy damage by the lowest resistance of all.\n\nAgainst level <value>{reference_level}</> monsters
+      it takes <good>{water_cut:1}</> % off water hits."
   EarthResistance:
-    append: "Against level <value>{reference_level}</> monsters it takes <good>{earth_cut:1}</> % off earth hits."
+    append: "Damage of this kind is reduced by the percent shown beside the resistance. Light damage is
+      resisted by the lower of the Mind and Body resistances, Dark damage by the lowest elemental resistance
+      and Energy damage by the lowest resistance of all.\n\nAgainst level <value>{reference_level}</> monsters
+      it takes <good>{earth_cut:1}</> % off earth hits."
   MindResistance:
-    append: "Against level <value>{reference_level}</> monsters it takes <good>{mind_cut:1}</> % off mind hits."
+    append: "Damage of this kind is reduced by the percent shown beside the resistance. Light damage is
+      resisted by the lower of the Mind and Body resistances, Dark damage by the lowest elemental resistance
+      and Energy damage by the lowest resistance of all.\n\nAgainst level <value>{reference_level}</> monsters
+      it takes <good>{mind_cut:1}</> % off mind hits."
   BodyResistance:
-    append: "Against level <value>{reference_level}</> monsters it takes <good>{body_cut:1}</> % off body hits."
+    append: "Damage of this kind is reduced by the percent shown beside the resistance. Light damage is
+      resisted by the lower of the Mind and Body resistances, Dark damage by the lowest elemental resistance
+      and Energy damage by the lowest resistance of all.\n\nAgainst level <value>{reference_level}</> monsters
+      it takes <good>{body_cut:1}</> % off body hits."
 
 # Item descriptions, keyed by item id or by a kind of item (gem); they replace the item table's notes.
 # Potions (zzAlchemy.lua:429-541, Tooltip.lua:83-130), numbers at the potion's power:

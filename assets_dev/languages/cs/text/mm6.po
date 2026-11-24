@@ -2090,6 +2090,7 @@ msgstr ""
 
 # imported from CZfix (MMMerge localization)
 #: assets_dev/worlds/mm6/events/maps/outd3.lua:178 assets_dev/worlds/mm6/events/maps/outd3.lua:197 assets_dev/worlds/mm6/events/maps/outd3.lua:444
+#: assets_dev/worlds/mm6/events/maps/outd3_mmmerge.lua:93
 msgid ""
 "The prince has been kidnapped!  No visitors will be admitted until this crisis has been resolved!"
 msgstr ""
@@ -3170,7 +3171,3 @@ msgstr ""
 # machine translation (Claude), review
 #~ msgid "Nicolai Kidnap"
 #~ msgstr "Únos Nicolaie"
-
-# machine translation (Claude), review
-#~ msgid "Dragon Tower"
-#~ msgstr "Dračí věž"

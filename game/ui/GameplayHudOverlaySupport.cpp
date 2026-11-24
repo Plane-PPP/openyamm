@@ -93,6 +93,50 @@ SkillMastery spellInspectCasterMasteryForSpell(const Character *pCaster, uint32_
     return pSkill->mastery;
 }
 
+// The spell inspect window's colour codes (R5G6B5, as Might and Magic's): its numbers white, the damage line's words
+// in the title's gold, and back to the row's own ivory.
+constexpr const char *SpellInspectNumberColorCode = "\f65535";
+constexpr const char *SpellInspectGoldColorCode = "\f58930";
+constexpr const char *SpellInspectResetColorCode = "\f00000";
+
+// "Damage: 12-36, average 24" in gold with white numbers ("9 x 12-36" for a fan of missiles), and under it in ivory a
+// ruleset's crit (MAW's): what one hit deals before the target's resistances.
+std::string spellInspectDamageLine(const PartySpellSystem::DamagePreview &damage)
+{
+    const auto number = [](int64_t value, const char *pAfter)
+    {
+        return SpellInspectNumberColorCode + std::to_string(value) + pAfter;
+    };
+    const SpellDamagePreview &hit = damage.hit;
+    const std::string range = hit.minimum == hit.maximum
+        ? number(hit.minimum, SpellInspectGoldColorCode)
+        : Engine::tr("{minimum}-{maximum}",
+              {{"minimum", number(hit.minimum, SpellInspectGoldColorCode)},
+                  {"maximum", number(hit.maximum, SpellInspectGoldColorCode)}});
+    const std::string hits = damage.hits > 1
+        ? Engine::tr("{count} x {damage}",
+              {{"count", number(damage.hits, SpellInspectGoldColorCode)}, {"damage", range}})
+        : range;
+    std::string line = SpellInspectGoldColorCode;
+    line += hit.minimum == hit.maximum
+        ? Engine::tr("Damage: {damage}", {{"damage", hits}})
+        : Engine::tr("Damage: {damage}, average {average}",
+              {{"damage", hits}, {"average", number(hit.average, SpellInspectGoldColorCode)}});
+    line += SpellInspectResetColorCode;
+
+    if (hit.criticalChance > 0)
+    {
+        char multiplier[16] = {};
+        std::snprintf(multiplier, sizeof(multiplier), "%.2f", hit.criticalMultiplier);
+        const int64_t chance = std::lround(std::min(hit.criticalChance, 1.0) * 100);
+        line += "\n" + Engine::tr("Critical hit: {chance} % chance, x{multiplier} damage",
+            {{"chance", number(chance, SpellInspectResetColorCode)},
+                {"multiplier", SpellInspectNumberColorCode + std::string(multiplier) + SpellInspectResetColorCode}});
+    }
+
+    return line;
+}
+
 void appendPopupBodyLine(std::string &body, const std::string &line)
 {
     if (line.empty())
@@ -589,7 +633,7 @@ void GameplayHudOverlaySupport::renderReagentQuantity(
     const float textWidth = context.measureHudTextWidth("SMALLNUM", text) * fontScale;
     const float textX = std::floor(x + std::max(0.0f, width - textWidth - scale));
     const float textY = std::floor(y + std::max(0.0f, height - font->fontHeight * fontScale - scale));
-    context.renderHudFontLayer(*font, font->shadowTextureHandle, text, textX, textY, fontScale);
+    context.renderHudFontLayer(*font, font->shadowLayer(), text, textX, textY, fontScale);
     context.renderHudFontLayer(*font, context.hudFontMainLayer(*font, 0xffffffffu),
         text, textX, textY, fontScale);
 }
@@ -1246,8 +1290,25 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
             anchor({popup->x, popup->y, popup->width, popup->height, 1.0f});
         }
     }
-    // A class counter's popup, on hover over its gems.
-    for (size_t i = 0; !overlay.active && i < std::min<size_t>(5, pParty->members().size()); ++i)
+    // A class counter's popup, on hover over its gems: the party portraits', or the solo unit frame's (which draws no
+    // portraits in plain play).
+    const bool soloGameplay =
+        context.soloHud() && context.currentHudScreenState() == GameplayHudScreenState::Gameplay;
+    if (!overlay.active && soloGameplay)
+    {
+        if (const std::optional<GameplaySoloHud::CounterHit> hit =
+                GameplaySoloHud::counterAt(context, width, height, pInput->pointerX, pInput->pointerY))
+        {
+            overlay.title = hit->counter.title;
+            for (const std::string &line : hit->counter.notes)
+            {
+                appendPopupBodyLine(overlay.body, line);
+            }
+            overlay.above = false;
+            anchor(hit->rect);
+        }
+    }
+    for (size_t i = 0; !soloGameplay && !overlay.active && i < std::min<size_t>(5, pParty->members().size()); ++i)
     {
         const PortraitCounter counter = pParty->rules().classes.portraitCounter(pParty->members()[i]);
         const std::string id = std::string(context.currentHudScreenState() == GameplayHudScreenState::Gameplay
@@ -1312,6 +1373,37 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
             else if (tile->kind == GameplaySoloHud::BuffTileKind::Condition)
             {
                 overlay.title = Engine::localizeKnown(GameMechanics::conditionName(CharacterCondition(tile->index)));
+            }
+            else if (tile->kind == GameplaySoloHud::BuffTileKind::Talent && pMember != nullptr)
+            {
+                const SoloTalentState &talents = pMember->talentState;
+                const TalentDefinition *pTalent = tile->index == 0
+                    ? soloTalentTable().find("onslaught") : soloTalentTable().findKeystone("cheat_death");
+                if (pTalent != nullptr)
+                {
+                    overlay.title = Engine::tr(pTalent->name);
+                    if (tile->index == 0)
+                    {
+                        overlay.body = Engine::trn("{count} stack", "{count} stacks",
+                            uint64_t(talents.onslaughtStacks), {{"count", int64_t(talents.onslaughtStacks)}});
+                        appendPopupBodyLine(overlay.body, formatRemainingDuration(talents.onslaughtSeconds));
+                    }
+                    else if (talents.cheatDeathSeconds > 0.0f)
+                    {
+                        overlay.body = Engine::tr("Protecting: {time}",
+                            {{"time", formatRemainingDuration(talents.cheatDeathSeconds)}});
+                    }
+                    else if (talents.cheatDeathCooldown > 0.0f)
+                    {
+                        overlay.body = Engine::tr("Cooldown: {time}",
+                            {{"time", formatRemainingDuration(talents.cheatDeathCooldown)}});
+                    }
+                    else
+                    {
+                        overlay.body = Engine::tr("Ready");
+                    }
+                    appendPopupBodyLine(overlay.body, talentEffectText(*pTalent, talentRank(*pMember, pTalent->id)));
+                }
             }
             if (!overlay.title.empty())
             {
@@ -1746,9 +1838,21 @@ void GameplayHudOverlaySupport::updateSpellInspectOverlay(
         : SpellTooltipText {pSpellEntry->name, pSpellEntry->description,
               {pSpellEntry->normalText, pSpellEntry->expertText, pSpellEntry->masterText,
                   pSpellEntry->grandmasterText}};
+    // The caster's own mastery row names its mastery in the damage line's gold: its numbers are at that mastery.
+    const CharacterSkill *pCasterSchool =
+        pActiveMember != nullptr && schoolSkill ? pActiveMember->findSkill(*schoolSkill) : nullptr;
+    const std::optional<size_t> casterMasteryRow =
+        pCasterSchool != nullptr && pCasterSchool->mastery != SkillMastery::None
+        ? std::optional<size_t>(size_t(pCasterSchool->mastery) - 1)
+        : std::nullopt;
     // The table's text in the interface language; a ruleset's own text (MAW) arrives translated and filled in.
-    const auto masteryLine = [&text](size_t mastery, std::string label)
+    const auto masteryLine = [&text, casterMasteryRow](size_t mastery, std::string label)
     {
+        if (casterMasteryRow == mastery)
+        {
+            label = std::string(SpellInspectGoldColorCode) + label + SpellInspectResetColorCode;
+        }
+
         return text.masteryLines[mastery].empty()
             ? std::string()
             : Engine::tr("{mastery}: {text}",
@@ -1760,6 +1864,14 @@ void GameplayHudOverlaySupport::updateSpellInspectOverlay(
     overlay.expert = masteryLine(1, Engine::tr("Expert"));
     overlay.master = masteryLine(2, Engine::tr("Master"));
     overlay.grandmaster = masteryLine(3, Engine::tr("Grand Master"));
+
+    if (const std::optional<PartySpellSystem::DamagePreview> damage = pActiveMember != nullptr
+            ? PartySpellSystem::damagePreview(*pParty, *pActiveMember, *context.spellTable(), spellId)
+            : std::nullopt)
+    {
+        overlay.damage = spellInspectDamageLine(*damage);
+    }
+
     overlay.sourceX = sourceRect.x;
     overlay.sourceY = sourceRect.y;
     overlay.sourceWidth = std::max(1.0f, sourceRect.width);
@@ -1976,6 +2088,13 @@ bool GameplayHudOverlaySupport::shopBagOverviewActive(const GameplayScreenRuntim
 #endif
 }
 
+bool GameplayHudOverlaySupport::nestedInventoryTabsShown(const GameplayScreenRuntime &context)
+{
+    const Party *pParty = context.partyReadOnly();
+    return pParty != nullptr && context.inventoryNestedOverlay().active && pParty->activeMember() != nullptr
+        && InventoryBags::tabCount(gameRulesFor(pParty).items.bagCount(*pParty)) > 1;
+}
+
 std::optional<ItemPouch> GameplayHudOverlaySupport::inventoryPouchShown(const GameplayScreenRuntime &context)
 {
     const Party *pParty = context.partyReadOnly();
@@ -1986,7 +2105,7 @@ std::optional<ItemPouch> GameplayHudOverlaySupport::inventoryPouchShown(const Ga
         && !(context.utilitySpellOverlayReadOnly().active
             && context.utilitySpellOverlayReadOnly().mode
                 == GameplayUiController::UtilitySpellOverlayMode::InventoryTarget)
-        && gameRulesFor(pParty).items.hasPouches();
+        && pParty->hasPouch(*screen.inventoryPouch.shown);
     return shown ? screen.inventoryPouch.shown : std::nullopt;
 }
 
@@ -1995,7 +2114,7 @@ std::optional<ItemPouch> GameplayHudOverlaySupport::nestedPouchShown(const Gamep
     const Party *pParty = context.partyReadOnly();
     const GameplayUiController::InventoryNestedOverlayState &overlay = context.inventoryNestedOverlay();
     const bool shown = pParty != nullptr && overlay.active && overlay.pouch.shown
-        && gameRulesFor(pParty).items.hasPouches();
+        && pParty->hasPouch(*overlay.pouch.shown);
     return shown ? overlay.pouch.shown : std::nullopt;
 }
 

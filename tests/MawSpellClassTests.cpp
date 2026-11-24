@@ -28,11 +28,13 @@
 #include "tests/PartySpellTestHarness.h"
 #include "tests/RegressionGameData.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -132,14 +134,14 @@ TEST_CASE("MAW aura holders follow their members when one is dismissed (A7.3)")
     Party party;
     party.seed(seed);
     party.setRules(&rules.gameRules());
-    rules.state().auraHolders = {{5, 0}, {17, 1}, {38, 2}};
+    party.rulesetState().auraHolders = {{5, 0}, {17, 1}, {38, 2}};
     rules.classRuntime(*party.member(2)).comboPoints = 3;
 
     REQUIRE(party.dismissMemberToAdventurersInn(1));
     REQUIRE_EQ(party.members().size(), 2u);
     CHECK_EQ(party.member(1)->name, "Cedric");
     // Brom took Shield along; Cedric keeps Stone Skin and his combo points in his new slot.
-    CHECK_EQ(rules.state().auraHolders, std::unordered_map<uint32_t, uint32_t>{{5, 0}, {38, 1}});
+    CHECK_EQ(party.rulesetState().auraHolders, std::unordered_map<uint32_t, uint32_t>{{5, 0}, {38, 1}});
     CHECK_EQ(rules.classRuntime(*party.member(1)).comboPoints, 3);
 }
 
@@ -182,16 +184,16 @@ TEST_CASE("MAW scroll, pedestal and temple buffs hold fixed auras until the map 
     rules.setCurrentMap("outd3.odm");
     spells.updateAuras(party, 0.5f);
     CHECK(party.partyBuff(PartyBuffId::FireResistance) == nullptr);
-    CHECK(rules.state().auraHolders.empty());
-    CHECK(rules.state().fixedAuraMaps.empty());
+    CHECK(party.rulesetState().auraHolders.empty());
+    CHECK(party.rulesetState().fixedAuraMaps.empty());
 
     // A member's own hold is not taken by a scroll, and a member takes a scroll's aura over by casting it.
     REQUIRE(spells.castSourceBuff(party, 3, BuffSource::Scroll));
     REQUIRE(spells.castAura(party, 0, 3) == AuraCastResult::Held);
-    CHECK_EQ(rules.state().auraHolders.at(3), 0u);
-    CHECK(rules.state().fixedAuraMaps.empty());
+    CHECK_EQ(party.rulesetState().auraHolders.at(3), 0u);
+    CHECK(party.rulesetState().fixedAuraMaps.empty());
     REQUIRE(spells.castSourceBuff(party, 3, BuffSource::Scroll));
-    CHECK_EQ(rules.state().auraHolders.at(3), 0u);
+    CHECK_EQ(party.rulesetState().auraHolders.at(3), 0u);
 
     CHECK_FALSE(standardGameRules().spells.castSourceBuff(party, 3, BuffSource::Scroll));
 }
@@ -224,14 +226,14 @@ TEST_CASE("a MAW solo run's scroll auras last a game day on any map")
 
     // A pedestal's aura keeps MAW's end with the map.
     REQUIRE(tryApplyEventSpellBuffs(party, 14, 10, 3));
-    CHECK_FALSE(rules.state().fixedAuraEndMinutes.contains(14));
+    CHECK_FALSE(party.rulesetState().fixedAuraEndMinutes.contains(14));
 
     // A day later the scroll's aura is gone.
     party.setGameMinutes(1000.0f + 24 * 60 + 1);
     spells.updateAuras(party, 0.5f);
     CHECK(party.partyBuff(PartyBuffId::FireResistance) == nullptr);
-    CHECK_FALSE(rules.state().auraHolders.contains(3));
-    CHECK(rules.state().fixedAuraEndMinutes.empty());
+    CHECK_FALSE(party.rulesetState().auraHolders.contains(3));
+    CHECK(party.rulesetState().fixedAuraEndMinutes.empty());
 }
 
 TEST_CASE("MAW auras on members reach MM9 hirelings and end with them (OY-559)")
@@ -292,7 +294,7 @@ TEST_CASE("the Regeneration aura and spell heal MM9 hirelings, in real time and 
         world.bindParty(&party);
         rules.setCurrentMap("oute3.odm");
         // Brom holds the Regeneration aura.
-        rules.state().auraHolders[71] = 1;
+        party.rulesetState().auraHolders[71] = 1;
         rules.gameRules().spells.updateAuras(party, 0.5f);
         REQUIRE(party.characterBuff(hirelingIndex, CharacterBuffId::Regeneration) != nullptr);
 
@@ -318,7 +320,7 @@ TEST_CASE("the Regeneration aura and spell heal MM9 hirelings, in real time and 
         CHECK(hireling.health > realTimeHealth);
 
         // No aura, no healing: a hireling has no Regeneration skill or items of its own.
-        rules.state().auraHolders.clear();
+        party.rulesetState().auraHolders.clear();
         rules.gameRules().spells.updateAuras(party, 0.5f);
         const int withoutAura = hireling.health;
         skills.updateRegeneration(party, world, 10.0f);
@@ -1056,7 +1058,7 @@ TEST_CASE("MAW class spells crit against their target and lose the Assassination
     CHECK(average(1, 1) > average(100000, 1) * 1.2);
 }
 
-TEST_CASE("MAW Assassins' Mass Distortion takes Earth twice; the vampires' drains leech a tenth (L6.3, A1.15)")
+TEST_CASE("MAW Assassins' Mass Distortion takes Earth once; the vampires' drains leech a tenth (L6.3, A1.15)")
 {
     MawRules rules(RulesetOptions{}, MawMapLevels{});
     Character assassin = member("Ariel", "Assassin", 20);
@@ -1074,8 +1076,8 @@ TEST_CASE("MAW Assassins' Mass Distortion takes Earth twice; the vampires' drain
         hit.pRng = &rng;
         return rules.gameRules().combat.damageToMonster(hit);
     };
-    const int once = landed(mage);
-    CHECK(double(landed(assassin)) == doctest::Approx(once / mawMonsterResistanceDivisor(100)).epsilon(0.02));
+    // As any spell of the school does (MAW 21275f61; the Assassin's took the resistance twice before).
+    CHECK_EQ(landed(assassin), landed(mage));
     // An Assassin's Mass Distortion is its blow, not a share of the target's hit points.
     CharacterSpellCast cast;
     SpellEntry massDistortion;
@@ -2024,4 +2026,135 @@ TEST_CASE("MAW missile and spell crits reach the status line: breath's Flame Bla
     CHECK(GameplayCombatController::formatPartyProjectileActorImpactStatusText("Dragon", "Ogre", events[1],
         &rules.gameRules().combat).find("(CRIT!)") == std::string::npos);
     CHECK_FALSE(events[2].critical);
+}
+
+TEST_CASE("The spell inspect window's damage range holds every roll that did not crit: Standard and MAW (user)")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    const SpellEntry *pFireBolt = gameData.spellTable.findById(spellIdValue(SpellId::FireBolt));
+    const SpellEntry *pFireball = gameData.spellTable.findById(spellIdValue(SpellId::Fireball));
+    const SpellEntry *pFlameBlast = gameData.spellTable.findById(123);
+    const SpellEntry *pBlades = gameData.spellTable.findById(39);
+    const SpellEntry *pTorchLight = gameData.spellTable.findById(spellIdValue(SpellId::TorchLight));
+    const SpellEntry *pMassDistortion = gameData.spellTable.findById(spellIdValue(SpellId::MassDistortion));
+    REQUIRE(pFireBolt != nullptr);
+    REQUIRE(pFireball != nullptr);
+    REQUIRE(pFlameBlast != nullptr);
+    REQUIRE(pBlades != nullptr);
+    REQUIRE(pTorchLight != nullptr);
+    REQUIRE(pMassDistortion != nullptr);
+
+    Character sorcerer;
+    sorcerer.name = "Sorcerer";
+    sorcerer.className = "Sorcerer";
+    sorcerer.level = 30;
+    sorcerer.intellect = 200;
+    Character dragon;
+    dragon.name = "Dragon";
+    dragon.className = "Dragon";
+    dragon.raceId = 5;
+    dragon.level = 30;
+    dragon.might = dragon.accuracy = dragon.speed = 89;
+    dragon.skills["DragonAbility"] = {"DragonAbility", 17, SkillMastery::Grandmaster};
+    Character assassin = assassinWithSword();
+
+    const auto castOf = [&](const Character &caster, const SpellEntry &spell, SkillMastery mastery)
+    {
+        CharacterSpellCast cast;
+        cast.pCaster = &caster;
+        cast.pItemTable = &gameData.itemTable;
+        cast.pSpell = &spell;
+        cast.mastery = mastery;
+        cast.skillLevel = 12;
+        return cast;
+    };
+    const auto checkRolls = [](const CombatRules &combat, const CharacterSpellCast &cast)
+    {
+        const std::optional<SpellDamagePreview> preview = combat.spellDamagePreview(cast);
+        REQUIRE(preview.has_value());
+        CHECK(preview->minimum <= preview->maximum);
+        CHECK(preview->minimum <= preview->average);
+        CHECK(preview->average <= preview->maximum);
+        int lowest = std::numeric_limits<int>::max();
+        int highest = 0;
+        double total = 0;
+        int ordinary = 0;
+
+        for (int roll = 0; roll < 3000; ++roll)
+        {
+            bool critical = false;
+            const int damage = combat.rollSpellDamage(cast, &critical);
+
+            if (!critical)
+            {
+                lowest = std::min(lowest, damage);
+                highest = std::max(highest, damage);
+                total += damage;
+                ++ordinary;
+            }
+        }
+
+        REQUIRE(ordinary > 0);
+        CHECK(lowest >= preview->minimum);
+        CHECK(highest <= preview->maximum);
+        CHECK(total / ordinary == doctest::Approx(preview->average).epsilon(0.05));
+        return *preview;
+    };
+
+    // Standard: the table's dice per skill point, never a crit; nothing for a spell without damage or one that takes
+    // a share of its target.
+    const SpellDamagePreview standard =
+        checkRolls(standardGameRules().combat, castOf(sorcerer, *pFireBolt, SkillMastery::Normal));
+    CHECK_EQ(standard.minimum, 12);
+    CHECK_EQ(standard.average, 24);
+    CHECK_EQ(standard.maximum, 36);
+    CHECK_EQ(standard.criticalChance, 0.0);
+    CHECK_FALSE(standardGameRules().combat.spellDamagePreview(castOf(sorcerer, *pTorchLight, SkillMastery::Normal)));
+    CHECK_FALSE(
+        standardGameRules().combat.spellDamagePreview(castOf(sorcerer, *pMassDistortion, SkillMastery::Normal)));
+
+    // MAW: the dice spells with Intellect and the spell crit, a dragon's Flame Blast and an Assassin's Blades.
+    const SpellDamagePreview fireball =
+        checkRolls(rules.gameRules().combat, castOf(sorcerer, *pFireball, SkillMastery::Master));
+    CHECK(fireball.criticalChance > 0);
+    CHECK(fireball.criticalMultiplier > 1);
+    checkRolls(rules.gameRules().combat, castOf(dragon, *pFlameBlast, SkillMastery::Grandmaster));
+    checkRolls(rules.gameRules().combat, castOf(assassin, *pBlades, SkillMastery::Master));
+    CHECK_FALSE(rules.gameRules().combat.spellDamagePreview(castOf(sorcerer, *pMassDistortion, SkillMastery::Master)));
+}
+
+TEST_CASE("MAW an Expert staff guards its holder and resists for the party (Discord, 2026-11-23)")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = OpenYAMM::Tests::regressionGameData();
+    REQUIRE(OpenYAMM::Tests::regressionGameDataLoaded());
+    MawRules rules(RulesetOptions{}, MawMapLevels{}, installedItemData());
+    const ItemDefinition *pPriestly = gameData.itemTable.get(81);
+    REQUIRE(pPriestly != nullptr);
+    REQUIRE(canonicalSkillName(pPriestly->skillGroup) == "Staff");
+
+    // Priestly Staff (rung 3.5, two-handed) at power 20: guard 8 + 11 = 19. Expert Staff 10: 2 % x 19 x (10 + 10) =
+    // 7.6, so 8 Armor Class and 8 resistance for the party (zzMAW-Skills.lua skillAC/skillResistance, Expert 2).
+    Character holder = member("Thorn", "Shaman", 20);
+    holder.equipment.mainHand = 81;
+    holder.equipmentRuntime.mainHand.rulesetFields.itemPower = 20;
+    holder.skills["Staff"] = {"Staff", 10, SkillMastery::Expert};
+    const std::optional<MawWeaponGuard> guard =
+        mawWeaponGuard(rules, holder, *pPriestly, holder.equipmentRuntime.mainHand.rulesetFields);
+    REQUIRE(guard.has_value());
+    CHECK_EQ(guard->guard, 19);
+    CHECK_EQ(guard->armorClass, 8);
+    CHECK_EQ(guard->resistance, 8);
+    CHECK_EQ(mawStaffPartyResistance(rules, holder, gameData.itemTable), 8);
+
+    // The weakest staff of a family has no flat guard: unpowered, it gives nothing at Expert, as in MAW.
+    holder.equipmentRuntime.mainHand.rulesetFields.itemPower = 0;
+    holder.equipment.mainHand = 79;
+    const ItemDefinition *pJourney = gameData.itemTable.get(79);
+    REQUIRE(pJourney != nullptr);
+    const std::optional<MawWeaponGuard> weakest =
+        mawWeaponGuard(rules, holder, *pJourney, holder.equipmentRuntime.mainHand.rulesetFields);
+    REQUIRE(weakest.has_value());
+    CHECK_EQ(weakest->armorClass, 0);
 }

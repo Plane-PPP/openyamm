@@ -1,6 +1,7 @@
 #include "game/render/RuntimeShader.h"
 #include "engine/Localization.h"
 #include "game/outdoor/OutdoorGameView.h"
+#include "game/coop/CoopBodies.h"
 #include "game/debug/AiArena.h"
 #include "game/outdoor/OutdoorSunlight.h"
 
@@ -2641,6 +2642,16 @@ bool OutdoorGameView::initialize(
     m_wetnessUniformHandle = bgfx::createUniform("u_wetness", bgfx::UniformType::Vec4);
     m_outdoorFogColorUniformHandle = bgfx::createUniform("u_fogColor", bgfx::UniformType::Vec4);
     m_skyFogUniformHandle = bgfx::createUniform("u_skyFog", bgfx::UniformType::Vec4, SkyFogUniformVectors);
+
+    if (!m_pOutdoorMapData->voidCells.empty())
+    {
+        std::vector<uint8_t> voidMask(m_pOutdoorMapData->voidCells.size());
+        std::transform(m_pOutdoorMapData->voidCells.begin(), m_pOutdoorMapData->voidCells.end(), voidMask.begin(),
+            [](uint8_t cell) { return uint8_t(cell != 0 ? 255 : 0); });
+        m_voidMaskTexture = bgfx::createTexture2D(uint16_t(OutdoorMapData::TerrainWidth),
+            uint16_t(OutdoorMapData::TerrainHeight), false, 1, bgfx::TextureFormat::R8,
+            BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP, bgfx::copy(voidMask.data(), uint32_t(voidMask.size())));
+    }
     m_outdoorFogDensitiesUniformHandle = bgfx::createUniform("u_fogDensities", bgfx::UniformType::Vec4);
     m_outdoorFogDistancesUniformHandle = bgfx::createUniform("u_fogDistances", bgfx::UniformType::Vec4);
     m_outdoorCameraPositionUniformHandle = bgfx::createUniform("u_cameraPosition", bgfx::UniformType::Vec4);
@@ -3352,6 +3363,7 @@ void OutdoorGameView::shutdown()
         m_bloodSplatVertexBufferRevision = std::numeric_limits<uint64_t>::max();
         m_outdoorFogColorUniformHandle = BGFX_INVALID_HANDLE;
         m_skyFogUniformHandle = BGFX_INVALID_HANDLE;
+        m_voidMaskTexture = BGFX_INVALID_HANDLE;
         m_outdoorFogDensitiesUniformHandle = BGFX_INVALID_HANDLE;
         m_outdoorFogDistancesUniformHandle = BGFX_INVALID_HANDLE;
         m_outdoorCameraPositionUniformHandle = BGFX_INVALID_HANDLE;
@@ -3376,6 +3388,7 @@ void OutdoorGameView::shutdown()
         m_bmodelWorldRenderRevision = std::numeric_limits<uint64_t>::max();
 
         m_texturedBModelBatches.clear();
+        m_hasTranslucentBModelBatches = false;
         OutdoorBillboardRenderer::invalidateRenderAssets(*this);
         OutdoorRenderer::invalidateSkyResources(*this);
         screenRuntime.releaseHudGpuResources(false);
@@ -3571,6 +3584,12 @@ void OutdoorGameView::shutdown()
         m_skyFogUniformHandle = BGFX_INVALID_HANDLE;
     }
 
+    if (bgfx::isValid(m_voidMaskTexture))
+    {
+        bgfx::destroy(m_voidMaskTexture);
+        m_voidMaskTexture = BGFX_INVALID_HANDLE;
+    }
+
     if (bgfx::isValid(m_outdoorFogDensitiesUniformHandle))
     {
         bgfx::destroy(m_outdoorFogDensitiesUniformHandle);
@@ -3674,6 +3693,7 @@ void OutdoorGameView::shutdown()
     }
     m_bmodelTextureArrays.clear();
     m_texturedBModelBatches.clear();
+    m_hasTranslucentBModelBatches = false;
     m_bmodelTextureAnimations.clear();
     for (ResolvedBModelDrawGroup &group : m_resolvedBModelDrawGroups)
     {
@@ -4528,8 +4548,12 @@ SkySurroundings OutdoorGameView::skySurroundings() const
 
     if (m_gameSettings.mist && m_pOutdoorMapData->mist.enabled())
     {
+        const EventRuntimeState *pEvents =
+            m_pOutdoorWorldRuntime != nullptr ? m_pOutdoorWorldRuntime->eventRuntimeState() : nullptr;
+        const float scripted = pEvents != nullptr ? m_mistScriptFade.amount(pEvents->scriptedMist.revision,
+            pEvents->scriptedMist.amount, pEvents->scriptedMist.seconds, m_elapsedTime) : 1.0f;
         surroundings.mist = packMistUniform(m_pOutdoorMapData->mist, m_skyCameraPosition, m_elapsedTime, mistLight(),
-            float(m_gameSettings.mistStrength) / 100.0f);
+            float(m_gameSettings.mistStrength) / 100.0f * scripted);
     }
 
     if (m_pOutdoorMapData->noTerrain)
@@ -4549,6 +4573,15 @@ SkySurroundings OutdoorGameView::skySurroundings() const
     for (size_t channel = 0; channel < 3; ++channel)
     {
         surroundings.seaColorDisplay[channel] = m_distantSea.waterColorDisplay[channel] * brightness;
+    }
+
+    if (!m_pOutdoorMapData->voidCells.empty())
+    {
+        // The void's floor is the void cells' terrain height, 0 (the studio lowers them there).
+        surroundings.hasVoid = true;
+        surroundings.voidSideWeights = m_distantSea.voidWeights;
+        surroundings.cameraAboveVoid = m_skyCameraPosition[2];
+        surroundings.voidMask = m_voidMaskTexture;
     }
 
     return surroundings;
@@ -4660,6 +4693,24 @@ void OutdoorGameView::renderCombatFeedbackOverlay(
             screenY = projected.y;
             return true;
         });
+
+    if (!m_gameSession.coopPlayerLabels().empty())
+    {
+        renderCoopPlayerLabels(screenRuntime, m_gameSession.coopPlayerLabels(),
+            [width, height, pViewProjectionMatrix](const bx::Vec3 &point, float &screenX, float &screenY)
+            {
+                ProjectedPoint projected = {};
+
+                if (!projectWorldPointToScreen(point, width, height, pViewProjectionMatrix, projected))
+                {
+                    return false;
+                }
+
+                screenX = projected.x;
+                screenY = projected.y;
+                return true;
+            });
+    }
 
     const ActorAiTrace *pAiTrace = m_pOutdoorWorldRuntime->actorAiTrace();
 
@@ -4964,8 +5015,9 @@ void OutdoorGameView::updateActorInspectOverlayState(int width, int height, cons
     actorInspectOverlay.active = true;
     actorInspectOverlay.runtimeActorIndex = runtimeActorIndex;
     actorInspectOverlay.rawNumbers = input.altHeld();
-    actorInspectOverlay.displayNameOverride =
-        OutdoorInteractionController::resolveActorInspectDisplayName(*this, inspectHit);
+    // Only a generated street NPC's name and title replaces the actor's name, which the panel localizes, as indoors.
+    const std::string resolvedName = OutdoorInteractionController::resolveActorInspectDisplayName(*this, inspectHit);
+    actorInspectOverlay.displayNameOverride = resolvedName != inspectHit.name ? resolvedName : std::string();
     actorInspectOverlay.sourceX = rectMinX;
     actorInspectOverlay.sourceY = rectMinY;
     actorInspectOverlay.sourceWidth = std::max(1.0f, rectMaxX - rectMinX);

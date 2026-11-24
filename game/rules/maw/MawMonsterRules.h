@@ -22,7 +22,7 @@ class MawMonsterRules : public MonsterRules
 public:
     explicit MawMonsterRules(MawRules &rules);
 
-    GameplayMonsterBolsterResult resolveMonster(
+    GameplayMonsterBolsterResult resolveMonsterByRules(
         const GameplayBolsterRuntimeContext &context,
         const MonsterTable::MonsterStatsEntry &stats,
         const MonsterEntry *pMonsterEntry) const override;
@@ -36,11 +36,14 @@ public:
     void adjustMapEncounters(MapStatsEntry &map) const override;
     // A dimension map's families replace the map's own.
     void enterMap(MapStatsEntry &map, MonsterTable &monsterTable) const override;
+    uint64_t mapAssetVariant(const std::string &mapFileName) const override;
     // A dimension map's "higher tier" affix.
     char spawnTier(const MapStatsEntry &map, char tier, uint32_t seed) const override;
     // "dimensional_maps": the Dimensional Maps quest of the Oracle, Judge Grey and the Seer
-    // (Global/zzMaw_DimensionalMapsQuest.lua).
-    std::optional<std::string> rulesTopic(const std::string &topic, Party &party) const override;
+    // (Global/zzMaw_DimensionalMapsQuest.lua). "dimensional_maps_repeat" and "dimensional_maps_repeat_confirmed":
+    // giving up the quest's unfinished run for the same map again (ours).
+    std::optional<RulesTopicReply> rulesTopic(
+        const std::string &topic, Party &party, const IGameplayWorldRuntime *pWorld) const override;
     // A boss of the actor's own level: twice its level less its family's, a random affix, x 2.5-7.5 health and
     // x 1.2-1.4 damage (generateBoss, zzMaw-Monsters.lua:2866-3110).
     bool makeBoss(ActorRulesetFacts &facts, uint64_t seed, uint8_t affix) const override;
@@ -65,6 +68,8 @@ public:
     bool countsForMapCompletion(const MapStatsEntry &map, const MonsterTable::MonsterStatsEntry &stats) const override;
     double packDensityFactor(const MapStatsEntry &map) const override;
     bool keepsUsedBarrelsThroughRefill() const override;
+    bool monstersFlee() const override;
+    bool reputationCounts() const override;
     // The bolster level is getPartyLevel() - 4, never below 0 (zzMaw-Monsters.lua:418-422).
     RulesetScriptInfo scriptInfo(uint32_t continentId) const override;
     // BountyHunt.lua: round(level + the levels banked on the three continents) x 100.
@@ -131,6 +136,14 @@ public:
     bool teleportBlockedNearEnemies() const override;
     // Beyond Madness's Town Portal: "Madness is not a place for cowards" (SP:3728-3735).
     std::string teleportBlockedText(bool townPortal) const override;
+    // The open rift (devdocs/maw/DIMENSION_INSTANCES_PLAN.md). Out of it: Town Portal leads where it says; a
+    // dungeon's way outdoors leads back to where the party entered the rift from; a way into another dungeon, a map's
+    // edge and travel by stable, ship or coach are closed. Lloyd's Beacon does not work inside.
+    std::vector<std::pair<std::string, std::string>> liveMapInstances() const override;
+    MapInstanceExit mapInstanceExit(
+        const std::string &targetMapFileName, bool sameMap, const std::string &moveSourceKind) const override;
+    std::optional<std::string> mapTravelRefusal() const override;
+    std::optional<std::string> lloydsBeaconRefusal() const override;
     // 2 indoors, 10 with enemies near; outdoors 0, or 3 with enemies near; free on a completed map.
     int saveFoodCost(const std::string &mapFileName, bool indoor, bool enemiesNear) const override;
 
@@ -147,8 +160,6 @@ private:
     // Road to Insanity and Beyond Madness, on entering a map: a dungeon caps the food at 15 + monsters / 25 and holds
     // the rest back; the next outdoor map returns it (zzMaw-Monsters.lua:2172-2187).
     void capInsanityFood(IGameplayWorldRuntime &world) const;
-    // Runtime only: maps reset at their entrance, whose next load refills them.
-    mutable std::unordered_set<std::string> m_forcedRefills;
     // Runtime only: a seed per map refilled this session, so its bosses are rolled again.
     mutable std::unordered_map<std::string, uint64_t> m_refillSeeds;
     // Runtime only: what MAW keeps in its map variables between ticks. A reload starts it afresh.

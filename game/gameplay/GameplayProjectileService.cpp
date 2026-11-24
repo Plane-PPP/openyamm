@@ -525,6 +525,10 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.sourceKind = request.sourceKind;
         projectile.sourceId = request.sourceId;
         projectile.sourcePartyMemberIndex = request.sourcePartyMemberIndex;
+    projectile.sourcePlayer =
+        projectile.sourceKind == ProjectileState::SourceKind::Party ? m_spawningPlayer : LocalPlayer;
+        projectile.sourcePlayer =
+            projectile.sourceKind == ProjectileState::SourceKind::Party ? m_spawningPlayer : LocalPlayer;
         projectile.sourceMonsterId = request.sourceMonsterId;
         projectile.fromSummonedMonster = request.fromSummonedMonster;
         projectile.ability = request.ability;
@@ -546,6 +550,8 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.sourceX = request.sourceX;
         projectile.sourceY = request.sourceY;
         projectile.sourceZ = request.sourceZ;
+        projectile.firedDistance = std::hypot(request.targetX - request.sourceX, request.targetY - request.sourceY,
+            request.targetZ - request.sourceZ);
         projectile.x = request.sourceX;
         projectile.y = request.sourceY;
         projectile.z = request.sourceZ;
@@ -563,6 +569,7 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
         projectile.chainShare = request.chainShare;
         projectile.chainRadius = request.chainRadius;
         projectile.hitCredit = request.hitCredit;
+        projectile.quietBlast = request.quietBlast;
         projectile.useActorHitChance = request.useActorHitChance;
         projectile.turnBasedPendingAction = request.turnBasedPendingAction;
         projectile.lifetimeTicks = request.definition.lifetimeTicks;
@@ -585,6 +592,8 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     projectile.sourceKind = request.sourceKind;
     projectile.sourceId = request.sourceId;
     projectile.sourcePartyMemberIndex = request.sourcePartyMemberIndex;
+    projectile.sourcePlayer =
+        projectile.sourceKind == ProjectileState::SourceKind::Party ? m_spawningPlayer : LocalPlayer;
     projectile.sourceMonsterId = request.sourceMonsterId;
     projectile.fromSummonedMonster = request.fromSummonedMonster;
     projectile.ability = request.ability;
@@ -606,6 +615,8 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     projectile.sourceX = request.sourceX;
     projectile.sourceY = request.sourceY;
     projectile.sourceZ = request.sourceZ;
+    projectile.firedDistance = std::hypot(request.targetX - request.sourceX, request.targetY - request.sourceY,
+        request.targetZ - request.sourceZ);
     projectile.x = request.sourceX + directionX * spawnForwardOffset;
     projectile.y = request.sourceY + directionY * spawnForwardOffset;
     projectile.z = request.sourceZ + directionZ * spawnForwardOffset;
@@ -644,6 +655,7 @@ GameplayProjectileService::ProjectileSpawnResult GameplayProjectileService::spaw
     projectile.chainShare = request.chainShare;
     projectile.chainRadius = request.chainRadius;
     projectile.hitCredit = request.hitCredit;
+    projectile.quietBlast = request.quietBlast;
     projectile.useActorHitChance = request.useActorHitChance;
     projectile.turnBasedPendingAction = request.turnBasedPendingAction;
     projectile.sectorId = request.sectorId;
@@ -1237,6 +1249,7 @@ std::optional<GameplayProjectileService::ProjectileSpawnRequest> GameplayProject
     request.blastMinimumDamage = projectile.blastMinimumDamage;
     request.blastMaximumDamage = projectile.blastMaximumDamage;
     request.critical = projectile.critical;
+    request.quietBlast = projectile.quietBlast;
     request.sourceX = struck.preciseX;
     request.sourceY = struck.preciseY;
     request.sourceZ = fromZ;
@@ -2213,6 +2226,24 @@ bool GameplayProjectileService::steerHomingProjectile(
     return false;
 }
 
+bool GameplayProjectileService::areaImpactReachesParty(
+    const GameplayWorldPoint &partyFeet,
+    float partyCollisionRadius,
+    float partyCollisionHeight,
+    const GameplayWorldPoint &impact,
+    float impactRadius)
+{
+    return pointWithinExpandedCylinder(
+        partyFeet.x,
+        partyFeet.y,
+        partyFeet.z + partyCollisionHeight * 0.5f,
+        partyCollisionRadius,
+        impact.x,
+        impact.y,
+        impact.z,
+        impactRadius);
+}
+
 GameplayWorldPoint GameplayProjectileService::partyPositionAtStep(
     const GameplayWorldPoint &previousFrame,
     const GameplayWorldPoint &currentFrame,
@@ -2761,6 +2792,8 @@ GameplayProjectileService::ProjectileState GameplayProjectileService::buildFireS
     projectile.sourceKind = input.sourceKind;
     projectile.sourceId = input.sourceId;
     projectile.sourcePartyMemberIndex = input.sourcePartyMemberIndex;
+    projectile.sourcePlayer =
+        projectile.sourceKind == ProjectileState::SourceKind::Party ? m_spawningPlayer : LocalPlayer;
     projectile.sourceMonsterId = input.sourceMonsterId;
     projectile.fromSummonedMonster = input.fromSummonedMonster;
     projectile.ability = input.ability;
@@ -2992,6 +3025,9 @@ PartyMissileSource GameplayProjectileService::partyMissileSource(
         source.spellId = uint32_t(std::max(projectile.spellId, 0));
         source.targetCurrentHp = targetCurrentHp;
         source.resistances = monsterDamageResistances(targetStats);
+        // The flight from where it left to where it is now, at the monster (a solo run's Long Shot).
+        source.flightDistance = std::hypot(projectile.x - projectile.sourceX, projectile.y - projectile.sourceY,
+            projectile.z - projectile.sourceZ);
     }
 
     return source;

@@ -112,6 +112,12 @@ std::string antialiasingValue(int samples);
 bool parseTurnBasedSpeedValue(const std::string &value, float &speed);
 std::string turnBasedSpeedValue(float speed);
 
+// Fast mode's speed factor: one of "1.5", "2", "3" or "4".
+bool parseFastModeSpeedValue(const std::string &value, float &speed);
+std::string fastModeSpeedValue(float speed);
+// The speed after the given one in 1x and the fast mode speeds; 1x after the fastest.
+float nextFastModeSpeed(float speed);
+
 // The repeated voice line interval in milliseconds: one of "0", "500", "1000", "2000", "3000", "5000" or "10000".
 bool parseRepeatedVoiceLineIntervalValue(const std::string &value, int &intervalMs);
 std::string repeatedVoiceLineIntervalValue(int intervalMs);
@@ -409,6 +415,8 @@ struct GameSettings
     // (GrayFace MM8Patch TurnBasedSpeed and TurnBasedPartySpeed). The party's own movement stage stays at 1.
     float turnBasedMonsterSpeed = 1.0f;
     float turnBasedPartySpeed = 1.0f;
+    // How many times faster the game runs while fast mode is on (1.5 to 4); the Fast Mode key turns it on and off.
+    float fastModeSpeed = 2.0f;
     // The combat log button and its docked log of hits (MAW GAPS H.3); hidden, nothing is recorded
     // (GameplayScreenRuntime::combatLogShown).
     CombatLogMode combatLog = CombatLogMode::Auto;
@@ -433,6 +441,9 @@ struct GameSettings
     // Maps with a painted map (MM9's) show it on the minimap and the journal map; false shows the MM6-MM8 line map
     // where the map also has outlines (MM9's dungeons, the default). Maps without outlines always show the painted map.
     bool paintedMaps = false;
+    // The colour of the party arrow on the minimap of indoor maps: "white" (the arrow as drawn), "green" or "cyan";
+    // a coloured arrow stands out among the white walls of the line map. Outdoors it is always white.
+    std::string indoorMinimapArrow = "white";
     // The load and save lists: false keeps Quicksave, Autosave, then the rest by name; true puts the newest first.
     bool saveListNewestFirst = false;
     // How many quicksaves a playthrough keeps (1 to 20): a new one pushes the earlier ones down, the oldest goes.
@@ -440,6 +451,10 @@ struct GameSettings
     // Random loot (drops, chests, map treasure) on MM6-MM8 maps may roll MM9's equipment; off, those maps roll only
     // the merged MM6-MM8 base's, as their shops already sell (Party::mm9LootInOlderWorlds, devdocs/LOOT_POOL.md).
     bool mm9LootInOlderWorlds = false;
+    // Under a ruleset without pouches of its own (Standard; MAW always has them): the party's potions, bottles and
+    // reagents and its quest items each go to a tab of their own shared by the whole party, in place of the members'
+    // bags (Party::partyPouches). Off, they go back into the bags.
+    bool partyPouches = true;
     // Obsidian basebar frame behind the gameplay party portraits; fullscreen overlays always draw their own strip.
     bool partyFrame = true;
     // The quick item rings: the round button at each gameplay portrait opening its ring of six quick slots, and the
@@ -482,6 +497,24 @@ struct GameSettings
     // HUD state the game remembers across map loads and saves: the follower panel beside the minimap (shown when the
     // party has followers) and the minimap zoom step (0 zoomed out, 1 default, 2 zoomed in).
     bool followerPanel = true;
+    // What the Multiplayer screen was last given (the [coop] section): typed once, offered again.
+    std::string coopSessionName;
+    // The player's own lobby server, typed on the Multiplayer screen. Empty: the lobby every game asks
+    // (Coop::DefaultLobbyAddress). With coopLocalNetworkOnly no lobby is asked at all: games are hosted for and
+    // found on the local network only.
+    std::string coopLobbyAddress;
+    bool coopLocalNetworkOnly = false;
+    std::string coopHostAddress;
+    bool coopJoinTab = false;
+    // Which member of the party stands for this player in the other players' games (its body, its face in their
+    // players panel): the member's place in the party, 0 the first. The file says it from 1 (avatar_member).
+    int coopAvatarMember = 0;
+    // The password this player's hosted games ask for (none when empty). Kept as typed: it guards a game among
+    // friends, not an account.
+    std::string coopHostPassword;
+    // A host's game: a guest's test commands are carried out (`coop sync` typed in a guest's console brings that
+    // guest to the host). Off unless a test launcher turns it on (tools/coop_local); never saved.
+    bool coopTestCommands = false;
     int minimapZoom = 1;
 #if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     bool contextActionPopup = true;

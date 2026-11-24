@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/party/PartyRulesetState.h"
+
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -11,6 +13,10 @@ namespace OpenYAMM::Game
 {
 // A dimension map used on its target map (zzMaw-Maps.lua mapvars.mapAffixes): its affixes stay in force there until
 // the map refills again.
+// A dimension map opens a rift: an instance of its map (GameSession::mapInstanceId) with a state of its own, which
+// leaves the map itself as it was. One rift is open at a time; a cleared one stays until the next map is used.
+constexpr const char *MawRiftInstanceId = "rift";
+
 struct MawDimensionRun
 {
     // The active affixes (0 empty) and the power.
@@ -24,6 +30,16 @@ struct MawDimensionRun
     bool completed = false;
     // The Dimensional Maps quest tier the run counts for when cleared (0: none).
     int questTier = 0;
+    // Where the party stood when it last entered the rift: its way out leads back there. No map: unknown (a run from
+    // a save before rifts were instances), and a way out leads where it says.
+    std::string originMapFileName;
+    int32_t originX = 0;
+    int32_t originY = 0;
+    int32_t originZ = 0;
+    // The slain and counted monsters as the party last left the rift, and the dimension maps dropped in it.
+    int32_t slain = 0;
+    int32_t counted = 0;
+    int32_t mapsDropped = 0;
 
     int affixCount() const;
     bool operator==(const MawDimensionRun &) const = default;
@@ -59,12 +75,14 @@ struct MawMapVisit
 
 // What a MAW game remembers besides the party and the maps (devdocs/maw/data/exp_curve.yml banked_levels,
 // monster_scaling.yml level): the levels banked on each continent, which drive monster levels, and the dungeons that
-// were completed or reset. Saved with MAW games only.
+// were completed or reset. Saved with MAW games only. What is a party's own (its auras, the food held back from it,
+// its deaths) is the party's ruleset state (PartyRulesetState, Party::rulesetState).
 struct MawGameState
 {
-    // MAW's four continents: Jadame (MM8), Antagarich (MM7), Enroth (MM6) and Chedian (MM9), map table continents 1,
-    // 2, 3 and 5. Levels are fractional.
-    static constexpr size_t ContinentCount = 4;
+    // MAW's continents: Jadame (MM8), Antagarich (MM7), Enroth (MM6) and Chedian (MM9), map table continents 1, 2, 3
+    // and 5, and the World of Xeen, both its faces (continents 6 and 7) one bank (devdocs/maw/XEEN_SUPPORT.md). Levels
+    // are fractional.
+    static constexpr size_t ContinentCount = 5;
 
     std::array<double, ContinentCount> continentLevels = {};
     // All bank experience so far and the MAW-curve level it amounts to; a gain moves the difference into the bank of
@@ -73,6 +91,9 @@ struct MawGameState
     double bankedLevel = 0;
     // Lowercase map file name: times the dungeon was reset for harder monsters (+20 levels each).
     std::unordered_map<std::string, int> mapResetCounts;
+    // Lowercase map file names whose next load refills them whatever their respawn time: a dungeon reset at its
+    // entrance, the map of a dimension run the party gave up.
+    std::unordered_set<std::string> pendingRefills;
     // Lowercase map file names whose completion reward was paid: once per game, and the dimension maps' pool.
     std::unordered_set<std::string> completedMaps;
     // Lowercase map file names cleared since their monsters last refilled (MAW's mapvars.completed): the HUD's 100 %,
@@ -90,17 +111,8 @@ struct MawGameState
     std::unordered_map<uint32_t, int> legendaryAffixDrops;
     // What each crafting material's drop roll (by item id) has failed since it last succeeded (craftPityCounters).
     std::unordered_map<uint32_t, double> craftingPity;
-    // The buff auras the party holds (CLASSES_SPELLS_SPEC.md §3): spell id to the holding member's index, or
-    // FixedAuraHolder for an aura from a scroll, a pedestal or a temple.
-    std::unordered_map<uint32_t, uint32_t> auraHolders;
-    // Where each fixed aura came from: the lowercase map file of its scroll or pedestal, which entering another
-    // outdoor map ends, or empty for a temple's, which leaving the map ends (SP:2693-2730).
-    std::unordered_map<uint32_t, std::string> fixedAuraMaps;
-    // A solo run's scroll auras: the game minute each ends, on any map (the user, 2026-11-16). A fixed aura listed
-    // here ends only then.
-    std::unordered_map<uint32_t, double> fixedAuraEndMinutes;
-    // Dimension maps by lowercase target map file name, the quest, and what the map kill drop has failed since it last
-    // dropped (vars.mapDropFailures).
+    // The open rift by its map's lowercase file name (one at most; saves before rifts were instances may hold more
+    // until loaded), the quest, and what the map kill drop has failed since it last dropped (vars.mapDropFailures).
     std::unordered_map<std::string, MawDimensionRun> dimensionRuns;
     MawDimensionQuest dimensionQuest;
     double mapDropPity = 0;
@@ -108,8 +120,6 @@ struct MawGameState
     std::unordered_map<std::string, int> mapsDropped;
     // The unique items a shop bought, by item id: each sells once a game (SpecialItems.SellOnce).
     std::unordered_map<uint32_t, int> soldUniqueItems;
-    // Road to Insanity: the food a dungeon's cap held back, returned on the next outdoor map (vars.refundFood).
-    int32_t heldFood = 0;
     // Beyond Madness: bosses rolled since the last Broodlord and Omnipotent one (vars.broodlordPityCounter,
     // vars.omnipotentPityCounter).
     double broodlordPity = 0;
@@ -122,23 +132,25 @@ struct MawGameState
     // The barrels and cauldrons that raised a stat, by lowercase map file name: decor var index to the state they were
     // left in (empty). They stay so through refills and resets (vars.usedBarrels, zzMaw-Maps.lua:240-283).
     std::unordered_map<std::string, std::unordered_map<uint8_t, uint8_t>> usedStatDecorations;
-    // Beyond Madness's death count as of the save, so a save moved to another installation (whose death ledger has no
-    // line for the run) keeps its count (vars.MadnessDeathCounter, zzMaw-Monsters.lua:2385-2400).
-    int32_t madnessDeaths = 0;
 
-    // The holder of an aura no party member holds (MAW's string holders: Temple, scroll or pedestal).
-    static constexpr uint32_t FixedAuraHolder = 0xFFFFFFFFu;
+    // The holder of an aura no party member holds (PartyRulesetState::auraHolders).
+    static constexpr uint32_t FixedAuraHolder = PartyRulesetState::FixedAuraHolder;
 
-    // The bank index of a continent id from the map table (1, 2, 3 or 5); none for any other id.
+    // The bank index of a continent id from the map table (1, 2, 3, 5, or Xeen's 6 and 7); none for any other id.
     static std::optional<size_t> continentIndex(uint32_t continentId);
 
     void addBankedExperience(double experience, uint32_t continentId);
     double totalLevel() const;
-    // The levels banked on this continent (0 for an id that is none of the four).
+    // The levels banked on this continent (0 for an id that is none of the banks').
     double levelOn(uint32_t continentId) const;
     // The levels banked on every continent except this one (MAW getPartyLevel).
     double levelOutside(uint32_t continentId) const;
     int resetCount(const std::string &mapFileName) const;
+    // A save from before rifts were map instances, where a run lay in its map's own state and several could be open:
+    // one run is kept as the rift (the one on `currentMap`, lowercase, else an unfinished one, else any), and what
+    // its map's records said of it (the visit, the maps dropped, the clear) goes onto the run; the other runs' maps
+    // are marked to refill as themselves. Returns the kept run's map, or nothing when there is no run.
+    std::string keepOneRift(const std::string &currentMap);
 
     bool operator==(const MawGameState &) const = default;
 };

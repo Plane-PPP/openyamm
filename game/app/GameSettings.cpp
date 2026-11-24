@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <sstream>
 #include <string_view>
 #include <system_error>
@@ -814,13 +815,15 @@ std::string antialiasingValue(int samples)
 
 namespace
 {
-constexpr std::array<std::pair<const char *, float>, 5> TurnBasedSpeeds = {{
+using SpeedStep = std::pair<const char *, float>;
+constexpr std::array<SpeedStep, 5> TurnBasedSpeeds = {{
     {"1", 1.0f}, {"1.5", 1.5f}, {"2", 2.0f}, {"3", 3.0f}, {"4", 4.0f}}};
-}
+// Fast mode offers the same factors without 1, which would make its key do nothing.
+constexpr std::span<const SpeedStep> FastModeSpeeds = std::span<const SpeedStep>(TurnBasedSpeeds).subspan(1);
 
-bool parseTurnBasedSpeedValue(const std::string &value, float &speed)
+bool parseSpeedStep(std::span<const SpeedStep> steps, const std::string &value, float &speed)
 {
-    for (const auto &[text, factor] : TurnBasedSpeeds)
+    for (const auto &[text, factor] : steps)
     {
         if (trimCopy(value) == text)
         {
@@ -832,15 +835,49 @@ bool parseTurnBasedSpeedValue(const std::string &value, float &speed)
     return false;
 }
 
-std::string turnBasedSpeedValue(float speed)
+std::string speedStepValue(std::span<const SpeedStep> steps, float speed)
 {
     // The nearest offered factor, so a hand-edited value still shows on the slider.
-    const auto nearest = std::min_element(TurnBasedSpeeds.begin(), TurnBasedSpeeds.end(),
-        [speed](const auto &left, const auto &right)
+    const auto nearest = std::min_element(steps.begin(), steps.end(),
+        [speed](const SpeedStep &left, const SpeedStep &right)
         {
             return std::abs(left.second - speed) < std::abs(right.second - speed);
         });
     return nearest->first;
+}
+}
+
+bool parseTurnBasedSpeedValue(const std::string &value, float &speed)
+{
+    return parseSpeedStep(TurnBasedSpeeds, value, speed);
+}
+
+std::string turnBasedSpeedValue(float speed)
+{
+    return speedStepValue(TurnBasedSpeeds, speed);
+}
+
+bool parseFastModeSpeedValue(const std::string &value, float &speed)
+{
+    return parseSpeedStep(FastModeSpeeds, value, speed);
+}
+
+std::string fastModeSpeedValue(float speed)
+{
+    return speedStepValue(FastModeSpeeds, speed);
+}
+
+float nextFastModeSpeed(float speed)
+{
+    for (const auto &[text, factor] : FastModeSpeeds)
+    {
+        if (factor > speed + 0.01f)
+        {
+            return factor;
+        }
+    }
+
+    return 1.0f;
 }
 
 namespace
@@ -1150,6 +1187,16 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "fast_mode_speed"))
+    {
+        float parsed = settings.fastModeSpeed;
+
+        if (parseFastModeSpeedValue(*value, parsed))
+        {
+            settings.fastModeSpeed = parsed;
+        }
+    }
+
     // Android has no combat log: the thumb controls leave it no room (user, 2026-10-25).
 #if !defined(__ANDROID__)
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "combat_log"))
@@ -1234,6 +1281,11 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         }
     }
 
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "party_pouches"))
+    {
+        parseBoolValue(*value, settings.partyPouches);
+    }
+
     if (const std::optional<std::string> value = getIniValue(document, "gameplay", "mm9_loot_in_older_worlds"))
     {
         bool parsed = settings.mm9LootInOlderWorlds;
@@ -1259,6 +1311,14 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
         if (*value == "painted" || *value == "lines")
         {
             settings.paintedMaps = *value == "painted";
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "gameplay", "indoor_minimap_arrow"))
+    {
+        if (*value == "white" || *value == "green" || *value == "cyan")
+        {
+            settings.indoorMinimapArrow = *value;
         }
     }
 
@@ -1762,6 +1822,51 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
     if (const std::optional<std::string> value = getIniValue(document, "startup", "save_file"))
     {
         settings.startupSaveFile = trimCopy(*value);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "session_name"))
+    {
+        settings.coopSessionName = trimCopy(*value);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "lobby_address"))
+    {
+        settings.coopLobbyAddress = trimCopy(*value);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "local_network_only"))
+    {
+        parseBoolValue(*value, settings.coopLocalNetworkOnly);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "host_address"))
+    {
+        settings.coopHostAddress = trimCopy(*value);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "host_password"))
+    {
+        settings.coopHostPassword = trimCopy(*value);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "join_tab"))
+    {
+        parseBoolValue(*value, settings.coopJoinTab);
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "avatar_member"))
+    {
+        int member = 1;
+
+        if (parseIntValue(*value, member))
+        {
+            settings.coopAvatarMember = std::clamp(member, 1, 255) - 1;
+        }
+    }
+
+    if (const std::optional<std::string> value = getIniValue(document, "coop", "test_commands"))
+    {
+        parseBoolValue(*value, settings.coopTestCommands);
     }
 
     if (const std::optional<std::string> value = getIniValue(document, "startup", "start_in_main_menu"))
@@ -2670,6 +2775,7 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("language", settings.language);
     serializer.add("turn_based_monster_speed", turnBasedSpeedValue(settings.turnBasedMonsterSpeed));
     serializer.add("turn_based_party_speed", turnBasedSpeedValue(settings.turnBasedPartySpeed));
+    serializer.add("fast_mode_speed", fastModeSpeedValue(settings.fastModeSpeed));
     serializer.add("enemy_health_bars", settings.enemyHealthBarMode);
     serializer.add("enemy_health_bar_values", settings.enemyHealthBarValues);
     serializer.add("enemy_health_bar_damage_trail", boolValue(settings.enemyHealthBarDamageTrail));
@@ -2679,9 +2785,11 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("upkeep_auto_brew", boolValue(settings.upkeepAutoBrew));
     serializer.add("quest_markers", boolValue(settings.questMarkers));
     serializer.add("map_style", settings.paintedMaps ? "painted" : "lines");
+    serializer.add("indoor_minimap_arrow", settings.indoorMinimapArrow);
     serializer.add("save_list_order", settings.saveListNewestFirst ? "newest" : "name");
     serializer.add("quicksave_slots", std::clamp(settings.quickSaveSlots, 1, 20));
     serializer.add("mm9_loot_in_older_worlds", boolValue(settings.mm9LootInOlderWorlds));
+    serializer.add("party_pouches", boolValue(settings.partyPouches));
     serializer.add("party_frame", boolValue(settings.partyFrame));
     serializer.add("quick_item_rings", boolValue(settings.quickItemRings));
     serializer.add("item_buttons", boolValue(settings.basebarItemButtons));
@@ -2703,6 +2811,14 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.section("startup");
     serializer.add("start_in_main_menu", boolValue(settings.startInMainMenu));
     serializer.add("save_file", settings.startupSaveFile);
+    serializer.section("coop");
+    serializer.add("session_name", settings.coopSessionName);
+    serializer.add("lobby_address", settings.coopLobbyAddress);
+    serializer.add("local_network_only", boolValue(settings.coopLocalNetworkOnly));
+    serializer.add("host_address", settings.coopHostAddress);
+    serializer.add("join_tab", boolValue(settings.coopJoinTab));
+    serializer.add("host_password", settings.coopHostPassword);
+    serializer.add("avatar_member", settings.coopAvatarMember + 1);
     serializer.section("features");
     serializer.add("bolster_monsters", boolValue(settings.bolsterMonsters));
     serializer.add("indoor_pathfinding", boolValue(settings.indoorPathfinding));

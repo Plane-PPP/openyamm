@@ -1,0 +1,9 @@
+A snake-headed warrior lunging with a curved sword: a throaty voiced reptilian snarl, a fast whoosh of the blade and a hard metallic slicing hit, close
+
+kind: sfx
+duration: 0.9
+loop: false
+variants: 3
+model: eleven_text_to_sound_v2
+prompt_influence: 0.45
+loudness_db: -9

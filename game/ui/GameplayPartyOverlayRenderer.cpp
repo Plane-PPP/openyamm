@@ -527,7 +527,7 @@ const JournalMapNote *findVisibleRuntimeMapNote(
         return nullptr;
     }
 
-    for (const JournalMapNote &note : pParty->journalMapNotes())
+    for (const JournalMapNote &note : pParty->campaign().journalMapNotes())
     {
         if (note.id == noteId && runtimeMapNoteMatchesMap(note, normalizedCurrentMapFileName))
         {
@@ -631,7 +631,7 @@ void renderRuntimeMapNotes(
         journalScreen.hoveredMapNoteId != 0 ? journalScreen.hoveredMapNoteId : journalScreen.selectedMapNoteId;
     std::vector<const JournalMapNote *> notes;
 
-    for (const JournalMapNote &note : pParty->journalMapNotes())
+    for (const JournalMapNote &note : pParty->campaign().journalMapNotes())
     {
         if (runtimeMapNoteMatchesMap(note, normalizedCurrentMapFileName))
         {
@@ -1091,7 +1091,7 @@ std::vector<JournalStoryPage> buildJournalStoryPages(
         static_cast<size_t>(std::floor(pageHeightPixels / std::max(1.0f, static_cast<float>(font.fontHeight) * fontScale))));
     const uint32_t historyContinentId = context.activeHistoryContinentId();
     const std::unordered_map<uint32_t, int32_t> &historyEventTimes =
-        pParty->historyEventTimes(normalizedHistoryContinentId(historyContinentId));
+        pParty->campaign().historyEventTimes(normalizedHistoryContinentId(historyContinentId));
 
     for (const JournalHistoryEntry &entry : historyTable.entriesForContinent(historyContinentId))
     {
@@ -1198,7 +1198,7 @@ bool isUtilityTownPortalDestinationUnlocked(
         return false;
     }
 
-    return pParty->hasQuestBit(destination.unlockQBitId);
+    return pParty->campaign().hasQuestBit(destination.unlockQBitId);
 }
 
 size_t utilityOverlayMaxLloydBeaconSlots(const Character *pCharacter)
@@ -1260,7 +1260,7 @@ void renderHudLines(
         const bool finalLine = index < paragraphEnds.size() ? paragraphEnds[index] != 0 : index + 1 == lines.size();
         if (justifiedWidth <= 0 || finalLine || spaces == 0)
         {
-            context.renderHudFontLayer(font, font.shadowTextureHandle, line, x, lineY, fontScale);
+            context.renderHudFontLayer(font, font.shadowLayer(), line, x, lineY, fontScale);
             context.renderHudFontLayer(font, coloredMainLayer, line, x, lineY, fontScale);
             continue;
         }
@@ -1278,7 +1278,7 @@ void renderHudLines(
             std::vector<std::string> carried = {word, std::string()};
             GameplayHudCommon::carryTextColorsAcrossLines(carried);
             openCode = carried[1];
-            context.renderHudFontLayer(font, font.shadowTextureHandle, word, pen, lineY, fontScale);
+            context.renderHudFontLayer(font, font.shadowLayer(), word, pen, lineY, fontScale);
             context.renderHudFontLayer(font, coloredMainLayer, word, pen, lineY, fontScale);
             pen += context.measureHudTextWidth(font.fontName, word) * fontScale + extra;
             first = last;
@@ -5043,7 +5043,7 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
             {
                 for (const JournalAutonoteEntry &entry : pJournalAutonoteTable->entries())
                 {
-                    if (!pParty->hasAutonote(entry.id)
+                    if (!pParty->campaign().hasAutonote(entry.id)
                         || (entry.owner.empty() ? "Shared" : entry.owner) != owner)
                     {
                         continue;
@@ -5080,7 +5080,8 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
             if (pParty != nullptr && context.houseTable() != nullptr
                 && journalScreen.notesCategory == GameplayUiController::JournalNotesCategory::Arcomage)
             {
-                for (const std::string &text : buildArcomageTavernTexts(*context.houseTable(), context.mapStats(), *pParty))
+                for (const std::string &text : buildArcomageTavernTexts(*context.houseTable(), context.mapStats(),
+                         pParty->trainerDirectory(), *pParty))
                 {
                     if (search.empty() || Engine::Utf8::lower(text).find(search) != std::string::npos)
                     {
@@ -5281,11 +5282,34 @@ void GameplayPartyOverlayRenderer::renderUtilitySpellOverlay(GameplayScreenRunti
             context.submitHudTexturedQuad(*texture, drawResolved.x, drawResolved.y, drawResolved.width, drawResolved.height);
         }
 
+        // Dimension Door's names under the portals, at all times, after every picture (one font run); the text style is
+        // TownPortalDoorName's, the place is the door's (dimension_doors.yml `label`). A dark door is no destination.
+        const GameplayScreenRuntime::HudLayoutElement *pDoorNameLayout =
+            context.findHudLayoutElement("TownPortalDoorName");
+
+        for (size_t index = 0; pDoorNameLayout != nullptr && pDoorNameLayout->visible
+             && index < context.townPortalDestinations().size(); ++index)
+        {
+            const GameplayTownPortalDestination &destination = context.townPortalDestinations()[index];
+
+            if (destination.nameWidth == 0 || !isUtilityTownPortalDestinationUnlocked(pParty, destination))
+            {
+                continue;
+            }
+
+            const GameplayScreenRuntime::ResolvedHudLayoutElement nameResolved = {
+                backgroundResolved->x + static_cast<float>(destination.nameX) * townPortalScale,
+                backgroundResolved->y + static_cast<float>(destination.nameY) * townPortalScale,
+                static_cast<float>(destination.nameWidth) * townPortalScale,
+                static_cast<float>(destination.nameHeight) * townPortalScale,
+                townPortalScale};
+            context.renderLayoutLabel(*pDoorNameLayout, nameResolved, Engine::localize(destination.label));
+        }
+
         // Every continent this installation has towns on; Dimension Door's single map has no buttons.
         const std::vector<GameplayTownPortalContinent> &continents = context.townPortalContinents();
 
-        for (size_t index = 0; continents.size() > 1 && index < continents.size()
-             && index < TownPortalContinentButtonCount; ++index)
+        for (size_t index = 0; continents.size() > 1 && index < continents.size(); ++index)
         {
             const std::string label = Engine::localize(continents[index].label);
             GameplayUiSkin::renderButton(
@@ -7095,7 +7119,7 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
             for (const SpecialDetailLine &detailLine : specialDetailLines)
             {
                 context.renderHudFontLayer(
-                    *pDetailFont, pDetailFont->shadowTextureHandle, detailLine.text, textX, textY, detailFontScale);
+                    *pDetailFont, pDetailFont->shadowLayer(), detailLine.text, textX, textY, detailFontScale);
 
                 // Drawn in parts: before the accent, the accent in its colour, after it.
                 const std::array<std::pair<std::string, uint32_t>, 3> parts = {{
@@ -7169,7 +7193,7 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
         {
             const float y = clip.y + i * bodyLineHeight;
             const std::string &line = descriptionLines[i + interaction.itemInspectScrollLines];
-            context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle, line,
+            context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowLayer(), line,
                 clip.x, y, popupScale, &clip);
             context.renderHudFontLayer(*pBodyFont, main, line, clip.x, y, popupScale, &clip);
         }
@@ -7562,7 +7586,7 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
         for (int row = 0; row < visibleBodyLines; ++row)
         {
             const std::string &line = bodyLines[size_t(row + interaction.characterInspectScrollLines)];
-            context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle,
+            context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowLayer(),
                 line, textX, textY, popupScale, &clip);
             context.renderHudFontLayer(*pBodyFont, coloredMainLayer, line, textX, textY, popupScale, &clip);
             textY += bodyLineHeight;
@@ -7620,7 +7644,7 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
 
                 for (const std::string &wrappedLine : wrappedLines)
                 {
-                    context.renderHudFontLayer(*pFont, pFont->shadowTextureHandle, wrappedLine, textX, textY, popupScale);
+                    context.renderHudFontLayer(*pFont, pFont->shadowLayer(), wrappedLine, textX, textY, popupScale);
                     context.renderHudFontLayer(*pFont, coloredMainLayer, wrappedLine, textX, textY, popupScale);
                     textY += lineHeight;
                 }
@@ -7663,9 +7687,9 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
                 const float valueX = labelX + context.measureHudTextWidth(*pFont, label) * popupScale;
                 const float textY = std::round(rowY + baseLayout.textPadY * popupScale);
 
-                context.renderHudFontLayer(*pFont, pFont->shadowTextureHandle, label, labelX, textY, popupScale);
+                context.renderHudFontLayer(*pFont, pFont->shadowLayer(), label, labelX, textY, popupScale);
                 context.renderHudFontLayer(*pFont, labelLayer, label, labelX, textY, popupScale);
-                context.renderHudFontLayer(*pFont, pFont->shadowTextureHandle, value, valueX, textY, popupScale);
+                context.renderHudFontLayer(*pFont, pFont->shadowLayer(), value, valueX, textY, popupScale);
                 context.renderHudFontLayer(*pFont, bonusLayer, value, valueX, textY, popupScale);
             };
 
@@ -7754,7 +7778,7 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
 
             for (const std::string &line : footerLines)
             {
-                context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle, line, textX, footerY, popupScale);
+                context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowLayer(), line, textX, footerY, popupScale);
                 context.renderHudFontLayer(*pBodyFont, coloredMainLayer, line, textX, footerY, popupScale);
                 footerY += bodyLineHeight;
             }
@@ -7781,6 +7805,8 @@ void GameplayPartyOverlayRenderer::renderSpellInspectOverlay(GameplayScreenRunti
     const GameplayScreenRuntime::HudLayoutElement *pExpertLayout = context.findHudLayoutElement("SpellInspectExpert");
     const GameplayScreenRuntime::HudLayoutElement *pMasterLayout = context.findHudLayoutElement("SpellInspectMaster");
     const GameplayScreenRuntime::HudLayoutElement *pGrandmasterLayout = context.findHudLayoutElement("SpellInspectGrandmaster");
+    // The caster's damage, between the description and the mastery rows.
+    const GameplayScreenRuntime::HudLayoutElement *pDamageLayout = context.findHudLayoutElement("SpellInspectDamage");
 
     if (pRootLayout == nullptr
         || pTitleLayout == nullptr
@@ -7825,6 +7851,7 @@ void GameplayPartyOverlayRenderer::renderSpellInspectOverlay(GameplayScreenRunti
     const float bodyHeight = bodyLines.empty() ? bodyLineHeight : bodyLineHeight * static_cast<float>(bodyLines.size());
     static constexpr float SpellInspectBodyToRowsGap = 10.0f;
     static constexpr float SpellInspectRowGap = 2.0f;
+    static constexpr float SpellInspectDamageToRowsGap = 8.0f;
     static constexpr float SpellInspectBottomPadding = 15.0f;
 
     const auto resolveWrappedLines =
@@ -7866,8 +7893,12 @@ void GameplayPartyOverlayRenderer::renderSpellInspectOverlay(GameplayScreenRunti
         showMaster ? resolveWrappedLines(*pMasterLayout, overlay.master) : std::vector<std::string>{};
     const std::vector<std::string> grandmasterLines =
         showGrandmaster ? resolveWrappedLines(*pGrandmasterLayout, overlay.grandmaster) : std::vector<std::string>{};
-    float rowsHeight = 0.0f;
-    bool hasRows = false;
+    const bool showDamage = pDamageLayout != nullptr && !overlay.damage.empty();
+    const std::vector<std::string> damageLines =
+        showDamage ? resolveWrappedLines(*pDamageLayout, overlay.damage) : std::vector<std::string>{};
+    float rowsHeight = showDamage ? rowHeight(*pDamageLayout, damageLines) : 0.0f;
+    bool hasRows = showDamage;
+    bool hasMasteryRows = false;
 
     for (const auto &[showRow, pLayout, pLines] : {
              std::tuple<bool, const GameplayScreenRuntime::HudLayoutElement *, const std::vector<std::string> *>{
@@ -7886,11 +7917,13 @@ void GameplayPartyOverlayRenderer::renderSpellInspectOverlay(GameplayScreenRunti
 
         if (hasRows)
         {
-            rowsHeight += SpellInspectRowGap * popupScale;
+            rowsHeight += (showDamage && !hasMasteryRows ? SpellInspectDamageToRowsGap : SpellInspectRowGap)
+                * popupScale;
         }
 
         rowsHeight += rowHeight(*pLayout, *pLines);
         hasRows = true;
+        hasMasteryRows = true;
     }
 
     const float rootWidth = provisionalRoot.width;
@@ -8063,7 +8096,7 @@ void GameplayPartyOverlayRenderer::renderSpellInspectOverlay(GameplayScreenRunti
 
             for (const std::string &line : bodyLines)
             {
-                context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle, line, textX, textY, popupScale);
+                context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowLayer(), line, textX, textY, popupScale);
                 context.renderHudFontLayer(*pBodyFont, coloredMainLayer, line, textX, textY, popupScale);
                 textY += bodyLineHeight;
             }
@@ -8098,7 +8131,7 @@ void GameplayPartyOverlayRenderer::renderSpellInspectOverlay(GameplayScreenRunti
 
                     for (const std::string &wrappedLine : wrappedLines)
                     {
-                        context.renderHudFontLayer(*pFont, pFont->shadowTextureHandle, wrappedLine, textX, textY, popupScale);
+                        context.renderHudFontLayer(*pFont, pFont->shadowLayer(), wrappedLine, textX, textY, popupScale);
                         context.renderHudFontLayer(*pFont, coloredMainLayer, wrappedLine, textX, textY, popupScale);
                         textY += lineHeight;
                     }
@@ -8107,6 +8140,17 @@ void GameplayPartyOverlayRenderer::renderSpellInspectOverlay(GameplayScreenRunti
                 };
 
             float nextRowY = std::round(bodyBaseRect->y + bodyHeight + SpellInspectBodyToRowsGap * popupScale);
+
+            if (showDamage)
+            {
+                if (const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> damageRect =
+                        resolveLayout("SpellInspectDamage"))
+                {
+                    nextRowY = renderWrappedRow(*pDamageLayout, *damageRect, nextRowY, damageLines)
+                        + SpellInspectDamageToRowsGap * popupScale;
+                }
+            }
+
             const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> normalRect = resolveLayout("SpellInspectNormal");
             const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> expertRect = resolveLayout("SpellInspectExpert");
             const std::optional<GameplayScreenRuntime::ResolvedHudLayoutElement> masterRect = resolveLayout("SpellInspectMaster");
@@ -8372,7 +8416,7 @@ void GameplayPartyOverlayRenderer::renderReadableScrollOverlay(GameplayScreenRun
             break;
         }
 
-        context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle, line, textX, textY, bodyFontScale);
+        context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowLayer(), line, textX, textY, bodyFontScale);
         context.renderHudFontLayer(*pBodyFont, coloredMainLayer, line, textX, textY, bodyFontScale);
         textY += bodyLineHeight;
     }
@@ -8574,7 +8618,7 @@ void GameplayPartyOverlayRenderer::renderBuffInspectOverlay(GameplayScreenRuntim
 
     for (const std::string &line : bodyLines)
     {
-        context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowTextureHandle, line, textX, textY, popupScale);
+        context.renderHudFontLayer(*pBodyFont, pBodyFont->shadowLayer(), line, textX, textY, popupScale);
         context.renderHudFontLayer(*pBodyFont, coloredMainLayer, line, textX, textY, popupScale);
         textY += bodyLineHeight;
     }
@@ -8756,7 +8800,7 @@ void GameplayPartyOverlayRenderer::renderCharacterDetailOverlay(GameplayScreenRu
                 context.hudFontMainLayer(font, colorAbgr);
 
 
-            context.renderHudFontLayer(font, font.shadowTextureHandle, text, textX, textY, fontScale);
+            context.renderHudFontLayer(font, font.shadowLayer(), text, textX, textY, fontScale);
             context.renderHudFontLayer(font, coloredMainLayer, text, textX, textY, fontScale);
         };
     const auto submitSolidQuad =
@@ -9983,21 +10027,21 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
 
             if (!showBase)
             {
-                context.renderHudFontLayer(*font, font->shadowTextureHandle, value.prefixText, textX, textY, fontScale);
+                context.renderHudFontLayer(*font, font->shadowLayer(), value.prefixText, textX, textY, fontScale);
                 context.renderHudFontLayer(*font, baseLayer, value.prefixText, textX, textY, fontScale);
                 textX += prefixWidth;
             }
 
-            context.renderHudFontLayer(*font, font->shadowTextureHandle, value.actualText, textX, textY, fontScale);
+            context.renderHudFontLayer(*font, font->shadowLayer(), value.actualText, textX, textY, fontScale);
             context.renderHudFontLayer(*font, actualLayer, value.actualText, textX, textY, fontScale);
 
             if (showBase)
             {
                 textX += actualWidth;
-                context.renderHudFontLayer(*font, font->shadowTextureHandle, separatorText, textX, textY, fontScale);
+                context.renderHudFontLayer(*font, font->shadowLayer(), separatorText, textX, textY, fontScale);
                 context.renderHudFontLayer(*font, baseLayer, separatorText, textX, textY, fontScale);
                 textX += separatorWidth;
-                context.renderHudFontLayer(*font, font->shadowTextureHandle, baseText, textX, textY, fontScale);
+                context.renderHudFontLayer(*font, font->shadowLayer(), baseText, textX, textY, fontScale);
                 context.renderHudFontLayer(*font, baseLayer, baseText, textX, textY, fontScale);
             }
         };
@@ -10186,8 +10230,7 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                 : normalizedLayoutId == "characterinventoryalchemytag"                 ? ItemPouch::Alchemy
                                                                                         : ItemPouch::Quest;
 
-            if (!context.isAdventurersInnCharacterSourceActive() && pCharacter != nullptr
-                && gameRulesFor(&party).items.hasPouches())
+            if (!context.isAdventurersInnCharacterSourceActive() && pCharacter != nullptr && party.hasPouch(pouch))
             {
                 GameplayUiSkin::renderButton(context, pLayout->id, width, height,
                     GameplayHudOverlaySupport::inventoryPouchShown(context) == pouch, true);
@@ -11529,7 +11572,7 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
 
                 for (const std::string &line : wrappedLines)
                 {
-                    context.renderHudFontLayer(*font, font->shadowTextureHandle, line, blurbX, blurbY, fontScale);
+                    context.renderHudFontLayer(*font, font->shadowLayer(), line, blurbX, blurbY, fontScale);
                     context.renderHudFontLayer(*font, coloredLayer, line, blurbX, blurbY, fontScale);
                     blurbY += lineHeight;
                 }

@@ -62,6 +62,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return settings.paintedMaps ? "painted" : "lines";
     }
+    if (id == "indoor_minimap_arrow")
+    {
+        return settings.indoorMinimapArrow;
+    }
     if (id == "party_frame")
     {
         return settings.partyFrame ? "true" : "false";
@@ -89,6 +93,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     if (id == "turn_based_party_speed")
     {
         return turnBasedSpeedValue(settings.turnBasedPartySpeed);
+    }
+    if (id == "fast_mode_speed")
+    {
+        return fastModeSpeedValue(settings.fastModeSpeed);
     }
     if (id == "language")
     {
@@ -322,6 +330,10 @@ std::string menuSettingValue(const GameSettings &settings, std::string_view id)
     {
         return settings.mm9LootInOlderWorlds ? "true" : "false";
     }
+    if (id == "party_pouches")
+    {
+        return settings.partyPouches ? "true" : "false";
+    }
     if (id == "sound_volume")
     {
         return std::to_string(settings.soundVolume);
@@ -448,6 +460,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
         settings.paintedMaps = value == "painted";
         return true;
     }
+    if (id == "indoor_minimap_arrow")
+    {
+        if (value != "white" && value != "green" && value != "cyan")
+        {
+            return false;
+        }
+        settings.indoorMinimapArrow = value;
+        return true;
+    }
     if (id == "party_frame")
     {
         if (value != "true" && value != "false")
@@ -492,6 +513,10 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
     if (id == "turn_based_party_speed")
     {
         return parseTurnBasedSpeedValue(value, settings.turnBasedPartySpeed);
+    }
+    if (id == "fast_mode_speed")
+    {
+        return parseFastModeSpeedValue(value, settings.fastModeSpeed);
     }
     if (id == "language")
     {
@@ -961,6 +986,15 @@ bool setMenuSettingValue(GameSettings &settings, std::string_view id, const std:
             return false;
         }
         settings.mm9LootInOlderWorlds = value == "true";
+        return true;
+    }
+    if (id == "party_pouches")
+    {
+        if (value != "true" && value != "false")
+        {
+            return false;
+        }
+        settings.partyPouches = value == "true";
         return true;
     }
     if (id == "sound_volume")

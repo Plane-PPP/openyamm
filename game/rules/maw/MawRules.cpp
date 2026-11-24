@@ -57,6 +57,7 @@ MawRules::MawRules(
     , m_crafting(*this)
     , m_gameRules{m_experience, m_combat, m_monsters, m_items, m_skills, m_spells, m_classes, m_potions, m_crafting}
 {
+    m_pPartyRuntime = &m_partyRuntimes[LocalPlayer];
 }
 
 double MawRules::diminishedCrowdControlSeconds(
@@ -188,7 +189,7 @@ void MawRules::updateStoryBands(const Party &party)
 
     for (uint32_t qbit : m_mapLevels.storyBandQBits())
     {
-        if (party.hasQuestBit(qbit))
+        if (party.campaign().hasQuestBit(qbit))
         {
             reached.insert(qbit);
         }
@@ -319,10 +320,47 @@ void MawRules::setTrainerHints(MawTrainerHints hints)
     m_trainerHints = std::move(hints);
 }
 
+void MawRules::setMapInstanceId(const std::string &instanceId)
+{
+    m_mapInstanceId = instanceId;
+}
+
+const std::pair<const std::string, MawDimensionRun> *MawRules::rift() const
+{
+    return m_state.dimensionRuns.empty() ? nullptr : &*m_state.dimensionRuns.begin();
+}
+
+std::pair<const std::string, MawDimensionRun> *MawRules::rift()
+{
+    return m_state.dimensionRuns.empty() ? nullptr : &*m_state.dimensionRuns.begin();
+}
+
+bool MawRules::inMapInstance() const
+{
+    return !m_mapInstanceId.empty();
+}
+
+bool MawRules::inRift() const
+{
+    return m_mapInstanceId == MawRiftInstanceId && rift() != nullptr;
+}
+
 const MawDimensionRun *MawRules::dimensionRun(const std::string &mapFileName) const
 {
-    const auto it = m_state.dimensionRuns.find(lowercase(mapFileName));
-    return it != m_state.dimensionRuns.end() ? &it->second : nullptr;
+    const std::pair<const std::string, MawDimensionRun> *pRift = inRift() ? rift() : nullptr;
+    return pRift != nullptr && pRift->first == lowercase(mapFileName) ? &pRift->second : nullptr;
+}
+
+MawDimensionRun *MawRules::dimensionRun(const std::string &mapFileName)
+{
+    std::pair<const std::string, MawDimensionRun> *pRift = inRift() ? rift() : nullptr;
+    return pRift != nullptr && pRift->first == lowercase(mapFileName) ? &pRift->second : nullptr;
+}
+
+bool MawRules::clearedSinceRefill(const std::string &mapFileName) const
+{
+    const MawDimensionRun *pRun = dimensionRun(mapFileName);
+    return pRun != nullptr ? pRun->completed : m_state.clearedSinceRefill.contains(lowercase(mapFileName));
 }
 
 std::optional<double> MawRules::mapAffix(MawMapAffix affix) const
@@ -485,14 +523,13 @@ uint64_t MawRules::randomRootSeed() const
     return m_randomRootSeed;
 }
 
-void MawRules::setRandomRootSeed(uint64_t rootSeed)
+void MawRules::setRandomRootSeed(uint64_t rootSeed, int savedDeaths)
 {
     m_randomRootSeed = rootSeed;
 
     if (m_options.challengeMode == RulesetChallengeMode::BeyondMadness)
     {
-        m_madnessLedger.loadRun(rootSeed, m_state.madnessDeaths);
-        m_state.madnessDeaths = m_madnessLedger.deaths();
+        m_madnessLedger.loadRun(rootSeed, savedDeaths);
         m_madnessSeenDeaths.reset();
     }
 }
@@ -515,7 +552,7 @@ void MawRules::markMadnessHit(double gameMinutes)
     }
 }
 
-void MawRules::updateMadnessLedger(const Party &party, double gameMinutes, bool enemiesNear)
+void MawRules::updateMadnessLedger(Party &party, double gameMinutes, bool enemiesNear)
 {
     if (m_options.challengeMode != RulesetChallengeMode::BeyondMadness)
     {
@@ -523,7 +560,7 @@ void MawRules::updateMadnessLedger(const Party &party, double gameMinutes, bool 
     }
 
     // A defeat adds to the party's NumDeaths (GameApplication::applyPartyDefeatConsequences).
-    const int numDeaths = party.eventVariableValue(uint16_t(EvtVariable::NumDeaths));
+    const int numDeaths = party.campaign().eventVariableValue(uint16_t(EvtVariable::NumDeaths));
 
     if (m_madnessSeenDeaths && numDeaths > *m_madnessSeenDeaths)
     {
@@ -532,7 +569,7 @@ void MawRules::updateMadnessLedger(const Party &party, double gameMinutes, bool 
 
     m_madnessSeenDeaths = numDeaths;
     m_madnessLedger.update(gameMinutes, enemiesNear);
-    m_state.madnessDeaths = m_madnessLedger.deaths();
+    party.rulesetState().madnessDeaths = m_madnessLedger.deaths();
 }
 
 void MawRules::leaveMadnessMap()
@@ -543,35 +580,87 @@ void MawRules::leaveMadnessMap()
     }
 }
 
+PlayerId MawRules::partyInPlay() const
+{
+    return m_partyInPlay;
+}
+
+void MawRules::setPartyInPlay(PlayerId player)
+{
+    m_partyInPlay = player;
+    m_pPartyRuntime = &m_partyRuntimes[player];
+}
+
+void MawRules::forgetParty(PlayerId player)
+{
+    if (player == LocalPlayer)
+    {
+        return;
+    }
+
+    if (m_partyInPlay == player)
+    {
+        setPartyInPlay(LocalPlayer);
+    }
+
+    m_partyRuntimes.erase(player);
+}
+
+MawPartyRuntime &MawRules::partyRuntime()
+{
+    return *m_pPartyRuntime;
+}
+
+const MawPartyRuntime &MawRules::partyRuntime() const
+{
+    return *m_pPartyRuntime;
+}
+
 std::optional<MawAuraSource> MawRules::activeAura(uint32_t spellId) const
 {
-    const auto it = m_activeAuras.find(spellId);
-    return it != m_activeAuras.end() ? std::optional<MawAuraSource>(it->second) : std::nullopt;
+    const auto it = m_pPartyRuntime->activeAuras.find(spellId);
+    return it != m_pPartyRuntime->activeAuras.end() ? std::optional<MawAuraSource>(it->second) : std::nullopt;
 }
 
 void MawRules::setActiveAuras(std::unordered_map<uint32_t, MawAuraSource> auras)
 {
-    m_activeAuras = std::move(auras);
+    m_pPartyRuntime->activeAuras = std::move(auras);
 }
 
 int MawRules::nearbyMonsters() const
 {
-    return m_nearbyMonsters;
+    return m_pPartyRuntime->nearbyMonsters;
 }
 
 void MawRules::setNearbyMonsters(int count)
 {
-    m_nearbyMonsters = count;
+    m_pPartyRuntime->nearbyMonsters = count;
+}
+
+int MawRules::outnumberedMonsters() const
+{
+    return m_pPartyRuntime->outnumberedMonsters;
+}
+
+int MawRules::battleFrenzyMonsters() const
+{
+    return m_pPartyRuntime->battleFrenzyMonsters;
+}
+
+void MawRules::setSoloPackMonsters(int outnumbered, int battleFrenzy)
+{
+    m_pPartyRuntime->outnumberedMonsters = outnumbered;
+    m_pPartyRuntime->battleFrenzyMonsters = battleFrenzy;
 }
 
 bool MawRules::shadowBossNearby() const
 {
-    return m_shadowBossNearby;
+    return m_pPartyRuntime->shadowBossNearby;
 }
 
 void MawRules::setShadowBossNearby(bool nearby)
 {
-    m_shadowBossNearby = nearby;
+    m_pPartyRuntime->shadowBossNearby = nearby;
 }
 
 std::optional<int> MawRules::bountyLevel() const
@@ -582,6 +671,16 @@ std::optional<int> MawRules::bountyLevel() const
 void MawRules::setBountyLevel(std::optional<int> levels)
 {
     m_bountyLevel = levels;
+}
+
+int MawRules::arenaLevel() const
+{
+    return m_arenaLevel;
+}
+
+void MawRules::setArenaLevel(int level)
+{
+    m_arenaLevel = level;
 }
 
 bool MawRules::madnessRewardlessMap(const std::string &mapFileName) const
@@ -597,22 +696,22 @@ bool MawRules::madnessRewardlessMap(const std::string &mapFileName) const
 
 int MawRules::partyStaffResistance() const
 {
-    return m_partyStaffResistance;
+    return m_pPartyRuntime->staffResistance;
 }
 
 void MawRules::setPartyStaffResistance(int resistance)
 {
-    m_partyStaffResistance = resistance;
+    m_pPartyRuntime->staffResistance = resistance;
 }
 
 double MawRules::soloMonsterCut() const
 {
-    return m_soloMonsterCut;
+    return m_pPartyRuntime->soloMonsterCut;
 }
 
 void MawRules::setSoloMonsterCut(double cut)
 {
-    m_soloMonsterCut = std::max(cut, 1.0);
+    m_pPartyRuntime->soloMonsterCut = std::max(cut, 1.0);
 }
 
 const MawExperienceCurve &MawRules::characterCurve() const
@@ -761,6 +860,7 @@ MawMonsterLevelInputs MawRules::monsterLevelInputs(const MapStatsEntry &map) con
         inputs.bountyLevel = *m_bountyLevel;
     }
 
+    inputs.arenaLevel = m_arenaLevel;
     return inputs;
 }
 
@@ -942,7 +1042,8 @@ const std::unordered_map<int, int> &MawRules::monsterLevels(
         || m_monsterLevels.partyLevel != partyLevel
         || m_monsterLevels.resetCount != resetCount
         || m_monsterLevels.dimensionPower != dimensionPower
-        || m_monsterLevels.bountyLevel != (mapFileName == m_currentMap ? m_bountyLevel : std::nullopt))
+        || m_monsterLevels.bountyLevel != (mapFileName == m_currentMap ? m_bountyLevel : std::nullopt)
+        || m_monsterLevels.arenaLevel != m_arenaLevel)
     {
         const MawMonsterLevelInputs inputs = monsterLevelInputs(map);
         m_monsterLevels.mapFileName = mapFileName;
@@ -950,6 +1051,7 @@ const std::unordered_map<int, int> &MawRules::monsterLevels(
         m_monsterLevels.resetCount = resetCount;
         m_monsterLevels.dimensionPower = dimensionPower;
         m_monsterLevels.bountyLevel = inputs.bountyLevel ? std::optional<int>(int(*inputs.bountyLevel)) : std::nullopt;
+        m_monsterLevels.arenaLevel = m_arenaLevel;
         m_monsterLevels.levels = resolveMawMonsterLevels(monsterTable, m_mapLevels, inputs);
         m_monsterLevels.bolster = mawMapBolster(m_mapLevels, inputs);
         m_monsterLevels.nativeLevels.clear();

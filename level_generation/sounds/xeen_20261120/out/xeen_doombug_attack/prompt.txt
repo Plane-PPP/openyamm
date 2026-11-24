@@ -1,0 +1,9 @@
+A huge beetle biting: a hard loud clack of big chitinous mandibles snapping shut twice, a short angry chirping rasp, close
+
+kind: sfx
+duration: 1.0
+loop: false
+variants: 3
+model: eleven_text_to_sound_v2
+prompt_influence: 0.45
+loudness_db: -9

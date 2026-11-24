@@ -161,7 +161,7 @@ Character auditMember(const std::string &className, uint32_t level)
 }
 }
 
-TEST_CASE("An Assassin's Mass Distortion takes no difficulty scale, only Earth twice (CMB-4)")
+TEST_CASE("An Assassin's Mass Distortion takes no difficulty scale and Earth's resistance once (CMB-4)")
 {
     const auto landed = [](const MawRules &rules)
     {
@@ -182,6 +182,7 @@ TEST_CASE("An Assassin's Mass Distortion takes no difficulty scale, only Earth t
     hellOptions.difficulty = RulesetDifficulty::Hell;
     MawRules hell(hellOptions, MawMapLevels{});
     CHECK_EQ(landed(hell), landed(normal));
+    CHECK_EQ(landed(normal), int(std::ceil(400 / mawMonsterResistanceDivisor(50))));
 }
 
 TEST_CASE("MAW class perks read the trained school skill, not item and follower bonuses (CLS-2)")
@@ -970,7 +971,7 @@ TEST_CASE("A released Preservation aura ends for every member but one whose own 
     Party party = auditParty(rules, {cleric, drinker, auditMember("Knight", 20)});
     const SpellRules &spells = rules.gameRules().spells;
 
-    rules.state().auraHolders[50] = 0;
+    party.rulesetState().auraHolders[50] = 0;
     spells.updateAuras(party, 0.5f);
 
     for (size_t memberIndex = 0; memberIndex < 3; ++memberIndex)
@@ -978,7 +979,7 @@ TEST_CASE("A released Preservation aura ends for every member but one whose own 
         CHECK(party.characterBuff(memberIndex, CharacterBuffId::Preservation) != nullptr);
     }
 
-    rules.state().auraHolders.erase(50);
+    party.rulesetState().auraHolders.erase(50);
     spells.updateAuras(party, 0.5f);
     CHECK(party.characterBuff(0, CharacterBuffId::Preservation) == nullptr);
     CHECK(party.characterBuff(1, CharacterBuffId::Preservation) != nullptr);
@@ -1024,6 +1025,7 @@ TEST_CASE("Dimension affix 26 slows the attack itself, not only the HUD's number
     run.affixes = {int(MawMapAffix::PlayerAttackSpeed), 0, 0, 0};
     run.power = 10;
     rules.state().dimensionRuns["6d02.blv"] = run;
+    rules.setMapInstanceId(MawRiftInstanceId);
     rules.setCurrentMap("6d02.blv");
     const std::optional<double> slower = rules.mapAffix(MawMapAffix::PlayerAttackSpeed);
     REQUIRE(slower.has_value());
@@ -1231,6 +1233,7 @@ TEST_CASE("The leech floor reads the full Speed and keeps whole under dimension 
     run.affixes = {int(MawMapAffix::Leech), 0, 0, 0};
     run.power = 10;
     rules.state().dimensionRuns["6d02.blv"] = run;
+    rules.setMapInstanceId(MawRiftInstanceId);
     rules.setCurrentMap("6d02.blv");
     REQUIRE(rules.mapAffix(MawMapAffix::Leech).has_value());
     CHECK_EQ(healed(), plain);
@@ -1331,6 +1334,7 @@ TEST_CASE("Hazards take legendaries 18 and 22's cut and dimension affix 2's crit
     run.affixes = {int(MawMapAffix::MonsterCritical), 0, 0, 0};
     run.power = 10;
     rules.state().dimensionRuns["6d02.blv"] = run;
+    rules.setMapInstanceId(MawRiftInstanceId);
     rules.setCurrentMap("6d02.blv");
     REQUIRE(rules.mapAffix(MawMapAffix::MonsterCritical).has_value());
     bool doubled = false;
@@ -1563,7 +1567,7 @@ TEST_CASE("The Elementalist's idle window comes from the last offensive cast, no
     CHECK_EQ(runtime.elementalLastDelayTicks, window);
 }
 
-TEST_CASE("A Regenerating boss counts the party's hits with itself, and a save keeps them (FCOR-2-6)")
+TEST_CASE("A Regenerating boss counts the party's damage with itself, and a save keeps it (FCOR-2-6)")
 {
     MawRules rules(RulesetOptions{}, MawMapLevels{});
     Party party = auditParty(rules, {auditMember("Knight", 20)});
@@ -1584,7 +1588,17 @@ TEST_CASE("A Regenerating boss counts the party's hits with itself, and a save k
     hit.targetActorIndex = bossIndex;
     rules.gameRules().combat.applyPartyHitEffects(party, hit);
     rules.gameRules().combat.applyPartyHitEffects(party, hit);
-    CHECK_EQ(world.actor(bossIndex).rulesetFacts.regeneratingHits, 2);
+    // Two blows of 1 % of its health: 200 hundredths of a percent.
+    CHECK_EQ(world.actor(bossIndex).rulesetFacts.regeneratingDamage, 200);
+    // A blow of a millionth of its health still counts, and one past its health counts as all of it.
+    world.actor(bossIndex).maxHp = 1000000;
+    hit.damage = 1;
+    rules.gameRules().combat.applyPartyHitEffects(party, hit);
+    CHECK_EQ(world.actor(bossIndex).rulesetFacts.regeneratingDamage, 201);
+    hit.damage = 5000000;
+    rules.gameRules().combat.applyPartyHitEffects(party, hit);
+    CHECK_EQ(world.actor(bossIndex).rulesetFacts.regeneratingDamage, 10201);
+    world.actor(bossIndex).maxHp = 1000;
 
     OutdoorWorldRuntime::MapActorState actor;
     actor.rulesetFacts = world.actor(bossIndex).rulesetFacts;
@@ -1600,7 +1614,7 @@ TEST_CASE("A Regenerating boss counts the party's hits with itself, and a save k
     std::filesystem::remove(path);
     REQUIRE_MESSAGE(restored.has_value(), error.c_str());
     REQUIRE_EQ(restored->outdoorWorldStates.at("oute3.odm").mapActors.size(), 1u);
-    CHECK_EQ(restored->outdoorWorldStates.at("oute3.odm").mapActors[0].rulesetFacts.regeneratingHits, 2);
+    CHECK_EQ(restored->outdoorWorldStates.at("oute3.odm").mapActors[0].rulesetFacts.regeneratingDamage, 10201);
 }
 
 TEST_CASE("An Assassin's blow on a monster that is not hostile pays no energy and builds nothing (FCOR-2-21)")
@@ -1793,7 +1807,7 @@ TEST_CASE("Skill popups show the numbers the rules use (TXT-2-5, TXT-2-6, TXT-2-
     cleric.skills["SpiritMagic"] = {"SpiritMagic", 20, SkillMastery::Master};
     cleric.maxSpellPoints = 1000;
     const std::string free = plainText(popup(0, "Meditation").description);
-    rules.state().auraHolders[46] = 0;
+    party.rulesetState().auraHolders[46] = 0;
     REQUIRE_GT(rules.gameRules().spells.reservedSpellPoints(party, 0), 0);
     CHECK_NE(plainText(popup(0, "Meditation").description), free);
 }

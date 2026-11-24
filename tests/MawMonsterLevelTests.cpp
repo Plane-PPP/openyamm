@@ -188,7 +188,58 @@ TEST_CASE("MAW reads a world's monster families by picture and gives them map le
     CHECK(mawArenaMap("D42.blv"));
     CHECK(mawArenaMap("7d05.blv"));
     CHECK(mawArenaMap("thearena.blv"));
+    CHECK(mawArenaMap("xeen_xd20.blv"));
     CHECK_FALSE(mawArenaMap("isleofashes.blv"));
+}
+
+TEST_CASE("MAW sizes the Arena's monsters by the Endless Arena's level")
+{
+    const MonsterTable monsters = exampleMonsters();
+    // The families by table level of their C row, a tie by id: Centaur, BThief, Dire Wolf, Mercenary, FighterLeath.
+    CHECK_EQ(mawArenaWaveMonster(1, monsters), 101);
+    CHECK_EQ(mawArenaWaveMonster(2, monsters), 638);
+    CHECK_EQ(mawArenaWaveMonster(3, monsters), 86);
+    CHECK_EQ(mawArenaWaveMonster(6, monsters), 101);
+    CHECK_EQ(mawArenaWaveMonster(0, monsters), 0);
+
+    MawMonsterLevelInputs inputs;
+    inputs.mapFileName = "d42.blv";
+    inputs.partyLevel = 300;
+    inputs.arenaLevel = 1;
+    std::unordered_map<int, int> levels = resolveMawMonsterLevels(monsters, exampleMapLevels(), inputs);
+    // Level 1: every B row at 6 + 6, the second wave's family 2 higher, the third's 4; the party's levels add nothing.
+    CHECK_EQ(levels.at(101), 12);
+    CHECK_EQ(levels.at(638), 14);
+    CHECK_EQ(levels.at(86), 16);
+    CHECK_EQ(levels.at(194), 12);
+    // The A and C rows keep 1.2 times their table distance from the B row, never below 5.
+    CHECK_EQ(levels.at(85), 10);
+    CHECK_EQ(levels.at(87), 22);
+    CHECK_EQ(levels.at(193), 5);
+    CHECK_EQ(levels.at(195), 20);
+
+    // Level 2 brings the next three families; past the last one the list starts again, at the level's numbers.
+    inputs.arenaLevel = 2;
+    levels = resolveMawMonsterLevels(monsters, exampleMapLevels(), inputs);
+    CHECK_EQ(levels.at(194), 18);
+    CHECK_EQ(levels.at(539), 20);
+    CHECK_EQ(levels.at(101), 22);
+    CHECK_EQ(levels.at(86), 18);
+
+    // Before the first bout the Arena is sized for level 1; Beyond Madness climbs 8 a level.
+    inputs.arenaLevel = 0;
+    CHECK_EQ(resolveMawMonsterLevels(monsters, exampleMapLevels(), inputs).at(638), 14);
+    inputs.arenaLevel = 3;
+    inputs.madness = true;
+    CHECK_EQ(resolveMawMonsterLevels(monsters, exampleMapLevels(), inputs).at(539), 32);
+
+    // The rules resolve the Arena again when its level moves.
+    MawRules rules(RulesetOptions{}, exampleMapLevels());
+    MapStatsEntry arena;
+    arena.fileName = "d42.blv";
+    CHECK_EQ(rules.monsterLevels(monsters, arena).at(194), 12);
+    rules.setArenaLevel(2);
+    CHECK_EQ(rules.monsterLevels(monsters, arena).at(194), 18);
 }
 
 TEST_CASE("a world's MAW balance adds its maps, story bands and completion exclusions")
@@ -322,6 +373,19 @@ TEST_CASE("MAW level banks follow the experience curve and the continent it was 
     CHECK(state.totalLevel() == doctest::Approx(10));
     CHECK(state.levelOutside(1) == doctest::Approx(8));
     CHECK(state.levelOutside(7) == doctest::Approx(10));
+
+    // The World of Xeen's two faces (continents 6 and 7) bank into one fifth bank: a face's monsters ignore what was
+    // earned on either face and grow with the other worlds' levels; the other worlds' grow with Xeen's.
+    MawGameState xeen = state;
+    xeen.addBankedExperience(196000, 6);
+    const double cloudside = xeen.continentLevels[4];
+    CHECK(cloudside > 0);
+    xeen.addBankedExperience(200000, 7);
+    CHECK(xeen.continentLevels[4] > cloudside);
+    CHECK(xeen.continentLevels[0] == doctest::Approx(2));
+    CHECK(xeen.levelOn(6) == doctest::Approx(xeen.levelOn(7)));
+    CHECK(xeen.levelOutside(7) == doctest::Approx(10));
+    CHECK(xeen.levelOutside(1) == doctest::Approx(8 + xeen.continentLevels[4]));
 
     MawRules rules(RulesetOptions{}, MawMapLevels{});
     CHECK_EQ(rules.gameRules().experience.experienceForNextLevel(1), 1000u);

@@ -1015,6 +1015,28 @@ void NewGameScreen::refreshSkillChoices(bool applyCandidateDefaults)
                 m_state.optionalSkills.push_back(pSkillName);
             }
         }
+
+        // A solo run starts with SoloRunStartSkill (makeSoloRunParty) where its rules let the class learn it: a
+        // fixed starting skill here, never one of the picks.
+        if (m_soloRun && m_partySize == 1)
+        {
+            Character character = {};
+            character.className = selectedClassName();
+            character.raceId = candidate.raceId;
+            const SkillMastery classCap = m_pGameData->classSkillTable().getEffectiveCap(
+                character.className, character.raceId, SoloRunStartSkill);
+
+            if (creationRules().skills.masteryCap(character, SoloRunStartSkill, classCap) != SkillMastery::None)
+            {
+                std::erase(m_state.optionalSkills, SoloRunStartSkill);
+
+                if (std::find(m_state.defaultSkills.begin(), m_state.defaultSkills.end(), SoloRunStartSkill)
+                    == m_state.defaultSkills.end())
+                {
+                    m_state.defaultSkills.push_back(SoloRunStartSkill);
+                }
+            }
+        }
     }
 
     // An innate class skill, beyond the two optional choices; keep the creation sheet and character in sync.
@@ -1236,6 +1258,29 @@ void NewGameScreen::finishPortraitImport()
     }
 
     confirm(Engine::tr("Add Portrait"), body, {Engine::tr("OK")}, [](int) {});
+}
+
+void NewGameScreen::setSoloRun(bool soloRun)
+{
+    if (m_soloRun == soloRun)
+    {
+        return;
+    }
+
+    m_soloRun = soloRun;
+    // The fixed skill of a solo run comes or goes; the picks that still stand are kept.
+    const std::vector<std::string> picks = m_state.selectedOptionalSkills;
+    refreshSkillChoices(false);
+
+    for (const std::string &pick : picks)
+    {
+        if (m_state.selectedOptionalSkills.size() < m_state.skillPickCount
+            && std::find(m_state.optionalSkills.begin(), m_state.optionalSkills.end(), pick)
+                != m_state.optionalSkills.end())
+        {
+            m_state.selectedOptionalSkills.push_back(pick);
+        }
+    }
 }
 
 bool NewGameScreen::textInputActive() const
@@ -1724,13 +1769,31 @@ const GameRules &NewGameScreen::creationRules()
         return standardGameRules();
     }
 
-    if (!m_pCreationRules || m_creationRulesSelection != m_ruleset)
+    // The rules of the game this party would start: a solo run's have its option on (Lone Discipline, the solo
+    // numbers in the skill texts).
+    RulesetSelection selection = m_ruleset;
+    selection.options.soloRun = m_soloRun && m_partySize == 1;
+
+    if (!m_pCreationRules || m_creationRulesSelection != selection)
     {
-        m_pCreationRules = createMawRules(*m_pGameData, m_ruleset.options);
-        m_creationRulesSelection = m_ruleset;
+        m_pCreationRules = createMawRules(*m_pGameData, selection.options);
+        m_creationRulesSelection = selection;
     }
 
     return m_pCreationRules ? m_pCreationRules->gameRules() : standardGameRules();
+}
+
+CreationSkillReach NewGameScreen::ruledSkillReach(
+    const std::string &className, uint32_t raceId, const std::string &skill)
+{
+    CreationSkillReach reach = creationSkillReach(m_pGameData->classSkillTable(), className, raceId, skill);
+    Character character = {};
+    character.className = className;
+    character.raceId = raceId;
+    const SkillRules &skills = creationRules().skills;
+    reach.now = skills.masteryCap(character, skill, reach.now);
+    reach.best = std::max(reach.now, skills.promotedMasteryCap(character, skill, reach.best));
+    return reach;
 }
 
 std::vector<std::pair<std::string, uint32_t>> NewGameScreen::creationSkillMatrixLines(const Character &character) const
@@ -2539,7 +2602,9 @@ void NewGameScreen::drawRulesPanel()
     if (!choices.challengeModes.empty())
     {
         const bool modes = choices.challengeModes.size() > 1;
-        y = section(Engine::tr("Challenge"),
+        // With a context: the solo run has a talent of the same English name (a taunt), which reads differently
+        // in some languages.
+        y = section(Engine::trc("rules section", "Challenge"),
                     modes || choices.randomizer ? Engine::tr("Chosen once · fixed for the adventure")
                                                 : Engine::tr("Coming in a later update"),
                     y);
@@ -2697,10 +2762,7 @@ void NewGameScreen::drawContinentSelection(float deltaSeconds)
     loadDesign("gameplay/continent_selection");
     beginDesign("ContinentSelection");
     const std::vector<RulesetStartCard> &startCards = chosenRulesetDefinition().startCards;
-    const std::vector<std::string> hiddenCards = startCards.empty() ? std::vector<std::string>{}
-        : std::vector<std::string>{"ContinentSelectionEnroth", "ContinentSelectionAntagarich",
-              "ContinentSelectionJadame", "ContinentSelectionChedian"};
-    drawDesign(hiddenCards);
+    drawDesign();
     drawRulesetSwitch();
     std::string chosenContinent;
     if (!startCards.empty())
@@ -2709,26 +2771,62 @@ void NewGameScreen::drawContinentSelection(float deltaSeconds)
     }
     else
     {
-        for (const std::string key : {"enroth", "antagarich", "jadame", "chedian"})
+        // A card for each new-game continent with a card (character_selection.yml and the worlds' own), by its order:
+        // copies of the layout's card template spread evenly over the card band, shrunk alike when they do not fit.
+        std::vector<const MergedCharacterSelectionContinent *> cards;
+        if (m_pGameData != nullptr)
         {
-            std::string name = key;
-            name[0] = char(std::toupper(name[0]));
-            const std::string prefix = "ContinentSelection" + name;
-            const bool available = continentOffered(key);
-            const Rect rect = designRect(prefix + "Button");
-            if (button(prefix, rect, "", "world_card", available, available && pointerInside(rect)))
+            for (const MergedCharacterSelectionContinent &continent :
+                 m_pGameData->mergedCharacterSelectionTable().continents())
             {
-                chosenContinent = key;
+                if (continent.hasCard)
+                {
+                    cards.push_back(&continent);
+                }
+            }
+        }
+        std::stable_sort(cards.begin(), cards.end(),
+                         [](const MergedCharacterSelectionContinent *pLeft, const MergedCharacterSelectionContinent *pRight)
+                         {
+                             return pLeft->cardOrder < pRight->cardOrder;
+                         });
+        const Rect band = designRect("ContinentSelectionCards");
+        const Rect card = designRect("ContinentSelectionCardButton");
+        const float gap = designRect("ContinentSelectionCardGap").width;
+        const float count = float(cards.size());
+        const float rowWidth = count * card.width + std::max(0.0f, count - 1) * gap;
+        const float cardScale = rowWidth > 0 ? std::min(1.0f, band.width / rowWidth) : 1.0f;
+        const float rowX = band.x + (band.width - rowWidth * cardScale) / 2;
+        const float rowY = band.y + (band.height - card.height * cardScale) / 2;
+        for (size_t index = 0; index < cards.size(); ++index)
+        {
+            const MergedCharacterSelectionContinent &continent = *cards[index];
+            const float cardX = rowX + float(index) * (card.width + gap) * cardScale;
+            // A template element's rect moved onto this card and scaled with it.
+            const auto placed = [&](const std::string &id)
+            {
+                const Rect rect = designRect(id);
+                return Rect{cardX + (rect.x - card.x) * cardScale, rowY + (rect.y - card.y) * cardScale,
+                            rect.width * cardScale, rect.height * cardScale};
+            };
+            const bool available = continentOffered(continent.key);
+            const Rect rect = placed("ContinentSelectionCardButton");
+            if (button("ContinentSelection-" + continent.key, rect, "", "world_card", available,
+                       available && pointerInside(rect)))
+            {
+                chosenContinent = continent.key;
             }
             // Cards draw their pictures and lettering above their blank selectable skin.
             // A card that cannot be chosen is dimmed: faded picture, grey lettering.
-            const UiLayoutManager::LayoutElement *pImage = m_designLayouts.findElement(prefix + "Illustration");
-            drawTextureColor(pImage->primaryAsset, designRect(prefix + "Illustration"),
+            drawTextureColor(continent.cardPicture, placed("ContinentSelectionCardIllustration"),
                              available ? 0xffffffffu : 0x70a0a0a0u);
             const uint32_t textColor = available ? 0 : RulesDisabledText;
-            label(prefix + "Name", Engine::localize(name), textColor);
-            label(prefix + "Game", m_designLayouts.findElement(prefix + "Game")->labelText, textColor);
-            label(prefix + "Start", m_designLayouts.findElement(prefix + "Start")->labelText, textColor);
+            labelIn("ContinentSelectionCardName", placed("ContinentSelectionCardName"),
+                    Engine::localize(continent.cardTitle), textColor, cardScale);
+            labelIn("ContinentSelectionCardGame", placed("ContinentSelectionCardGame"),
+                    Engine::localize(continent.cardSubtitle), textColor, cardScale);
+            labelIn("ContinentSelectionCardStart", placed("ContinentSelectionCardStart"),
+                    Engine::localize(continent.cardCaption), textColor, cardScale);
         }
     }
     if (action("ContinentSelectionCancelButton") || m_escapePressed)

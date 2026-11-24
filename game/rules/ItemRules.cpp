@@ -251,7 +251,13 @@ void ItemRules::adjustShopStock(
 {
 }
 
-std::optional<std::string> ItemRules::useTravelItem(Party &, const InventoryItem &) const
+std::optional<TravelItemUse> ItemRules::planTravelItem(
+    const Party &, const InventoryItem &, const TravelItemOrigin &) const
+{
+    return std::nullopt;
+}
+
+std::optional<TravelItemUse> ItemRules::useTravelItem(Party &, const InventoryItem &, const TravelItemOrigin &) const
 {
     return std::nullopt;
 }
@@ -341,6 +347,29 @@ std::optional<ItemPouch> ItemRules::pouch(const ItemDefinition &) const
 bool ItemRules::hasPouches() const
 {
     return false;
+}
+
+bool ItemRules::questItem(const ItemDefinition &definition)
+{
+    // What is worn or wielded stays with the gear, whatever it is worth (blasters, the Wetsuit); a pile of gold is
+    // no item of a bag.
+    static constexpr std::array<std::string_view, 18> NoQuestItem = {
+        "Weapon", "Weapon2", "Weapon1or2", "Missile", "WeaponW", "Armor", "Shield", "Helm", "Belt", "Cloak",
+        "Gauntlets", "Boots", "Ring", "Amulet", "Gold", "Bottle", "Reagent", "Herb"};
+
+    return definition.itemId != 0 && definition.value == 0 && !definition.name.empty()
+        && std::find(NoQuestItem.begin(), NoQuestItem.end(), definition.equipStat) == NoQuestItem.end();
+}
+
+std::optional<ItemPouch> ItemRules::alchemyOrQuestPouch(const ItemDefinition &definition)
+{
+    // MM6's reagents are herbs (1762-1764).
+    if (definition.equipStat == "Bottle" || definition.equipStat == "Reagent" || definition.equipStat == "Herb")
+    {
+        return ItemPouch::Alchemy;
+    }
+
+    return questItem(definition) ? std::optional<ItemPouch>(ItemPouch::Quest) : std::nullopt;
 }
 
 std::optional<std::string> ItemRules::chestOpenRefusal(const Party &, int) const

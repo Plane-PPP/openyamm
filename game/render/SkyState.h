@@ -87,6 +87,19 @@ struct SkyFrameState
     bool drawSky = true;
     // Active map theme, empty when none.
     std::string themeName;
+    // The theme's rim glow and its strength now (0: none drawn): day to night by the preset's star weight, dimmed by
+    // haze and fog like the stars.
+    SkyRimGlow rimGlow;
+    float rimGlowStrength = 0.0f;
+    // Space below the horizon over a map's void (the theme's, else the preset's, else the defaults); its star
+    // brightness already dimmed by a fog cover (voidVisibility).
+    SkyVoidLook voidLook;
+    // How much of the void the sky pass draws below the horizon: 1 in every weather (empty space stays dark with its
+    // stars), less only under an open sky's fog cover.
+    float voidVisibility = 1.0f;
+    // How far geometry seen toward the void fades into it (sky_common.sh skyFogDisplayColor): 1 in haze, less in fog
+    // weather, where fogged land fades into the fog colour instead.
+    float voidFogVisibility = 1.0f;
 
     const SkyColor &value(SkyValue id) const
     {
@@ -115,6 +128,12 @@ float skyOrbitLightAngle(const SkyOrbitRing &ring, int index, double gameMinutes
 bool isPaintedSkyPreset(const SkyPreset &preset);
 std::string selectSkyPreset(const SkyPresetLibrary &library, const SkyInputs &inputs);
 const SkyTheme *selectSkyTheme(const SkyPresetLibrary &library, const SkyInputs &inputs);
+
+// u_skyRim values for fs_sky's rim glow (SkyRimGlow): [0] its middle's direction on the horizon (x east, y north),
+// half width and height (radians); [1] colour times strength (linear), depth below the horizon (radians). All zero
+// (nothing drawn) without a glow.
+using SkyRimUniformValues = std::array<std::array<float, 4>, 2>;
+SkyRimUniformValues packSkyRimUniform(const SkyFrameState &frame);
 
 class SkyStateModel
 {

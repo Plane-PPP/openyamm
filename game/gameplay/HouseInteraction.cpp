@@ -5,6 +5,7 @@
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/BountyHuntRuntime.h"
 #include "game/gameplay/GameMechanics.h"
+#include "game/gameplay/TravelRuntime.h"
 #include "game/mm9/Mm9TransportRoute.h"
 #include "game/events/EvtEnums.h"
 #include "game/tables/ClassSkillTable.h"
@@ -291,7 +292,8 @@ void tryApplyTempleDonationBuffs(
     }
 
     const uint32_t spellLevel = templeSpellLevelFromGameMinutes(worldRuntime.gameMinutes());
-    const int reputation = worldRuntime.currentLocationReputation();
+    const int reputation =
+        boundGameRules().monsters.reputationCounts() ? worldRuntime.currentLocationReputation() : 0;
 
     if (reputation <= -5)
     {
@@ -460,7 +462,7 @@ bool hasGuildMembership(
         return true;
     }
 
-    if (pParty != nullptr && pParty->eventVariableValue(guildMembershipPartyVariableId(*guildType)) != 0)
+    if (pParty != nullptr && pParty->campaign().eventVariableValue(guildMembershipPartyVariableId(*guildType)) != 0)
     {
         return true;
     }
@@ -632,7 +634,7 @@ bool routeQBitSatisfied(
     }
 
     const Party *pParty = pWorldRuntime->party();
-    return pParty != nullptr && pParty->hasQuestBit(route.requiredQBit);
+    return pParty != nullptr && pParty->campaign().hasQuestBit(route.requiredQBit);
 }
 
 bool routeAvailableToday(const HouseEntry::TransportRoute &route, float currentGameMinutes)
@@ -643,6 +645,17 @@ bool routeAvailableToday(const HouseEntry::TransportRoute &route, float currentG
     }
 
     return route.daysAvailable[dayOfWeekFromGameMinutes(currentGameMinutes)];
+}
+
+// With other players in the world coaches and boats leave on every day of the week: a wait for the right day would
+// be everyone's (devdocs/plans/MULTIPLAYER_LISTEN_SERVER_ARCHITECTURE.md, "Rules").
+bool routeLeavesToday(
+    const HouseEntry::TransportRoute &route,
+    const IGameplayWorldRuntime *pWorldRuntime,
+    float currentGameMinutes)
+{
+    return (pWorldRuntime != nullptr && pWorldRuntime->sharedWithOtherPlayers())
+        || routeAvailableToday(route, currentGameMinutes);
 }
 
 int adjustedTransportTravelDays(
@@ -788,8 +801,8 @@ bool shouldShowLorettaPriceFixing(const HouseEntry &houseEntry, const Party *pPa
     const std::optional<uint32_t> stableQuestBit = lorettaStableQuestBitForHouse(houseEntry.id);
 
     return stableQuestBit.has_value()
-        && pParty->hasQuestBit(LorettaPriceQuestBit)
-        && !pParty->hasQuestBit(*stableQuestBit);
+        && pParty->campaign().hasQuestBit(LorettaPriceQuestBit)
+        && !pParty->campaign().hasQuestBit(*stableQuestBit);
 }
 
 int roundPrice(float multiplier, int scale, int minimumPrice)
@@ -1148,7 +1161,7 @@ std::vector<std::string> buildHouseServiceInfoLines(
         if (continent)
         {
             const TeacherLedgerSettings &ledger = pParty->trainerDirectory()->ledger();
-            lines.push_back(ledger.fill(ledger.description, trainerContinentName(*continent)));
+            lines.push_back(ledger.fill(ledger.description, pParty->trainerDirectory()->continentName(*continent)));
         }
     }
     else if (menuId == DialogueMenuId::TavernArcomage)
@@ -1272,7 +1285,8 @@ std::optional<uint32_t> tavernTeacherLedgerContinent(const HouseEntry &houseEntr
 
     const std::optional<uint32_t> continent = pParty->trainerDirectory()->mapContinent(houseEntry.mapId);
 
-    if (!continent || trainerContinentName(*continent).empty() || pParty->hasTeacherLedger(*continent))
+    if (!continent || pParty->trainerDirectory()->continentName(*continent).empty()
+        || pParty->hasTeacherLedger(*continent))
     {
         return std::nullopt;
     }
@@ -1399,7 +1413,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             const TeacherLedgerSettings &ledger = pParty->trainerDirectory()->ledger();
             HouseActionOption buy = makeOption(HouseActionId::BuyTeacherLedger,
-                ledger.fill(ledger.buy, trainerContinentName(*continent)), isHouseOpenNow,
+                ledger.fill(ledger.buy, pParty->trainerDirectory()->continentName(*continent)), isHouseOpenNow,
                 closedReason);
             buy.argument = std::to_string(*continent);
             options.push_back(std::move(buy));
@@ -1443,7 +1457,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
     if (houseEntry.extraExit.has_value()
         && (houseEntry.extraExit->requiredQuestBit == 0
-            || (pParty != nullptr && pParty->hasQuestBit(houseEntry.extraExit->requiredQuestBit))))
+            || (pParty != nullptr && pParty->campaign().hasQuestBit(houseEntry.extraExit->requiredQuestBit))))
     {
         options.push_back(makeOption(
             HouseActionId::ExtraExit,
@@ -1814,7 +1828,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
                 continue;
             }
 
-            if (!routeAvailableToday(route, currentGameMinutes))
+            if (!routeLeavesToday(route, pWorldRuntime, currentGameMinutes))
             {
                 anyRouteHidden = true;
                 continue;
@@ -1996,6 +2010,13 @@ void travelByTransport(
         return;
     }
 
+    // Where the rules close the roads (MAW: in a rift), nothing is paid and nobody leaves.
+    if (const std::optional<std::string> refusal = party.rules().monsters.mapTravelRefusal())
+    {
+        result.messages.push_back(*refusal);
+        return;
+    }
+
     int waitDays = 0;
 
     if (scheduled)
@@ -2008,7 +2029,7 @@ void travelByTransport(
 
         waitDays = transportWaitDays(dayOfWeekFromGameMinutes(pWorldRuntime->gameMinutes()), departureDay);
     }
-    else if (!routeAvailableToday(route, pWorldRuntime->gameMinutes()))
+    else if (!routeLeavesToday(route, pWorldRuntime, pWorldRuntime->gameMinutes()))
     {
         result.messages.push_back(Engine::tr("Sorry, come back another day"));
         return;
@@ -2040,32 +2061,29 @@ void travelByTransport(
         return;
     }
 
-    party.addGold(-price, GoldReason::Travel);
-
-    if (waitDays > 0)
-    {
-        party.addFood(-waitFood);
-        const float waitMinutes = float(waitDays * MinutesPerDay);
-        pWorldRuntime->advanceGameMinutes(waitMinutes);
-        party.advanceTimedStates(waitMinutes * 60.0f);
-    }
-
-    party.restAndHealAll();
     const int travelDays =
         adjustedTransportTravelDays(route, pEventRuntimeState, !isBoatHouse(houseEntry));
-
-    if (PlaythroughStatistics *pStatistics = party.statistics())
-    {
-        pStatistics->recordTravel(isBoatHouse(houseEntry), double(waitDays + travelDays));
-    }
+    TravelCost cost;
+    cost.fareGold = price;
+    cost.waitDays = waitDays;
+    cost.waitFood = waitFood;
+    cost.travelDays = travelDays;
+    cost.rideByBoat = isBoatHouse(houseEntry);
+    // With other players in the world the ride waits for their agreement, and nobody pays before that.
+    const bool paidOnDeparture = pWorldRuntime->sharedWithOtherPlayers();
     const float beforeGameMinutes = pWorldRuntime->gameMinutes();
     const float travelMinutes = static_cast<float>(travelDays * MinutesPerDay);
-    pWorldRuntime->advanceGameMinutes(travelMinutes);
-    party.advanceTimedStates(travelMinutes * 60.0f);
+
+    if (!paidOnDeparture)
+    {
+        applyTravelCost(party, {}, pWorldRuntime, cost);
+    }
+
     const float afterGameMinutes = pWorldRuntime->gameMinutes();
 
     EventRuntimeState::PendingMapMove pendingMapMove = {};
-    pendingMapMove.travelTimeApplied = true;
+    pendingMapMove.travelTimeApplied = !paidOnDeparture;
+    pendingMapMove.unpaidCost = paidOnDeparture ? std::optional<TravelCost>(cost) : std::nullopt;
     pendingMapMove.mapName = route.mapFileName;
     pendingMapMove.x = route.x;
     pendingMapMove.y = route.y;
@@ -2422,13 +2440,13 @@ HouseActionResult performHouseAction(
             const std::optional<uint32_t> stableQuestBit = lorettaStableQuestBitForHouse(houseEntry.id);
 
             if (!stableQuestBit.has_value()
-                || !party.hasQuestBit(LorettaPriceQuestBit)
-                || party.hasQuestBit(*stableQuestBit))
+                || !party.campaign().hasQuestBit(LorettaPriceQuestBit)
+                || party.campaign().hasQuestBit(*stableQuestBit))
             {
                 return result;
             }
 
-            party.setQuestBit(*stableQuestBit, true);
+            party.campaign().setQuestBit(*stableQuestBit, true);
             result.messages.push_back(Engine::tr("Well, If Loretta's got a new scheme, count me in!\n"
                                                  "But you better get all the other companies to sign up!"));
             result.succeeded = true;
@@ -2437,7 +2455,7 @@ HouseActionResult performHouseAction(
 
             for (uint32_t questBit = LorettaFirstStableBit; questBit <= LorettaLastStableBit; ++questBit)
             {
-                if (!party.hasQuestBit(questBit))
+                if (!party.campaign().hasQuestBit(questBit))
                 {
                     allStablesFixed = false;
                     break;
@@ -2447,7 +2465,7 @@ HouseActionResult performHouseAction(
             if (allStablesFixed)
             {
                 party.addExperienceToMember(party.activeMemberIndex(), 1);
-                party.setQuestBit(LorettaPriceCompleteBit, true);
+                party.campaign().setQuestBit(LorettaPriceCompleteBit, true);
             }
 
             return result;
@@ -2508,11 +2526,13 @@ HouseActionResult performHouseAction(
             }
 
             party.clearFineGold();
-            party.addEventVariableValue(static_cast<uint16_t>(EvtVariable::PrisonTerms), 1);
+            party.campaign().addEventVariableValue(static_cast<uint16_t>(EvtVariable::PrisonTerms), 1);
             party.addAward(PrisonTermsAwardId);
             party.restAndHealAll();
 
-            if (pWorldRuntime != nullptr)
+            // With other players in the world the clock is everyone's: the sentence is served and no time passes,
+            // as a rented room rests its guest at once.
+            if (pWorldRuntime != nullptr && !pWorldRuntime->sharedWithOtherPlayers())
             {
                 pWorldRuntime->advanceGameMinutes(PrisonSentenceMinutes);
                 party.advanceTimedStates(PrisonSentenceMinutes * 60.0f);
@@ -2619,7 +2639,8 @@ HouseActionResult performHouseAction(
             {
                 party.restAndHealAll();
 
-                if (pWorldRuntime != nullptr)
+                // With other players in the world the clock is everyone's: training takes no time ("Time").
+                if (pWorldRuntime != nullptr && !pWorldRuntime->sharedWithOtherPlayers())
                 {
                     const float trainingMinutes = party.rules().experience.trainingDurationMinutes(
                         oeTrainingDurationMinutes(houseEntry, pWorldRuntime->gameMinutes()));
@@ -2727,7 +2748,7 @@ HouseActionResult performHouseAction(
             }
 
             const TrainerDirectory &directory = *party.trainerDirectory();
-            const std::string continentName = trainerContinentName(*continent);
+            const std::string continentName = directory.continentName(*continent);
 
             if (!buyTeacherLedger(party, directory, *continent))
             {

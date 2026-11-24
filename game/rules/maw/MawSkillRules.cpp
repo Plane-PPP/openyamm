@@ -15,6 +15,7 @@
 #include "game/rules/maw/MawMonsterInspect.h"
 #include "game/rules/maw/MawRules.h"
 #include "game/rules/maw/MawSkillFormulas.h"
+#include "game/rules/maw/MawSoloTalents.h"
 #include "game/rules/maw/MawSpellFormulas.h"
 #include "game/rules/maw/MawTexts.h"
 #include "game/tables/ClassMultiplierTable.h"
@@ -551,10 +552,13 @@ SkillTooltipText MawSkillRules::skillTooltip(
     // skill's next point is learning it at Normal.
     const SkillMastery nextMastery = std::max(mastery, SkillMastery::Normal);
     const double fullHealth = Party::effectiveMaximumHealth(character);
+    // A solo run's early Regeneration scales the skill's healing by the character's level, for a class without the
+    // skill of its own (soloRegenerationShare).
+    const double soloRegeneration = soloRegenerationShare(party, character);
     const auto regeneration = [&](double skill, SkillMastery skillMastery)
     {
-        return mawRegenerationHealthPerSecond(skillMastery, model.health(std::pow(skill, 1.4)), fullHealth,
-            fullHealth);
+        return soloRegeneration * mawRegenerationHealthPerSecond(skillMastery, model.health(std::pow(skill, 1.4)),
+            fullHealth, fullHealth);
     };
     // Meditation fills the pool the auras leave, and Legendary 20 adds 1 % for each 1 % they reserve, as the
     // regeneration does (TXT-2-6).
@@ -583,8 +587,8 @@ SkillTooltipText MawSkillRules::skillTooltip(
     values["med_now"] = meditation(level, mastery);
     values["med_next"] = meditation(level + 1, nextMastery);
 
-    // Ascension's percents, each from the ascension its own use reads: a Shaman heals and pays by seven schools, an
-    // Elementalist by the four elements at Grandmaster, Death Knights and Assassins have none (TXT-2-5).
+    // Ascension's percents, each from the ascension its own use reads: a Shaman heals, pays and deals damage by seven
+    // schools, an Elementalist by the four elements at Grandmaster, Death Knights and Assassins have none (TXT-2-5).
     const double ascension = mawAscension(character, MawAscensionUse::Damage).skill;
     const double healAscension = mawAscension(character, MawAscensionUse::Heal).skill;
     const MawAscension costAscension = mawAscension(character, MawAscensionUse::Cost);
@@ -1081,6 +1085,8 @@ std::string MawSkillRules::statTooltip(
     crit.fateSkill = m_rules.auraSkill(47);
     crit.buffScale = m_rules.buffScale();
     crit.madness = m_rules.options().challengeMode == RulesetChallengeMode::BeyondMadness;
+    // Legendary 14's 10 % counts, and the chance may pass 100 % with it (getCritInfo).
+    crit.overcrit = mawWearsLegendaryAffix(character, 14);
     const MawCrit weaponCrit = mawCrit(crit);
     crit.kind = MawCritKind::Spell;
     const MawCrit spellCrit = mawCrit(crit);
@@ -1102,8 +1108,8 @@ std::string MawSkillRules::statTooltip(
     {
         const CharacterCombatRows rows = mawCombatRows(m_rules, character, *party.itemTable(),
             {sheet.might.actual, sheet.accuracy.actual, sheet.luck.actual});
-        values["hit_chance"] =
-            100 * mawPartyHitChance(rows.meleeAttack, reference, m_rules.blessHitSkill(character), model);
+        values["hit_chance"] = 100
+            * mawPartyHitChance(mawFullMeleeAttack(character, rows), reference, m_rules.blessHitSkill(character), model);
     }
 
     const double physicalTaken = mawDamageTakenPercent(m_rules, character, party.itemTable(),
@@ -1129,6 +1135,7 @@ std::string MawSkillRules::statTooltip(
     values["levels_mm7"] = state.continentLevels[1];
     values["levels_mm6"] = state.continentLevels[2];
     values["levels_mm9"] = state.continentLevels[3];
+    values["levels_xeen"] = state.continentLevels[4];
     values["levels_total"] = state.totalLevel();
     // Each world's bolster level, as MAW's popup shows it: the levels banked in the other worlds, less 4
     // (zzMaw-Stats.lua:458-466, TXT-2-9).
@@ -1136,6 +1143,7 @@ std::string MawSkillRules::statTooltip(
     values["bolster_mm7"] = std::max(state.levelOutside(2) - 4, 0.0);
     values["bolster_mm6"] = std::max(state.levelOutside(3) - 4, 0.0);
     values["bolster_mm9"] = std::max(state.levelOutside(5) - 4, 0.0);
+    values["bolster_xeen"] = std::max(state.levelOutside(6) - 4, 0.0);
 
     std::string text = pEntry->description ? mawFillText(*pEntry->description, values) : table;
 
@@ -1337,6 +1345,21 @@ IdentifyMonsterReveal MawSkillRules::identifyMonsterReveal(const Party &party, i
     return reveal;
 }
 
+double MawSkillRules::soloRegenerationShare(const Party &party, const Character &member) const
+{
+    if (!m_rules.options().soloRun)
+    {
+        return 1.0;
+    }
+
+    // The class's own limit, before Lone Discipline (masteryCap) raises it.
+    const ClassSkillTable *pClassSkillTable = party.classSkillTable();
+    const SkillMastery ownCap = pClassSkillTable != nullptr
+        ? pClassSkillTable->getEffectiveCap(member.className, member.raceId, "Regeneration")
+        : SkillMastery::None;
+    return ownCap == SkillMastery::None ? MawSoloTalents::earlyRegeneration(member) : 1.0;
+}
+
 std::pair<double, double> MawSkillRules::regenerationPerSecond(const Party &party, size_t index) const
 {
     const std::optional<MawAuraSource> aura = m_rules.activeAura(RegenerationAura);
@@ -1364,6 +1387,10 @@ std::pair<double, double> MawSkillRules::regenerationPerSecond(const Party &part
     const auto [regeneration, regenerationMastery] = effectiveSkill("Regeneration");
     double healthPerSecond = mawRegenerationHealthPerSecond(
         regenerationMastery, model.health(std::pow(regeneration, 1.4)), fullHealth, member.health);
+
+    // A solo run's early Regeneration: the skill's own healing is cut at low character levels for a class that has
+    // the skill only by Lone Discipline; the aura, potions and items below are not.
+    healthPerSecond *= soloRegenerationShare(party, member);
 
     // The Regeneration aura or the member's Regeneration potion, whichever heals more (SK:1364-1376).
     const int potionSkill = member.rulesetState.potionEffect(TimedPotionEffect::Kind::Regeneration, 0);
@@ -1623,8 +1650,8 @@ SkillMastery MawSkillRules::masteryCap(
     // Lone Discipline (solo run), whatever the class (class_extra.txt promotion steps: 1 the first promotion, 2 the
     // final one; a class whose own cap is higher keeps it):
     // - Bodybuilding up to Expert from the start, Master after the first promotion, Grandmaster after the final one;
-    // - Regeneration up to Expert from the start, Master after the final promotion (user, 2026-11-15). Learned at a
-    //   temple as any Regeneration, never given.
+    // - Regeneration up to Expert from the start, Master after the final promotion (user, 2026-11-15). A new solo
+    //   run starts with it at 1 (makeSoloRunParty; user, 2026-11-19); a run under way learns it at a temple.
     const bool bodybuilding = canonicalSkill == "Bodybuilding";
     if (!m_rules.options().soloRun || (!bodybuilding && canonicalSkill != "Regeneration"))
     {

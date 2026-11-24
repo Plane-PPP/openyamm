@@ -50,6 +50,10 @@ struct MonsterDamageHit
     // shot; the item table and the HP above are set with it.
     const Character *pMissileAttacker = nullptr;
     uint32_t missileSpellId = 0;
+    // A party missile's flight, from where it left to where it struck (0 when unknown), and the monsters its blast
+    // damaged at once, this one included (0: no blast, or unknown).
+    float missileFlightDistance = 0.0f;
+    int blastMonsters = 0;
     std::mt19937 *pRng = nullptr;
     bool stop = false;
 };
@@ -67,6 +71,9 @@ struct PartyMissileSource
     // its own element (GameplayProjectileService::addPartyArrowElements).
     int addedElementalDamage = 0;
     std::optional<ElementalDamageBonuses> weaponElements;
+    // The missile's flight to the monster, and the monsters its blast damaged at once (MonsterDamageHit).
+    float flightDistance = 0.0f;
+    int blastMonsters = 0;
 };
 
 // A monster's attack reaching a party member, before it lands.
@@ -151,6 +158,9 @@ struct PartyHitOnMonster
     bool melee = false;
     uint32_t spellId = 0;
     bool killed = false;
+    // A critical hit, and a weapon blow's recovery in seconds (a solo run's talents: Expose Weakness, Hamstring, rage).
+    bool critical = false;
+    float recoverySeconds = 0.0f;
     // The world and the actor hit, for effects on the monster (null when not known).
     IGameplayWorldRuntime *pWorld = nullptr;
     std::optional<size_t> targetActorIndex;
@@ -192,6 +202,17 @@ struct CharacterSpellCast
     bool fromScroll = false;
 };
 
+// What one hit of a party damage spell deals before its target's resistances (the spell inspect window): the least, the
+// average and the most an ordinary roll gives, and the chance and multiplier of a critical hit, which they leave out.
+struct SpellDamagePreview
+{
+    int minimum = 0;
+    int average = 0;
+    int maximum = 0;
+    double criticalChance = 0;
+    double criticalMultiplier = 1;
+};
+
 // The monster a party spell lands on, for spells that read it (Mass Distortion).
 struct SpellTargetState
 {
@@ -214,6 +235,10 @@ struct CharacterDamageHit
     // A monster's attack (traps and other sources skip the attack-only stages); a missile when physicalProjectile.
     bool monsterAttack = false;
     bool physicalProjectile = false;
+    // A monster's missile or spell of any damage type, and how far the monster stood from the party when it loosed it
+    // (negative: unknown).
+    bool missile = false;
+    float firedFromDistance = -1.0f;
     // A monster attack's source: its level and ruleset facts, which attack it was, and the damage it rolled before a
     // personal shield took its share (amount is what passed the shield).
     int attackerLevel = 0;
@@ -361,6 +386,9 @@ public:
     // A damage spell's roll: the table's base plus its dice per skill point at the cast mastery. pCritical, when given,
     // learns whether the roll was a critical hit (Standard: never).
     virtual int rollSpellDamage(const CharacterSpellCast &cast, bool *pCritical = nullptr) const;
+    // The range rollSpellDamage rolls in, or nothing for a spell that rolls no damage (no damage at all, or a share of
+    // its target's hit points). Standard: the table's base plus its dice per skill point, never a critical hit.
+    virtual std::optional<SpellDamagePreview> spellDamagePreview(const CharacterSpellCast &cast) const;
     // A spell whose damage is a share of its target's hit points (Mass Distortion): the damage on this target, or
     // nothing for the roll above. Standard: 25 % of the target's current hit points plus 2 % per skill point.
     virtual std::optional<int> spellDamageOnTarget(const CharacterSpellCast &cast, const SpellTargetState &target) const;
@@ -416,6 +444,10 @@ public:
     virtual void characterDamaged(Party &party, size_t memberIndex) const;
     // Each frame of play: combat state that lapses with time (MAW's Retaliation stacks). Standard: none.
     virtual void updateCombat(Party &party, IGameplayWorldRuntime &world, float deltaSeconds) const;
+    // A party whose own game runs the rules for it (another player's on a co-op host, standing at x, y): what the
+    // host's world reads of it when it does something to it (a monster's hit) is worked out here, and nothing of the
+    // party is changed. The caller has made it the party in play.
+    virtual void observeRemoteParty(const Party &party, const IGameplayWorldRuntime &world, float x, float y) const;
     // A condition landed on a member (again or for the first time). Standard: nothing.
     virtual void characterConditionApplied(Party &party, size_t memberIndex, CharacterCondition condition) const;
     // What else a monster's hit does to the party after its damage landed (MAW boss affixes); the attacker's actor id
