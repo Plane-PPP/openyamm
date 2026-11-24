@@ -2,6 +2,13 @@
 
 # Minotaur Rebalance — Roadmap
 
+## OpenYAMM 3.2 — local port (2026-11-24)
+
+Target `v3.2`, `2539b76596c815be1edd86c703e2a6c98cd6d918`. Writer `OYMINO1/v202` uses schema 201 and reads
+the previous `v194` as 193. The Roguelike scenarios check the saved route, talents and guardian reward.
+The Windows workflow is ready for Xeen. Independent review and Windows build verification are pending.
+[3.2 integration record](research/openyamm-3.2-integration.md).
+
 ## OpenYAMM 2.4 — current integration (2026-11-15)
 
 Target: `v2.4`, `f052579667e2233d6318d9855dce29097e8ca9ef`. The complete prototype base is

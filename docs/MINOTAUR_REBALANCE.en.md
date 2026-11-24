@@ -1,6 +1,13 @@
 [Русский](MINOTAUR_REBALANCE.md) | **English**
 
 
+## OpenYAMM 3.2 — compatibility (2026-11-24)
+
+Axe, Damage Resistance and Lethal Strike retain their 2.7 formulas. The primary melee attack still gets
+one Lethal Strike roll. The new co-op guest replica blocks Lethal Strike kills locally. Roguelike retains
+its own talents, route and storage of camp purchases in the members' bags.
+[3.2 integration details and verification](research/openyamm-3.2-integration.md).
+
 ## OpenYAMM 2.4 — current integration (2026-11-15)
 
 Target: `v2.4`, `f052579667e2233d6318d9855dce29097e8ca9ef`. The complete prototype base is

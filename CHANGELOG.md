@@ -1,3 +1,10 @@
+# OpenYAMM 3.2 integration (2026-11-24)
+
+Integrated the official v3.2 tag, including Xeen, named mods and Map Studio, with the Minotaur, Medusa,
+portrait importer and Roguelike changes from 2.7. Save writer `OYMINO1/v202` uses upstream schema 201
+and reads the former mod v194 as schema 193. Roguelike keeps its own talents and its bag-based camp inventory.
+The Windows workflow and update installer accept Xeen content. See the [integration record](docs/research/openyamm-3.2-integration.md).
+
 # Roguelike run v2: random dungeons of MM6-MM9, camp bottles that brew (2026-11-18)
 
 Every stop of a run is now random (route `[1, 2, 3, 4]`): 94 indoor maps of MM6, MM7, MM8 and MM9 stand at the stages

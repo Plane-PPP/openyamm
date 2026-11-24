@@ -1,3 +1,10 @@
+# OpenYAMM 3.2 integration — local port (2026-11-24)
+
+Source branch `integration/minotaur-v3.2-20261124`, upstream v3.2 `2539b76596c815be1edd86c703e2a6c98cd6d918`.
+The workflow checks out the new Xeen world and validates its update packs. It retains the existing selected
+update base. The confirmed Windows executable and package are still the v2.7 entries below.
+[Local checks and integration details](docs/research/openyamm-3.2-integration.md).
+
 # OpenYAMM 2.7 integration + Roguelike v2 — verified Windows update over patch #51 (2026-11-18)
 
 Windows executable source: `f4dd6d0f33b506f6d757f866aab90bd7d7c76317`.
