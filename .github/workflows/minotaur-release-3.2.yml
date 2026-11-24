@@ -37,6 +37,7 @@ jobs:
           import pathlib
           import shutil
           import subprocess
+          import time
           import zipfile
 
           repo = 'Plane-PPP/openyamm'
@@ -235,7 +236,13 @@ jobs:
               else:
                   gh('release', 'create', tag, '--repo', repo, '--target', source, '--title', r['title'],
                      '--notes-file', str(notes), '--draft', '--latest=false')
-              release_id = find_release(tag)['id']
+              for attempt in range(30):  # a new draft takes a moment to show up in the list
+                  release = find_release(tag)
+                  if release is not None:
+                      break
+                  time.sleep(2)
+              assert release is not None, f'{tag}: the draft is not listed'
+              release_id = release['id']
               gh('release', 'upload', tag, '--repo', repo, '--clobber', *[str(p) for p in sorted(out.iterdir())])
               release = api(f'releases/{release_id}')
               assets = {a['name']: a for a in release['assets']}
