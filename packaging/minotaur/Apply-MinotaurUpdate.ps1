@@ -68,8 +68,8 @@ function Assert-Index($Index) {
         Assert-Record $pack $true
         Assert-Relative $pack.file
         Assert-Relative $pack.id
-        # The full 2.3 base adds MM9 and the languages' optional packs (fonts, voices, videos) to the 1.x worlds.
-        if (@('engine','mm6','mm7','mm8','mm9') -cnotcontains $pack.package) { throw 'Unknown world package.' }
+        # Newer bases add MM9, Xeen and optional language packs to the 1.x worlds.
+        if (@('engine','mm6','mm7','mm8','mm9','xeen') -cnotcontains $pack.package) { throw 'Unknown world package.' }
         if ($null -ne $pack.PSObject.Properties['language'] -and
             $pack.language -cnotmatch '^[a-z]{2,3}(-[a-z0-9]{2,8})?$') { throw 'Invalid pack language.' }
         $mount = '/worlds/' + $pack.package

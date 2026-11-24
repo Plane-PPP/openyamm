@@ -14,7 +14,7 @@ tests="${1:?usage: minotaur_ci_tests.sh <tests directory> [group ...]}"
 shift
 groups=("$@")
 if [ ${#groups[@]} -eq 0 ]; then
-    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9 upstream24 upstream27 native-ui
+    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9 upstream24 upstream27 upstream32 native-ui
             maw24)
 fi
 
@@ -63,6 +63,12 @@ for group in "${groups[@]}"; do
             # The test sources OpenYAMM 2.5-2.7 added: potion upkeep, named mods, scene overlays, the ground-item
             # spotter, the HUD draw list and reading, the Custom loot filter.
             run upstream-27-tests "$unit" --source-file='*PotionUpkeepTests.cpp,*NamedModsTests.cpp,*SceneOverlayTests.cpp,*WorldItemSpotterTests.cpp,*HudDrawListTests.cpp,*HudReadingTests.cpp,*LootFilterTests.cpp' ;;
+        upstream32)
+            run upstream-32-unit-tests "$unit" --source-file='*CoopRulesTests.cpp,*WorldScriptSourcesTests.cpp'
+            unit_result=$?
+            run upstream-32-runtime-tests "$runtime" --source-file='*CoopNetTests.cpp'
+            runtime_result=$?
+            (exit "$((unit_result != 0 ? unit_result : runtime_result))") ;;
         native-ui)
             run native-ui-tests "$runtime" --source-file='*NewGameScreenTests.cpp,*PartyCreationSheetTests.cpp,*GameplayUiRuntimeTests.cpp,*GameplaySpellServiceTests.cpp' ;;
         maw24)

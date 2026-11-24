@@ -17,9 +17,9 @@ SHA = re.compile(r"[0-9a-f]{64}\Z")
 VERSION = re.compile(r"(?=[^\n]{1,32}\Z)minotaur-[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z")
 PACK_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.zip\Z")
 # The packages a Minotaur index may hold. Every index needs the engine and MM6-MM8 (the 1.x baselines hold exactly
-# those); the full 2.3 base adds MM9 and the languages' optional packs, and a full release checks its whole
-# composition against packs.yml (verify_minotaur_windows_package.py --full).
-PACKAGES = ("engine", "mm6", "mm7", "mm8", "mm9")
+# those). Newer bases add MM9, Xeen and optional language packs. A full release checks its composition against
+# packs.yml (verify_minotaur_windows_package.py --full).
+PACKAGES = ("engine", "mm6", "mm7", "mm8", "mm9", "xeen")
 REQUIRED_PACKAGES = frozenset(("engine", "mm6", "mm7", "mm8"))
 LANGUAGE = re.compile(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})?\Z")
 

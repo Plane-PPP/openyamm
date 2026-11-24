@@ -163,6 +163,13 @@ class FullBaseTests(unittest.TestCase):
         self.assertEqual(manifest['changed_packs'], [])
         self.assertEqual(len(manifest['reused_packs']), 7)
 
+    def test_update_from_mm9_base_adds_xeen(self):
+        target_worlds = (*self.worlds, 'xeen')
+        stage, content, _ = release(self.root, 'minotaur-3.2-next', worlds=target_worlds, languages=('ru', 'zh-cn'))
+        manifest = build_update(stage, content, self.base, 'b' * 40, self.root / 'next.zip', self.root / 'next.json')
+        self.assertEqual(manifest['changed_packs'], ['xeen.core'])
+        self.assertEqual(len(manifest['reused_packs']), 7)
+
     def test_language_is_part_of_a_pack_identity(self):
         other = copy.deepcopy(self.base['index'])
         other['packs'][-1]['language'] = 'de'
@@ -279,8 +286,8 @@ class WindowsInstallerTests(Fixture):
         self.apply(directory)
         self.assertEqual(self.current(), second['target']['version'])
 
-    def test_patch_of_a_full_base_with_mm9_and_languages(self):
-        # The full 2.3 base: MM9 and a language's optional pack installed, then a patch changes the engine table.
+    def test_patch_of_a_full_base_with_mm9_adds_xeen(self):
+        # The full 2.3 base has MM9 and a language pack. The update changes the engine table and adds Xeen.
         worlds, languages = ('mm6', 'mm7', 'mm8', 'mm9'), ('ru',)
         base_stage, base_content, base = release(self.root, 'minotaur-2.3-full', worlds=worlds, languages=languages)
         shutil.rmtree(self.install)
@@ -289,13 +296,13 @@ class WindowsInstallerTests(Fixture):
         (self.install / 'settings.ini').write_bytes(b'player-settings')
         (self.install / 'saves').mkdir()
         (self.install / 'saves/precious.oysav').write_bytes(b'player-progress')
-        manifest, _, directory = self.update('minotaur-2.3-patch', base=base, engine=b'changed',
-                                             worlds=worlds, languages=languages)
-        self.assertEqual(manifest['changed_packs'], ['engine.core'])
+        manifest, _, directory = self.update('minotaur-3.2-patch', base=base, engine=b'changed',
+                                             worlds=(*worlds, 'xeen'), languages=languages)
+        self.assertEqual(manifest['changed_packs'], ['engine.core', 'xeen.core'])
         self.apply(directory)
-        self.assertEqual(self.current(), 'minotaur-2.3-patch')
+        self.assertEqual(self.current(), 'minotaur-3.2-patch')
         installed = read_json(self.install / 'app' / self.current() / 'index.json')
-        self.assertIn('mm9', {p['package'] for p in installed['packs']})
+        self.assertTrue({'mm9', 'xeen'} <= {p['package'] for p in installed['packs']})
         self.assertEqual([p['language'] for p in installed['packs'] if 'language' in p], ['ru'])
 
     def test_wrong_base_refused_before_switch(self):
