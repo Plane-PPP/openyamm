@@ -1,0 +1,258 @@
+name: Publish verified Minotaur 3.4
+
+# Keeps the Windows update the user installed (#55 over #54, 2026-11-26) after its Actions artifact expires. The ZIP is
+# published unchanged (under the 2 GiB release asset limit: one file; the part cutting stays for a larger one).
+
+on:
+  push:
+    branches: [integration/minotaur-v3.4-20261126]
+    paths: [.github/workflows/minotaur-release-3.4.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-minotaur-3.4
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Plane-PPP/openyamm'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify the CI builds and publish their unchanged ZIPs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import math
+          import pathlib
+          import shutil
+          import subprocess
+          import time
+          import zipfile
+
+          repo = 'Plane-PPP/openyamm'
+          part_limit = 1_900_000_000  # release assets must be under 2 GiB
+          docs = 'https://github.com/Plane-PPP/openyamm/blob/f889707944cee688d702bac066287b6dd0339b5d/'
+
+          releases = [
+              dict(number=55, run_id=45777138689, branch='integration/minotaur-v3.4-20261126',
+                   source='f889707944cee688d702bac066287b6dd0339b5d',
+                   tag='minotaur-3.4-f889707944ce-55-1', base='minotaur-3.2-9e3596663bd6-54-1',
+                   base_label='сборка #54, OpenYAMM 3.2, отдельный релиз',
+                   package_id=15099112912, metadata_id=15099666896, size=892532502,
+                   sha='0a2b4a375a673e26942b94468237720a88fbe17a93c3a65c480b0edb98ee0080',
+                   title='Minotaur Rebalance 3.4 — Windows update', latest=True,
+                   upstream='[v3.4](https://github.com/pjasicek/openyamm/releases/tag/v3.4) '
+                            '(`91540f225bc7f07dc5ba03262e53b076b1cf60d4`)',
+                   about='Изменения Minotaur из 3.2 (баланс, roguelike-режим, Medusa) перенесены на OpenYAMM 3.4; '
+                         'мешочки добычи 3.4 действуют и в Roguelike; импортированные портреты и куклы больше не '
+                         'пропадают после перезапуска при включённых именованных модах; поиск предметов в инвентаре '
+                         'во всех правилах.',
+                   checked='Windows CI (программа и тесты, сценарии пакетов, офлайн-установщик под PowerShell 5.1), '
+                           '14 групп Linux-тестов и 27 сценариев порта, пул Roguelike из 94 карт; патч установлен '
+                           'поверх #54 и проверен вручную 2026-11-26 (поиск, портреты, Medusa 0.5 с evt.JoinParty).',
+                   doc=('Отчёт об интеграции 3.4', 'docs/research/openyamm-3.4-integration.md')),
+          ]
+
+          def gh(*args):
+              subprocess.run(['gh', *args], check=True)
+
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/{path}']))
+
+          def download(artifact_id, path):
+              with path.open('wb') as stream:
+                  subprocess.run(['gh', 'api', f'repos/{repo}/actions/artifacts/{artifact_id}/zip'],
+                                 stdout=stream, check=True)
+
+          def sha256(path):
+              with path.open('rb') as stream:
+                  return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+          def gib(n):
+              return f'{n / 2**30:.2f}'.replace('.', ',') + ' ГиБ'
+
+          def find_release(tag):
+              return next((x for x in api('releases?per_page=100') if x['tag_name'] == tag), None)
+
+          def join_script(filename, names, sha):
+              lines = ['@echo off', 'setlocal', 'cd /d "%~dp0"']
+              lines += [f'if not exist "{n}" (echo Missing {n} & pause & exit /b 1)' for n in names]
+              lines += [f'echo Joining {filename} ...',
+                        'copy /b ' + '+'.join(f'"{n}"' for n in names) + f' "{filename}" >nul',
+                        'if errorlevel 1 (echo Join failed & pause & exit /b 1)',
+                        'echo Checking SHA-256 ...',
+                        'powershell -NoProfile -ExecutionPolicy Bypass -Command "if ((Get-FileHash -Algorithm '
+                        f"SHA256 -LiteralPath '{filename}').Hash -ieq '{sha}') {{ exit 0 }} else {{ exit 1 }}\"",
+                        'if errorlevel 1 (echo SHA-256 mismatch: download the parts again & pause & exit /b 1)',
+                        f'echo OK: {filename}',
+                        'pause']
+              return '\r\n'.join(lines) + '\r\n'
+
+          def notes_text(r, report, names, filename):
+              n = r['number']
+              lines = [
+                  f'## Minotaur Rebalance на OpenYAMM {r["tag"].split("-")[1]}',
+                  '',
+                  f'Готовый Windows ZIP-патч из CI-сборки #{n}, без срока хранения Actions-артефакта. '
+                  'Это обновление установленного мода, а не полная установка игры. ' + r['about'],
+                  '',
+                  f'**Ставится поверх:** `{r["base"]}` ({r["base_label"]}).',
+                  f'**Новая версия:** `{r["tag"]}`.',
+                  f'**Код сборки:** `{r["source"]}`.',
+                  f'**Официальная база:** OpenYAMM {r["upstream"]}.',
+                  '',
+                  f'Изменённых пакетов в ZIP: {report["changed_packs"]} ({gib(report["changed_pack_bytes"])}), '
+                  f'повторно используется: {report["reused_packs"]} ({gib(report["reused_pack_bytes"])}). '
+                  f'Размер ZIP: {format(r["size"], ",").replace(",", " ")} байт ({gib(r["size"])}).',
+                  '',
+              ]
+              if len(names) > 1:
+                  lines += [
+                      '### Скачивание',
+                      '',
+                      f'GitHub принимает файлы меньше 2 ГиБ, поэтому ZIP из CI разрезан на {len(names)} части без изменений.',
+                      '',
+                      '1. Скачайте ' + ', '.join(f'`{x}`' for x in names) + ' и `Join-MinotaurUpdate.cmd` в одну папку.',
+                      f'2. Запустите `Join-MinotaurUpdate.cmd`: он склеит `{filename}` и проверит его SHA-256.',
+                      '   Вручную: `copy /b ' + '+'.join(f'"{x}"' for x in names) + f' "{filename}"` в cmd '
+                      'или откройте `.001` в 7-Zip.',
+                      '',
+                  ]
+              lines += [
+                  '### Установка',
+                  '',
+                  '1. Закройте игру, отдельно скопируйте `saves` и `settings.ini`.',
+                  '2. Распакуйте ZIP в папку игры и запустите `Apply-MinotaurUpdate.cmd` из папки обновления.',
+                  '3. Запустите обычный `OpenYAMM.exe`. Проверьте старое сохранение, запишите новый слот и загрузите его повторно.',
+                  '',
+                  'Установщик создаёт копию сейвов/настроек в `backups/minotaur/` и сохраняет предыдущую программу и ресурсы '
+                  'для отката. Новые сейвы нельзя открыть в старой версии мода.',
+                  '',
+                  f'Проверено: {r["checked"]}',
+                  '',
+                  f'[Успешный CI](https://github.com/{repo}/actions/runs/{r["run_id"]}) · '
+                  f'[{r["doc"][0]}]({docs}{r["doc"][1]})',
+                  '',
+                  f'SHA-256 ZIP: `{r["sha"]}`.',
+              ]
+              return '\n'.join(lines) + '\n'
+
+          def publish(r):
+              tag, source = r['tag'], r['source']
+              filename = f'Minotaur-Update-{tag}.zip'
+              existing = find_release(tag)
+              if existing is not None and not existing['draft']:
+                  assert existing['target_commitish'] == source, f'{tag}: published from another source'
+                  print(f'{tag}: already published, left as it is: {existing["html_url"]}', flush=True)
+                  return
+
+              run = api(f'actions/runs/{r["run_id"]}')
+              assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Build did not succeed'
+              assert run['head_sha'] == source and run['head_branch'] == r['branch']
+              assert run['path'] == '.github/workflows/minotaur-windows.yml'
+              artifacts = {a['id']: a for a in api(f'actions/runs/{r["run_id"]}/artifacts?per_page=100')['artifacts']}
+              package, metadata = artifacts[r['package_id']], artifacts[r['metadata_id']]
+              assert not package['expired'] and not metadata['expired']
+              assert package['name'] == filename and package['size_in_bytes'] == r['size']
+              assert package['digest'] == 'sha256:' + r['sha']
+
+              work = pathlib.Path(f'work-{r["number"]}')
+              out = pathlib.Path(f'release-assets-{r["number"]}')
+              work.mkdir()
+              out.mkdir()
+              download(metadata['id'], work / 'metadata.zip')
+              with zipfile.ZipFile(work / 'metadata.zip') as archive:
+                  records = [json.loads(archive.read(n)) for n in archive.namelist() if n.endswith('.json')]
+              report = next(d for d in records if 'archive_sha256' in d)
+              baseline = next(d for d in records if 'index' in d)
+              assert report['source_sha'] == source and report['base'] == r['base'] and report['target'] == tag
+              assert report['archive_sha256'] == r['sha'] and report['archive_bytes'] == r['size']
+              assert baseline['source_sha'] == source and baseline['version'] == tag
+
+              package_path = work / filename
+              download(package['id'], package_path)
+              assert package_path.stat().st_size == r['size']
+              assert sha256(package_path) == r['sha'], 'ZIP checksum mismatch'
+              print(f'{tag}: verified unchanged ZIP, {r["size"]} bytes', flush=True)
+
+              parts = math.ceil(r['size'] / part_limit)
+              if parts == 1:
+                  names = [filename]
+                  package_path.rename(out / filename)
+              else:
+                  chunk = math.ceil(r['size'] / parts)
+                  names = [f'{filename}.{i:03d}' for i in range(1, parts + 1)]
+                  with package_path.open('rb') as stream:
+                      for name in names:
+                          remaining = chunk
+                          with (out / name).open('wb') as part:
+                              while remaining:
+                                  block = stream.read(min(remaining, 64 << 20))
+                                  if not block:
+                                      break
+                                  part.write(block)
+                                  remaining -= len(block)
+                  package_path.unlink()
+                  joined = hashlib.sha256()
+                  for name in names:
+                      assert (out / name).stat().st_size < 2**31
+                      with (out / name).open('rb') as part:
+                          for block in iter(lambda: part.read(64 << 20), b''):
+                              joined.update(block)
+                  assert joined.hexdigest() == r['sha'], 'The parts do not join into the CI ZIP'
+                  (out / 'Join-MinotaurUpdate.cmd').write_bytes(join_script(filename, names, r['sha']).encode('ascii'))
+                  print(f'{tag}: cut into {parts} parts that join into the CI ZIP', flush=True)
+
+              sums = ''.join(f'{sha256(out / n)}  {n}\n' for n in names)
+              if parts > 1:
+                  sums += f'{r["sha"]}  {filename}\n'
+              (out / 'SHA256SUMS.txt').write_text(sums, encoding='utf-8')
+              (out / 'update-report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+              (out / 'minotaur-baseline.json').write_text(json.dumps(baseline, indent=2) + '\n', encoding='utf-8')
+              notes = work / 'release-notes.md'
+              notes.write_text(notes_text(r, report, names, filename), encoding='utf-8')
+
+              if existing is not None:
+                  assert existing['target_commitish'] == source, 'Existing draft points to another source'
+              else:
+                  gh('release', 'create', tag, '--repo', repo, '--target', source, '--title', r['title'],
+                     '--notes-file', str(notes), '--draft', '--latest=false')
+              for attempt in range(30):  # a new draft takes a moment to show up in the list
+                  release = find_release(tag)
+                  if release is not None:
+                      break
+                  time.sleep(2)
+              assert release is not None, f'{tag}: the draft is not listed'
+              release_id = release['id']
+              gh('release', 'upload', tag, '--repo', repo, '--clobber', *[str(p) for p in sorted(out.iterdir())])
+              release = api(f'releases/{release_id}')
+              assets = {a['name']: a for a in release['assets']}
+              assert set(assets) == {p.name for p in out.iterdir()}, 'Incomplete release assets'
+              for path in out.iterdir():
+                  asset = assets[path.name]
+                  assert asset['state'] == 'uploaded' and asset['size'] == path.stat().st_size
+                  assert asset['digest'] == 'sha256:' + sha256(path), f'Release asset digest mismatch: {path.name}'
+              gh('release', 'edit', tag, '--repo', repo, '--notes-file', str(notes), '--draft=false',
+                 '--latest=' + ('true' if r['latest'] else 'false'))
+              release = api(f'releases/{release_id}')
+              assert not release['draft'] and not release['prerelease']
+              assert api(f'git/ref/tags/{tag}')['object']['sha'] == source
+              print('Published:', release['html_url'], flush=True)
+              for a in release['assets']:
+                  print('  ', a['name'], a['size'], a['browser_download_url'], flush=True)
+              shutil.rmtree(work)
+              shutil.rmtree(out)
+
+          for r in releases:
+              publish(r)
+          PY
