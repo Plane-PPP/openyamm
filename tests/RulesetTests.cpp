@@ -2010,7 +2010,7 @@ TEST_CASE("Minotaur frozen MAW mod180 reads the retired alchemist as schema179 a
     CHECK(summary->ruleset == original->ruleset);
     const std::optional<GameSaveData> restored = roundTrip(*original, error);
     REQUIRE_MESSAGE(restored, error);
-    CHECK(restored->sourceSaveVersion == 201);
+    CHECK(restored->sourceSaveVersion == 202);
     CHECK(restored->ruleset == original->ruleset);
     REQUIRE(restored->mawState);
     CHECK(*restored->mawState == *original->mawState);

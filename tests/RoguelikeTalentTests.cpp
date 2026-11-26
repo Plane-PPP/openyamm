@@ -1058,14 +1058,14 @@ TEST_CASE("Minotaur frozen 2.4 v1 run (patch #51): talents by id survive 2.7, th
     REQUIRE(data().itemTable.get(220) != nullptr);
     CHECK(data().itemTable.get(220)->isEmptyAlchemyBottle);
 
-    // Written by this version (OYMINO1/v202, upstream 201) and read back: the same talents.
+    // Written by this version (OYMINO1/v203, upstream 202) and read back: the same talents.
     const std::filesystem::path path =
         std::filesystem::temp_directory_path() / "openyamm-roguelike-v1-roundtrip.oysav";
     REQUIRE_MESSAGE(saveGameDataToPath(path, *save, error), error);
     std::optional<GameSaveData> restored = loadGameDataFromPath(path, error);
     std::filesystem::remove(path);
     REQUIRE_MESSAGE(restored, error);
-    CHECK_EQ(restored->sourceSaveVersion, 201u);
+    CHECK_EQ(restored->sourceSaveVersion, 202u);
 
     for (size_t index = 0; index < ranks.size(); ++index)
     {
@@ -1073,7 +1073,7 @@ TEST_CASE("Minotaur frozen 2.4 v1 run (patch #51): talents by id survive 2.7, th
     }
 }
 
-TEST_CASE("Minotaur frozen v194 keeps its run's route and talents in v202")
+TEST_CASE("Minotaur frozen v194 keeps its run's route and talents in v203")
 {
     const std::filesystem::path fixture =
         std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-2.7-v194-roguelike.oysav";
@@ -1098,4 +1098,44 @@ TEST_CASE("Minotaur frozen v194 keeps its run's route and talents in v202")
     CHECK_EQ(state.rewarded, 1);
     CHECK_EQ(state.route, std::vector<int32_t>{dungeonRunMapKey("6d01.blv"), dungeonRunMapKey("6t3.blv"),
         dungeonRunMapKey("6d12.blv"), dungeonRunMapKey("6d07.blv")});
+}
+
+TEST_CASE("Minotaur frozen v202 reads as schema 201 and round trips with the new loot pouch")
+{
+    const auto fixture = std::filesystem::path(OPENYAMM_SOURCE_DIR) / "tests/fixtures/minotaur-3.2-v202-roguelike.oysav";
+    std::string error;
+    const auto old = loadGameDataFromPath(fixture, error);
+    REQUIRE_MESSAGE(old, error);
+    CHECK_EQ(old->sourceSaveVersion, 201u);
+    CHECK_EQ(old->ruleset.id, "roguelike");
+    CHECK(old->party.pouches[size_t(ItemPouch::Loot)].empty());
+
+    const auto summary = loadGameSaveSummaryFromPath(fixture, error);
+    REQUIRE_MESSAGE(summary, error);
+    CHECK_EQ(summary->mapFileName, "6d01.blv");
+    CHECK(summary->ruleset == old->ruleset);
+
+    auto save = *old;
+    InventoryItem loot;
+    loot.objectDescriptionId = 1945;
+    loot.identified = true;
+    save.party.pouches[size_t(ItemPouch::Loot)].push_back(loot);
+
+    const auto path = std::filesystem::temp_directory_path() / "minotaur-v202-to-v203.oysav";
+    REQUIRE_MESSAGE(saveGameDataToPath(path, save, error), error);
+    const auto restored = loadGameDataFromPath(path, error);
+    std::filesystem::remove(path);
+    REQUIRE_MESSAGE(restored, error);
+    CHECK_EQ(restored->sourceSaveVersion, 202u);
+    CHECK(restored->ruleset == old->ruleset);
+    CHECK(restored->namedGlobalVars == old->namedGlobalVars);
+    CHECK_EQ(restored->party.gold, old->party.gold);
+    REQUIRE_EQ(old->party.members.size(), 4u);
+    REQUIRE_EQ(restored->party.members.size(), old->party.members.size());
+    for (size_t index = 0; index < old->party.members.size(); ++index)
+    {
+        CHECK(restored->party.members[index].talentRanks == old->party.members[index].talentRanks);
+        CHECK(restored->party.members[index].inventory == old->party.members[index].inventory);
+    }
+    CHECK(restored->party.pouches[size_t(ItemPouch::Loot)] == save.party.pouches[size_t(ItemPouch::Loot)]);
 }

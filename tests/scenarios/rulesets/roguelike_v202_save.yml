@@ -1,0 +1,26 @@
+id: rulesets.roguelike_v202_save
+title: Roguelike - a v3.2 save keeps its route, talents and guardian reward
+world: mm6
+mode: faithful
+tags: [rulesets, roguelike, saves]
+steps:
+  - new_game_flow: {start_map: hive.blv}
+  - load_game: {path: ../../fixtures/minotaur-3.2-v202-roguelike.oysav}
+  - assert:
+      map: 6d01.blv
+      ruleset: {id: roguelike}
+      inventory_any_member: [{item_id: 2029, count: 1}]
+  - console: {line: "run", expect_contains: "seed 4, order: 6d01.blv 6t3.blv 6d12.blv 6d07.blv"}
+  - console: {line: "run", expect_contains: "level-ups 3 of 10, guardian slain"}
+  - console: {line: "run", expect_contains: "rewards 1 (items 2029), items owed 0; gold 2000 food 2;"}
+  - console: {line: "run", expect_contains: "Roderick talents: sweeping_blows=1; Alexis talents: cheat_death=1 resolve=1"}
+  - console: {line: "run", expect_contains: "Serena talents: attunement=2 cheat_death=1; Zoltan talents: attunement=1"}
+  - save_game: roguelike_v202_resaved
+  - new_game_flow: {start_map: hive.blv}
+  - load_game: roguelike_v202_resaved
+  - assert:
+      map: 6d01.blv
+      ruleset: {id: roguelike}
+      inventory_any_member: [{item_id: 2029, count: 1}]
+  - console: {line: "run", expect_contains: "seed 4, order: 6d01.blv 6t3.blv 6d12.blv 6d07.blv"}
+  - console: {line: "run", expect_contains: "Alexis talents: cheat_death=1 resolve=1; Serena talents: attunement=2"}

@@ -1,0 +1,13 @@
+Frozen Minotaur 3.2 Roguelike save.
+Source: integration/minotaur-v3.2-20261124, 3675ce0d2404a87369da410a3446655f08eecb18.
+Captured before the v3.4 merge with an unmodified Linux executable built from that commit.
+Scenario: tests/scenarios/rulesets/roguelike_run.yml, named save roguelike_rewarded.
+Seed 4, Goblinwatch (6d01.blv), four characters, first guardian slain and artifact 2029 granted.
+Assets: the v3.2 integration test overlay, read-only. Source assets match the base revision.
+Header: OYMINO1, writer 202, upstream layout 201.
+
+Base build: safe-heavy-run: 20261126T010211Z-299c470079: profile=openyamm, jobs=4, RAM=18432 MiB, swap=1024 MiB, CPU<=4; unit=agentheavy-cb46ae31296f40fca0549ab2fbfa8396.service
+Save run: safe-heavy-run: 20261126T011733Z-f94443d0bf: profile=openyamm, jobs=4, RAM=18432 MiB, swap=1024 MiB, CPU<=4; unit=agentheavy-7c03e69c9c9a4840a33bc72758a85f11.service
+
+SHA256 openyamm: 43c90f95f93c949c043ffbbff6b85fe3160792b504f5037403bd0c810cdf1f2f
+SHA256 minotaur-3.2-v202-roguelike.oysav: 01ba917d32c8a25a6ab5625934a2134c57ff63864f0d7b56e854e0e5f51a7e3a

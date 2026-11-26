@@ -72,8 +72,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MINOTAUR_UPSTREAM_VERSION: "3.2"
-  MINOTAUR_UPSTREAM_SHA: 2539b76596c815be1edd86c703e2a6c98cd6d918
+  MINOTAUR_UPSTREAM_VERSION: "3.4"
+  MINOTAUR_UPSTREAM_SHA: 91540f225bc7f07dc5ba03262e53b076b1cf60d4
   MINOTAUR_PACKAGE_MODE: ${{ inputs.package_mode || 'update' }}
 
 jobs:
@@ -117,7 +117,7 @@ jobs:
           REQUESTED_BASE: ${{ inputs.baseline_version }}
           PREVIOUS_BUILD_SHA: ${{ inputs.previous_build_sha }}
         run: |
-          version="minotaur-3.2-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          version="minotaur-3.4-${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [ "$MINOTAUR_PACKAGE_MODE" = full ]; then
             # A full installation starts a new base (the full 2.7 desktop release): no patch to an older one.
@@ -498,6 +498,7 @@ jobs:
             /tests/fixtures/minotaur-2.4-v184-roguelike-perks.oysav
             /tests/fixtures/minotaur-2.4-v184-roguelike-v1.oysav
             /tests/fixtures/minotaur-2.7-v194-roguelike.oysav
+            /tests/fixtures/minotaur-3.2-v202-roguelike.oysav
             /assets_dev/engine/data_tables/npc.txt
             /assets_dev/engine/data_tables/npc_topic.txt
             /assets_dev/engine/ui/gameplay/character.yml
@@ -618,7 +619,7 @@ jobs:
           number=0
           for scenario in $scenarios mm9/shop_after_world_switch.yml rulesets/medusa_start.yml \
               rulesets/roguelike_run.yml rulesets/roguelike_v184_save.yml rulesets/roguelike_v1_save.yml \
-              rulesets/roguelike_v194_save.yml rulesets/roguelike_worlds.yml \
+              rulesets/roguelike_v194_save.yml rulesets/roguelike_v202_save.yml rulesets/roguelike_worlds.yml \
               rulesets/standard_exit_dialog.yml \
               mm8/plane_gateway_keeps_buffs.yml turn_based/maw_potion_spends_turn.yml; do
             number=$((number + 1))

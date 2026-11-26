@@ -14,7 +14,8 @@ tests="${1:?usage: minotaur_ci_tests.sh <tests directory> [group ...]}"
 shift
 groups=("$@")
 if [ ${#groups[@]} -eq 0 ]; then
-    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9 upstream24 upstream27 upstream32 native-ui
+    groups=(gameplay world medusa-importer updater upstream-ai upstream-indoor roguelike mm9 upstream24 upstream27 upstream32
+            upstream34 native-ui
             maw24)
 fi
 
@@ -69,6 +70,13 @@ for group in "${groups[@]}"; do
             run upstream-32-runtime-tests "$runtime" --source-file='*CoopNetTests.cpp'
             runtime_result=$?
             (exit "$((unit_result != 0 ? unit_result : runtime_result))") ;;
+        upstream34)
+            # New 3.3–3.4 checks outside the earlier selections, including indoor movement and interaction reach.
+            upstream34_status=0
+            run upstream-34-unit-tests "$unit" --source-file='*ImageAssetLoaderTests.cpp,*IndoorCollisionPrimitivesTests.cpp,*IndoorMovementRecoveryTests.cpp,*IndoorMoversTests.cpp,*IndoorTranslucentFacesTests.cpp,*MercenaryRecruitmentRuntimeTests.cpp,*SpellbookUiLayoutTests.cpp' || upstream34_status=$?
+            run upstream-34-script-tests "$unit" --test-case='mm6 shadow guild spike pit portal stays a floor,evt.JoinParty*' || upstream34_status=$?
+            run upstream-34-runtime-tests "$runtime" --source-file='*HoverReachTests.cpp,*MawMm9ShopRuntimeTests.cpp' || upstream34_status=$?
+            (exit "$upstream34_status") ;;
         native-ui)
             run native-ui-tests "$runtime" --source-file='*NewGameScreenTests.cpp,*PartyCreationSheetTests.cpp,*GameplayUiRuntimeTests.cpp,*GameplaySpellServiceTests.cpp' ;;
         maw24)
