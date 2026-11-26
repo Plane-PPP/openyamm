@@ -1,3 +1,10 @@
+# OpenYAMM 3.4 integration (2026-11-26)
+
+Integrated OpenYAMM v3.4 and Medusa's `evt.JoinParty` roster recruitment. The Minotaur save writer is
+`OYMINO1/v203` (upstream schema 202). It reads `OYMINO1/v202` as schema 201. The new loot pouch follows
+the gameplay setting in the campaign rulesets. Roguelike keeps routing loot and camp purchases to the heroes' bags.
+[Integration record](docs/research/openyamm-3.4-integration.md).
+
 # OpenYAMM 3.2 integration (2026-11-24)
 
 Integrated the official v3.2 tag, including Xeen, named mods and Map Studio, with the Minotaur, Medusa,

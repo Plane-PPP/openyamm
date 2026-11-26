@@ -2,6 +2,13 @@
 
 # Minotaur Rebalance — Roadmap
 
+## OpenYAMM 3.4 — local port (2026-11-26)
+
+Target `v3.4`, `91540f225bc7f07dc5ba03262e53b076b1cf60d4`. Writer `OYMINO1/v203` uses schema 202.
+The reader maps earlier `OYMINO1/v202` saves to schema 201. Medusa gains the `evt.JoinParty` script call.
+Roguelike keeps routing loot to the heroes' bags. Independent review and Windows verification are pending.
+[Integration record in Russian](research/openyamm-3.4-integration.md).
+
 ## OpenYAMM 3.2 — local port (2026-11-24)
 
 Target `v3.2`, `2539b76596c815be1edd86c703e2a6c98cd6d918`. Writer `OYMINO1/v202` uses schema 201 and reads

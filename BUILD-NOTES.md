@@ -1,3 +1,10 @@
+# OpenYAMM 3.4 integration — local port (2026-11-26)
+
+Integration branch `integration/minotaur-v3.4-20261126`, upstream v3.4
+`91540f225bc7f07dc5ba03262e53b076b1cf60d4`. The Minotaur workflow identifies the new release and checks
+the v3.2 save fixture. The installed 3.2 build #54 is the selected update base. The Windows build and package
+for 3.4 remain pending. [Local integration and verification](docs/research/openyamm-3.4-integration.md).
+
 # OpenYAMM 3.2 integration — local port (2026-11-24)
 
 Source branch `integration/minotaur-v3.2-20261124`, upstream v3.2 `2539b76596c815be1edd86c703e2a6c98cd6d918`.
