@@ -731,8 +731,20 @@ bool AssetFileSystem::setNamedMods(const std::vector<std::string> &modIds)
     const std::string activeWorldId = m_activeWorldId;
     InstalledContentOptions installedContentOptions = m_installedContentOptions;
     installedContentOptions.namedMods = modIds;
+    // The ruleset's icons and the player's imported portraits belong to the game, not to the mounts: initialize()
+    // forgets them, so the start's named mods, mounted after the portraits, dropped them (Minotaur 3.2 #54: imported
+    // faces and dolls back to the standard ones after a restart with a named mod on). Kept as switchActiveWorld does.
+    const std::string rulesetIconRoot = m_rulesetIconRoot;
+    const std::filesystem::path userIconDirectory = m_userIconDirectory;
 
-    return initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions);
+    if (!initialize(basePath, assetRoot, assetScaleTier, assetScaleProfile, activeWorldId, installedContentOptions))
+    {
+        return false;
+    }
+
+    setRulesetIconRoot(rulesetIconRoot);
+    setUserIconDirectory(userIconDirectory);
+    return true;
 }
 
 const InstalledContentOptions &AssetFileSystem::installedContentOptions() const

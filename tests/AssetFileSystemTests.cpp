@@ -1771,6 +1771,50 @@ TEST_CASE("AssetFileSystem serves the user icon folder after the packages and ke
     std::filesystem::remove_all(temporaryRoot);
 }
 
+TEST_CASE("AssetFileSystem keeps ruleset and imported portraits when the start mounts named mods")
+{
+    // GameApplication::loadGameData mounts the imported portraits, then the start's named mods: a named mod on used to
+    // drop the portraits (faces and dolls back to the standard ones after a restart, Minotaur 3.2 #54).
+    using namespace OpenYAMM::Engine;
+    const std::filesystem::path root = makeTemporaryRoot();
+    const std::filesystem::path assets = root / "assets";
+    const std::filesystem::path modsRoot = root / "mods";
+    writeZipFile(assets / "packs/engine.core.zip", {
+        {"icon_packages.txt", "engine x2\nworlds/mm7 x2\n"},
+        {"icons_x2/pc02-01.png", "packaged"},
+        {"rulesets/medusa/icons_x2/med01-01.png", "ruleset"}
+    });
+    writeZipFile(assets / "packs/mm7.core.zip", {{"icons_x2/npc1.png", "mm7"}});
+    writeCorePackIndex(assets, {"engine", "mm7"});
+    writeTextFile(modsRoot / "slice" / "mod.yml", "format: 1\nid: slice\nname: Slice\nversion: 1\n");
+    writeTextFile(modsRoot / "slice" / "worlds" / "mm7" / "maps" / "med_school.blv", "mod-map");
+    const std::filesystem::path user = root / "portraits/icons_x2";
+    std::filesystem::create_directories(user);
+    std::ofstream(user / "user_face-01.png") << "imported";
+    InstalledContentOptions options;
+    options.modsRoot = modsRoot;
+    {
+        AssetFileSystem fs;
+        REQUIRE(fs.initialize(root, assets, AssetScaleTier::X2, AssetScaleProfile{}, "mm7", options));
+        fs.setRulesetIconRoot("engine/rulesets/medusa");
+        REQUIRE(fs.setUserIconDirectory(user));
+
+        REQUIRE(fs.setNamedMods({"slice"}));
+        CHECK(fs.readTextFile("worlds/mm7/maps/med_school.blv") == std::optional<std::string>("mod-map"));
+        CHECK(fs.getUserIconDirectory() == user);
+        CHECK(fs.getRulesetIconRoot() == "engine/rulesets/medusa");
+        CHECK(fs.readTextFile("Data/icons/user_face-01.png") == std::optional<std::string>("imported"));
+        CHECK(fs.readTextFile("Data/icons/med01-01.png") == std::optional<std::string>("ruleset"));
+        CHECK(fs.readTextFile("Data/icons/pc02-01.png") == std::optional<std::string>("packaged"));
+
+        // Turning the mods off again keeps them too.
+        REQUIRE(fs.setNamedMods({}));
+        CHECK_FALSE(fs.exists("worlds/mm7/maps/med_school.blv"));
+        CHECK(fs.readTextFile("Data/icons/user_face-01.png") == std::optional<std::string>("imported"));
+    }
+    std::filesystem::remove_all(root);
+}
+
 TEST_CASE("AssetFileSystem keeps ruleset and imported portraits together across worlds")
 {
     using namespace OpenYAMM::Engine;
