@@ -1,6 +1,12 @@
 [Русский](MINOTAUR_REBALANCE.md) | **English**
 
 
+## OpenYAMM 3.4 — Roguelike pouches (2026-11-26)
+
+The OpenYAMM 3.4 settings apply to dungeon runs. Party pouches puts potions, bottles, reagents and quest items in
+shared tabs. New loot pouch puts picked-up items without a pouch of their own in the shared loot tab. Camp purchases
+follow the usual inventory rules. [Integration record in Russian](research/openyamm-3.4-integration.md).
+
 ## OpenYAMM 3.2 — compatibility (2026-11-24)
 
 Axe, Damage Resistance and Lethal Strike retain their 2.7 formulas. The primary melee attack still gets

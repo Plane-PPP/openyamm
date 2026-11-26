@@ -3354,14 +3354,14 @@ bool runNewGameFlow(
 
         std::string failure;
 
-        // `party_pouches: true` plays with the Gameplay setting Party pouches on (Standard's quest and alchemy tabs).
         if (!context.runtimeDriver->initialize(failure))
         {
             failures.push_back(stepLocation(step) + ": " + failure);
             return false;
         }
 
-        context.runtimeDriver->setPartyPouches(step.payload["party_pouches"].as<bool>(false));
+        context.runtimeDriver->setPouchSettings(
+            step.payload["party_pouches"].as<bool>(false), step.payload["loot_pouch"].as<bool>(false));
 
         if (!context.runtimeDriver->startNewGame(
                 0, startMap, failure, hasExplicitParty ? &seed : nullptr, ruleset))

@@ -228,7 +228,8 @@ void MainMenuScreen::loadCatalog()
         // Names, descriptions and choices show in the interface language; ids, values and groups stay English.
         setting.name = Engine::localize(item["name"].as<std::string>());
         setting.description = Engine::localize(item["desc"].as<std::string>());
-        if (m_currentGame && item["ruleset_desc"])
+        if (m_currentGame && item["ruleset_desc"]
+            && (setting.id != "party_pouches" || m_currentGame->hasRulesetPouches))
         {
             setting.description = Engine::localize(item["ruleset_desc"].as<std::string>());
         }

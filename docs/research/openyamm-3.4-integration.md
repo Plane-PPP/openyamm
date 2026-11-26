@@ -32,7 +32,7 @@
 
 | Файл | Решение |
 |---|---|
-| `game/app/GameApplication.cpp` | Сохранено отключение автоматических общих мешочков в Roguelike. Настройка нового мешочка применяется в остальных режимах при создании партии, привязке сцены и обновлении настроек. |
+| `game/app/GameApplication.cpp` | При первом переносе сохранено исключение Roguelike. По решению пользователя оба переключателя действуют в Roguelike при создании партии, привязке сцены и обновлении настроек. |
 | `game/gameplay/HouseInteraction.cpp` | Добавлена массовая тренировка 3.4. Предложение сброса талантов остаётся доступно соло и защищает таланты Roguelike. |
 | `game/maps/SaveGame.cpp` | Сохранены отдельные оболочки и старые mappings мода. Писатель обновлён до v203, v202 сопоставлен со схемой 201. Добавлено поле мешочка схемы 202. |
 | `tests/RulesetTests.cpp` | Согласованы старые тестовые форматы. Сохранён вырез пустого идентификатора инстанса, учтено новое поле мешочка и сохранён официальный заголовок синтетических образцов. |
@@ -52,8 +52,8 @@
   точной базы до слияния. Исходный сценарий прошёл 170 шагов. Фикстура сделана сразу после первого стража
   Гоблинвотча и однократной выдачи артефакта 2029. Ревизия, SHA256 бинарника и сейва и защищённый запуск
   указаны в соседнем TXT. Сценарий загрузки и round trip проверяют маршрут, награду, таланты и новый формат.
-- Roguelike сохраняет раскладку добычи по сумкам героев при автоматическом подборе. В остальных режимах
-  поведение задаёт настройка оригинала. Содержимое нового мешочка сохраняется в формате v203.
+- В Roguelike автоматический подбор учитывает `lootPouch`, а распределение зелий, реагентов, бутылок и
+  квестовых предметов учитывает `partyPouches`. Содержимое нового мешочка сохраняется в формате v203.
   Команда `evt.JoinParty` перенесена поверх v3.4 и использует его код внешности персонажа из ростера.
 - Формулы Axe, Damage Resistance и Lethal Strike сохраняются из базы. Код авторитетной проверки Lethal Strike
   при кооперативе сохранён. Обновление массовой тренировки не отменяет право сброса талантов только в соло.
@@ -104,7 +104,7 @@ upstream34 103 unit, 2 script и 5 runtime, native-ui 32, maw24 359. Паден�
   `game/maps/SaveGame.cpp:2489`, `game/maps/SaveGame.cpp:2548`, `game/maps/SaveGame.cpp:6732`,
   `game/maps/SaveGame.cpp:7314` и `tests/RoguelikeTalentTests.cpp:1103`. Сверить обе оболочки
   версии 202, сохранение маршрута и талантов, пустой мешочек при чтении v202.
-- Инвентарь. `game/app/GameApplication.cpp:11683`, `game/app/GameApplication.cpp:12993`,
+- Инвентарь. `game/app/GameApplication.cpp:11683`, `game/app/GameApplication.cpp:12992`,
   `game/party/Party.cpp:4218`, `game/party/Party.cpp:4340`, `game/party/Party.cpp:6761`,
   `game/ui/GameplayHudOverlaySupport.cpp:2555`. Сверить автоматическую выдачу добычи, перенос вещей
   между вкладками, объединение стаков и настройки при повторной привязке партии.
@@ -112,14 +112,26 @@ upstream34 103 unit, 2 script и 5 runtime, native-ui 32, maw24 359. Паден�
   `game/indoor/IndoorWorldRuntime.cpp:21878` и `game/outdoor/OutdoorWorldRuntime.cpp:20560`.
   Сверить массовую тренировку, доступ к сбросу талантов и проверку авторитета Lethal Strike.
 - Medusa. `game/events/EventRuntime.cpp:5163`, `game/party/Party.cpp:5489`,
-  `game/app/GameApplication.cpp:13000`. Сверить границы партии, выбор портрета и источник строки ростера.
+  `game/app/GameApplication.cpp:13002`. Сверить границы партии, выбор портрета и источник строки ростера.
 
-## Оставшаяся проверка и решение
+## Оставшиеся проверки и решение пользователя
 
 Независимый ревьюер ещё не проверял перенос. Сборка и установщик Windows, Vulkan, запуск Map Studio,
 ручные кампании и живая сессия кооператива остаются непроверенными. Проверка сценариев использовала
 локальный каталог ресурсов Linux. Установленный Windows-пакет 3.2 #54 остаётся базой обновления.
 
-В Roguelike можно сохранить автоматический подбор в сумки героев или разрешить глобальной настройке v3.4
-перенаправлять добычу в новый общий мешочек. В ветке выбран прежний порядок. Он сохраняет привычную раскладку добычи и прежнее управление снаряжением.
-Порядок можно утвердить после ревью.
+26 ноября пользователь утвердил оба переключателя v3.4 в Roguelike. Меню паузы показывает обычное описание
+«Мешочки партии» для правил без собственных мешочков. Сценарий забега включает оба переключателя и проверяет,
+что меч из сундука, купленный реагент и пустая бутылка доступны каждому из четырёх героев как общие предметы.
+
+## Повторные проверки после решения пользователя
+
+| Проверка после решения пользователя | Команда и результат |
+|---|---|
+| Сборка всех трёх целей | `safe-heavy-run run --label v34-pouches-build -- bash build/port/build.sh openyamm openyamm_unit_tests openyamm_runtime_tests`, код 0. Запуск `20261126T065704Z-9a312f9537`. |
+| Сценарий мешочков | `safe-heavy-run run --label v34-pouches-focused -- env PORT_SCENARIO_RESULTS="$PWD/build/port/pouches-focused" bash build/port/test-scenarios.sh tests/scenarios/rulesets/roguelike_run.yml`, 177/177, код 0. Запуск `20261126T070025Z-d26a664d10`. |
+| Группы | `safe-heavy-run run --label v34-pouches-groups -- python3 build/port/with-unit-assets.py bash tools/minotaur_ci_tests.sh build/tests`, 14/14, код 0. Запуск `20261126T070043Z-0a813bb472`. |
+| Сценарии | `safe-heavy-run run --label v34-pouches-scenarios -- env PORT_SCENARIO_RESULTS="$PWD/build/port/pouches-scenario-results" bash build/port/test-scenarios.sh`, 27/27 и 547/547 шагов, код 0. Запуск `20261126T070143Z-b9a5ce2a51`. |
+| Пул с обоими переключателями | `safe-heavy-run run --label v34-pouches-pool -- env PORT_SCENARIO_RESULTS="$PWD/build/port/pouches-pool-results" bash build/port/test-scenarios.sh build/port/pool-pouches/pool_mm{6,7,8,9}.yml`, 94/94 и 846/846 шагов, код 0. Запуск `20261126T070308Z-bc0c02c721`. |
+| Документация и пробелы | `safe-heavy-run run --profile light --label v34-pouches-i18n -- python3 tools/check_doc_i18n.py`, 0 ошибок, 8 прежних предупреждений. `GIT_NO_LAZY_FETCH=1 git -c diff.renames=false diff --check` и такая же проверка с `--cached` прошли. |
+| Освещение в sparse-дереве | `safe-heavy-run run --profile light --label v34-pouches-lighting -- python3 tools/lighting/stale_bakes.py --check`, код 1. Проверка отметила `assets_dev/worlds/mm8/maps/out01.lighting`: отсутствуют все 200 исходных BMP из `assets_dev/worlds/mm8/textures/`. Полный список в `build/port/pouches-lighting.log`. |

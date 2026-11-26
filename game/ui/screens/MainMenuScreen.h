@@ -40,6 +40,7 @@ class MainMenuScreen : public MenuDesignScreen
         // The party's adventurers and MM9 hirelings: a party of one may become a solo run (the Solo run row).
         size_t partySize = 0;
         size_t hirelingCount = 0;
+        bool hasRulesetPouches = false;
     };
     MainMenuScreen(const Engine::AssetFileSystem &assets, const GameDataRepository &gameData, GameAudioSystem *pAudio,
                    const GameSettings &settings, Actions actions, std::string &settingsSection, bool paused = false,

@@ -4,12 +4,20 @@ world: mm6
 mode: faithful
 tags: [rulesets, roguelike]
 steps:
+  # Check loot routing in its own run so the chest's other contents cannot change the camp checks below.
+  - new_game_flow: {start_map: hive.blv, party_pouches: true, loot_pouch: true}
+  - console: {line: "run new 4 6d01.blv", expect_contains: "Run started in 6d01.blv, seed 4."}
+  - lua_event: {source: "evt.EnsureChestItem(1, 5)"}
+  - lua_event: {source: "evt.OpenChest(1)"}
+  - play_lua: {source: "assert(take_chest())"}
+  - lua_event:
+      source: "for i = 0, 3 do assert(evt.PartyMemberItemCount(i, 5) == 1, 'loot pouch sword') end"
   # Any game brings the runtime up (the Hive, a map no run visits). `run new` then starts the run through the code a
   # new game from party creation uses (GameApplication::startNewSessionFromCharacterCreation), with four heroes of
   # level 1 and seed 4. The route takes one dungeon per stage of run.yml's `route` (1, 2, 3, 4) from a pool of MM6-MM9
   # maps; the scenario pins the four dungeons of the 2.4 runs (`run new <seed> <map> ...`) so that its steps stay the
   # same whatever the pool.
-  - new_game_flow: {start_map: hive.blv}
+  - new_game_flow: {start_map: hive.blv, party_pouches: true, loot_pouch: true}
   - console: {line: "run new 4 6d01.blv 6t3.blv 6d12.blv 6d07.blv", expect_contains: "Run started in 6d01.blv, seed 4."}
   - assert:
       map: 6d01.blv
@@ -80,7 +88,7 @@ steps:
   - console: {line: "run leave", expect_contains: "The way out is sealed."}
   # The save keeps the run in the middle of a dungeon: the level-ups and the living guardian come back with it.
   - save_game: roguelike_guardian
-  - new_game_flow: {start_map: hive.blv}
+  - new_game_flow: {start_map: hive.blv, party_pouches: true, loot_pouch: true}
   - load_game: roguelike_guardian
   - assert:
       map: 6d01.blv
@@ -97,7 +105,7 @@ steps:
       inventory_any_member: [{item_id: 2029, count: 1}]
   # Once: a save and a load give nothing more.
   - save_game: roguelike_rewarded
-  - new_game_flow: {start_map: hive.blv}
+  - new_game_flow: {start_map: hive.blv, party_pouches: true, loot_pouch: true}
   - load_game: roguelike_rewarded
   - console: {line: "run", expect_contains: "rewards 1 (items 2029), items owed 0; gold 2000 food 2;"}
   - assert:
@@ -151,7 +159,14 @@ steps:
   - console: {line: "run buy 1764", expect_contains: "Bought 1 of item 1764 (3 on the shelf) for "}
   - console: {line: "run buy 220", expect_contains: "Bought 1 of item 220 (3 on the shelf) for "}
   - assert:
-      inventory_any_member: [{item_id: 1764, min_count: 1}, {item_id: 220, min_count: 1}]
+      inventory_any_member: [{item_id: 1764, count: 1}, {item_id: 220, count: 5}]
+  # The bought reagent and the five bottles (four at the start, one bought) are shared by all four heroes.
+  - lua_event:
+      source: >
+        for i = 0, 3 do
+          assert(evt.PartyMemberItemCount(i, 1764) == 1, 'alchemy pouch reagent')
+          assert(evt.PartyMemberItemCount(i, 220) == 5, 'alchemy pouch bottle')
+        end
   - press_action: {action: cancel_dialog}
   - console: {line: "run", expect_contains: "guardian slain"}
   - press_action: {action: cancel_dialog}

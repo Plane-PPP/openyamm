@@ -1986,9 +1986,11 @@ bool ScenarioRuntimeDriver::setPartyImmortal(bool immortal, std::string &failure
     return true;
 }
 
-void ScenarioRuntimeDriver::setPartyPouches(bool enabled)
+void ScenarioRuntimeDriver::setPouchSettings(bool partyPouches, bool lootPouch)
 {
-    ScenarioGameApplicationAccess::settings(m_application).partyPouches = enabled;
+    GameSettings &settings = ScenarioGameApplicationAccess::settings(m_application);
+    settings.partyPouches = partyPouches;
+    settings.lootPouch = lootPouch;
 }
 
 bool ScenarioRuntimeDriver::walkTo(const ScenarioWalkRequest &request, ScenarioWalkResult &result, std::string &failure)

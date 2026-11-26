@@ -6,7 +6,8 @@
 
 Target `v3.4`, `91540f225bc7f07dc5ba03262e53b076b1cf60d4`. Writer `OYMINO1/v203` uses schema 202.
 The reader maps earlier `OYMINO1/v202` saves to schema 201. Medusa gains the `evt.JoinParty` script call.
-Roguelike keeps routing loot to the heroes' bags. Independent review and Windows verification are pending.
+Both OpenYAMM 3.4 pouch settings apply in Roguelike, as approved on November 26. Independent review and Windows
+verification are pending.
 [Integration record in Russian](research/openyamm-3.4-integration.md).
 
 ## OpenYAMM 3.2 — local port (2026-11-24)

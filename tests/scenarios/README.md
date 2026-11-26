@@ -71,7 +71,8 @@ the actors' (`maw_bow_disabled.yml`).
 `new_game_flow: {ruleset: "standard:solo"}` is a solo run under Standard rules (a party of one, as the New Game
 screen's Solo run row starts it); `"standard"` alone is the default. Scenarios play with the Gameplay setting Party
 pouches off whatever settings.ini says; `new_game_flow: {party_pouches: true}` turns it on for that game (Standard's
-alchemy and quest pouches: `rulesets/quest_pouch_lich_promotion.yml`).
+alchemy and quest pouches: `rulesets/quest_pouch_lich_promotion.yml`). The New loot pouch setting is also off by
+default in scenarios. Set `new_game_flow: {loot_pouch: true}` to send eligible ground loot to the shared tab.
 A `new_game_flow` party member may carry `battle_orders: {fallback: weapon|hold, orders: [...]}`
 (devdocs/BATTLE_ORDERS.md): each order is `{spell: <table name>}`, `{melee: true}`, `{shoot: true}` or, for a MAW
 solo run, `{talent: <talents.yml id>}` with optional
