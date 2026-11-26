@@ -136,12 +136,11 @@ def window():
 
 
 def turn_dial(k, times):
+    # D-159: a click turns the dial one step, its new reading on the status line (no question)
     for _ in range(times):
-        add({'play_lua': {'source': 'click(%d); wait(0.5)' % ev['evt:thing:sundial_%d' % k]}})
-        add({'assert': {'dialog': {'active': True, 'action_label_present': 'Yes'}}})   # D-72 (A5 s30): buttons
-        add({'select_topic': {'match_label': 'Yes'}})
-        add({'advance_runtime': {'seconds': 0.5}})
-        add({'play_lua': {'source': 'close(); wait(0.3)'}})
+        add({'play_lua': {'source': 'click(%d); wait(0.5); local s = status(); '
+                                    'if not s:find("You turn the sundial") then error("no dial line: " .. s) end'
+                                    % ev['evt:thing:sundial_%d' % k]}})
 
 
 s = build['start']
@@ -242,12 +241,12 @@ add({'advance_game_time': {'hours': 14}})
 # XD-24 is entered only once the world knows the map (its map_stats row, A2): without the row the game cannot load it
 XD24_ROW = 'xeen_xd24.blv' in open(os.path.join(ROOT, 'assets_dev/worlds/xeen/data_tables/map_stats.txt')).read()
 if XD24_ROW:
-    add({'note': "The open coffin's stair: into XD-24 at its start (0, 704), then back"})
+    add({'note': "The open coffin's stair: into XD-24 at the coffin stair (0, 1600; P3 F45), then back"})
     add({'execute_event': {'id': ev['evt:thing:coffin_open']}})
     window()
     add({'advance_runtime': {'seconds': 1.5, 'follow_map_move': True}})
     add({'assert': {'map': 'xeen_xd24.blv'}})
-    add({'assert': {'party_position': {'x': 0, 'y': 704, 'radius': 160}}})
+    add({'assert': {'party_position': {'x': 0, 'y': 1600, 'radius': 160}}})
     add({'load_map': {'map': M}})
     add({'advance_runtime': {'seconds': 0.5}})
     add({'note': 'Back on X3 on the square (by load_map)'})

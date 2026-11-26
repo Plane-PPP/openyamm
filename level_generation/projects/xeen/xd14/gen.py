@@ -197,8 +197,11 @@ room('room:gatehouse', 'Gatehouse', GATEHOUSE, 0, 512, 'theme:castle', ambient=1
      platforms=[block('platform:bench', -640, -1280, -544, -896, 48, PLANKS, PLANKS,
                       "The guards' bench along the west wall.")],
      notes="Inside the gate, 1,280 by 1,024: the arrival (entrance:x6_gate), quiet; the great hall's double doors north with a sconce either side, a guard bench west.")
-HALL_TABLES = [block(f'platform:table_{s}', x0, -128, x1, 896, 64, PLANKS, PLANKS, "A long table against the wall.")
-               for s, (x0, x1) in (('w', (-1344, -1184)), ('e', (1184, 1344)))]
+# The long tables stand clear of the hall's three side doors (the west arch at y 0, the scriptorium's and the kennels'
+# doors at y 832): run across them, 64 high and 64 off the wall, they stopped the party in each doorway like an
+# invisible wall and the route planner found no way in (P3 2026-11-24, studio audit `face.in_doorway`).
+HALL_TABLES = [block(f'platform:table_{s}', x0, y0, x1, y1, 64, PLANKS, PLANKS, "A long table against the wall.")
+               for s, (x0, y0, x1, y1) in (('w', (-1344, 224, -1184, 656)), ('e', (1184, -128, 1344, 656)))]
 room('room:great_hall', 'Great hall', HALL, 0, 960, 'theme:castle', ambient=18,
      bands=[{'height': 64, 'surface': SMALL}],
      platforms=[block('platform:hearth', -320, 1040, 320, 1152, 32, SMALL, FLAGS,
@@ -287,10 +290,12 @@ PARAPET_H = 160
 
 
 def sky_side(r, wall):
-    """An outer wall drawn as sky over a parapet 32 in from it: (the wall's entry, the parapet)."""
+    """An outer wall drawn as sky over a parapet 32 in from it: (the wall's entry, the parapet). F60 (the player's
+    pins 2026-11-25, p3/p4 "wall is missing"): the parapet runs from side wall to side wall; it stopped 32 short of
+    both and left a slot of sky from the floor up (tools/xeen/check_parapet_gaps.py)."""
     x0, y0, x1, y1 = r
-    path = {'south': [[x0 + 32, y0 + 32], [x1 - 32, y0 + 32]], 'north': [[x0 + 32, y1 - 32], [x1 - 32, y1 - 32]],
-            'west': [[x0 + 32, y0 + 32], [x0 + 32, y1 - 32]], 'east': [[x1 - 32, y0 + 32], [x1 - 32, y1 - 32]]}[wall]
+    path = {'south': [[x0, y0 + 32], [x1, y0 + 32]], 'north': [[x0, y1 - 32], [x1, y1 - 32]],
+            'west': [[x0 + 32, y0], [x0 + 32, y1]], 'east': [[x1 - 32, y0], [x1 - 32, y1]]}[wall]
     return ({'wall': wall, 'surface': dict(OUTER, sky=True), 'bands': False},
             {'path': path, 'height': PARAPET_H, 'thickness': 32, 'surface': OUTER,
              'notes': f"The {wall} parapet, X6's sky beyond it (D-97)."})
@@ -520,7 +525,7 @@ for n, (x, y) in enumerate([(-640, 384), (640, 384)], 1):
 deco('hearth_fire', 'room:great_hall', 'ckfyr00', [0, 1096], floor_height=32)
 light('hearth', 'room:great_hall', [0, 1080], 96, 1500, [255, 150, 70], floor_height=32,
       pulse={'intensity': [0.8, 1], 'frequency': 0.8}, notes="The hearth's fire.")
-deco('study_fire', 'room:study', 'ckfyr00', [512, 1632], floor_height=1312)
+deco('study_fire', 'room:study', 'ckfyr00', [502, 1606], floor_height=1312)
 light('study_fire', 'room:study', [512, 1620], 96, 1100, [255, 150, 70], floor_height=1312,
       pulse={'intensity': [0.8, 1], 'frequency': 0.8}, notes="The study's fire.")
 deco('den_brazier', 'room:den', 'flamb00', [6240, 1480])
@@ -543,16 +548,20 @@ deco('study_candle', 'room:study', 'dec02', [288, 1152], floor_height=1360)
 D = deco
 D('hall_bones_1', 'room:great_hall', '7dec18', [-560, 1000])
 D('hall_bones_2', 'room:great_hall', 'dec29', [520, 1010])
-D('hall_plates_w1', 'room:great_hall', 'dec37', [-1264, 160], floor_height=64)
+D('hall_plates_w1', 'room:great_hall', 'dec37', [-1264, 320], floor_height=64)
 D('hall_plates_w2', 'room:great_hall', 'dec39', [-1264, 560], floor_height=64)
 D('hall_plates_e1', 'room:great_hall', 'dec36', [1264, 240], floor_height=64)
-D('hall_goblet_e', 'room:great_hall', '7dec46', [1264, 640], floor_height=64)
+D('hall_goblet_e', 'room:great_hall', '7dec46', [1264, 560], floor_height=64)
 D('gate_barrel_1', 'room:gatehouse', 'smlbarel', [520, -1400])
 D('gate_barrel_2', 'room:gatehouse', 'smlbarel', [520, -1280])
 D('kennel_bowl_1', 'room:kennels', 'foodbowl', [2200, 1980])
 D('kennel_bowl_2', 'room:kennels', 'foodbowl', [3350, 1980])
-D('kennel_bones_1', 'room:kennels', '7dec18', [2560, 1344], floor_height=PIT_FLOOR)
-D('kennel_bones_2', 'room:kennels', 'dec29', [2700, 1300], floor_height=PIT_FLOOR)
+# F63 (the player's pin XD-14 p1, 2026-11-25, "monsters can get stuck here"): the big bone pile (7dec18, a solid
+# cylinder of radius 52) lay in the middle of the pit's 256-wide floor, in the way of anything crossing it; both piles
+# now lie in the pit's north corners, the floor between them clear. This did not free the monster that freezes in the
+# pit in output/xeen_fb/p4_dungeon2/dbg_pit2.yml (the same spot with and without the bones): an engine request.
+D('kennel_bones_1', 'room:kennels', '7dec18', [2372, 1408], floor_height=PIT_FLOOR)
+D('kennel_bones_2', 'room:kennels', 'dec29', [2776, 1440], floor_height=PIT_FLOOR)
 D('kennel_bones_3', 'room:kennels', 'dec19', [1600, 1760])
 D('kennel_skull', 'room:kennels', '7dec20', [3380, 1720])
 D('stores_barrel_1', 'room:stores', 'bigbarel', [-2840, 2330])

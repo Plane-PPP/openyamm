@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Project.h"
+#include "core/OutdoorModel.h"
 
 #include "game/outdoor/OutdoorMapData.h"
 
@@ -30,6 +31,13 @@ struct OutdoorRoofPlan
     double eaves = 0.0;
     // The upright band between the walls' top and the roof's foot.
     double fascia = 0.0;
+    // `verge` (a box's gable): how far the slopes run on past each gable end, so the roof shows its edge over the
+    // gable; `barge`: the height of the board under that edge at each end, in the `trim` texture. 0: none.
+    double verge = 0.0;
+    double barge = 0.0;
+    // `verge_walls`: the gable ends (by their walls, s e n w = 0 to 3) that take the verge; all when left out (the
+    // other end stays flush where a wing or a shed stands against it).
+    std::array<bool, 4> vergeWalls = {true, true, true, true};
     // Hip: how far the ridge is drawn in from each end; 0: half the shorter side.
     double hipRun = 0.0;
     // A beam along the ridge of a hip or gable roof, this wide and high; 0: none.
@@ -476,9 +484,13 @@ std::vector<OutdoorBuildingPlan> readOutdoorBuildings(
 // one more than the bays of that row (`upper`: the rows above the lowest).
 std::vector<double> outdoorBayEdges(const OutdoorPartPlan &part, size_t wall, bool upper);
 
+struct LoweredOutdoorMap;
+
 // The building model of a plan with its `base` set. Sets each door's `face` and place (and gives that face the
-// door's event, if any; the other faces get `nameEvent`).
-Game::OutdoorBModel raiseOutdoorBuilding(OutdoorBuildingPlan &plan);
+// door's event, if any; the other faces get `nameEvent`). `pLand`: the lowered land, so that a porch's slab and a
+// ruin's course do not lie on it (D-170, outdoorClearOfLand); none: they stand where the plan says.
+Game::OutdoorBModel raiseOutdoorBuilding(OutdoorBuildingPlan &plan, const OutdoorWallTiles *pWallTiles = nullptr,
+    const LoweredOutdoorMap *pLand = nullptr);
 
 // The names of the face textures a world has under an asset root (lower case, without extension): the files of
 // worlds/<world>/textures* and of engine/textures*. Empty when the root has neither. With a mount folder read in front

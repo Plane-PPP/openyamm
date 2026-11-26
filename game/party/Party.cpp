@@ -1032,6 +1032,16 @@ void applyCharacterIdentityFromDollTable(Character &member, const CharacterDollT
     {
         member.raceId = static_cast<uint32_t>(pEntry->raceId);
     }
+
+    // A roster recruit's portrait is named PC<row>-01 from its picture id, but MM7 faces and some MM8 rows store their
+    // art under the row's own prefix (7pc01-, pc31-): use the row's art, as party creation does.
+    const std::string derivedTextureName = portraitTextureNameFromPictureId(member.characterDataId - 1);
+
+    if (!pEntry->facePicturesPrefix.empty()
+        && toLowerCopy(member.portraitTextureName) == toLowerCopy(derivedTextureName))
+    {
+        member.portraitTextureName = portraitTextureNameFromCharacterDollEntry(*pEntry);
+    }
 }
 
 void applyCharacterDollIdentity(Character &member, const CharacterDollTable *pCharacterDollTable, bool forceVoice)
@@ -4176,6 +4186,11 @@ std::optional<ItemPouch> Party::pouchFor(const InventoryItem &item) const
 
 bool Party::hasPouch(ItemPouch pouch) const
 {
+    if (pouch == ItemPouch::Loot)
+    {
+        return rules().items.hasPouches() || m_lootPouch || !pouchItems(pouch).empty();
+    }
+
     return rules().items.hasPouches() || (partyPouches() && pouch != ItemPouch::Crafting)
         || (pouch == ItemPouch::Quest && campaign().questPouchShared()) || !pouchItems(pouch).empty();
 }
@@ -4188,6 +4203,60 @@ void Party::setPartyPouches(bool enabled)
 bool Party::partyPouches() const
 {
     return m_partyPouches && !rules().items.hasPouches() && !campaign().questPouchShared();
+}
+
+void Party::setLootPouch(bool enabled)
+{
+    m_lootPouch = enabled;
+}
+
+bool Party::lootGoesToPouch(const InventoryItem &item) const
+{
+    return m_lootPouch && !pouchFor(item);
+}
+
+bool Party::tryGrantLootItem(
+    const InventoryItem &item,
+    size_t *pRecipientMemberIndex,
+    std::optional<ItemPouch> *pPouch)
+{
+    if (!lootGoesToPouch(item))
+    {
+        if (!tryGrantInventoryItem(item, pRecipientMemberIndex))
+        {
+            return false;
+        }
+
+        if (pPouch != nullptr)
+        {
+            *pPouch = pouchFor(item);
+        }
+
+        return true;
+    }
+
+    if (item.objectDescriptionId == 0 || item.quantity == 0 || m_members.empty()
+        || !addToPouch(ItemPouch::Loot, item))
+    {
+        m_lastStatus = "inventory full";
+        return false;
+    }
+
+    markArtifactItemFoundIfRelevant(item);
+    recordEverOwnedItemIfRelevant(item);
+
+    // The party's, so the active member counts as the recipient.
+    if (pRecipientMemberIndex != nullptr)
+    {
+        *pRecipientMemberIndex = std::min(activeMemberIndex(), m_members.size() - 1);
+    }
+
+    if (pPouch != nullptr)
+    {
+        *pPouch = ItemPouch::Loot;
+    }
+
+    return true;
 }
 
 bool Party::hasPouches() const
@@ -4206,6 +4275,12 @@ size_t Party::sortPouchItems()
 
     for (std::vector<InventoryItem> *pStorage : pouchStorages())
     {
+        // The loot pouch's items have no pouch of their own and stay: the player empties it.
+        if (pStorage == &m_pouches[size_t(ItemPouch::Loot)])
+        {
+            continue;
+        }
+
         // Taken out first: a grant puts an item where it belongs, which is a bag for what has no pouch now.
         std::vector<InventoryItem> items = std::move(*pStorage);
         pStorage->clear();
@@ -4247,12 +4322,14 @@ const std::vector<InventoryItem> &Party::pouchItems(ItemPouch pouch) const
 
 std::array<std::vector<InventoryItem> *, ItemPouchCount> Party::pouchStorages()
 {
-    return {&m_pouches[size_t(ItemPouch::Crafting)], &m_pouches[size_t(ItemPouch::Alchemy)], &campaign().questPouch()};
+    return {&m_pouches[size_t(ItemPouch::Crafting)], &m_pouches[size_t(ItemPouch::Alchemy)], &campaign().questPouch(),
+        &m_pouches[size_t(ItemPouch::Loot)]};
 }
 
 std::array<const std::vector<InventoryItem> *, ItemPouchCount> Party::pouchStorages() const
 {
-    return {&m_pouches[size_t(ItemPouch::Crafting)], &m_pouches[size_t(ItemPouch::Alchemy)], &campaign().questPouch()};
+    return {&m_pouches[size_t(ItemPouch::Crafting)], &m_pouches[size_t(ItemPouch::Alchemy)], &campaign().questPouch(),
+        &m_pouches[size_t(ItemPouch::Loot)]};
 }
 
 std::vector<InventoryItem> &Party::pouchItemsMutable(ItemPouch pouch)
@@ -5007,6 +5084,7 @@ bool Party::learnMemberSkill(size_t memberIndex, const std::string &skillName)
     pMember->skills[skill.name] = skill;
     pMember->synchronizeInnateAbilitySpells();
     GameMechanics::refreshCharacterBaseResources(*pMember, false, m_pClassMultiplierTable);
+    rebuildMagicalBonusesFromBuffs();
     return true;
 }
 
@@ -5062,6 +5140,9 @@ bool Party::increaseActiveMemberSkillLevel(const std::string &skillName)
     m_lastStatus = rules().skills.afterSkillRaised(*pMember, canonicalSkill, m_pClassSkillTable);
 
     GameMechanics::refreshCharacterBaseResources(*pMember, false, m_pClassMultiplierTable);
+    // A ruleset's skill bonuses on the resources (MAW: Enlightenment, Bodybuilding, Endurance) are magical bonuses,
+    // rebuilt with the buffs, not part of the base pools.
+    rebuildMagicalBonusesFromBuffs();
     return true;
 }
 
@@ -5096,6 +5177,7 @@ bool Party::resetActiveMemberSkills()
 
     addGold(-*cost, GoldReason::Guild);
     GameMechanics::refreshCharacterBaseResources(*pMember, false, m_pClassMultiplierTable);
+    rebuildMagicalBonusesFromBuffs();
     m_lastStatus = Engine::tr("{name}'s skills were reset: {points} skill points.",
         {{"name", pMember->name}, {"points", pMember->skillPoints}});
     return true;
@@ -6673,8 +6755,8 @@ bool Party::tryPlaceItemInMemberInventoryCell(
         return true;
     }
 
-    // And a pouch takes nothing else.
-    if (!pouch && InventoryBags::isPouchBag(openBag))
+    // And a pouch of one kind takes nothing else; the loot pouch takes any item without a pouch.
+    if (!pouch && InventoryBags::isKindPouchBag(openBag))
     {
         replacedItem.reset();
         const ItemPouch openPouch = InventoryBags::pouchOfBag(openBag);

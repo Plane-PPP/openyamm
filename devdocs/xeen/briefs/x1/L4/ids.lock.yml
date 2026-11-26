@@ -199,6 +199,8 @@ events:
   evt:thing:north_road_crate: 212
   evt:thing:north_road_end: 262
   evt:thing:north_road_fire: 211
+  evt:thing:nystor_jetty: 284
+  evt:thing:nystor_post: 285
   evt:thing:obelisk: 75
   evt:thing:orc_cave_mouth: 74
   evt:thing:orothin_1: 80
@@ -304,7 +306,17 @@ map_vars:
   barrel_key_taken: 1
   money_tree_shaken: 0
   once.evt:gunther_errand: 3
+  once.thing:derek_fire: 14
   once.thing:great_boulder: 6
+  once.thing:north_road_fire: 13
+  once.thing:outpost_fire_1: 8
+  once.thing:outpost_fire_2: 9
+  once.thing:outpost_fire_3: 10
+  once.thing:travellers_camp_1: 15
+  once.thing:way_in_dress_25: 7
+  once.thing:west_camp_fire: 11
+  once.thing:west_road_fire: 12
+  once.thing:woodcutters_camp_1: 16
   shrine_used: 4
   valia_key_given: 5
 sounds:

@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -73,6 +74,9 @@ struct LoweredOutdoorMap
     std::vector<OutdoorRoadRun> roads;
     // The buildings to raise, each with its floor's height; the ground under its plot is level at it.
     std::vector<OutdoorBuildingPlan> buildings;
+    OutdoorWallTiles wallTiles;
+    // Bearing points in native XYZ at zero facing, relative to the origin of a placed decoration.
+    std::map<std::string, std::vector<std::array<double, 3>>> decorationFeet;
     // The texture classes' door pictures the build read from its asset root (empty without one): a wing door
     // becomes a pair, a leaf shows its picture at its own width (F2, D-91); doorways read them too.
     OutdoorDoorPictures doorPictures;
@@ -103,7 +107,19 @@ struct LoweredOutdoorMap
     // stood on the land (decorations, actors, spawn points, chests and crates) use it; structures keep
     // `storedHeightAt`.
     double groundHeightAt(double x, double y) const;
+    // The lowest and the highest of that ground under a polygon given in world units (x east, y north): exact, from
+    // its corners, its edges' crossings of the cells' lines and diagonals, and the nodes inside it (D-170).
+    std::array<double, 2> groundRangeUnder(const std::vector<std::array<double, 2>> &world) const;
+    double decorationGroundAt(const std::string &name, double cellX, double cellY, int facing) const;
 };
+
+// D-170: where a level face over `world` (a porch's slab, a ruin's course, a tread) stands so that it does not lie on
+// the land and flicker with it: at `top` when the land under it lies all 4 or more under it or all 8 or more over
+// it; else 4 over the highest land under it when that is no higher than `highest`; else 8 under the lowest.
+constexpr double OutdoorClearOver = 4.0;
+constexpr double OutdoorClearUnder = 8.0;
+double outdoorClearOfLand(const LoweredOutdoorMap &lowered, const std::vector<std::array<double, 2>> &world,
+    double top, double highest = 1.0e18);
 
 // Whether the node (x, y) lies on a line drawn `width` nodes across, in sketch cells (heights.ridges, ground
 // lines). Width 1: the nodes nearest the line, within half a cell of it. More: exactly that many nodes across it,

@@ -528,7 +528,8 @@ std::string pouchHoverText(ItemPouch pouch)
 {
     return pouch == ItemPouch::Crafting  ? Engine::tr("The party's crafting materials (Shift+B)")
         : pouch == ItemPouch::Alchemy ? Engine::tr("The party's potions, bottles and reagents")
-                                      : Engine::tr("The party's quest items");
+        : pouch == ItemPouch::Quest   ? Engine::tr("The party's quest items")
+                                      : Engine::tr("New loot: what you leave here is trash");
 }
 
 std::string skillRaiseCostHoverText(
@@ -2169,7 +2170,8 @@ bool GameplayPartyOverlayInputController::togglePouchTab(GameplayScreenRuntime &
     view.shown = pouch;
     context.setStatusBarEvent(pouch == ItemPouch::Crafting  ? Engine::tr("Crafting materials")
             : pouch == ItemPouch::Alchemy ? Engine::tr("Potions and reagents")
-                                          : Engine::tr("Quest items"));
+            : pouch == ItemPouch::Quest   ? Engine::tr("Quest items")
+                                          : Engine::tr("New loot"));
     return true;
 }
 
@@ -2829,18 +2831,21 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
 #endif
 
 
-                for (const auto &[pPouchId, pouch] : {std::pair("CharacterInventoryCraftingTag", ItemPouch::Crafting),
-                         std::pair("CharacterInventoryAlchemyTag", ItemPouch::Alchemy),
-                         std::pair("CharacterInventoryQuestTag", ItemPouch::Quest)})
+                const std::array<std::optional<ItemPouch>, 4> pouchSlots = pParty != nullptr
+                    ? GameplayHudOverlaySupport::pouchButtons(*pParty)
+                    : std::array<std::optional<ItemPouch>, 4>{};
+
+                for (size_t slot = 0; slot < pouchSlots.size(); ++slot)
                 {
-                    GameplayCharacterPointerTarget pouchTarget = pParty != nullptr && pParty->hasPouch(pouch)
+                    const std::string pouchId = "CharacterInventoryPouch" + std::to_string(slot + 1);
+                    GameplayCharacterPointerTarget pouchTarget = pouchSlots[slot]
                         ? resolveCharacterButtonTarget(
-                              pPouchId, GameplayCharacterPointerTargetType::InventoryPouchButton)
+                              pouchId.c_str(), GameplayCharacterPointerTargetType::InventoryPouchButton)
                         : GameplayCharacterPointerTarget{};
 
                     if (pouchTarget.type != GameplayCharacterPointerTargetType::None)
                     {
-                        pouchTarget.bagButton = uint8_t(pouch);
+                        pouchTarget.bagButton = uint8_t(*pouchSlots[slot]);
                         return pouchTarget;
                     }
                 }
@@ -3842,7 +3847,8 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                     context.setStatusBarEvent(
                         *shownPouch == ItemPouch::Crafting  ? Engine::tr("Crafting materials sorted")
                         : *shownPouch == ItemPouch::Alchemy ? Engine::tr("Potions and reagents sorted")
-                                                            : Engine::tr("Quest items sorted"));
+                        : *shownPouch == ItemPouch::Quest   ? Engine::tr("Quest items sorted")
+                                                            : Engine::tr("New loot sorted"));
                     return;
                 }
 

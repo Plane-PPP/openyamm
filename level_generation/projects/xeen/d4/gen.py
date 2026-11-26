@@ -112,6 +112,9 @@ def hcall(name):
 
 
 # A2's rows (data_tables/monster_data.txt)
+# things.overhang (2026-11-24): the well stood at (88.6, 97.4) on the brow's slope (the land fell 43 under its foot);
+# now on the level ground west of Well Fork, off its three roads
+WARDING_WELL = (84.75, 95.5)
 ROW = {'witch': 11170, 'coven_witch': 11171, 'coven_mother': 11172, 'octopod': 11470, 'great_octopod': 11471,
        'treant': 453, 'peasant_m': 361, 'peasant_f': 377, 'mage': 611}
 SLOT = {'gargoyles': 'Xeen Mountain Gargoyle', 'rocs': 'Xeen Roc', 'coven': 'Xeen Coven'}
@@ -553,7 +556,10 @@ SQUARE_ARRIVAL = (73.0, 89.5)     # lakeside_square: the mirror's and Town Porta
 DOCK_ARRIVAL = (73.0, 82.0)       # lakeside_dock: the jetty's foot, facing south (the town)
 JETTY = [[72.0, 82.2], [72.0, 79.2]]
 JETTY_END = (72.0, 79.6)          # the signature view: 17,600 from the keep
-ISLE_JETTY = [[72.6, 73.3], [72.6, 75.8]]
+# D-174 (xeen-fb4-outdoor9): the land end on node line 72 (as installed since D-170, 71.97): from 73.3 common/wild.py
+# (water only where the sketch has water) stopped the end on row 73, shore nodes the studio holds at the lake's
+# 1056, and the deck stood 67 over the land beyond (town_fit bridges.step)
+ISLE_JETTY = [[72.6, 72.0], [72.6, 75.8]]
 ISLE_ARRIVAL = (72.0, 72.0)       # isle_landing: the jetty's head on the Isle, facing north (the tower)
 ISLE_BOAT = (73.4, 73.6)          # A4's poi:isle_boat (cells 73, 74): Tern's sign and the Isle Ferry's door
 ISLE_TOWER = (72.0, 68.0)         # DD-12's ruined round tower, its door south
@@ -806,7 +812,7 @@ def build():
               {'id': 'junction:well_fork', 'at': [86, 95]}, {'id': 'junction:ector_fork', 'at': [36, 81]},
               {'id': 'junction:snow_bridge', 'at': list(JUNCTION)}]
     points.append({'id': 'entrance:d7_fall', 'at': [75, 90], 'facing': 'w'})   # D-58 Q10 (A6 s16)
-    POI_AT = {'poi:obelisk': OBELISK, 'poi:fountain_magic': (29, 49), 'poi:warding_well': (88.6, 97.4),
+    POI_AT = {'poi:obelisk': OBELISK, 'poi:fountain_magic': (29, 49), 'poi:warding_well': WARDING_WELL,
               'poi:fountain_resilience': (100, 38), 'poi:woodpile': WOODPILE, 'poi:cairn': (91.6, 84.0),
               'poi:mirabeth': (95, 76), 'poi:genie_seat': (36, 43.6), 'poi:genie_skerry': (89, 70.1),
               'poi:witches_circle': (50, 90), 'poi:reed_cauldron': (51.4, 68.8), 'poi:beached_boat': BEACHED_BOAT,
@@ -1055,6 +1061,7 @@ def build():
     # beacon fires on the curtain's walk (floor fixtures on the walk), seen from Lakeside at night
     for i, (u, v) in enumerate(((x0 + 1.3, y1), (x0 + 2.9, y1), (x1 - 2.9, y1), (x1 - 1.3, y1), (x0, y0 + 2.2),
                                 (x1, y0 + 2.2))):
+        # on the walk between the battlements on purpose: kept in tools/xeen/town_fit_kept.yml (P3 2026-11-24)
         S(deco('thing:blackfang_beacon_%d' % (i + 1), 'dec60', (u, v), **{'raise': 512}))
     # Lakeside's yard trees (town_feel: a shipped town has a few; behind or beside houses, never before a door)
     for i, (d, at) in enumerate(TOWN_TREES):
@@ -1098,7 +1105,10 @@ def build():
           'notes': "m25.blackfang_gate: never opens (DD-14 is entered by the griffin from D6, m25.flight)."}
     S(gh)
     # ---------------------------------------------------------------- the north and the uplands
-    S({'id': 'thing:snow_bridge', 'kind': 'bridge', 'line': SNOW_BRIDGE, 'width': 320, 'rise': 32, 'kerb': 48,
+    # D-170 (2026-11-25): the river falls 64 a cell under the bridge (its water nodes at x 59 stand 1280 and 1216, and the
+    # studio levels no terrace on water), so the deck humps 64 to stand 12 over the water under its north edge; its
+    # ends stand 16 over the flat pads common/wild.py lays at their lowest land (it lay on the water at rise 32)
+    S({'id': 'thing:snow_bridge', 'kind': 'bridge', 'line': SNOW_BRIDGE, 'width': 320, 'rise': 64, 'kerb': 48,
        'textures': {'deck': '7trimda'}, 'title': 'The Snow River bridge'})
     S({'id': 'thing:resilience_fountain', 'kind': 'fountain', 'at': [100.0, 38.0], 'title': 'Fountain of Great Resilience',
        'tiers': [[64, 24]], 'textures': {'wall': 'hkm2bs'},
@@ -1221,7 +1231,7 @@ def build():
     S({'id': 'thing:gibbet_purse', 'kind': 'chest', 'at': [74.3, 104.4], 'title': "A dead thief's purse",
        'chest': {'level': 3, 'random_items': 1}})
     # ---------------------------------------------------------------- the east shore, the falls
-    S({'id': 'thing:warding_well', 'kind': 'well', 'at': [88.6, 97.4], 'title': 'Fountain of Magic Resistance',
+    S({'id': 'thing:warding_well', 'kind': 'well', 'at': list(WARDING_WELL), 'title': 'Fountain of Magic Resistance',
        'frame': {'height': 224, 'roof': 'gable', 'roof_height': 64},
        'condition': {'not': {'player_bit': 11340}},
        'effects': [{'player_bit': 11340}, {'add': {'var': 'MindResistance', 'value': 5}},
@@ -1485,6 +1495,10 @@ def build():
     import wild as WILD
     for _note in WILD.apply(sketch, 'd4'):
         print('wild:', _note)
+    # The classic kits (2026-11-24): Clouds of Xeen's own walls on the map's buildings (classic_kit.yml)
+    import classic_kit as CK
+    for _note in CK.apply(sketch, 'd4'):
+        print(_note)
     import entrance_screens as ES     # F16/D-90 (s32): each dungeon door's trans.txt row in its entrance window
     print('entrance screens:', ES.apply_sketch(sketch, 'xeen_d4'))
     dump(OUT, 'sketch.yml', sketch)

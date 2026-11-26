@@ -8,6 +8,7 @@
 #include "core/MonsterRelations.h"
 #include "core/IndoorLowering.h"
 #include "core/Ops.h"
+#include "core/OutdoorDecorationCollision.h"
 #include "core/OutdoorLowering.h"
 #include "core/OutdoorPlaces.h"
 #include "core/OutdoorThings.h"
@@ -220,6 +221,54 @@ StandingPlace standingPlaceOnModels(const std::vector<Game::OutdoorBModel> &mode
     }
 
     return place;
+}
+
+// A structure that cuts through a body standing at a point (x, y) with its feet at z and `height` tall: the first
+// model with a face over the point between the feet and the head (a roof's underside, a box's lid), empty for none.
+// After standingPlaceOnModels such a face is what kept the body from climbing: it stands inside the structure.
+std::string modelThroughBody(
+    const std::vector<Game::OutdoorBModel> &models, double x, double y, double z, double height)
+{
+    const uint32_t portal = Game::faceAttributeBit(Game::FaceAttribute::IsPortal);
+    const uint32_t invisible = Game::faceAttributeBit(Game::FaceAttribute::Invisible);
+    const uint32_t untouchable = Game::faceAttributeBit(Game::FaceAttribute::Untouchable);
+
+    for (const Game::OutdoorBModel &model : models)
+    {
+        for (const Game::OutdoorBModelFace &face : model.faces)
+        {
+            if (std::abs(face.planeNormalZ) < 3277 || (face.attributes & portal) != 0
+                || (face.attributes & (invisible | untouchable)) == untouchable || face.vertexIndices.size() < 3)
+            {
+                continue;
+            }
+
+            bool inside = false;
+
+            for (size_t index = 0, previous = face.vertexIndices.size() - 1; index < face.vertexIndices.size();
+                 previous = index++)
+            {
+                const Game::OutdoorBModelVertex &a = model.vertices[face.vertexIndices[index]];
+                const Game::OutdoorBModelVertex &b = model.vertices[face.vertexIndices[previous]];
+
+                if ((a.y > y) != (b.y > y) && x < a.x + (b.x - a.x) * (y - a.y) / static_cast<double>(b.y - a.y))
+                {
+                    inside = !inside;
+                }
+            }
+
+            const Game::OutdoorBModelVertex &corner = model.vertices[face.vertexIndices[0]];
+            const double faceZ = corner.z - (static_cast<double>(face.planeNormalX) * (x - corner.x)
+                + static_cast<double>(face.planeNormalY) * (y - corner.y)) / face.planeNormalZ;
+
+            if (inside && faceZ > z + 0.5 && faceZ < z + height)
+            {
+                return model.name;
+            }
+        }
+    }
+
+    return {};
 }
 
 // An arrival placed on a structure's top far over the land (a point sketched in the middle of a cave mouth's mound,
@@ -2354,7 +2403,7 @@ bool buildOutdoorProject(const Project &project, const BuildOptions &options, Bu
 
     for (OutdoorBuildingPlan &building : lowered.buildings)
     {
-        Game::OutdoorBModel model = raiseOutdoorBuilding(building);
+        Game::OutdoorBModel model = raiseOutdoorBuilding(building, &lowered.wallTiles, &lowered);
         words.applyToModel(building.id, model);
         models.push_back(model);
     }
@@ -2462,6 +2511,49 @@ bool buildOutdoorProject(const Project &project, const BuildOptions &options, Bu
         }
     }
 
+    OutdoorPlaces places;
+    std::string decorationTable;
+
+    // The engine's decorations and the world's own (world.yml `decorations`: Xeen's basalt boulders, A5 on X7).
+    if (!options.assetRoot.empty())
+    {
+        readWorldTable(options.assetRoot, lowered.world, "decoration_data.txt", "decorations", decorationTable);
+    }
+
+    if (!placeOutdoorThings(project, lowered, decorationTable, places, result.issues, result.warnings,
+            things.covered))
+    {
+        return false;
+    }
+
+    // Monsters and their spawn points stand on a structure's top where one covers the land, as an arrival does: a
+    // flyer set on the land under Winterkill's square (a paving 16 over it) stood inside the paving and never moved
+    // (P4 feedback F63). The drawn models only: a decoration's collision box is no floor.
+    for (OutdoorActorPlan &actor : things.actors)
+    {
+        actor.z = static_cast<int>(std::lround(standingPlaceOnModels(models, actor.x, actor.y, actor.z).height));
+        const std::string inside = modelThroughBody(models, actor.x, actor.y, actor.z, actor.height);
+
+        if (!inside.empty())
+        {
+            result.warnings.push_back("sketch.yml: an actor of " + actor.monster + " (group "
+                + std::to_string(actor.group) + ") at [" + std::to_string(actor.x) + ", " + std::to_string(actor.y)
+                + "] stands inside " + inside + ", which cuts through its body: it cannot move or be reached. Place it "
+                "outside the structure (P4 feedback F63, a ghost in Winterkill's strange machine)");
+        }
+    }
+
+    for (OutdoorPlacedSpawn &spawn : places.spawns)
+    {
+        spawn.z = static_cast<int>(std::lround(standingPlaceOnModels(models, spawn.x, spawn.y, spawn.z).height));
+    }
+
+    const size_t drawnModelCount = models.size();
+    std::vector<Game::OutdoorBModel> collision = raiseDecorationCollision(options.assetRoot, lowered.world,
+        lowered.mapStem, things.decorations, things.decorationIds, things.decorationHidden, result.warnings,
+        places.decorations);
+    models.insert(models.end(), std::make_move_iterator(collision.begin()), std::make_move_iterator(collision.end()));
+
     const std::string stem = lowered.mapStem;
     result.mapFile = stem + ".odm";
     Game::OutdoorMapData map;
@@ -2494,21 +2586,6 @@ bool buildOutdoorProject(const Project &project, const BuildOptions &options, Bu
     {
         result.issues.push_back({"", "", "the ODM the build wrote does not read back: "
             + (readBack ? errorMessage : std::string("the game's loader refuses it")), "build"});
-        return false;
-    }
-
-    OutdoorPlaces places;
-    std::string decorationTable;
-
-    // The engine's decorations and the world's own (world.yml `decorations`: Xeen's basalt boulders, A5 on X7).
-    if (!options.assetRoot.empty())
-    {
-        readWorldTable(options.assetRoot, lowered.world, "decoration_data.txt", "decorations", decorationTable);
-    }
-
-    if (!placeOutdoorThings(project, lowered, decorationTable, places, result.issues, result.warnings,
-            things.covered))
-    {
         return false;
     }
 
@@ -2583,7 +2660,8 @@ bool buildOutdoorProject(const Project &project, const BuildOptions &options, Bu
     // Every face that carries an event: the game clears the events of all faces and sets these.
     std::vector<DoorFace> doors;
 
-    for (size_t model = 0; model < models.size(); ++model)
+    // Static decoration solids already carry their immutable Invisible bit in the ODM.
+    for (size_t model = 0; model < drawnModelCount; ++model)
     {
         for (size_t face = 0; face < models[model].faces.size(); ++face)
         {

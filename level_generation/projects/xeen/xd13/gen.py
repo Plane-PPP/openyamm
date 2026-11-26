@@ -176,7 +176,8 @@ room('room:great_hall', 'Great hall', HALL, floor=0, ceiling=768, theme='theme:k
                "Rubble: fallen roof stone in the north-east corner (gone at stage 2)."),
          block('platform:rubble_se', [928, 1184], [320, 384], 40, RUIN, RUIN,
                "Rubble against the east wall south of the court's arch (gone at stage 2)."),
-         block('platform:woodpile', [-896, 2880], [384, 256], 72, BOARDS, BOARDS,
+         # face.in_doorway (2026-11-24): at y 2880 it ran across the pantry door (y 2736-2896); now south of it.
+         block('platform:woodpile', [-896, 2240], [384, 256], 72, BOARDS, BOARDS,
                "The woodpile: the old roof's beams, sawn and stacked against the west wall (gone at stage 2)."),
      ],
      walls=[{'wall': 'north', 'panels': [
@@ -514,7 +515,8 @@ def mon(id, rm, kind, at, facing, group, **kw):
     monsters.append(d)
 
 
-for n, at in enumerate([[-640, 2304], [-320, 2560], [320, 2560], [640, 2176], [-384, 1408], [384, 1600]], 1):
+# D-130 (2026-11-24): 1-3 and 6 out of sight of the gate's landing (0, 320) (hide.py's spots; 1 north of the woodpile).
+for n, at in enumerate([[-960, 2560], [-768, 2560], [704, 2432], [640, 2176], [-384, 1408], [448, 1600]], 1):
     mon(f'monster:hall_golem_{n}', 'room:great_hall', WOOD, at, 270, G_RUIN,
         notes="Stage 0-1: a wood golem grown out of the fallen roof timbers.")
 for n, at in enumerate([[1664, 1216], [1664, 2240], [2688, 2240], [2688, 1600]], 1):
@@ -851,8 +853,13 @@ light_by['light:hall_day']['height'] = 64      # over the roof patch's top (768)
 # The breach in the north wall's east end: the corner fell outward; rubble heaped outside it under the open sky.
 BREACH = (608, 3200, 1120, 3456)
 RECTS['room:breach'] = BREACH
-room('room:breach', 'The breach', BREACH, floor=0, ceiling=768, theme='theme:open_sky', ambient=18, steep_floor=True,
-     space='room:great_hall',
+# F58/F60 (the player's pin XD-13 p1, 2026-11-25, "z-fighting": a flat white face beside a pillar): the breach's walls
+# were sky from the floor up, and from the heap (a jump from the rubble) the sky below the eye drew as the preset's
+# flat fog. The fallen corner's own walls now stand in ruin stone to 352 over the heap's top (BREACH_WALL), the sky
+# only above them and overhead (tools/xeen/check_parapet_gaps.py `sky.low`).
+BREACH_WALL = 832   # 80 over the stage-2 plug's top (752) too
+room('room:breach', 'The breach', BREACH, floor=0, ceiling=1024, theme='theme:open_sky', ambient=18, steep_floor=True,
+     space='room:great_hall', bands=[{'height': BREACH_WALL, 'surface': RUIN}],
      platforms=[block('platform:breach_ledge', [864, 3248], [512, 96], 224, RUIN, RUIN,
                       "The fallen stone level with the breach's sill."),
                 block('platform:breach_heap', [864, 3376], [512, 160], 224, dict(RUIN, uneven=True), dict(RUIN, uneven=True),

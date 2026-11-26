@@ -2185,6 +2185,52 @@ private:
                 roof.halfHip = 0.0;
             }
         }
+
+        // `verge` (2026-11-24, the Xeen Clouds towns' classic kit): a box's gable runs its slopes on past each gable
+        // end, so the roof shows its edge over the gable, with a barge board under that edge.
+        const YAML::Node verge = fieldOf(node, m_plot, "verge");
+        const YAML::Node barge = fieldOf(node, m_plot, "barge");
+        const YAML::Node vergeWalls = fieldOf(node, m_plot, "verge_walls");
+
+        if (verge.IsDefined() || barge.IsDefined() || vergeWalls.IsDefined())
+        {
+            const bool readable = numberOfNode(verge, roof.verge);
+            roof.barge = roof.fascia > 0.0 ? roof.fascia : 24.0;
+            const bool bargeReadable = !barge.IsDefined() || numberOfNode(barge, roof.barge);
+            // `verge_walls`: the gable ends that take it, by their walls (s, e, n, w).
+            bool wallsReadable = true;
+
+            if (vergeWalls.IsDefined())
+            {
+                roof.vergeWalls = {false, false, false, false};
+                wallsReadable = vergeWalls.IsSequence() && vergeWalls.size() > 0;
+
+                for (size_t index = 0; wallsReadable && index < vergeWalls.size(); ++index)
+                {
+                    const size_t wall = vergeWalls[index].IsScalar() && vergeWalls[index].Scalar().size() == 1
+                        ? std::string("senw").find(vergeWalls[index].Scalar()[0]) : std::string::npos;
+                    wallsReadable = wall != std::string::npos;
+
+                    if (wallsReadable)
+                    {
+                        roof.vergeWalls[wall] = true;
+                    }
+                }
+            }
+
+            if (!readable || !bargeReadable || !wallsReadable || !box || roof.form != "gable" || roof.halfHip > 0.0
+                || part.concave || roof.verge < 1.0 || roof.verge > 256.0 || roof.barge < 0.0 || roof.barge > 128.0
+                || childOf(node, "eaves_walls").IsDefined())
+            {
+                add(at + ".verge", "verge runs a box's gable roof on past each gable end, 1 to 256 map units, with a "
+                    "barge board `barge` high under the roof's edge there (0 to 128; left out: the fascia, else 24), "
+                    "at the ends `verge_walls` names (s, e, n, w; left out: both); not with `half_hip` or "
+                    "`eaves_walls`");
+                roof.verge = 0.0;
+                roof.barge = 0.0;
+                roof.vergeWalls = {true, true, true, true};
+            }
+        }
     }
 
     // A text field of the part, else of the plot.
@@ -3861,8 +3907,10 @@ private:
 class PartRaiser
 {
 public:
-    PartRaiser(OutdoorModelBuilder &builder, OutdoorBuildingPlan &building, size_t partIndex)
+    PartRaiser(OutdoorModelBuilder &builder, OutdoorBuildingPlan &building, size_t partIndex,
+        const LoweredOutdoorMap *pLand)
         : m_builder(builder)
+        , m_pLand(pLand)
         , m_building(building)
         , m_partIndex(partIndex)
         , m_part(building.parts[partIndex])
@@ -4433,7 +4481,7 @@ private:
     std::vector<RuinPiece> ruinPieces(size_t wall, std::vector<double> &cuts) const
     {
         const OutdoorRuinPlan &ruin = m_part.ruin;
-        // The lowest row's bays: their heights (0: gone).
+        // The lowest row's bays: their heights (0, or one course over a foundation: gone).
         const std::vector<double> lowEdges = bayEdgesOf(m_part, wall, false);
         std::vector<double> standing(lowEdges.size() - 1, 0.0);
         const auto doorAt = [&](int row, size_t bay)
@@ -4451,13 +4499,27 @@ private:
             return -1;
         };
 
+        // A gone bay over a foundation keeps one stone course: a cap at the floor itself would lie on the levelled
+        // land and flicker (P4 feedback F58, the ruins' footings).
+        constexpr double RuinCourse = 8.0;
+        const double goneHeight = m_building.foundation > 0.0 && m_part.bottom == 0.0 ? RuinCourse : 0.0;
+
         for (size_t bay = 0; bay < standing.size(); ++bay)
         {
             const bool door = doorAt(0, bay) >= 0;
             const double height = ruin.low + (ruin.high - ruin.low) * chance(static_cast<uint32_t>(wall),
                 static_cast<uint32_t>(bay), 1);
             standing[bay] = door ? std::max(height, std::min(m_part.wallHeight, RowHeight))
-                : chance(static_cast<uint32_t>(wall), static_cast<uint32_t>(bay), 2) < ruin.gaps ? 0.0 : height;
+                : chance(static_cast<uint32_t>(wall), static_cast<uint32_t>(bay), 2) < ruin.gaps ? goneHeight : height;
+
+            // D-170: the course's cap stands 4 over the land under it where the land beyond the levelled plot
+            // rises to it (D3's roadside ruin), never lower than the course.
+            if (goneHeight > 0.0 && standing[bay] == goneHeight && ruin.thickness > 0.0)
+            {
+                standing[bay] = std::max(goneHeight, clearOfLand({onWall(wall, lowEdges[bay]),
+                    onWall(wall, lowEdges[bay + 1]), onWall(wall, lowEdges[bay + 1], ruin.thickness),
+                    onWall(wall, lowEdges[bay], ruin.thickness)}, m_floor + goneHeight) - m_floor);
+            }
         }
 
         // How high the wall stands over a stretch: the least of the lowest row's bays it covers.
@@ -5582,6 +5644,13 @@ private:
         return m_part.textures.contains(role) ? m_part.textures.at(role) : texture(fallback);
     }
 
+    // D-170: the height a level top over `outline` stands at so that it does not lie on the land (outdoorClearOfLand,
+    // never sunk: a porch's slab is walked on, a ruin's course is its footing).
+    double clearOfLand(const std::vector<Point2> &outline, double top) const
+    {
+        return m_pLand == nullptr ? top : outdoorClearOfLand(*m_pLand, outline, top);
+    }
+
     // The foot of what stands on the ground: down into it by the foundation, as the walls' base course.
     double groundFoot() const
     {
@@ -5914,8 +5983,10 @@ private:
                     at(frontTo, front + thick)}, trim, m_nameEvent);
             }
 
-            // The slab's top: over the part's foot, or over the land under the building's plinth.
-            const double slab = (porch.floorFromLand ? m_floor - m_building.plinth : m_floor) + porch.floor;
+            // The slab's top: over the part's foot, or over the land under the building's plinth; and 4 over the
+            // land under it where that rises to it beyond the plot (D-170: X3's temple, D3's Guild of Light).
+            const double slab = clearOfLand({wallFrom, frontFrom, frontTo, wallTo},
+                (porch.floorFromLand ? m_floor - m_building.plinth : m_floor) + porch.floor);
 
             if (porch.floor > 0.0)
             {
@@ -6829,6 +6900,11 @@ private:
         const bool alongFirst = roof.along == 'x' || (roof.along != 'y' && first >= second);
         // A vault (S8d) has a gable's eaves, fascia and end walls.
         const bool gabled = roof.form == "gable" || roof.form == "vault";
+        // How far a gable runs on past its end on the box's wall `wall` (`verge`, `verge_walls`).
+        const auto vergeAt = [&roof](size_t wall)
+        {
+            return roof.form == "gable" && roof.vergeWalls[wall % 4] ? roof.verge : 0.0;
+        };
         // The roof's foot: the walls' outline moved out by the eaves; a gable roof only at its eaves sides.
         std::vector<Point2> outer = roof.eavesWalls.empty() ? grown(m_topOutline, roof.eaves)
             : eavesOutline(box && gabled ? (alongFirst ? 1 : 0) : -1);
@@ -6860,8 +6936,19 @@ private:
                 // Only along the eaves: the gable ends take the band into their own face.
                 for (const size_t wall : alongFirst ? std::array<size_t, 2>{0, 2} : std::array<size_t, 2>{1, 3})
                 {
-                    const Point2 &from = outer[wall];
-                    const Point2 &to = outer[(wall + 1) % 4];
+                    // With a verge the band runs on with the slopes past the gable ends, to the barge boards. The
+                    // ridge's first corner (the near end, its wall before it) starts the first eaves wall.
+                    const Point2 &start = outer[wall];
+                    const Point2 &end = outer[(wall + 1) % 4];
+                    const double wallLength = std::max(lengthOf(start, end), 1.0e-9);
+                    const size_t first = alongFirst ? 0 : 1;
+                    const double vergeNear = vergeAt((first + 3) % 4);
+                    const double vergeFar = vergeAt((first + 1) % 4);
+                    const double fromBy = wall == first ? vergeNear : vergeFar;
+                    const double toBy = wall == first ? vergeFar : vergeNear;
+                    const Point2 way = {(end[0] - start[0]) / wallLength, (end[1] - start[1]) / wallLength};
+                    const Point2 from = {start[0] - way[0] * fromBy, start[1] - way[1] * fromBy};
+                    const Point2 to = {end[0] + way[0] * toBy, end[1] + way[1] * toBy};
                     const double length = lengthOf(from, to);
                     texelFace({at(from, m_top), at(to, m_top), at(to, m_foot), at(from, m_foot)}, trim,
                         {{0.0, roof.fascia}, {length, roof.fascia}, {length, 0.0}, {0.0, 0.0}}, event);
@@ -6984,6 +7071,21 @@ private:
         const Point2 ridgeFrom = onRidge(run);
         const Point2 ridgeTo = onRidge(ridgeLength - run);
         const bool point = ridgeLength - 2.0 * run < 1.0;
+        // A gable's verge: the slopes run on along the ridge past each gable end that takes it (the gable faces stay
+        // in the walls' planes, up to the ridge there). The near end (a, d) is on the wall before `start`.
+        const double vergeNear = vergeAt(start + 3);
+        const double vergeFar = vergeAt(start + 1);
+        const Point2 ridgeWay = {(b[0] - a[0]) / ridgeLength, (b[1] - a[1]) / ridgeLength};
+        const auto onward = [&ridgeWay](const Point2 &place, double by)
+        {
+            return Point2{place[0] + ridgeWay[0] * by, place[1] + ridgeWay[1] * by};
+        };
+        const Point2 slopeA = onward(a, -vergeNear);
+        const Point2 slopeB = onward(b, vergeFar);
+        const Point2 slopeC = onward(c, vergeFar);
+        const Point2 slopeD = onward(d, -vergeNear);
+        const Point2 slopeFrom = onward(ridgeFrom, -vergeNear);
+        const Point2 slopeTo = onward(ridgeTo, vergeFar);
 
         if (point)
         {
@@ -6992,9 +7094,9 @@ private:
         }
         else
         {
-            surface({at(a, m_foot), at(b, m_foot), at(ridgeTo, tip), at(ridgeFrom, tip)}, roofTexture,
+            surface({at(slopeA, m_foot), at(slopeB, m_foot), at(slopeTo, tip), at(slopeFrom, tip)}, roofTexture,
                 event);
-            surface({at(c, m_foot), at(d, m_foot), at(ridgeFrom, tip), at(ridgeTo, tip)}, roofTexture,
+            surface({at(slopeC, m_foot), at(slopeD, m_foot), at(slopeFrom, tip), at(slopeTo, tip)}, roofTexture,
                 event);
         }
 
@@ -7042,6 +7144,50 @@ private:
 
                 texelFace(points, gable, texels, event);
             }
+
+            // The barge boards: at each end, under the roof's edge from each eaves corner up to the ridge, in the
+            // end's plane out at the verge, wound to face out from the gable.
+            if (roof.barge > 0.0)
+            {
+                const double slopeLength = std::hypot(span * 0.5, roof.rise);
+
+                for (const bool far : {false, true})
+                {
+                    if ((far ? vergeFar : vergeNear) <= 0.0)
+                    {
+                        continue;
+                    }
+
+                    const Point2 &apex = far ? slopeTo : slopeFrom;
+                    const Point2 out = far ? ridgeWay : Point2{-ridgeWay[0], -ridgeWay[1]};
+
+                    for (const Point2 &corner : far ? std::array<Point2, 2>{slopeB, slopeC}
+                                                    : std::array<Point2, 2>{slopeA, slopeD})
+                    {
+                        std::vector<OutdoorModelPoint> points = {at(corner, m_foot), at(apex, tip),
+                            at(apex, tip - roof.barge), at(corner, m_foot - roof.barge)};
+                        std::vector<std::array<double, 2>> texels = {{0.0, 0.0}, {slopeLength, 0.0},
+                            {slopeLength, roof.barge}, {0.0, roof.barge}};
+                        // Counter-clockwise seen from outside: the normal of (1 - 0) x (2 - 0) points out.
+                        const double ax = points[1][0] - points[0][0];
+                        const double ay = points[1][1] - points[0][1];
+                        const double az = points[1][2] - points[0][2];
+                        const double bx = points[2][0] - points[0][0];
+                        const double by = points[2][1] - points[0][1];
+                        const double bz = points[2][2] - points[0][2];
+                        const double normalX = ay * bz - az * by;
+                        const double normalY = az * bx - ax * bz;
+
+                        if (normalX * out[0] + normalY * out[1] < 0.0)
+                        {
+                            std::reverse(points.begin(), points.end());
+                            std::reverse(texels.begin(), texels.end());
+                        }
+
+                        texelFace(points, trim, texels, event);
+                    }
+                }
+            }
         }
 
         if (roof.ridge > 0.0 && !point)
@@ -7059,11 +7205,13 @@ private:
             const double high = tip + half;
             // On a gable the beam's ends stand out past the gable walls by half its width: ended in their planes,
             // they would flicker with the walls' tips.
-            const double past = roof.form == "gable" ? half : 0.0;
-            const Point2 beamFrom = {ridgeFrom[0] - (b[0] - a[0]) / ridgeLength * past,
-                ridgeFrom[1] - (b[1] - a[1]) / ridgeLength * past};
-            const Point2 beamTo = {ridgeTo[0] + (b[0] - a[0]) / ridgeLength * past,
-                ridgeTo[1] + (b[1] - a[1]) / ridgeLength * past};
+            // With a verge they run on to its ends.
+            const double pastFrom = roof.form == "gable" ? half + vergeNear : 0.0;
+            const double pastTo = roof.form == "gable" ? half + vergeFar : 0.0;
+            const Point2 beamFrom = {ridgeFrom[0] - (b[0] - a[0]) / ridgeLength * pastFrom,
+                ridgeFrom[1] - (b[1] - a[1]) / ridgeLength * pastFrom};
+            const Point2 beamTo = {ridgeTo[0] + (b[0] - a[0]) / ridgeLength * pastTo,
+                ridgeTo[1] + (b[1] - a[1]) / ridgeLength * pastTo};
             const double length = lengthOf(beamFrom, beamTo);
             surface({beam(beamFrom, -1.0, high), beam(beamTo, -1.0, high), beam(beamTo, 1.0, high),
                 beam(beamFrom, 1.0, high)}, ridgeTexture, event);
@@ -8203,6 +8351,7 @@ private:
     }
 
     OutdoorModelBuilder &m_builder;
+    const LoweredOutdoorMap *m_pLand;
     OutdoorBuildingPlan &m_building;
     const size_t m_partIndex;
     const OutdoorPartPlan &m_part;
@@ -8361,19 +8510,20 @@ std::vector<double> outdoorBayEdges(const OutdoorPartPlan &part, size_t wall, bo
     return edges;
 }
 
-Game::OutdoorBModel raiseOutdoorBuilding(OutdoorBuildingPlan &plan)
+Game::OutdoorBModel raiseOutdoorBuilding(OutdoorBuildingPlan &plan, const OutdoorWallTiles *pWallTiles,
+    const LoweredOutdoorMap *pLand)
 {
     Game::OutdoorBModel model;
     model.name = plan.id;
     model.secondaryName = plan.id;
-    OutdoorModelBuilder builder(model);
+    OutdoorModelBuilder builder(model, pWallTiles);
 
     plan.faceParts.clear();
 
     for (size_t part = 0; part < plan.parts.size(); ++part)
     {
         const size_t from = model.faces.size();
-        PartRaiser(builder, plan, part).raise();
+        PartRaiser(builder, plan, part, pLand).raise();
 
         for (size_t face = from; face < model.faces.size(); ++face)
         {

@@ -1,0 +1,202 @@
+format: 1
+counter: 17
+pins:
+  - id: pin:p1
+    text: z-fighting
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [12409.147, 20531.391, 1153]
+      yaw_radians: 2.791
+      pitch_degrees: -1.277
+      heading_yaw_units: 910
+    picture: .oymap/pins/pictures/p1.png
+    author: user
+    created: 2026-11-23T18:19:25
+    status: open
+    from: 20261123-181925-xeen_x2.yml
+  - id: pin:p2
+    text: this does not look good
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [4714.166, 3689.637, 878]
+      yaw_radians: 0.015
+      pitch_degrees: -14.148
+      heading_yaw_units: 5
+    picture: .oymap/pins/pictures/p2.png
+    author: user
+    created: 2026-11-23T18:23:36
+    status: open
+    from: 20261123-182336-xeen_x2.yml
+  - id: pin:p3
+    text: not working
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [5094.62, 1754.046, 1025]
+      yaw_radians: 2.015
+      pitch_degrees: -8.424
+      heading_yaw_units: 657
+    picture: .oymap/pins/pictures/p3.png
+    author: user
+    created: 2026-11-23T18:24:29
+    status: open
+    from: 20261123-182429-xeen_x2.yml
+  - id: pin:p4
+    text: maybe fill the gap
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [110.709, 2791.526, 1025]
+      yaw_radians: 1.626
+      pitch_degrees: -26.292
+      heading_yaw_units: 530
+    picture: .oymap/pins/pictures/p4.png
+    author: user
+    created: 2026-11-23T18:25:52
+    status: open
+    from: 20261123-182552-xeen_x2.yml
+  - id: pin:p5
+    text: does not look good
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [-5677.464, 3619.637, 647.297]
+      yaw_radians: 0.104
+      pitch_degrees: -9.352
+      heading_yaw_units: 34
+    picture: .oymap/pins/pictures/p5.png
+    author: user
+    created: 2026-11-23T18:27:51
+    status: open
+    from: 20261123-182751-xeen_x2.yml
+  - id: pin:p6
+    text: looks not good
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [1874.973, 8281.989, 1030.624]
+      yaw_radians: 1.845
+      pitch_degrees: -19.392
+      heading_yaw_units: 601
+    picture: .oymap/pins/pictures/p6.png
+    author: user
+    created: 2026-11-23T18:31:19
+    status: open
+    from: 20261123-183119-xeen_x2.yml
+  - id: pin:p7
+    text: Sprites are giving no loot. Even the bosses.
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [-7744.557, -310.927, 957.428]
+      yaw_radians: 3.425
+      pitch_degrees: 4.632
+      heading_yaw_units: 1117
+    picture: .oymap/pins/pictures/p7.png
+    author: user
+    created: 2026-11-23T19:16:07
+    status: open
+    from: 20261123-191607-xeen_x2.yml
+  - id: pin:p8
+    text: Sprites are annoying.
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [-8688.33, -2868.204, 1044.263]
+      yaw_radians: 4.896
+      pitch_degrees: -3.412
+      heading_yaw_units: 1596
+    picture: .oymap/pins/pictures/p8.png
+    author: user
+    created: 2026-11-23T19:17:04
+    status: open
+    from: 20261123-191704-xeen_x2.yml
+  - id: pin:p9
+    text: missing texture
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [-15976.667, -6928.435, 872.25]
+      yaw_radians: 0.656
+      pitch_degrees: -40.106
+      heading_yaw_units: 214
+    picture: .oymap/pins/pictures/p9.png
+    author: user
+    created: 2026-11-23T19:30:06
+    status: open
+    from: 20261123-193006-xeen_x2.yml
+  - id: pin:p10
+    text: clean it up a bit
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [-8390.513, 2295.5, 733.744]
+      yaw_radians: 4.343
+      pitch_degrees: -19.686
+      heading_yaw_units: 1416
+    picture: .oymap/pins/pictures/p10.png
+    author: user
+    created: 2026-11-23T19:31:06
+    status: open
+    from: 20261123-193106-xeen_x2.yml
+  - id: pin:p11
+    text: z-fighting
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [18723.938, 14646.287, 1089]
+      yaw_radians: 4.313
+      pitch_degrees: -57.696
+      heading_yaw_units: 1406
+    picture: .oymap/pins/pictures/p11.png
+    author: user
+    created: 2026-11-24T15:18:38
+    status: resolved
+    claimed_by: agent:xeen-fb4-outdoor
+    from: 20261124-151838-xeen_x2.yml
+    replies:
+      - author: agent:xeen-fb4-outdoor
+        text: "F58: a ruin's gone wall now keeps a stone course 8 over its floor instead of a cap lying on the land (studio ruinPieces); check_faces faces.on_land guards it. Installed 2026-11-25."
+        created: 2026-11-25T09:40:35
+        revision: 3eb55f5dbb43a242f8f7da6b5bdceb50
+        status: resolved
+  - id: pin:p12
+    text: make the pier a little deeper
+    source: game
+    world: xeen
+    map: xeen_x2.odm
+    pose:
+      position: [8831.335, 4699.141, 577]
+      yaw_radians: 2.887
+      pitch_degrees: -14.685
+      heading_yaw_units: 941
+    picture: .oymap/pins/pictures/p12.png
+    author: user
+    created: 2026-11-24T20:50:25
+    status: resolved
+    claimed_by: agent:xeen-fb4-outdoor
+    from: 20261124-205025-xeen_x2.yml
+    replies:
+      - author: agent:xeen-fb4-outdoor
+        text: "Nystor's pier reaches a quarter cell further into the river; a deeper head waits on the bridge-end rule (NEXT)."
+        created: 2026-11-25T09:40:39
+        revision: 3eb55f5dbb43a242f8f7da6b5bdceb50
+        status: resolved
+      - author: agent:xeen-fb4-outdoor2
+        text: "Deeper: the pier's head now reaches y 52.0, over the river's water (was 52.45); common/wild.py head: last keeps it a head, town_fit_check bridges.step skips an end over the sketch's water. X2 installed 09:52 with its bake."
+        created: 2026-11-25T09:56:22
+        revision: 46351885f88bf1643addb64bb7374637
+        pictures: [.oymap/pins/pictures/p12-r2.png]

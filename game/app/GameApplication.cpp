@@ -11681,10 +11681,13 @@ void GameApplication::applyCurrentSettingsToActiveRuntime()
 
     // After a load and on entering a map too: a save from another setting gets the pouches of this one.
     m_gameSession.setPartyPouches(m_settings.partyPouches && m_gameSession.roguelikeRules() == nullptr);
+    m_gameSession.setLootPouch(m_settings.lootPouch && m_gameSession.roguelikeRules() == nullptr);
 
     if (m_pMapSceneRuntime != nullptr)
     {
         m_pMapSceneRuntime->party().setMm9LootInOlderWorlds(m_settings.mm9LootInOlderWorlds);
+        m_pMapSceneRuntime->party().setLootPouch(
+            m_settings.lootPouch && m_gameSession.roguelikeRules() == nullptr);
         m_pMapSceneRuntime->party().setDebugDamageImmune(m_settings.immortal);
         m_pMapSceneRuntime->party().setDebugUnlimitedMana(m_settings.unlimitedMana);
         m_pMapSceneRuntime->party().setFormationTargetingActive(formationsActive());
@@ -12988,6 +12991,7 @@ void GameApplication::bindPartyDependencies(Party &party)
     party.setSoloRun(m_gameSession.ruleset().options.soloRun);
     party.setMm9LootInOlderWorlds(m_settings.mm9LootInOlderWorlds);
     party.setPartyPouches(m_settings.partyPouches && m_gameSession.roguelikeRules() == nullptr);
+    party.setLootPouch(m_settings.lootPouch && m_gameSession.roguelikeRules() == nullptr);
     party.setItemTable(&data.itemTable());
     party.setJournalQuestTable(&data.journalQuestTable());
     party.setCharacterDollTable(&data.characterDollTable());

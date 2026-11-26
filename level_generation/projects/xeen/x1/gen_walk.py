@@ -237,7 +237,8 @@ add({'play_lua': {'source': 'close(); click(%d); wait(0.5); if held() ~= %d then
 # D-95: the grate is at the foot of a ditch cut into the bank (its end face at row 55, x 61.5): down the ramp from the
 # lane north of the warehouse, the arch to the north
 walk(*W(59.2, 57.6), timeout=60)
-walk(*W(59.3, 56.2), timeout=60)       # west of the warehouse's door marks (7dec21 blocks the corner)
+# Joe's shop (58.5-60, 55.6-56.9 since P3 F49) stands west of the lane: up between it and 7dec21 (60.6, 57.15)
+walk(*W(60.25, 56.3), timeout=60)
 walk(*W(61.5, 56.2), timeout=60)
 gx, gy = W(61.5, 55.3)
 walk(gx, gy, 'The culvert grate at the foot of its ditch: barred from inside')
@@ -246,7 +247,7 @@ add({'press_interact': {'expect': {'kind': 'event_target'}}})
 add({'advance_runtime': {'seconds': 0.5}})
 add({'assert': {'map': M}})
 walk(*W(61.5, 56.2), timeout=60)
-walk(*W(59.3, 56.2), timeout=60)
+walk(*W(60.25, 56.3), timeout=60)
 walk(*W(59.2, 57.6), timeout=60)
 # XD-01: the warehouse door (turned 90: it looks west; the party stands west of it, looking east)
 enter((61.08, 58.3), 'xeen_xd01.blv', "XD-01 Joe's Warehouse: in by its loading doors", stand=W(60.45, 58.3), yaw=0.0, thing='thing:warehouse_door')
@@ -379,15 +380,14 @@ walk(*W(41.5, 44), timeout=90)
 walk(*W(38.5, 44), timeout=90)
 walk(*W(38.5, 46), timeout=90)
 walk(*W(21, 46), timeout=120)
-steps.append({'note': "The Water Reflector (M37, A3's hook): the prompt, Yes, and before M36 the hook's fail text"})
+steps.append({'note': "The Water Reflector (M37, A3's hook): a click (D-144), before M36 the hook's fail text on the "
+                      "status line"})
 add({'play_lua': {'source': 'click(%d); wait(0.5)' % ev['evt:thing:water_reflector']}})
-add({'advance_runtime': {'seconds': 0.3, 'present_dialogs': True}})   # one prompt with Yes/No buttons (D-65 B1, D-66)
-add({'assert': {'dialog': {'active': True, 'text_contains': 'below the rim. Reflector. Activate?'}}})
-add({'answer_input': {'text': 'Yes'}})
-add({'advance_runtime': {'seconds': 0.5}})
-add({'assert': {'dialog': {'active': True}}})
-add({'press_action': {'action': 'cancel_dialog'}})
-add({'play_lua': {'source': 'if qbit(111743) then error("the reflector set its bit before M36") end'}})
+add({'advance_runtime': {'seconds': 0.3, 'present_dialogs': True}})
+add({'assert': {'dialog': {'active': False}}})
+add({'play_lua': {'source': 'local s = tostring(status())\n'
+                            'if not string.find(s, "cold and silent", 1, true) then error("status line: " .. s) end\n'
+                            'if qbit(111743) then error("the reflector set its bit before M36") end'}})
 add({'advance_runtime': {'seconds': 0.3}})
 if installed('xeen_x2.odm'):
   add({'walk_to': {'x': W(18, 46)[0], 'y': W(18, 46)[1], 'z': ground(*W(18, 46)), 'z_tolerance': 600, 'radius': 128,

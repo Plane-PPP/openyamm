@@ -463,7 +463,7 @@ chest('chest:smelter', 'room:smelter', [2944, 2048], kind='7gt002', treasure_lev
 spawn('spawn:smelter', 'room:smelter', [2112, 2880], 1, 'b')
 
 # D-7 (2026-11-20): the third heap from (-2880, 2240), 86 from the line window -> south door, into the south-west corner
-for i, (x, y) in enumerate([(-2880, 2880), (-2240, 2944), (-3000, 1990), (-2048, 2816)]):
+for i, (x, y) in enumerate([(-2880, 2880), (-2240, 2944), (-2913, 1990), (-2048, 2816)]):
     deco(f'deco:scrap_{i}', 'room:scrap_hall', ['trasheap', '7dec01', '7dec10', 'trasheap'][i], [x, y])
 torch('deco:torch_scrap', 'room:scrap_hall', 'e', 0.5)
 spawn('spawn:scrap', 'room:scrap_hall', [-2304, 2560], 1, 'b')
@@ -553,7 +553,9 @@ spawn('spawn:reading_e', 'room:reading_room', [1536, 2240], 2, 'b')
 spawn('spawn:great_library', 'room:great_library', [-512, -2496], 2, 'b')
 spawn('spawn:library_s', 'room:library_s', [0, -1408], 2, 'b')
 spawn('spawn:library_n', 'room:library_n', [384, 1408], 3, 'b')
-spawn('spawn:library_stair', 'room:library_stair', [-2496, 0], 3, 'b')
+# D-132 (xeen-fb4-dungeon6, 2026-11-25): at (-2496, 0) its shooters saw the party over the flight's edge with a thin
+# shot (check_ledge_shots.py); 512 south of it the flight hides them.
+spawn('spawn:library_stair', 'room:library_stair', [-2496, -512], 3, 'b')
 
 STUDY = {'room:study_ne': ('personality', 'BasePersonality', 'Personality', [2880, 2880]),
          'room:study_nw': ('intellect', 'BaseIntellect', 'Intellect', [-2880, 2880]),

@@ -146,6 +146,27 @@ heights:
       height: 1728
       slope: 0
       notes: "The wizard quarter (D-28): a walled terrace 224 over the city, its retaining wall below."
+    - polygon: [[73.85, 44.875], [72.1, 44.875], [72.1, 47.125], [73.85, 47.125]]
+      height: 1024
+      slope: 2
+      notes: "D-170: the land at Wrath Bridge's end, its lowest across it (common/wild.py bridge_ends)"
+    - polygon: [[77.5, 47.125], [79.25, 47.125], [79.25, 44.875], [77.5, 44.875]]
+      height: 992
+      slope: 2
+      notes: "D-170: the land at Wrath Bridge's end, its lowest across it (common/wild.py bridge_ends)"
+    - polygon: [[73.98, 44.98], [74.02, 44.98], [74.02, 45.02], [73.98, 45.02]]
+      height: 1024
+      notes: "D-170: the land under Wrath Bridge's deck (common/wild.py bridge_ends)"
+    - polygon: [[73.98, 45.98], [74.02, 45.98], [74.02, 46.02], [73.98, 46.02]]
+      height: 1024
+      notes: "D-170: the land under Wrath Bridge's deck (common/wild.py bridge_ends)"
+    - polygon: [[73.98, 46.98], [74.02, 46.98], [74.02, 47.02], [73.98, 47.02]]
+      height: 1024
+      notes: "D-170: the land under Wrath Bridge's deck (common/wild.py bridge_ends)"
+    - polygon: [[91, 41], [94, 41], [94, 44], [91, 44]]
+      height: 1760
+      slope: 1
+      notes: level land under The tower mages' supply cart (common/level_pads.py)
   cuts:
     - polygon: [[80, 21], [79, 26], [78, 32], [77, 38], [80, 38], [81, 32], [82, 26], [83, 21]]
       floor: 960
@@ -286,56 +307,56 @@ districts:
   - space: town:sandcaster
     polygon: [[27, 20], [47, 20], [47, 39], [27, 39]]
     plots:
-      - {building: building:sc_lucio_jetty, at: [27.5, 20.5], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [928, 928], signs: [{wall: s, bay: 0, texture: sgdock, size: [64, 64], bottom: 160, out: 48, hang: true}], wall_height: 448, windows: alternate, roof: flat, parapet: 64}, {id: tier2, at: [112, 64], size: [800, 672], bottom: 448, wall_height: 384, windows: alternate, roof: flat, parapet: 64}, {id: tier3, at: [176, 80], size: [672, 416], bottom: 832, wall_height: 384, windows: alternate, roof: flat, parapet: 64}, {id: tier4, at: [240, 96], size: [544, 208], bottom: 1216, wall_height: 320, windows: none, roof: flat}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4649, title: Lucio's Jetty, kit: plaster, door: {part: body, wall: s}, condition: {qbit: lucio_open}, else_effects: [{lua: "evt.SimpleMessage(\"A jetty that ends in thin air. A sign: \\\"Celestial boats. Chosen Ones only.\\\"\")"}]}
-      - {building: building:sc_guild_mind, at: [30, 21], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [1184, 1120], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: sgmind, size: [64, 64], bottom: 160, out: 48, hang: true}], wall_height: 512, roof: gable, roof_pitch: 36, ridge_along: ew}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4608, title: Sandcaster Guild of Mind, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_guild_spirit, at: [33, 21], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [1184, 1120], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: sgspirit, size: [64, 64], bottom: 160, out: 48, hang: true}], wall_height: 512, roof: gable, roof_pitch: 36, ridge_along: ew}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4609, title: Sandcaster Guild of Spirit, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_guild_light, at: [36, 21], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [1184, 1120], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: sglight, size: [64, 64], bottom: 160, out: 48, hang: true}], wall_height: 512, roof: gable, roof_pitch: 36, ridge_along: ew}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4610, title: Sandcaster Guild of Light, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_magic, at: [33, 25], facing: s, door_to: zone:sc_square, parts: [{id: body, at: [64, 64], size: [896, 896], signs: [{wall: s, bay: 0, texture: xsmagic, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 448, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: hip, roof_pitch: 26}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4603, title: Aladdin's Lamps, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_alchemist, at: [37.5, 25], facing: s, door_to: zone:sc_square, parts: [{id: body, at: [48, 48], size: [672, 912], signs: [{wall: s, bay: 0, texture: xspotions, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 576, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4604, title: Vulture Repellant and Other Remedies, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_temple, at: [27.5, 25.5], facing: e, door_to: zone:sc_west_lane, parts: [{id: body, at: [64, 64], size: [1408, 1152], signs: [{wall: e, bay: 0, texture: xstemple, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 512, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 96}, {id: dome, shape: round, at: [768, 640], radius: 384, sides: 12, bottom: 512, textures: {roof: desrf3a}, wall_height: 160, windows: none, roof: cone, roof_pitch: 38}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4605, title: Temple of the Desert Sun, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_training, at: [27.5, 29], facing: e, door_to: zone:sc_west_lane, parts: [{id: body, at: [644, 48], size: [844, 1184], signs: [{wall: e, bay: 0, texture: xstraining, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 448, roof: flat, parapet: 64}, {id: wing, at: [49, 640], size: [675, 560], wall_height: 320, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4607, title: Barticus' Gym, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_tavern, at: [33.5, 35], facing: e, door_to: zone:sc_main_street, parts: [{id: body, at: [413, 48], size: [563, 1184], signs: [{wall: e, bay: 0, texture: xstavern, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 448, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}, {id: wing, at: [49, 640], size: [444, 560], wall_height: 320, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4606, title: The Thirsty Camel, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_weapons, at: [40, 32.5], facing: n, door_to: zone:sc_east_street, parts: [{id: body, at: [48, 64], size: [928, 656], signs: [{wall: n, bay: 0, texture: xsweapons, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 576, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4601, title: Sandsteel Blades, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_armour, at: [42.5, 32.5], facing: n, door_to: zone:sc_east_street, parts: [{id: body, at: [48, 64], size: [928, 656], signs: [{wall: n, bay: 0, texture: xsarmour, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 576, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4602, title: The Brass Scale, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 1, at: [38.5, 21.5], facing: s, parts: [{id: body, at: [48, 48], size: [416, 656], wall_height: 576, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4618, title: Astra's House, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_houses, index: 2, at: [35.5, 25], facing: s, parts: [{id: body, at: [48, 48], size: [672, 656], wall_height: 576, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4619, title: Natasha the Enchantress, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_houses, index: 3, at: [32, 27.5], facing: e, parts: [{id: body, at: [48, 48], size: [400, 416], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4620, title: Madame Gloriana's, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_houses, index: 4, at: [32, 29.5], facing: e, parts: [{id: body, at: [48, 48], size: [400, 416], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4621, title: School of Trade, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_houses, index: 5, at: [32, 31], facing: e, parts: [{id: body, at: [48, 48], size: [400, 416], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4622, title: School of Letters, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_houses, index: 6, at: [27.5, 32.5], facing: s, parts: [{id: body, at: [48, 48], size: [672, 400], wall_height: 576, upper_walls: {e: [t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4623, title: The Quiet House, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_houses, index: 7, at: [27.5, 34.5], facing: e, parts: [{id: body, at: [48, 48], size: [656, 416], wall_height: 576, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4624, title: School of Navigation, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_houses, index: 8, at: [27.5, 36.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 656], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4625, title: School of Tongues, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 9, at: [29.5, 36.5], facing: n, parts: [{id: body, at: [48, 64], size: [416, 400], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4626, title: The Knife House, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 10, at: [32, 33.5], facing: e, parts: [{id: body, at: [48, 48], size: [400, 672], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4627, title: Saffron House, kit: plaster, door: {part: body, wall: e}}
-      - {building: building:sc_houses, index: 11, at: [31, 37.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], wall_height: 576, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4628, title: The Archer's House, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 12, at: [45, 32.5], facing: n, parts: [{id: body, at: [48, 64], size: [416, 400], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4629, title: Dune House, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 13, at: [38, 34], facing: w, parts: [{id: body, at: [64, 48], size: [656, 416], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4630, title: The Dyer's, kit: plaster, door: {part: body, wall: w}}
-      - {building: building:sc_houses, index: 14, at: [38, 36], facing: w, parts: [{id: body, at: [64, 64], size: [640, 640], wall_height: 448, roof: hip, roof_pitch: 26}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4631, title: Glassblower's House, kit: plaster, door: {part: body, wall: w}}
-      - {building: building:sc_houses, index: 15, at: [40.5, 35], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4632, title: The Water Seller's, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 16, at: [43, 35], facing: n, parts: [{id: body, at: [48, 64], size: [416, 400], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4633, title: Camel House, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 17, at: [45, 35], facing: w, parts: [{id: body, at: [64, 48], size: [656, 416], wall_height: 576, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4634, title: Scribe's House, kit: plaster, door: {part: body, wall: w}}
-      - {building: building:sc_houses, index: 18, at: [41, 37.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4635, title: Potter's Yard, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 19, at: [44, 37.5], facing: n, parts: [{id: body, at: [64, 64], size: [640, 384], wall_height: 448, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: hip, roof_pitch: 26}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4636, title: The Tax House, kit: plaster, door: {part: body, wall: n}}
-      - {building: building:sc_houses, index: 20, at: [40, 28.5], facing: s, parts: [{id: body, at: [48, 48], size: [672, 400], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4637, title: Courtyard House, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_houses, index: 21, at: [43.5, 28.5], facing: s, parts: [{id: body, at: [48, 48], size: [416, 400], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4638, title: Sandal Maker's, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_houses, index: 22, at: [45.5, 28.5], facing: s, parts: [{id: body, at: [48, 48], size: [416, 400], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4639, title: Date Palm House, kit: plaster, door: {part: body, wall: s}}
-      - {building: building:sc_houses, index: 23, at: [30.5, 24.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], wall_height: 384, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4640, title: Well House, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_lucio_jetty, at: [27.5, 20.5], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [928, 928], signs: [{wall: s, bay: 0, texture: sgdock, size: [64, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, windows: alternate, roof: flat, parapet: 64}, {id: tier2, at: [112, 64], size: [800, 672], bottom: 448, textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, windows: alternate, roof: flat, parapet: 64}, {id: tier3, at: [176, 80], size: [672, 416], bottom: 832, textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, windows: alternate, roof: flat, parapet: 64}, {id: tier4, at: [240, 96], size: [544, 208], bottom: 1216, textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 256, windows: none, roof: flat}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4649, title: Lucio's Jetty, kit: plaster, door: {part: body, wall: s}, condition: {qbit: lucio_open}, else_effects: [{lua: "evt.SimpleMessage(\"A jetty that ends in thin air. A sign: \\\"Celestial boats. Chosen Ones only.\\\"\")"}]}
+      - {building: building:sc_guild_mind, at: [30, 21], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [1184, 1120], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: sgmind, size: [64, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvsdoor, gable: xvswall, post_left: xvscornl, post_right: xvscornr, ridge: xvridge, trim: xvbeam, wall: xvswall, window: xvswin}, wall_height: 512, roof: gable, roof_pitch: 36, eaves: 24, verge: 40, ridge_along: ew}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4608, title: Sandcaster Guild of Mind, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_guild_spirit, at: [33, 21], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [1184, 1120], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: sgspirit, size: [64, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvsdoor, gable: xvswall, post_left: xvscornl, post_right: xvscornr, ridge: xvridge, trim: xvbeam, wall: xvswall, window: xvswin}, wall_height: 512, roof: gable, roof_pitch: 36, eaves: 24, verge: 40, ridge_along: ew}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4609, title: Sandcaster Guild of Spirit, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_guild_light, at: [36, 21], facing: s, door_to: zone:sc_north_street, parts: [{id: body, at: [48, 48], size: [928, 1120], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: sglight, size: [64, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvsdoor, gable: xvswall, post_left: xvscornl, post_right: xvscornr, ridge: xvridge, trim: xvbeam, wall: xvswall, window: xvswin}, wall_height: 512, roof: gable, roof_pitch: 36, eaves: 24, verge: 40, ridge_along: ew}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4610, title: Sandcaster Guild of Light, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_magic, at: [33, 25], facing: s, door_to: zone:sc_square, parts: [{id: body, at: [64, 64], size: [896, 896], signs: [{wall: s, bay: 0, texture: xsmagic, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: hip, roof_pitch: 26, eaves: 24}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4603, title: Aladdin's Lamps, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_alchemist, at: [37.5, 25], facing: s, door_to: zone:sc_square, parts: [{id: body, at: [48, 48], size: [672, 912], signs: [{wall: s, bay: 0, texture: xspotions, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4604, title: Vulture Repellant and Other Remedies, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_temple, at: [27.5, 25.5], facing: e, door_to: zone:sc_west_lane, parts: [{id: body, at: [64, 64], size: [1408, 1152], signs: [{wall: e, bay: 0, texture: xstemple, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvsdoor, gable: xvswall, post_left: xvscornl, post_right: xvscornr, ridge: xvridge, trim: xvbeam, wall: xvswall, window: xvswin}, wall_height: 512, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 96}, {id: dome, shape: round, at: [768, 640], radius: 384, sides: 12, bottom: 512, textures: {door: xvsdoor, gable: xvswall, post_left: xvswall, post_right: xvswall, ridge: xvridge, roof: desrf3a, trim: xvbeam, wall: xvswall, window: xvswall}, wall_height: 160, windows: none, roof: cone, roof_pitch: 38}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4605, title: Temple of the Desert Sun, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_training, at: [27.5, 29], facing: e, door_to: zone:sc_west_lane, parts: [{id: body, at: [644, 48], size: [844, 1184], signs: [{wall: e, bay: 0, texture: xstraining, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}, {id: wing, at: [49, 640], size: [675, 560], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 256, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4607, title: Barticus' Gym, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_tavern, at: [33.5, 35], facing: e, door_to: zone:sc_main_street, parts: [{id: body, at: [413, 48], size: [563, 1184], signs: [{wall: e, bay: 0, texture: xstavern, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}, {id: wing, at: [49, 640], size: [444, 560], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 256, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4606, title: The Thirsty Camel, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_weapons, at: [40, 32.5], facing: n, door_to: zone:sc_east_street, parts: [{id: body, at: [48, 64], size: [928, 656], signs: [{wall: n, bay: 0, texture: xsweapons, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4601, title: Sandsteel Blades, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_armour, at: [42.5, 32.5], facing: n, door_to: zone:sc_east_street, parts: [{id: body, at: [48, 64], size: [928, 656], signs: [{wall: n, bay: 0, texture: xsarmour, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4602, title: The Brass Scale, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 1, at: [38.5, 21.5], facing: s, parts: [{id: body, at: [48, 48], size: [416, 656], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4618, title: Astra's House, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_houses, index: 2, at: [35.5, 25], facing: s, parts: [{id: body, at: [48, 48], size: [672, 656], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a02c, t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4619, title: Natasha the Enchantress, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_houses, index: 3, at: [32, 27.5], facing: e, parts: [{id: body, at: [48, 48], size: [400, 416], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4620, title: Madame Gloriana's, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_houses, index: 4, at: [32, 29.5], facing: e, parts: [{id: body, at: [48, 48], size: [400, 416], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4621, title: School of Trade, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_houses, index: 5, at: [32, 31], facing: e, parts: [{id: body, at: [48, 48], size: [400, 416], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4622, title: School of Letters, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_houses, index: 6, at: [27.5, 32.5], facing: s, parts: [{id: body, at: [48, 48], size: [672, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a02c, t07a01], n: [t07a01, t07a02c, t07a01, t07a02c, t07a01], s: [t07a01, t07a02c, t07a01, t07a02c, t07a01], w: [t07a01, t07a02c, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4623, title: The Quiet House, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_houses, index: 7, at: [27.5, 34.5], facing: e, parts: [{id: body, at: [48, 48], size: [656, 416], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4624, title: School of Navigation, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_houses, index: 8, at: [27.5, 36.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 656], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4625, title: School of Tongues, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 9, at: [29.5, 36.5], facing: n, parts: [{id: body, at: [48, 64], size: [416, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4626, title: The Knife House, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 10, at: [32, 33.5], facing: e, parts: [{id: body, at: [48, 48], size: [400, 672], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4627, title: Saffron House, kit: plaster, door: {part: body, wall: e}}
+      - {building: building:sc_houses, index: 11, at: [31, 37.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4628, title: The Archer's House, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 12, at: [45, 32.5], facing: n, parts: [{id: body, at: [48, 64], size: [416, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4629, title: Dune House, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 13, at: [38, 34], facing: w, parts: [{id: body, at: [64, 48], size: [656, 416], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4630, title: The Dyer's, kit: plaster, door: {part: body, wall: w}}
+      - {building: building:sc_houses, index: 14, at: [38, 36], facing: w, parts: [{id: body, at: [64, 64], size: [640, 640], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: hip, roof_pitch: 26, eaves: 24}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4631, title: Glassblower's House, kit: plaster, door: {part: body, wall: w}}
+      - {building: building:sc_houses, index: 15, at: [40.5, 35], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4632, title: The Water Seller's, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 16, at: [43, 35], facing: n, parts: [{id: body, at: [48, 64], size: [416, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4633, title: Camel House, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 17, at: [45, 35], facing: w, parts: [{id: body, at: [64, 48], size: [656, 416], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4634, title: Scribe's House, kit: plaster, door: {part: body, wall: w}}
+      - {building: building:sc_houses, index: 18, at: [41, 37.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4635, title: Potter's Yard, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 19, at: [44, 37.5], facing: n, parts: [{id: body, at: [64, 64], size: [640, 384], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: hip, roof_pitch: 26, eaves: 24}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4636, title: The Tax House, kit: plaster, door: {part: body, wall: n}}
+      - {building: building:sc_houses, index: 20, at: [40, 28.5], facing: s, parts: [{id: body, at: [48, 48], size: [672, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}, house: 4637, title: Courtyard House, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_houses, index: 21, at: [43.5, 28.5], facing: s, parts: [{id: body, at: [48, 48], size: [416, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4638, title: Sandal Maker's, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_houses, index: 22, at: [45.5, 28.5], facing: s, parts: [{id: body, at: [48, 48], size: [416, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4639, title: Date Palm House, kit: plaster, door: {part: body, wall: s}}
+      - {building: building:sc_houses, index: 23, at: [30.5, 24.5], facing: n, parts: [{id: body, at: [48, 64], size: [672, 400], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}, house: 4640, title: Well House, kit: plaster, door: {part: body, wall: n}}
     notes: "A4's d3.yml: 11 services, Lucio's Jetty (4649) on the Sky Stair, the mirror (4612, a thing on the square) and 23 homes inside a sandstone wall on a terrace 300 over the valley (20 x 19 cells); the caravan yard (stables 4611) outside the south gate. Two gates (south to the caravan road, east to the Crossroads), each with the pass check."
   - space: zone:wizard_quarter
     polygon: [[40, 20], [47, 20], [47, 27], [40, 27]]
     plots:
-      - {building: building:wq_guild_dark, at: [40.5, 20.5], facing: e, parts: [{id: body, at: [48, 48], size: [864, 928], porches: [{wall: e, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: e, bay: 0, texture: sgdark, size: [64, 64], bottom: 160, out: 48, hang: true}], wall_height: 512, roof: gable, roof_pitch: 36, ridge_along: ns}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4613, title: The Guild of Night, kit: plaster, door: {part: body, wall: e}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. A voice from inside: The quarter is closed to the insensitive.\")"}]}
-      - {building: building:wq_magic, at: [44.5, 20.5], facing: s, parts: [{id: body, at: [48, 48], size: [928, 608], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: xsmagic, size: [128, 64], bottom: 160, out: 48, hang: true}], wall_height: 512, roof: gable, roof_pitch: 36, ridge_along: ew}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4614, title: Esoterica, kit: plaster, door: {part: body, wall: s}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. A voice from inside: The quarter is closed to the insensitive.\")"}]}
-      - {building: building:wq_houses, index: 1, at: [40.5, 25], facing: s, turn: -90, parts: [{id: body, shape: round, at: [384, 384], radius: 307, sides: 10, wall_height: 512, windows: alternate, roof: cone, roof_pitch: 48}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4615, title: The Mindwright's Tower, kit: plaster, door: {part: body}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. The wizards are sensitive to insults; best not to knock twice.\")"}]}
-      - {building: building:wq_houses, index: 2, at: [43, 25], facing: s, turn: 180, parts: [{id: body, shape: round, at: [384, 384], radius: 307, sides: 10, wall_height: 512, windows: alternate, roof: cone, roof_pitch: 48}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4616, title: The Appraiser's Tower, kit: plaster, door: {part: body}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. The wizards are sensitive to insults; best not to knock twice.\")"}]}
-      - {building: building:wq_houses, index: 3, at: [45, 23.5], facing: s, turn: 90, parts: [{id: body, shape: round, at: [384, 384], radius: 307, sides: 10, wall_height: 512, windows: alternate, roof: cone, roof_pitch: 48}], textures: {door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4617, title: The Alembic Tower, kit: plaster, door: {part: body}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. The wizards are sensitive to insults; best not to knock twice.\")"}]}
+      - {building: building:wq_guild_dark, at: [40.5, 20.5], facing: e, parts: [{id: body, at: [48, 48], size: [864, 928], porches: [{wall: e, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: e, bay: 0, texture: sgdark, size: [64, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvsdoor, gable: xvswall, post_left: xvscornl, post_right: xvscornr, ridge: xvridge, trim: xvbeam, wall: xvswall, window: xvswin}, wall_height: 512, roof: gable, roof_pitch: 36, eaves: 24, verge: 40, ridge_along: ns}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4613, title: The Guild of Night, kit: plaster, door: {part: body, wall: e}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. A voice from inside: The quarter is closed to the insensitive.\")"}]}
+      - {building: building:wq_magic, at: [44.5, 20.5], facing: s, parts: [{id: body, at: [48, 48], size: [928, 608], porches: [{wall: s, depth: 112, height: 256, posts: 32, floor: 16}], signs: [{wall: s, bay: 0, texture: xsmagic, size: [128, 64], bottom: 160, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, roof: gable, roof_pitch: 36, eaves: 24, verge: 40, ridge_along: ew}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4614, title: Esoterica, kit: plaster, door: {part: body, wall: s}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. A voice from inside: The quarter is closed to the insensitive.\")"}]}
+      - {building: building:wq_houses, index: 1, at: [40.5, 25], facing: s, turn: -90, parts: [{id: body, shape: round, at: [384, 384], radius: 307, sides: 10, textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, windows: alternate, roof: cone, roof_pitch: 48}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4615, title: The Mindwright's Tower, kit: plaster, door: {part: body}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. The wizards are sensitive to insults; best not to knock twice.\")"}]}
+      - {building: building:wq_houses, index: 2, at: [43, 25], facing: s, turn: 180, parts: [{id: body, shape: round, at: [384, 384], radius: 307, sides: 10, textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, windows: alternate, roof: cone, roof_pitch: 48}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4616, title: The Appraiser's Tower, kit: plaster, door: {part: body}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. The wizards are sensitive to insults; best not to knock twice.\")"}]}
+      - {building: building:wq_houses, index: 3, at: [45, 23.5], facing: s, turn: 90, parts: [{id: body, shape: round, at: [384, 384], radius: 307, sides: 10, textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, windows: alternate, roof: cone, roof_pitch: 48}], textures: {base: cwb1, door: hcsmdr, gable: hcwall, post_left: hcw1le, post_right: hcw1re, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: hcwall, window: {fit: true, size: [128, 256], texture: hcwindo}}, house: 4617, title: The Alembic Tower, kit: plaster, door: {part: body}, condition: {qbit: quarter_open}, else_effects: [{lua: "evt.SimpleMessage(\"Sealed with a wizard's lock. The wizards are sensitive to insults; best not to knock twice.\")"}]}
     notes: "The wizard quarter on a terrace 200 over the city, pink ashlar (the kit's hc): a small court with the Guild of Night, Esoterica and three towers (4613-4617, sealed until q-d14.done) and the guild gate in the back wall (DD-19, open from the start). A stair from the square's north-east corner."
   - space: zone:sc_square
     polygon: [[33, 27], [40, 27], [40, 33], [33, 33]]
   - space: zone:caravan_yard
     polygon: [[34, 39], [44, 39], [44, 45], [34, 45]]
     plots:
-      - {building: building:sc_stables, at: [40.5, 40], facing: w, door_to: zone:caravan_yard, parts: [{id: body, at: [48, 48], size: [634, 1184], signs: [{wall: w, bay: 0, texture: xscaravan, size: [128, 64], bottom: 120, out: 48, hang: true}], textures: {roof: t07b02}, roof: gable, roof_pitch: 40, ridge_along: ns}, {id: shed, at: [666, 96], size: [325, 1024], textures: {roof: t07b02}, wall_height: 192, windows: none, roof: lean_to}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4611, title: Sandcaster Caravans, kit: plaster, door: {part: body, wall: w}}
+      - {building: building:sc_stables, at: [40.5, 40], facing: w, door_to: zone:caravan_yard, parts: [{id: office, at: [48, 48], size: [512, 512], signs: [{wall: w, bay: 0, texture: xscaravan, size: [128, 64], bottom: 120, out: 48, hang: true}], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, roof: t07b02, trim: xvbeam, wall: xvwall, window: xvwin}, roof: gable, roof_pitch: 40, verge: 40}, {id: pen, at: [48, 564], size: [634, 668], posts: 24, post_every: 256, sill: 96, sill_walls: [s, e, w], textures: {door: xvdoor, gable: xvwall, post: xvbeam, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, roof: xvshgl, sill: xvbeam, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 256, windows: none, roof: gable, roof_pitch: 30, ridge_along: ns}, {id: shed, at: [686, 96], size: [305, 1024], posts: 16, post_every: 256, sill: 112, sill_walls: [s, e, n], textures: {door: xvdoor, gable: xvwall, post: xvbeam, post_left: xvwall, post_right: xvwall, ridge: xvridge, sill: xvbeam, trim: xvbeam, wall: xvwall, window: xvwall}, wall_height: 144, windows: none, roof: none}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4611, title: Sandcaster Caravans, kit: plaster, door: {part: office, wall: w}}
     notes: "The caravan yard outside the south gate (D-28): a fenced pocket in sight of the gate, the stables (4611), camels, a water trough; its opening faces the gate lane."
   - space: town:crossroads
     polygon: [[55, 39], [65, 39], [65, 49], [55, 49]]
@@ -350,11 +371,11 @@ districts:
   - space: zone:celia_yard
     polygon: [[63, 45], [67, 45], [67, 49], [63, 49]]
     plots:
-      - {building: building:celia_derek_cottage, at: [64, 46], facing: s, parts: [{id: body, at: [48, 48], size: [672, 656], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4647, title: Celia and Derek's Cottage, kit: plaster, door: {part: body, wall: s}, condition: {any: [{qbit: 112443}, {lua: "XeenQuests.hook(\"q-c22.cottage\")"}]}}
+      - {building: building:celia_derek_cottage, at: [64, 46], facing: s, parts: [{id: body, at: [48, 48], size: [672, 656], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4647, title: Celia and Derek's Cottage, kit: plaster, door: {part: body, wall: s}, condition: {any: [{qbit: 112443}, {lua: "XeenQuests.hook(\"q-c22.cottage\")"}]}}
   - space: zone:thaddeus_yard
     polygon: [[78, 73], [84, 73], [84, 79], [78, 79]]
     plots:
-      - {building: building:thaddeus_hut, at: [81, 74], facing: w, parts: [{id: body, at: [64, 48], size: [656, 672], wall_height: 384, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4648, title: The Fountain Keeper's Hut, kit: plaster, door: {part: body, wall: w}}
+      - {building: building:thaddeus_hut, at: [81, 74], facing: w, parts: [{id: body, at: [64, 48], size: [656, 672], textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 512, upper_walls: {e: [t07a01, t07a01, t07a01, t07a01, t07a01], n: [t07a01, t07a01, t07a01, t07a01, t07a01], s: [t07a01, t07a01, t07a01, t07a01, t07a01], w: [t07a01, t07a01, t07a01, t07a01, t07a01]}, roof: flat, parapet: 64}], textures: {base: cwb1, door: t07a03a, gable: t07a01, parapet: t07a01, post_left: t07b07, post_right: t07b06, ridge: t07a11a, roof: t07b02, trim: t07a11a, wall: t07b01, window: t07b04a}, house: 4648, title: The Fountain Keeper's Hut, kit: plaster, door: {part: body, wall: w}}
   - space: zone:cornelius_glade
     polygon: [[37, 69], [43, 69], [43, 75], [37, 75]]
   - space: zone:tower_knoll
@@ -443,25 +464,25 @@ areas:
     index: 2
     count: 1
     slot: 3
-    circle: {at: [54, 20], r: 1}
+    circle: {at: [52, 23], r: 1}
     notes: walkable ground (D-28)
   - id: pop:dune_scrub
     index: 3
     count: 1
     slot: 3
-    circle: {at: [76, 20], r: 1}
+    circle: {at: [75, 26], r: 1}
     notes: walkable ground (D-28)
   - id: pop:dune_scrub
     index: 4
     count: 1
     slot: 3
-    circle: {at: [54, 33], r: 1}
+    circle: {at: [56, 34], r: 1}
     notes: walkable ground (D-28)
   - id: pop:dune_scrub
     index: 5
     count: 1
     slot: 3
-    circle: {at: [65, 20], r: 1}
+    circle: {at: [63, 22], r: 1}
     notes: walkable ground (D-28)
   - id: pop:dune_scrub
     index: 6
@@ -503,31 +524,31 @@ areas:
     index: 1
     count: 1
     slot: 1
-    circle: {at: [86, 28], r: 1}
+    circle: {at: [74, 33], r: 1}
     notes: "Mantis ants (22/30/38) on the Wrath hills' walkable shoulders (D-28): the road shelf under the crest, its north shoulder and its south foot round the Eastern Tower; none on the crest's steep flanks."
   - id: pop:wrath_hills
     index: 2
     count: 1
     slot: 1
-    circle: {at: [102, 53], r: 1}
+    circle: {at: [94, 59], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 3
     count: 1
     slot: 1
-    circle: {at: [86, 47], r: 1}
+    circle: {at: [82, 50], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 4
     count: 1
     slot: 1
-    circle: {at: [100, 21], r: 1}
+    circle: {at: [73, 29], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 5
     count: 1
     slot: 1
-    circle: {at: [99, 41], r: 1}
+    circle: {at: [87, 55], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 6
@@ -539,61 +560,61 @@ areas:
     index: 7
     count: 1
     slot: 1
-    circle: {at: [93, 54], r: 1}
+    circle: {at: [91, 58], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 8
     count: 1
     slot: 1
-    circle: {at: [93, 45], r: 1}
+    circle: {at: [80, 41], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 9
     count: 1
     slot: 1
-    circle: {at: [86, 30], r: 1}
+    circle: {at: [84, 29], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 10
     count: 1
     slot: 1
-    circle: {at: [102, 50], r: 1}
+    circle: {at: [101, 66], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 11
     count: 1
     slot: 1
-    circle: {at: [89, 47], r: 1}
+    circle: {at: [84, 53], r: 1}
     notes: walkable ground (D-28)
   - id: pop:wrath_hills
     index: 12
     count: 1
     slot: 1
-    circle: {at: [99, 44], r: 1}
+    circle: {at: [96, 65], r: 1}
     notes: walkable ground (D-28)
   - id: pop:howling_woods
     index: 1
     count: 1
     slot: 1
-    circle: {at: [20, 54], r: 1}
+    circle: {at: [22, 58], r: 1}
     notes: "Mantis ants on the Howling ridge's shoulders (the mantis mound); the first fight from D2."
   - id: pop:howling_woods
     index: 2
     count: 1
     slot: 1
-    circle: {at: [30, 102], r: 1}
+    circle: {at: [33, 101], r: 1}
     notes: walkable ground (D-28)
   - id: pop:howling_woods
     index: 3
     count: 1
     slot: 1
-    circle: {at: [30, 80], r: 1}
+    circle: {at: [30, 82], r: 1}
     notes: walkable ground (D-28)
   - id: pop:howling_woods
     index: 4
     count: 1
     slot: 1
-    circle: {at: [20, 87], r: 1}
+    circle: {at: [26, 86], r: 1}
     notes: walkable ground (D-28)
   - id: pop:howling_woods
     index: 5
@@ -605,7 +626,7 @@ areas:
     index: 6
     count: 1
     slot: 1
-    circle: {at: [20, 70], r: 1}
+    circle: {at: [22, 70], r: 1}
     notes: walkable ground (D-28)
   - id: pop:howling_woods
     index: 7
@@ -617,7 +638,7 @@ areas:
     index: 8
     count: 1
     slot: 1
-    circle: {at: [20, 98], r: 1}
+    circle: {at: [22, 98], r: 1}
     notes: walkable ground (D-28)
   - id: pop:howling_woods
     index: 9
@@ -629,7 +650,7 @@ areas:
     index: 10
     count: 1
     slot: 1
-    circle: {at: [28, 100], r: 1}
+    circle: {at: [26, 100], r: 1}
     notes: walkable ground (D-28)
   - id: pop:howling_woods
     index: 11
@@ -641,7 +662,7 @@ areas:
     index: 12
     count: 1
     slot: 1
-    circle: {at: [20, 84], r: 1}
+    circle: {at: [22, 78], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 1
@@ -653,37 +674,37 @@ areas:
     index: 2
     count: 1
     slot: 2
-    circle: {at: [102, 102], r: 1}
+    circle: {at: [101, 96], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 3
     count: 1
     slot: 2
-    circle: {at: [102, 77], r: 1}
+    circle: {at: [101, 72], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 4
     count: 1
     slot: 2
-    circle: {at: [61, 102], r: 1}
+    circle: {at: [58, 101], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 5
     count: 1
     slot: 2
-    circle: {at: [87, 102], r: 1}
+    circle: {at: [87, 101], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 6
     count: 1
     slot: 2
-    circle: {at: [74, 102], r: 1}
+    circle: {at: [71, 101], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 7
     count: 1
     slot: 2
-    circle: {at: [90, 81], r: 1}
+    circle: {at: [87, 81], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 8
@@ -701,13 +722,13 @@ areas:
     index: 10
     count: 1
     slot: 2
-    circle: {at: [102, 100], r: 1}
+    circle: {at: [101, 93], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 11
     count: 1
     slot: 2
-    circle: {at: [102, 79], r: 1}
+    circle: {at: [97, 84], r: 1}
     notes: walkable ground (D-28)
   - id: pop:venom_fen
     index: 12
@@ -719,19 +740,19 @@ areas:
     index: 1
     count: 1
     slot: 3
-    circle: {at: [21, 24], r: 1}
+    circle: {at: [21, 24], r: 0.5}
     notes: "Sand burrowers outside the walls: under the west wall by the rim and in the caravan valley south of the city."
   - id: pop:outside_walls
     index: 2
     count: 1
     slot: 3
-    circle: {at: [46, 49], r: 1}
+    circle: {at: [46, 49], r: 0.5}
     notes: walkable ground (F10)
   - id: pop:forest_edge
     index: 1
     count: 1
     slot: 1
-    circle: {at: [70, 63], r: 1}
+    circle: {at: [69, 63], r: 0.5}
     notes: Mantis ants between the Aging Forest's east edge and the river meadows.
   - id: town:sandcaster
     kind: keep_clear
@@ -1537,8 +1558,8 @@ structures:
       - text: The gate swings open.
   - id: thing:sc_square
     kind: platform
-    at: [36.5, 30]
-    size: [3328, 2816]
+    at: [36.5, 30.25]
+    size: [3328, 2560]
     height: 16
     textures: {top: t30a05c, wall: t30a05a}
     title: Sandcaster's square
@@ -1811,9 +1832,9 @@ structures:
     at: [44.6, 46.8]
     size: [2, 1.5]
     kit: plaster
-    textures: {door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}
+    textures: {base: cwb1, door: t07a03a, gable: t07a01, post_left: t07a10a, post_right: t07a10a, ridge: t07a11b, roof: t07a05, trim: t07a11a, wall: t07a01, window: t07a02c}
     parts:
-      - {id: r, at: [64, 64], size: [896, 640], wall_height: 448, windows: alternate, roof: none}
+      - {id: r, at: [64, 64], size: [896, 640], textures: {door: xvsdoor, gable: xvswall, post_left: xvswall, post_right: xvswall, ridge: xvridge, trim: xvbeam, wall: xvswall, window: xvswall}, wall_height: 448, windows: none, roof: none}
     door: none
     title: A roadside ruin
     ruin:
@@ -1932,7 +1953,8 @@ structures:
     kind: obelisk
     at: [94.5, 23]
     turn: 35
-    height: 544
+    raise: -160
+    height: 704
     width: 448
     taper: 0.45
     tip: 156
@@ -1942,7 +1964,8 @@ structures:
     kind: obelisk
     at: [97.5, 25.5]
     turn: 10
-    height: 416
+    raise: -192
+    height: 608
     width: 416
     taper: 0.45
     tip: 145
@@ -1952,7 +1975,8 @@ structures:
     kind: obelisk
     at: [99, 23]
     turn: -30
-    height: 800
+    raise: -192
+    height: 992
     width: 448
     taper: 0.45
     tip: 156
@@ -1982,7 +2006,8 @@ structures:
     kind: obelisk
     at: [99.5, 34.5]
     turn: 40
-    height: 544
+    raise: -96
+    height: 640
     width: 544
     taper: 0.45
     tip: 190
@@ -2002,7 +2027,8 @@ structures:
     kind: obelisk
     at: [95, 32]
     turn: 15
-    height: 512
+    raise: -64
+    height: 576
     width: 512
     taper: 0.45
     tip: 179
@@ -2012,7 +2038,8 @@ structures:
     kind: obelisk
     at: [93, 34.5]
     turn: -35
-    height: 704
+    raise: -128
+    height: 832
     width: 448
     taper: 0.45
     tip: 156
@@ -2032,7 +2059,8 @@ structures:
     kind: obelisk
     at: [92, 31.5]
     turn: 30
-    height: 992
+    raise: -288
+    height: 1280
     width: 448
     taper: 0.45
     tip: 156
@@ -2051,6 +2079,7 @@ structures:
   - id: thing:wrath_bridge
     kind: bridge
     line: [[73.6, 46], [77.75, 46]]
+    raise: 24
     width: 640
     kerb: 96
     textures: {deck: t30a05c, pier: t30c01, side: t30c01}
@@ -2098,12 +2127,12 @@ structures:
     textures: {door: hkm1d, roof: xtslate, trim: gtrlwal1, wall: gtrlwal1, window: hkm3elw}
     facing: w
     parts:
-      - {id: base, shape: round, at: [768, 768], radius: 608, sides: 12, textures: {post_left: gtrlwal1, post_right: gtrlwal1, roof: gtrlwal1, trim: gtrlwal1, wall: gtrlwal1, window: gtrlwal1}, wall_height: 640, windows: none, roof: none}
-      - {id: base_band, shape: round, at: [768, 768], radius: 608, sides: 12, bottom: 640, textures: {post_left: hkm3b, post_right: hkm3b, roof: gtrlwal1, trim: gtrlwal1, wall: hkm3b, window: hkm3b}, wall_height: 256, windows: none, roof: none}
-      - {id: mid, shape: round, at: [768, 768], radius: 512, sides: 12, bottom: 896, textures: {post_left: gtrlwal1, post_right: gtrlwal1, roof: gtrlwal1, trim: gtrlwal1, wall: gtrlwal1, window: gtrlwal1}, wall_height: 640, windows: none, roof: none}
-      - {id: mid_band, shape: round, at: [768, 768], radius: 512, sides: 12, bottom: 1536, textures: {post_left: hkm3b, post_right: hkm3b, roof: gtrlwal1, trim: gtrlwal1, wall: hkm3b, window: hkm3b}, wall_height: 256, windows: none, roof: none}
-      - {id: top, shape: round, at: [768, 768], radius: 448, sides: 12, bottom: 1792, textures: {post_left: gtrlwal1, post_right: gtrlwal1, roof: gtrlwal1, trim: gtrlwal1, wall: gtrlwal1, window: gtrlwal1}, wall_height: 256, windows: none, roof: none}
-      - {id: top_band, shape: round, at: [768, 768], radius: 448, sides: 12, bottom: 2048, textures: {post_left: hkm3b, post_right: hkm3b, wall: hkm3b}, wall_height: 256, windows: alternate, roof: cone, roof_pitch: 68}
+      - {id: base, shape: round, at: [768, 768], radius: 608, sides: 12, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, roof: gtrlwal1, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 640, windows: none, roof: none}
+      - {id: base_band, shape: round, at: [768, 768], radius: 608, sides: 12, bottom: 640, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, roof: gtrlwal1, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 256, windows: none, roof: none}
+      - {id: mid, shape: round, at: [768, 768], radius: 512, sides: 12, bottom: 896, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, roof: gtrlwal1, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 640, windows: none, roof: none}
+      - {id: mid_band, shape: round, at: [768, 768], radius: 512, sides: 12, bottom: 1536, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, roof: gtrlwal1, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 256, windows: none, roof: none}
+      - {id: top, shape: round, at: [768, 768], radius: 448, sides: 12, bottom: 1792, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, roof: gtrlwal1, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 256, windows: none, roof: none}
+      - {id: top_band, shape: round, at: [768, 768], radius: 448, sides: 12, bottom: 2048, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 256, windows: alternate, roof: cone, roof_pitch: 68}
     floor: 1952
     door:
       part: base
@@ -2126,9 +2155,9 @@ structures:
     at: [86.5, 63.89999999999999]
     size: [1.4, 1.4]
     kit: poor
-    textures: {roof: hhp2rf, wall: hhp1b}
+    textures: {base: cwb1, roof: hhp2rf, wall: hhp1b}
     parts:
-      - {id: hut, shape: round, at: [358, 358], radius: 288, sides: 10, wall_height: 256, windows: none, roof: cone, roof_pitch: 40}
+      - {id: hut, shape: round, at: [358, 358], radius: 288, sides: 10, textures: {door: xvdoor, gable: xvwall, post_left: xvcornl, post_right: xvcornr, ridge: xvridge, roof: xvthat, trim: xvbeam, wall: xvwall, window: xvwin}, wall_height: 256, windows: none, roof: cone, roof_pitch: 40}
     door: none
     title: The pear hut
   - id: thing:pear_basket
@@ -2188,9 +2217,9 @@ structures:
     at: [68.6, 57.6]
     size: [1, 1]
     kit: plaster
-    textures: {door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}
+    textures: {base: cwb1, door: t07c03b, gable: t07a01, parapet: t07a01, post_left: t07c07, post_right: t07c07, ridge: t07a11b, roof: desrf2a, trim: t07a11b, wall: t07a01b, window: t07c04c}
     parts:
-      - {id: s, at: [96, 96], size: [320, 320], posts: 32, wall_height: 288, windows: none, roof: hip, roof_pitch: 40, title: Wayside shrine of the desert sun}
+      - {id: s, at: [96, 96], size: [320, 320], posts: 32, textures: {door: xvsdoor, gable: xvswall, post_left: xvswall, post_right: xvswall, ridge: xvridge, trim: xvbeam, wall: xvswall, window: xvswall}, wall_height: 288, windows: none, roof: hip, roof_pitch: 40, title: Wayside shrine of the desert sun}
     door: none
     title: Wayside shrine of the desert sun
   - id: thing:fountain_youth
@@ -2348,11 +2377,11 @@ structures:
     decoration: 7dec18
   - id: thing:barrel_1
     kind: decoration
-    at: [32.75, 34.6]
+    at: [32.3, 35.03]
     decoration: bigbarel
   - id: thing:barrel_1_pair
     kind: decoration
-    at: [32.75, 34.9]
+    at: [32.62, 35.03]
     decoration: smlbarel
   - id: thing:barrel_2
     kind: decoration
@@ -2428,329 +2457,581 @@ structures:
     decoration: tree06
   - id: thing:hull_001
     kind: decoration
-    at: [2, 103.98]
+    at: [0.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_002
     kind: decoration
-    at: [6, 103.98]
+    at: [3, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_003
     kind: decoration
-    at: [10, 103.98]
+    at: [7, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_004
     kind: decoration
-    at: [14, 103.98]
+    at: [9.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_005
     kind: decoration
-    at: [18, 103.98]
+    at: [10.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_006
     kind: decoration
-    at: [22, 103.98]
+    at: [11.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_007
     kind: decoration
-    at: [26, 103.98]
+    at: [12.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_008
     kind: decoration
-    at: [30, 103.98]
+    at: [13.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_009
     kind: decoration
-    at: [34, 103.98]
+    at: [16, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_010
     kind: decoration
-    at: [38, 103.98]
+    at: [18.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_011
     kind: decoration
-    at: [42, 103.98]
+    at: [19.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_012
     kind: decoration
-    at: [46, 103.98]
+    at: [20.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_013
     kind: decoration
-    at: [50, 103.98]
+    at: [21.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_014
     kind: decoration
-    at: [54, 103.98]
+    at: [22.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_015
     kind: decoration
-    at: [58, 103.98]
+    at: [23.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_016
     kind: decoration
-    at: [62, 103.98]
+    at: [24.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_017
     kind: decoration
-    at: [66, 103.98]
+    at: [27, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_018
     kind: decoration
-    at: [70, 103.98]
+    at: [29.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_019
     kind: decoration
-    at: [74, 103.98]
+    at: [30.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_020
     kind: decoration
-    at: [78, 103.98]
+    at: [31.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_021
     kind: decoration
-    at: [82, 103.98]
+    at: [32.5, 103.98]
     turn: -180
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_022
     kind: decoration
-    at: [86, 103.98]
+    at: [35, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_023
     kind: decoration
-    at: [90, 103.98]
+    at: [39, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_024
     kind: decoration
-    at: [94, 103.98]
+    at: [43, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_025
     kind: decoration
-    at: [98, 103.98]
+    at: [47, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_026
     kind: decoration
-    at: [102, 103.98]
+    at: [51, 103.98]
     turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_027
     kind: decoration
-    at: [103.98, 102]
-    turn: 90
+    at: [55, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_028
     kind: decoration
-    at: [103.98, 98]
-    turn: 90
+    at: [59, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_029
     kind: decoration
-    at: [103.98, 94]
-    turn: 90
+    at: [63, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_030
     kind: decoration
-    at: [103.98, 90]
-    turn: 90
+    at: [67, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_031
     kind: decoration
-    at: [103.98, 86]
-    turn: 90
+    at: [71, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_032
     kind: decoration
-    at: [103.98, 82]
-    turn: 90
+    at: [75, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_033
     kind: decoration
-    at: [103.98, 78]
-    turn: 90
+    at: [79, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_034
     kind: decoration
-    at: [103.98, 74]
-    turn: 90
+    at: [83, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_035
     kind: decoration
-    at: [103.98, 70]
-    turn: 90
+    at: [87, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_036
     kind: decoration
-    at: [103.98, 67.5]
-    turn: 90
-    decoration: xeen_hull1
+    at: [91, 103.98]
+    turn: -180
+    decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_037
     kind: decoration
-    at: [103.98, 66.5]
-    turn: 90
-    decoration: xeen_hull1
+    at: [95, 103.98]
+    turn: -180
+    decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_038
     kind: decoration
-    at: [103.98, 60]
-    turn: 90
+    at: [99, 103.98]
+    turn: -180
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_039
     kind: decoration
-    at: [103.98, 56]
-    turn: 90
-    decoration: xeen_hull4
+    at: [101.5, 103.98]
+    turn: -180
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_040
     kind: decoration
-    at: [103.98, 52]
-    turn: 90
-    decoration: xeen_hull4
+    at: [102.5, 103.98]
+    turn: -180
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_041
     kind: decoration
-    at: [103.98, 48]
-    turn: 90
-    decoration: xeen_hull4
+    at: [103.5, 103.98]
+    turn: -180
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_042
     kind: decoration
-    at: [103.98, 44]
+    at: [103.98, 102]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_043
     kind: decoration
-    at: [103.98, 40]
+    at: [103.98, 98]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_044
     kind: decoration
-    at: [103.98, 36]
+    at: [103.98, 94]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_045
     kind: decoration
-    at: [103.98, 32]
+    at: [103.98, 90]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_046
     kind: decoration
-    at: [103.98, 28]
+    at: [103.98, 86]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_047
     kind: decoration
-    at: [103.98, 24]
+    at: [103.98, 82]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_048
     kind: decoration
-    at: [103.98, 20]
+    at: [103.98, 78]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_049
     kind: decoration
-    at: [103.98, 16]
+    at: [103.98, 74]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_050
     kind: decoration
-    at: [103.98, 12]
+    at: [103.98, 70]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_051
     kind: decoration
-    at: [103.98, 8]
+    at: [103.98, 67.5]
     turn: 90
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_052
     kind: decoration
-    at: [103.98, 4]
+    at: [103.98, 66.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_053
+    kind: decoration
+    at: [103.98, 60]
     turn: 90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_053
+  - id: thing:hull_054
+    kind: decoration
+    at: [103.98, 56]
+    turn: 90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_055
+    kind: decoration
+    at: [103.98, 53.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_056
+    kind: decoration
+    at: [103.98, 52.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_057
+    kind: decoration
+    at: [103.98, 51.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_058
+    kind: decoration
+    at: [103.98, 50.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_059
+    kind: decoration
+    at: [103.98, 48]
+    turn: 90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_060
+    kind: decoration
+    at: [103.98, 44]
+    turn: 90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_061
+    kind: decoration
+    at: [103.98, 41.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_062
+    kind: decoration
+    at: [103.98, 40.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_063
+    kind: decoration
+    at: [103.98, 39.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_064
+    kind: decoration
+    at: [103.98, 38.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_065
+    kind: decoration
+    at: [103.98, 37.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_066
+    kind: decoration
+    at: [103.98, 36.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_067
+    kind: decoration
+    at: [103.98, 35.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_068
+    kind: decoration
+    at: [103.98, 34.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_069
+    kind: decoration
+    at: [103.98, 33.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_070
+    kind: decoration
+    at: [103.98, 32.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_071
+    kind: decoration
+    at: [103.98, 31.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_072
+    kind: decoration
+    at: [103.98, 30.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_073
+    kind: decoration
+    at: [103.98, 29.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_074
+    kind: decoration
+    at: [103.98, 28.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_075
+    kind: decoration
+    at: [103.98, 27.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_076
+    kind: decoration
+    at: [103.98, 26.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_077
+    kind: decoration
+    at: [103.98, 25.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_078
+    kind: decoration
+    at: [103.98, 24.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_079
+    kind: decoration
+    at: [103.98, 22]
+    turn: 90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_080
+    kind: decoration
+    at: [103.98, 19.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_081
+    kind: decoration
+    at: [103.98, 18.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_082
+    kind: decoration
+    at: [103.98, 17.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_083
+    kind: decoration
+    at: [103.98, 16.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_084
+    kind: decoration
+    at: [103.98, 15.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_085
+    kind: decoration
+    at: [103.98, 14.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_086
+    kind: decoration
+    at: [103.98, 13.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_087
+    kind: decoration
+    at: [103.98, 12.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_088
+    kind: decoration
+    at: [103.98, 11.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_089
+    kind: decoration
+    at: [103.98, 10.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_090
+    kind: decoration
+    at: [103.98, 9.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_091
+    kind: decoration
+    at: [103.98, 8.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_092
+    kind: decoration
+    at: [103.98, 6]
+    turn: 90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_093
+    kind: decoration
+    at: [103.98, 3.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_094
+    kind: decoration
+    at: [103.98, 2.5]
+    turn: 90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_095
     kind: decoration
     at: [103.98, 1.5]
     turn: 90
     decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_054
+  - id: thing:hull_096
     kind: decoration
     at: [103.98, 0.5]
     turn: 90
     decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_055
+  - id: thing:hull_097
     kind: decoration
     at: [103.98, 103.98]
     turn: 135

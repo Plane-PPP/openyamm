@@ -155,12 +155,15 @@ cogs:
   cog:thing:newcastle_wall_3: 3
   cog:thing:newcastle_wall_4: 4
   cog:thing:newcastle_wall_5: 5
+  cog:thing:ranger_bones: 30000
   cog:thing:ranger_tent_1: 9
   cog:thing:ranger_tent_2: 10
 map_vars:
   food_tree_1: 0
   food_tree_2: 1
   food_tree_3: 2
+  once.thing:camp_fire: 3
+  once.thing:ranger_fire: 4
 sounds:
   sound:bed_lagoon_1: 1
   sound:bed_lagoon_2: 2

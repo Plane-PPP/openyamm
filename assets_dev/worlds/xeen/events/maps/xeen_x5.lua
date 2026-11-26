@@ -380,7 +380,9 @@ end, "The chief's tent")
 
 -- evt:thing:camp_fire
 RegisterEvent(77, "Campfire", function()
-    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end evt.ChangeEvent(0)
+    if IsAtLeast(MapVar(17), 1) then return end
+    SetValue(MapVar(17), 1)
+    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end
 end, "Campfire")
 
 -- evt:thing:hunt_tent
@@ -388,7 +390,9 @@ RegisterEvent(78, "Barbarian tent", nil, "Barbarian tent")
 
 -- evt:thing:hunt_fire
 RegisterEvent(79, "Campfire", function()
-    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end evt.ChangeEvent(0)
+    if IsAtLeast(MapVar(18), 1) then return end
+    SetValue(MapVar(18), 1)
+    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end
 end, "Campfire")
 
 -- evt:thing:camp_chest
@@ -406,7 +410,9 @@ RegisterEvent(87, "Freeda's tent", nil, "Freeda's tent")
 
 -- evt:thing:freeda_fire
 RegisterEvent(88, "Campfire", function()
-    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end evt.ChangeEvent(0)
+    if IsAtLeast(MapVar(19), 1) then return end
+    SetValue(MapVar(19), 1)
+    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end
 end, "Campfire")
 
 -- evt:thing:frozen_sledge
@@ -462,7 +468,9 @@ end, "The ogres' camp")
 
 -- evt:thing:ogre_fire
 RegisterEvent(98, "Campfire", function()
-    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end evt.ChangeEvent(0)
+    if IsAtLeast(MapVar(20), 1) then return end
+    SetValue(MapVar(20), 1)
+    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end
 end, "Campfire")
 
 -- evt:thing:ogre_chest
@@ -483,7 +491,9 @@ end, "The archers' camp")
 
 -- evt:thing:archer_fire
 RegisterEvent(101, "Campfire", function()
-    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end evt.ChangeEvent(0)
+    if IsAtLeast(MapVar(21), 1) then return end
+    SetValue(MapVar(21), 1)
+    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end
 end, "Campfire")
 
 -- evt:thing:archer_chest
@@ -537,12 +547,10 @@ RegisterEvent(111, "Glom's burrows", function()
 end, "Glom's burrows")
 
 -- evt:thing:outpost_tent
-RegisterEvent(112, "The Cyclops' outpost", function(continueStep)
-    local eventId = 112
+RegisterEvent(112, "The Cyclops' outpost", function()
     if Xeen.isSet("q-c16.outpost_burnt") then return end
-    if continueStep == 1 then evt.SetFacetBit(1, FacetBits.Invisible, 1) evt.SetFacetBit(1, FacetBits.Untouchable, 1) evt.SetFacetBit(2, FacetBits.Invisible, 1) evt.SetFacetBit(2, FacetBits.Untouchable, 1) evt.SetSprite(30000, 0) evt.SetSprite(30001, 1) evt.SetSprite(30002, 1) evt.SetSprite(30003, 1) evt.SetSprite(30004, 1) evt.SetSprite(30005, 1) XeenQuests.hook("q-c16.outpost") return end
-    if continueStep ~= nil then return end
-    AskChoiceWithAnswerSteps(eventId, 3, "You have found the Cyclops' outpost! Burn?", {{Answer = "Yes", Step = 1}, {Answer = "No", Step = 2}})
+    evt.SetFacetBit(1, FacetBits.Invisible, 1) evt.SetFacetBit(1, FacetBits.Untouchable, 1) evt.SetFacetBit(2, FacetBits.Invisible, 1) evt.SetFacetBit(2, FacetBits.Untouchable, 1) evt.SetSprite(30000, 0) evt.SetSprite(30006, 0) evt.SetSprite(30007, 0) evt.SetSprite(30008, 0) evt.SetSprite(30001, 1) evt.SetSprite(30002, 1) evt.SetSprite(30003, 1) evt.SetSprite(30004, 1) evt.SetSprite(30005, 1)
+    XeenQuests.hook("q-c16.outpost")
 end, "The Cyclops' outpost")
 
 -- evt:thing:outpost_tent2
@@ -550,7 +558,9 @@ RegisterEvent(113, "The Cyclops' outpost", nil, "The Cyclops' outpost")
 
 -- evt:thing:outpost_fire
 RegisterEvent(114, "Campfire", function()
-    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end evt.ChangeEvent(0)
+    if IsAtLeast(MapVar(22), 1) then return end
+    SetValue(MapVar(22), 1)
+    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end
 end, "Campfire")
 
 -- evt:thing:outpost_chest
@@ -581,11 +591,8 @@ RegisterEvent(118, "Waters of Great Magic", function()
 end, "Waters of Great Magic")
 
 -- evt:thing:earth_reflector
-RegisterEvent(119, "The Earth Reflector", function(continueStep)
-    local eventId = 119
-    if continueStep == 1 then XeenQuests.hook("m37.reflector_earth") return end
-    if continueStep ~= nil then return end
-    AskChoiceWithAnswerSteps(eventId, 3, "A great bronze disc in a ring of stone, turned toward the glacier's edge. Reflector. Activate?", {{Answer = "Yes", Step = 1}, {Answer = "No", Step = 2}})
+RegisterEvent(119, "The Earth Reflector", function()
+    XeenQuests.hook("m37.reflector_earth")
 end, "The Earth Reflector")
 
 -- evt:thing:giants_bones
@@ -789,6 +796,9 @@ RegisterEvent(152, nil, function()
     evt.SetFacetBit(2, FacetBits.Invisible, 1)
     evt.SetFacetBit(2, FacetBits.Untouchable, 1)
     evt.SetSprite(30000, 0)
+    evt.SetSprite(30006, 0)
+    evt.SetSprite(30007, 0)
+    evt.SetSprite(30008, 0)
     evt.SetSprite(30001, 1)
     evt.SetSprite(30002, 1)
     evt.SetSprite(30003, 1)
@@ -814,5 +824,5 @@ end, "Shrine of Cold")
 
 -- evt:rim_fall
 RegisterEvent(155, nil, function()
-    Xeen.rimFall({{{-32768, 32768}, {-20992, 32768}, {-20992, -20992}, {32768, -20992}, {32768, -32768}, {-32768, -32768}}}, {{-18944, 21504, 1504, 0}, {-18944, 18432, 1504, 0}, {-18944, 9216, 1024, 0}, {-18944, 6144, 1056, 0}, {-18944, 2560, 1024, 0}, {-18944, -512, 1024, 0}, {-18944, -3584, 1024, 0}, {-18944, -6656, 1120, 0}, {-18944, -19456, 2208, 0}, {-16384, -18944, 2240, 512}, {-3584, -18944, 1216, 512}, {-512, -18944, 1216, 512}, {2560, -18944, 1248, 512}, {12288, -18944, 928, 512}, {15360, -18944, 928, 512}, {18432, -18944, 928, 512}, {21504, -18944, 1024, 512}})
+    Xeen.rimFall({{{-32768, 32768}, {-20992, 32768}, {-20992, -20992}, {32768, -20992}, {32768, -32768}, {-32768, -32768}}}, {{-18944, 21504, 1504, 0}, {-18944, 18432, 1504, 0}, {-18944, 9216, 1024, 0}, {-18944, 6144, 1056, 0}, {-18944, 2560, 1024, 0}, {-18944, -512, 1024, 0}, {-18944, -3584, 1024, 0}, {-18944, -6656, 1120, 0}, {-18944, -19456, 2208, 0}, {-16384, -18944, 2240, 512}, {-3584, -18944, 1216, 512}, {-512, -18944, 1216, 512}, {2560, -18944, 1248, 512}, {12288, -18944, 928, 512}, {15360, -18944, 928, 512}, {18432, -18944, 928, 512}, {21504, -18944, 928, 512}, {25088, -18944, 928, 512}, {28160, -18944, 928, 512}})
 end)

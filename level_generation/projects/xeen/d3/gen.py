@@ -185,6 +185,42 @@ def clear_givers(pid, chosen, cand):
     return chosen
 
 
+# D-138 (2026-11-24): no marker within D-15's first-fight buffer (2,000, the circle's edge) of a dungeon door's arrival,
+# and the moved one out of the arrival's sight over the land (party eye 150, monster 100 over LD's heights): the
+# markers of the sampling nearer move to the nearest free candidate past it; the others keep their places. Spawn 18
+# (pop:wrath_hills 8) stood 898 from DD-07's door on the knoll.
+DOOR_ARRIVALS = {'entrance:dd07_door': (94, 46), 'entrance:d7_fall': (34, 41)}
+FIRST_FIGHT = 2000
+
+
+def land_sees(a, q, r=1, eye=150, top=100, cover=64):
+    """A line from the arrival's eye to the circle's middle or one of four points 0.7 r out passes no land standing
+    `cover` over it (the studio smooths LD's heights: a margin)."""
+    def one(p):
+        z0, z1 = LD.raw_height(*a) + eye, LD.raw_height(*p) + top
+        n = int(math.hypot(p[0] - a[0], p[1] - a[1]) * 8) + 2
+        return all(LD.raw_height(a[0] + (p[0] - a[0]) * k / n, a[1] + (p[1] - a[1]) * k / n)
+                   < z0 + (z1 - z0) * k / n + cover for k in range(1, n))
+    return any(one((q[0] + dx, q[1] + dy)) for dx, dy in ((0, 0), (.7 * r, 0), (-.7 * r, 0), (0, .7 * r), (0, -.7 * r)))
+
+
+def clear_arrivals(pid, chosen, cand, r=1):
+    near = lambda q: min((math.hypot(q[0] - a[0], q[1] - a[1]) - r) * 512 for a in DOOR_ARRIVALS.values())
+    for i, q in enumerate(chosen):
+        if near(q) >= FIRST_FIGHT:
+            continue
+        others = chosen[:i] + chosen[i + 1:]
+        ok = [c for c in cand if c not in chosen and near(c) >= FIRST_FIGHT
+              and min(math.hypot(c[0] - o[0], c[1] - o[1]) for o in others) >= 2.0
+              and not any(land_sees(a, c) for a in DOOR_ARRIVALS.values()
+                          if math.hypot(c[0] - a[0], c[1] - a[1]) * 512 < 5120)]
+        if not ok:
+            raise SystemExit('%s: no place for marker %d past %d of a door arrival' % (pid, i + 1, FIRST_FIGHT))
+        chosen[i] = min(ok, key=lambda c: (math.hypot(c[0] - q[0], c[1] - q[1]), c))
+        print('D-138: %s marker %d %s -> %s' % (pid, i + 1, q, chosen[i]))
+    return chosen
+
+
 # F10 (A5 s30): areas whose markers stand at fixed cells (gen_l1.AREAS pop:outside_walls, pop:forest_edge)
 FIXED_SPOTS = {'pop:outside_walls': [(21, 24), (46, 49)], 'pop:forest_edge': [(70, 63)]}
 
@@ -198,8 +234,9 @@ def markers():
         if pid in FIXED_SPOTS:
             spots = FIXED_SPOTS[pid]
             assert len(spots) == count and all(walkable(x, y) and K.inside((x, y), poly) for x, y in spots), pid
+            # F63 (2026-11-25): a fixed spot's circle half a cell (its markers 768 from the bounds at (21, 24))
             for k, (x, y) in enumerate(spots, 1):
-                out.append({'id': pid, 'index': k, 'count': 1, 'slot': slot, 'circle': {'at': [x, y], 'r': 1},
+                out.append({'id': pid, 'index': k, 'count': 1, 'slot': slot, 'circle': {'at': [x, y], 'r': 0.5},
                             'notes': note if k == 1 else 'walkable ground (F10)'})
             continue
         xs = [q[0] for q in poly]
@@ -245,6 +282,7 @@ def markers():
         while len(chosen) < count:
             chosen.append(max(cand, key=lambda q: min(math.hypot(q[0] - c[0], q[1] - c[1]) for c in chosen)))
         chosen = clear_givers(pid, chosen, cand)
+        chosen = clear_arrivals(pid, chosen, cand)
         for k, (x, y) in enumerate(chosen, 1):
             out.append({'id': pid, 'index': k, 'count': 1, 'slot': slot, 'circle': {'at': [int(x), int(y)], 'r': 1},
                         'notes': note if k == 1 else 'walkable ground (D-28)'})
@@ -256,6 +294,32 @@ def markers():
     for aid, poly, note in L1.OPEN:
         out.append({'id': aid, 'kind': 'open', 'polygon': poly, 'notes': note})
     return out
+
+
+def d142_enforce(areas):
+    """D-142 / D-157 / D-162 (2026-11-25, F64) for the marker circles (common/d142.py): the edge arrivals and the
+    dungeon exits (D3 in check_arrivals.D142_EXITS) 4,096 from a marker's edge, 5,888 for a slot that shoots or casts;
+    every road, lane and path 1,024 from its centre; F63: 768 from the bounds and the hull. A failing circle moves to
+    the nearest spot that keeps markers()' own rules (walkable, off the keep-clear areas, 5.2 cells from the doors,
+    out of a dungeon door arrival's sight within 5,120, D-138)."""
+    sys.path.insert(0, os.path.join(_REPO_ROOT, 'level_generation', 'projects', 'xeen', 'common'))
+    import d142
+    sys.path.pop(0)
+    d142.CA.D142_EXITS.add('xeen_d3')   # the floors this build is held to (the checker's set takes D3 at its install)
+    l4 = os.path.join(BRIEFS, 'L4', 'sketch.yml')
+    base = d142.standard_ok(l4, LD.raw_height)
+    clear = [poly for _aid, poly, _n in L1.KEEP_CLEAR]
+    door_pts = [d[2] for d in P.doors]
+
+    def ok(x, y, r):
+        return (base(x, y, r) and walkable(x, y) and not any(K.inside((x, y), c) for c in clear)
+                and min(math.hypot(x - d[0], y - d[1]) for d in door_pts) > 5.2
+                and not any(land_sees(a, (x, y)) for a in DOOR_ARRIVALS.values()
+                            if math.hypot(x - a[0], y - a[1]) * 512 < 5120)
+                # D-54 (playtest_d7_fall): a party just down from the Skyroads is not set on within 20 s; a moved
+                # sand worm 5,248 from the landing reached it: moved circles keep D-15's 8,192 from the fall
+                and (math.hypot(x - D7_FALL[0], y - D7_FALL[1]) - r) * 512 >= 8192)
+    d142.enforce('xeen_d3', areas, d142.road_cells(l4), {}, ok, also=d142.hull_reason(l4))
 
 
 def sketch():
@@ -284,6 +348,7 @@ def sketch():
     pts.append({'id': 'entrance:d7_fall', 'at': D7_FALL, 'facing': 'e'})
     s['points'] = pts
     s['areas'] = markers()
+    d142_enforce(s['areas'])
     s['structures'] = P.structures()
     s['actors'] = V.fill(P.actors(), 'D3')   # D-96: Sandcaster's and the Crossroads' villagers
     s['relations'] = (s.get('relations') or []) + V.relations('D3')
@@ -324,6 +389,10 @@ def main():
     import wild as WILD
     for _note in WILD.apply(sk, 'd3'):
         print('wild:', _note)
+    # The classic kits (2026-11-24): Clouds of Xeen's own walls on the map's buildings (classic_kit.yml)
+    import classic_kit as CK
+    for _note in CK.apply(sk, 'd3'):
+        print(_note)
     atmos = {'format': 0, 'sky': 'xeendark1', 'weather': {},
              'notes': "Darkside's amber day (xeendark1; A3's Lua switches xeendark2/3 by the sun's stage on load, "
                       'evt:sky). No weather. The bright face\'s glow above the east rim: asked of A6 (the preset has '

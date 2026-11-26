@@ -193,6 +193,10 @@ heights:
       height: 1696
       slope: 2
       notes: "The border pass (edge_d5_d6.json's 1,700)."
+    - polygon: [[35, 39], [37, 39], [37, 41], [35, 41]]
+      height: 1536
+      slope: 1
+      notes: level land under A basalt pinnacle (common/level_pads.py)
   grid:
     step: 4
     unit: 32
@@ -289,17 +293,17 @@ districts:
   - space: town:necropolis
     polygon: [[82, 74], [100, 74], [100, 90], [82, 90]]
     plots:
-      - {building: building:np_guild, at: [84, 76], facing: e, parts: [{id: body, at: [64, 64], size: [1408, 1408], signs: [{wall: e, bay: 0, texture: sgdark, size: [64, 64], bottom: 192, out: 48, hang: true}], textures: {band: t09b11b}, wall_height: 544, walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, band: 32, upper_walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 40, eaves: 48, door_height: 288}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4751, title: Necropolis Guild, kit: grey, door: {arch: round, leaves: 2, part: body, wall: e}}
-      - {building: building:np_market, at: [96, 76], facing: w, parts: [{id: body, at: [64, 64], size: [896, 1408], signs: [{wall: w, bay: 0, texture: sgmagic, size: [64, 64], bottom: 120, out: 48, hang: true}], walls: {w: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, upper_walls: {w: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 38}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4753, title: The Grave Market, kit: grey, door: {leaves: 2, part: body, wall: w}}
-      - {building: building:np_embalmer, at: [96, 80], facing: w, parts: [{id: body, at: [64, 64], size: [896, 896], signs: [{wall: w, bay: 0, texture: sgalch, size: [64, 64], bottom: 120, out: 48, hang: true}], walls: {w: [[post_left, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [post_right, 128]]}, upper_walls: {w: [[post_left, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 38}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4754, title: The Embalmer, kit: grey, door: {leaves: 2, part: body, wall: w}}
-      - {building: building:np_tavern, at: [84, 80], facing: e, parts: [{id: body, at: [64, 64], size: [1408, 1408], signs: [{wall: e, bay: 0, texture: sgtvrn, size: [64, 64], bottom: 120, out: 48, hang: true}], walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, upper_walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 38}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4755, title: The Warm Barrel, kit: grey, door: {leaves: 2, part: body, wall: e}}
-      - {building: building:np_temple, at: [89, 82], facing: n, parts: [{id: body, at: [64, 64], size: [1920, 1408], textures: {band: t09b11b}, wall_height: 544, walls: {n: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, band: 32, upper_walls: {n: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 40, eaves: 48, door_height: 288}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4752, title: Temple of the Dead, kit: grey, door: {arch: round, leaves: 2, part: body, wall: n}}
-      - {building: building:np_houses, index: 1, at: [94, 83], facing: w, parts: [{id: body, at: [96, 96], size: [1344, 1344], wall_height: 384, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [1216, 1216], bottom: 384, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4757, title: The Necromancers' House, kit: grey, door: {part: body, wall: w}}
-      - {building: building:np_houses, index: 2, at: [90, 87], facing: n, parts: [{id: body, at: [96, 96], size: [1344, 832], wall_height: 384, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [1216, 704], bottom: 384, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4758, title: Count Velkor's Crypt, kit: grey, door: {part: body, wall: n}}
-      - {building: building:np_houses, index: 3, at: [84, 87], facing: n, parts: [{id: body, at: [96, 96], size: [832, 832], wall_height: 384, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4759, title: The Quiet Tomb, kit: grey, door: {part: body, wall: n}}
-      - {building: building:np_houses, index: 4, at: [87, 87], facing: n, parts: [{id: body, at: [96, 96], size: [832, 832], wall_height: 384, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4760, title: The Trapsmith's Vault, kit: grey, door: {part: body, wall: n}}
-      - {building: building:np_houses, index: 5, at: [94, 87], facing: n, parts: [{id: body, at: [96, 96], size: [832, 832], wall_height: 384, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4761, title: The Gravedigger's, kit: grey, door: {part: body, wall: n}}
-      - {building: building:np_houses, index: 6, at: [84, 84], facing: e, parts: [{id: body, at: [96, 96], size: [832, 832], wall_height: 384, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4762, title: The Weeping Mausoleum, kit: grey, door: {part: body, wall: e}}
+      - {building: building:np_guild, at: [84, 76], facing: e, parts: [{id: body, at: [64, 64], size: [1408, 1408], signs: [{wall: e, bay: 0, texture: sgdark, size: [64, 64], bottom: 192, out: 48, hang: true}], textures: {band: t09b11b, door: xvtdoorw, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, band: 32, upper_walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 40, eaves: 48, door_height: 288}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4751, title: Necropolis Guild, kit: grey, door: {arch: round, leaves: 2, part: body, wall: e}}
+      - {building: building:np_market, at: [96, 76], facing: w, parts: [{id: body, at: [64, 64], size: [896, 1408], signs: [{wall: w, bay: 0, texture: sgmagic, size: [64, 64], bottom: 120, out: 48, hang: true}], textures: {door: xvtdoorw, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, walls: {w: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, upper_walls: {w: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 38, eaves: 24}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4753, title: The Grave Market, kit: grey, door: {leaves: 2, part: body, wall: w}}
+      - {building: building:np_embalmer, at: [96, 80], facing: w, parts: [{id: body, at: [64, 64], size: [896, 896], signs: [{wall: w, bay: 0, texture: sgalch, size: [64, 64], bottom: 120, out: 48, hang: true}], textures: {door: xvtdoorw, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, walls: {w: [[post_left, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [post_right, 128]]}, upper_walls: {w: [[post_left, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 38, eaves: 24}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4754, title: The Embalmer, kit: grey, door: {leaves: 2, part: body, wall: w}}
+      - {building: building:np_tavern, at: [84, 80], facing: e, parts: [{id: body, at: [64, 64], size: [1408, 1408], signs: [{wall: e, bay: 0, texture: sgtvrn, size: [64, 64], bottom: 120, out: 48, hang: true}], textures: {door: xvtdoorw, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, upper_walls: {e: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 38, eaves: 24}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4755, title: The Warm Barrel, kit: grey, door: {leaves: 2, part: body, wall: e}}
+      - {building: building:np_temple, at: [89, 82], facing: n, parts: [{id: body, at: [64, 64], size: [1920, 1408], textures: {band: t09b11b, door: xvtdoorw, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, walls: {n: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [door, 256], [wall, 64], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, band: 32, upper_walls: {n: [[post_left, 128], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 64], [wall, 64], [window, 128], [wall, 128], [window, 128], [wall, 128], [window, 128], [post_right, 128]]}, roof: hip, roof_pitch: 40, eaves: 48, door_height: 288}], floor: 1664, textures: {door: t09a03a, gable: t09a01, post_left: t09a06, post_right: t09a07, ridge: t06a10, roof: xlslate, trim: t09b11b, wall: t09a01, window: t09a04b}, house: 4752, title: Temple of the Dead, kit: grey, door: {arch: round, leaves: 2, part: body, wall: n}}
+      - {building: building:np_houses, index: 1, at: [94, 83], facing: w, parts: [{id: body, at: [96, 96], size: [1344, 1344], textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [1216, 1216], bottom: 384, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4757, title: The Necromancers' House, kit: grey, door: {part: body, wall: w}}
+      - {building: building:np_houses, index: 2, at: [90, 87], facing: n, parts: [{id: body, at: [96, 96], size: [1344, 832], textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [1216, 704], bottom: 384, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4758, title: Count Velkor's Crypt, kit: grey, door: {part: body, wall: n}}
+      - {building: building:np_houses, index: 3, at: [84, 87], facing: n, parts: [{id: body, at: [96, 96], size: [832, 832], textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4759, title: The Quiet Tomb, kit: grey, door: {part: body, wall: n}}
+      - {building: building:np_houses, index: 4, at: [87, 87], facing: n, parts: [{id: body, at: [96, 96], size: [832, 832], textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4760, title: The Trapsmith's Vault, kit: grey, door: {part: body, wall: n}}
+      - {building: building:np_houses, index: 5, at: [94, 87], facing: n, parts: [{id: body, at: [96, 96], size: [832, 832], textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4761, title: The Gravedigger's, kit: grey, door: {part: body, wall: n}}
+      - {building: building:np_houses, index: 6, at: [84, 84], facing: e, parts: [{id: body, at: [96, 96], size: [832, 832], textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwin}, wall_height: 512, windows: none, roof: flat}, {id: cap, at: [160, 160], size: [704, 704], bottom: 384, textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 96, windows: none, roof: flat}], floor: 1664, textures: {door: t09a03c, gable: twb2, post_left: twb2, post_right: twb2, ridge: twb1, roof: twb1, trim: twb1, wall: twb2, window: twb2}, house: 4762, title: The Weeping Mausoleum, kit: grey, door: {part: body, wall: e}}
     notes: "A4's d6.yml: the guild 4751 and the tavern 4755 west of the square, the Grave Market 4753 and the Embalmer 4754 east, the Temple of the Dead 4752 south, six tombs and mausoleums 4757-4762 along the south lanes; the mirror 4756 on the square with the skull; the Books of the Dead at the square's west edge; DD-21's crypt stair in the south-east corner; one gate in the north wall."
   - space: zone:ash_waste
     polygon: [[24, 24], [64, 24], [64, 32], [60, 35], [51, 32], [42, 35], [36, 41], [35, 50], [40, 58], [36, 62], [24, 62]]
@@ -438,7 +442,7 @@ areas:
     kind: encounter
     count: 1
     slot: 1
-    circle: {at: [92, 31], r: 1}
+    circle: {at: [91, 29], r: 1}
   - id: pop:field_gazers
     index: 9
     kind: encounter
@@ -480,7 +484,7 @@ areas:
     kind: encounter
     count: 1
     slot: 1
-    circle: {at: [80, 54], r: 1}
+    circle: {at: [78, 55], r: 1}
   - id: pop:field_gazers
     index: 16
     kind: encounter
@@ -510,7 +514,7 @@ areas:
     kind: encounter
     count: 1
     slot: 2
-    circle: {at: [40, 92], r: 1}
+    circle: {at: [37, 92], r: 1}
   - id: pop:west_griffins
     index: 4
     kind: encounter
@@ -528,13 +532,13 @@ areas:
     kind: encounter
     count: 1
     slot: 2
-    circle: {at: [52, 92], r: 1}
+    circle: {at: [49, 87], r: 1}
   - id: pop:west_griffins
     index: 7
     kind: encounter
     count: 1
     slot: 2
-    circle: {at: [47, 102], r: 1}
+    circle: {at: [47, 106], r: 1}
   - id: pop:west_griffins
     index: 8
     kind: encounter
@@ -570,7 +574,7 @@ areas:
     kind: encounter
     count: 1
     slot: 2
-    circle: {at: [99, 96], r: 1}
+    circle: {at: [100, 96], r: 1}
   - id: pop:east_griffins
     index: 6
     kind: encounter
@@ -1331,7 +1335,7 @@ structures:
     decoration: bigbarel
   - id: thing:np_prop_2
     kind: decoration
-    at: [84.25, 82.95]
+    at: [84.25, 82.25]
     decoration: bigbarel
   - id: thing:np_prop_3
     kind: decoration
@@ -1359,7 +1363,8 @@ structures:
     decoration: cmpfyr00
     title: A camp fire
     effects:
-      - lua: "local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText(\"Food by the fire (+\" .. food .. \"), and a ring in the ashes.\") else evt.StatusText(\"You find food by the fire (+\" .. food .. \").\") end evt.ChangeEvent(0)"
+      - lua: "local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText(\"Food by the fire (+\" .. food .. \"), and a ring in the ashes.\") else evt.StatusText(\"You find food by the fire (+\" .. food .. \").\") end"
+    once: true
   - id: thing:obelisk
     kind: obelisk
     at: [30, 62]
@@ -1464,7 +1469,8 @@ structures:
     decoration: cmpfyr00
     title: A camp fire
     effects:
-      - lua: "local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText(\"Food by the fire (+\" .. food .. \"), and a ring in the ashes.\") else evt.StatusText(\"You find food by the fire (+\" .. food .. \").\") end evt.ChangeEvent(0)"
+      - lua: "local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText(\"Food by the fire (+\" .. food .. \"), and a ring in the ashes.\") else evt.StatusText(\"You find food by the fire (+\" .. food .. \").\") end"
+    once: true
   - id: thing:archers_chest
     kind: chest
     at: [35.6, 86.6]
@@ -1530,6 +1536,7 @@ structures:
   - id: thing:prospector_bones
     kind: decoration
     at: [40.5, 95.3]
+    raise: -29
     decoration: dec05
   - id: thing:griffin_nest
     kind: chest
@@ -1545,7 +1552,7 @@ structures:
     at: [82.75, 96.75]
     size: [2.5, 2.5]
     kit: stone
-    textures: {post_left: xahullbn, post_right: xahullbn, roof: xahullbn, wall: xahullbn}
+    textures: {post_left: xahullbn, post_right: xahullbn, roof: xahullbn, trim: xahullbn, wall: xahullbn}
     parts:
       - {id: p, at: [128, 128], size: [1024, 1024], wall_height: 640, windows: none, roof: none}
     door: none
@@ -1620,7 +1627,7 @@ structures:
     kit: grey
     textures: {post_left: t09a01, post_right: t09a01, trim: t09a01, wall: t09a01}
     parts:
-      - {id: tower, at: [128, 128], size: [768, 768], wall_height: 896, windows: none, roof: none}
+      - {id: tower, at: [128, 128], size: [768, 768], textures: {door: xvtdoor, gable: xvtwall, post_left: xvtwall, post_right: xvtwall, ridge: xvridge, roof: xtslate, trim: xvbeam, wall: xvtwall, window: xvtwall}, wall_height: 896, windows: none, roof: none}
     door: none
     title: A watchtower of the dead
     ruin:
@@ -1632,13 +1639,14 @@ structures:
     kind: platform
     at: [49, 80]
     size: [512, 512]
+    raise: -32
     height: 64
     textures: {top: voltyl, wall: vlcwl1lg}
     title: A smoking vent
   - id: thing:cinder_smoke
     kind: decoration
     at: [49, 80]
-    raise: 64
+    raise: 32
     decoration: cmpfyr00
     title: A smoking vent
   - id: thing:ancient_spar
@@ -1675,6 +1683,7 @@ structures:
   - id: thing:rim_cairn
     kind: decoration
     at: [55, 27]
+    raise: -21
     decoration: searka01
     title: A cairn at the rim
   - id: thing:fork_signpost
@@ -1687,407 +1696,635 @@ structures:
       - {title: "Griffin Pass, Castleview", toward: s}
   - id: thing:hull_001
     kind: decoration
-    at: [126, 24.02]
+    at: [126.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_002
     kind: decoration
-    at: [122, 24.02]
+    at: [125.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_003
     kind: decoration
-    at: [118, 24.02]
+    at: [124.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_004
     kind: decoration
-    at: [114, 24.02]
+    at: [123.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_005
     kind: decoration
-    at: [110, 24.02]
+    at: [122.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_006
     kind: decoration
-    at: [106, 24.02]
+    at: [121.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_007
     kind: decoration
-    at: [102, 24.02]
+    at: [120.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_008
     kind: decoration
-    at: [98, 24.02]
+    at: [119.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_009
     kind: decoration
-    at: [94, 24.02]
+    at: [118.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_010
     kind: decoration
-    at: [90, 24.02]
+    at: [117.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_011
     kind: decoration
-    at: [86, 24.02]
+    at: [116.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_012
     kind: decoration
-    at: [82, 24.02]
+    at: [115.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_013
     kind: decoration
-    at: [78, 24.02]
+    at: [114.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_014
     kind: decoration
-    at: [74, 24.02]
+    at: [112, 24.02]
     turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_015
     kind: decoration
-    at: [70, 24.02]
+    at: [109.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_016
     kind: decoration
-    at: [66, 24.02]
+    at: [107, 24.02]
     turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_017
     kind: decoration
-    at: [62, 24.02]
+    at: [104.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_018
     kind: decoration
-    at: [58, 24.02]
+    at: [103.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_019
     kind: decoration
-    at: [54, 24.02]
+    at: [101, 24.02]
     turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_020
     kind: decoration
-    at: [50, 24.02]
+    at: [97, 24.02]
     turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_021
     kind: decoration
-    at: [47.5, 24.02]
+    at: [94.5, 24.02]
     turn: 0
     decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_022
     kind: decoration
-    at: [46.5, 24.02]
+    at: [93.5, 24.02]
     turn: 0
     decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_023
     kind: decoration
-    at: [45.5, 24.02]
+    at: [92.5, 24.02]
     turn: 0
-    decoration: xeen_hullfbn
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_024
     kind: decoration
-    at: [44.5, 24.02]
+    at: [90, 24.02]
     turn: 0
-    decoration: xeen_hullfbn
+    decoration: xeen_hull4bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_025
     kind: decoration
-    at: [43.5, 24.02]
+    at: [86, 24.02]
     turn: 0
-    decoration: xeen_hullfbn
+    decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_026
     kind: decoration
-    at: [42.5, 24.02]
+    at: [82, 24.02]
     turn: 0
-    decoration: xeen_hullfbn
+    decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_027
     kind: decoration
-    at: [40, 24.02]
+    at: [79.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_028
     kind: decoration
-    at: [36, 24.02]
+    at: [78.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_029
     kind: decoration
-    at: [32, 24.02]
+    at: [77.5, 24.02]
     turn: 0
-    decoration: xeen_hull4
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_030
     kind: decoration
-    at: [28, 24.02]
+    at: [76.5, 24.02]
     turn: 0
-    decoration: xeen_hull4bn
+    decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_031
     kind: decoration
-    at: [25.5, 24.02]
+    at: [75.5, 24.02]
     turn: 0
     decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_032
     kind: decoration
-    at: [24.5, 24.02]
+    at: [73, 24.02]
     turn: 0
-    decoration: xeen_hull1
+    decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_033
     kind: decoration
-    at: [24.02, 26]
-    turn: -90
+    at: [69, 24.02]
+    turn: 0
     decoration: xeen_hull4bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_034
     kind: decoration
-    at: [24.02, 30]
-    turn: -90
+    at: [65, 24.02]
+    turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_035
     kind: decoration
-    at: [24.02, 34]
-    turn: -90
+    at: [61, 24.02]
+    turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_036
     kind: decoration
-    at: [24.02, 38]
-    turn: -90
+    at: [57, 24.02]
+    turn: 0
     decoration: xeen_hull4bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_037
     kind: decoration
-    at: [24.02, 42]
-    turn: -90
+    at: [53, 24.02]
+    turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_038
     kind: decoration
-    at: [24.02, 46]
-    turn: -90
+    at: [49, 24.02]
+    turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_039
     kind: decoration
-    at: [24.02, 48.5]
-    turn: -90
+    at: [46.5, 24.02]
+    turn: 0
     decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_040
     kind: decoration
-    at: [24.02, 49.5]
-    turn: -90
+    at: [45.5, 24.02]
+    turn: 0
     decoration: xeen_hullfbn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_041
     kind: decoration
-    at: [24.02, 50.5]
-    turn: -90
+    at: [44.5, 24.02]
+    turn: 0
     decoration: xeen_hullfbn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_042
     kind: decoration
-    at: [24.02, 51.5]
-    turn: -90
+    at: [43.5, 24.02]
+    turn: 0
     decoration: xeen_hullfbn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_043
     kind: decoration
-    at: [24.02, 52.5]
-    turn: -90
+    at: [42.5, 24.02]
+    turn: 0
     decoration: xeen_hullfbn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_044
     kind: decoration
-    at: [24.02, 55]
-    turn: -90
-    decoration: xeen_hull4
+    at: [41.5, 24.02]
+    turn: 0
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_045
     kind: decoration
-    at: [24.02, 59]
-    turn: -90
+    at: [39, 24.02]
+    turn: 0
     decoration: xeen_hull4bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_046
     kind: decoration
-    at: [24.02, 63]
-    turn: -90
+    at: [35, 24.02]
+    turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_047
     kind: decoration
-    at: [24.02, 67]
-    turn: -90
+    at: [31, 24.02]
+    turn: 0
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_048
     kind: decoration
-    at: [24.02, 71]
-    turn: -90
+    at: [27, 24.02]
+    turn: 0
     decoration: xeen_hull4bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_049
     kind: decoration
-    at: [24.02, 75]
-    turn: -90
-    decoration: xeen_hull4
+    at: [24.5, 24.02]
+    turn: 0
+    decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_050
     kind: decoration
-    at: [24.02, 79]
+    at: [24.02, 26]
     turn: -90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_051
     kind: decoration
-    at: [24.02, 83]
+    at: [24.02, 30]
     turn: -90
     decoration: xeen_hull4bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_052
     kind: decoration
-    at: [24.02, 87]
+    at: [24.02, 34]
     turn: -90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_053
     kind: decoration
-    at: [24.02, 91]
+    at: [24.02, 38]
     turn: -90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_054
     kind: decoration
-    at: [24.02, 95]
+    at: [24.02, 42]
     turn: -90
     decoration: xeen_hull4bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_055
     kind: decoration
-    at: [24.02, 99]
+    at: [24.02, 46]
     turn: -90
     decoration: xeen_hull4
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_056
     kind: decoration
-    at: [24.02, 103]
-    turn: -90
-    decoration: xeen_hull4
-    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_057
-    kind: decoration
-    at: [24.02, 107]
-    turn: -90
-    decoration: xeen_hull4bn
-    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_058
-    kind: decoration
-    at: [24.02, 111]
-    turn: -90
-    decoration: xeen_hull4
-    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_059
-    kind: decoration
-    at: [24.02, 115]
-    turn: -90
-    decoration: xeen_hull4
-    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_060
-    kind: decoration
-    at: [24.02, 119]
-    turn: -90
-    decoration: xeen_hull4bn
-    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_061
-    kind: decoration
-    at: [24.02, 123]
-    turn: -90
-    decoration: xeen_hull4
-    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
-  - id: thing:hull_062
-    kind: decoration
-    at: [24.02, 125.5]
+    at: [24.02, 48.5]
     turn: -90
     decoration: xeen_hull1
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_057
+    kind: decoration
+    at: [24.02, 49.5]
+    turn: -90
+    decoration: xeen_hullfbn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_058
+    kind: decoration
+    at: [24.02, 50.5]
+    turn: -90
+    decoration: xeen_hullfbn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_059
+    kind: decoration
+    at: [24.02, 51.5]
+    turn: -90
+    decoration: xeen_hullfbn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_060
+    kind: decoration
+    at: [24.02, 52.5]
+    turn: -90
+    decoration: xeen_hullfbn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_061
+    kind: decoration
+    at: [24.02, 53.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_062
+    kind: decoration
+    at: [24.02, 56]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_063
     kind: decoration
-    at: [24.02, 126.5]
+    at: [24.02, 58.5]
     turn: -90
     decoration: xeen_hull1bn
     notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
   - id: thing:hull_064
     kind: decoration
+    at: [24.02, 59.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_065
+    kind: decoration
+    at: [24.02, 62]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_066
+    kind: decoration
+    at: [24.02, 66]
+    turn: -90
+    decoration: xeen_hull4bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_067
+    kind: decoration
+    at: [24.02, 70]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_068
+    kind: decoration
+    at: [24.02, 74]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_069
+    kind: decoration
+    at: [24.02, 78]
+    turn: -90
+    decoration: xeen_hull4bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_070
+    kind: decoration
+    at: [24.02, 82]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_071
+    kind: decoration
+    at: [24.02, 84.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_072
+    kind: decoration
+    at: [24.02, 85.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_073
+    kind: decoration
+    at: [24.02, 86.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_074
+    kind: decoration
+    at: [24.02, 87.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_075
+    kind: decoration
+    at: [24.02, 88.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_076
+    kind: decoration
+    at: [24.02, 89.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_077
+    kind: decoration
+    at: [24.02, 90.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_078
+    kind: decoration
+    at: [24.02, 91.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_079
+    kind: decoration
+    at: [24.02, 92.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_080
+    kind: decoration
+    at: [24.02, 93.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_081
+    kind: decoration
+    at: [24.02, 94.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_082
+    kind: decoration
+    at: [24.02, 97]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_083
+    kind: decoration
+    at: [24.02, 99.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_084
+    kind: decoration
+    at: [24.02, 100.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_085
+    kind: decoration
+    at: [24.02, 101.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_086
+    kind: decoration
+    at: [24.02, 102.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_087
+    kind: decoration
+    at: [24.02, 103.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_088
+    kind: decoration
+    at: [24.02, 104.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_089
+    kind: decoration
+    at: [24.02, 105.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_090
+    kind: decoration
+    at: [24.02, 106.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_091
+    kind: decoration
+    at: [24.02, 107.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_092
+    kind: decoration
+    at: [24.02, 108.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_093
+    kind: decoration
+    at: [24.02, 109.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_094
+    kind: decoration
+    at: [24.02, 112]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_095
+    kind: decoration
+    at: [24.02, 114.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_096
+    kind: decoration
+    at: [24.02, 115.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_097
+    kind: decoration
+    at: [24.02, 118]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_098
+    kind: decoration
+    at: [24.02, 122]
+    turn: -90
+    decoration: xeen_hull4
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_099
+    kind: decoration
+    at: [24.02, 124.5]
+    turn: -90
+    decoration: xeen_hull1bn
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_100
+    kind: decoration
+    at: [24.02, 125.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_101
+    kind: decoration
+    at: [24.02, 126.5]
+    turn: -90
+    decoration: xeen_hull1
+    notes: "U-12 (rim agent, 2026-11-23): the world's hull under the rim (common/rim.py)."
+  - id: thing:hull_102
+    kind: decoration
     at: [24.02, 24.02]
     turn: -45
-    decoration: xeen_hullc
+    decoration: xeen_hullcbn
     notes: "U-12 (rim agent, 2026-11-23): the hull's corner piece (common/rim.py)."
 actors:
-  - {monster: "11620", at: [64, 56.5], count: 3, spread: 1.2, group: 1, hostile: true, leash: 1024}
-  - {monster: "11620", at: [63, 67.5], count: 3, spread: 1.2, group: 2, hostile: true, leash: 1024}
-  - {monster: "11621", at: [63.5, 70], count: 1, spread: 0, group: 2, hostile: true, leash: 1024}
-  - {monster: "11620", at: [74, 59.5], count: 3, spread: 1.2, group: 3, hostile: true, leash: 1024}
-  - {monster: "11621", at: [77.5, 61], count: 1, spread: 0, group: 3, hostile: true, leash: 1024}
-  - {monster: "11620", at: [67.5, 60], count: 2, spread: 0.8, group: 4, hostile: true, leash: 1024}
-  - {monster: "11621", at: [66, 72.5], count: 1, spread: 0, group: 4, hostile: true, leash: 1024}
-  - {monster: "11104", at: [33.9, 85.6], count: 9, spread: 1.6, group: 5, hostile: true}
+  - {monster: "11620", at: [63, 46], count: 3, spread: 1.2, group: 1, hostile: true, leash: 1024}
+  - {monster: "11620", at: [36.5, 46], count: 3, spread: 0.8, group: 2, hostile: true, leash: 1024}
+  - {monster: "11621", at: [37, 43.5], count: 1, spread: 0, group: 2, hostile: true, leash: 1024}
+  - {monster: "11620", at: [67.9, 57.8], count: 3, spread: 0.5, group: 3, hostile: true, leash: 1024}
+  - {monster: "11621", at: [69.5, 57.6], count: 1, spread: 0, group: 3, hostile: true, leash: 1024}
+  - {monster: "11620", at: [66.8, 58.5], count: 2, spread: 0.5, group: 4, hostile: true, leash: 1024}
+  - {monster: "11621", at: [68.8, 57.3], count: 1, spread: 0, group: 4, hostile: true, leash: 1024}
+  - {monster: "11104", at: [35, 85.9], count: 9, spread: 1, group: 5, hostile: true}
   - {monster: "11105", at: [35.1, 85.8], count: 3, spread: 0.8, group: 5, hostile: true}
   - {monster: "11610", at: [44, 40], count: 2, spread: 0.6, group: 11, hostile: true}
   - {monster: "11610", at: [51, 38.5], count: 2, spread: 0.6, group: 12, hostile: true}
-  - {monster: "11610", at: [58, 40], count: 2, spread: 0.6, group: 13, hostile: true}
-  - {monster: "11610", at: [59, 47], count: 2, spread: 0.6, group: 14, hostile: true}
-  - {monster: "11611", at: [58.5, 53.5], count: 2, spread: 0.6, group: 15, hostile: true}
-  - {monster: "11610", at: [43, 47], count: 2, spread: 0.6, group: 16, hostile: true}
-  - {monster: "11610", at: [43.5, 53.5], count: 2, spread: 0.6, group: 17, hostile: true}
-  - {monster: "11610", at: [47, 55], count: 2, spread: 0.6, group: 18, hostile: true}
-  - {monster: "11610", at: [55, 55.5], count: 2, spread: 0.6, group: 19, hostile: true}
+  - {monster: "11610", at: [57.9, 42.4], count: 2, spread: 0.6, group: 13, hostile: true}
+  - {monster: "11610", at: [58.6, 44], count: 2, spread: 0.6, group: 14, hostile: true}
+  - {monster: "11611", at: [54.8, 39], count: 2, spread: 0.6, group: 15, hostile: true}
+  - {monster: "11610", at: [41.6, 44], count: 2, spread: 0.6, group: 16, hostile: true}
+  - {monster: "11610", at: [43.2, 42.6], count: 2, spread: 0.6, group: 17, hostile: true}
+  - {monster: "11610", at: [47.4, 39], count: 2, spread: 0.6, group: 18, hostile: true}
+  - {monster: "11610", at: [49.3, 37.9], count: 2, spread: 0.6, group: 19, hostile: true}
   - {monster: "11917", at: [61, 95], spread: 0, group: 6, hostile: false, npc: 5512}
   - {monster: "11913", at: [62.2, 95.9], count: 1, spread: 0, group: 6, hostile: false}
   - {monster: "214", at: [88.5, 81.94], spread: 0, group: 47, hostile: false, notes: D-96 villager of Necropolis (villagers.yml)}

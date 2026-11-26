@@ -92,7 +92,9 @@ RegisterEvent(30, "Arie's tent", nil, "Arie's tent")
 
 -- evt:thing:arie_fire
 RegisterEvent(31, "Campfire", function()
-    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end evt.ChangeEvent(0)
+    if IsAtLeast(MapVar(0), 1) then return end
+    SetValue(MapVar(0), 1)
+    local food = math.random(1, 3) evt.Add(Food, food) local ring = IsAtLeast(PerceptionSkill, 1) if ring then evt.GiveItem(1, ItemType.Ring_) end if ring then evt.StatusText("Food by the fire (+" .. food .. "), and a ring in the ashes.") else evt.StatusText("You find food by the fire (+" .. food .. ").") end
 end, "Campfire")
 
 -- evt:thing:saul_urn
@@ -148,13 +150,11 @@ RegisterEvent(39, "The Waters of Great Power", function()
 end, "The Waters of Great Power")
 
 -- evt:thing:shrine_energy
-RegisterEvent(40, "Shrine of Energy", function(continueStep)
-    local eventId = 40
+RegisterEvent(40, "Shrine of Energy", function()
     if not (not (IsPlayerBitSet(PlayerBit(11331)))) then
         evt.StatusText("The sparks crackle, but leave you alone.", 4)
         return
     end
-    if continueStep ~= 1 then if continueStep == nil then AskChoiceWithAnswerSteps(eventId, 3, "A pedestal crackling with blue sparks under an open roof. Shrine of Energy. Pray?", {{Answer = "Yes", Step = 1}, {Answer = "No", Step = 2}}) end return end
     AddValue(AirResistance, 5)
     evt.StatusText("Lightning runs over your skin and is gone. (+5 Air resistance, permanent)", 6)
     SetPlayerBit(PlayerBit(11331))
@@ -183,11 +183,8 @@ RegisterEvent(42, "Caravan cairn", function()
 end, "Caravan cairn")
 
 -- evt:thing:air_reflector
-RegisterEvent(43, "Air Reflector", function(continueStep)
-    local eventId = 43
-    if continueStep == 1 then XeenQuests.hook("m37.reflector_air") return end
-    if continueStep ~= nil then return end
-    AskChoiceWithAnswerSteps(eventId, 3, "A disc of pale crystal on a stone stem, turned toward the wind off the edge. Reflector. Activate?", {{Answer = "Yes", Step = 1}, {Answer = "No", Step = 2}})
+RegisterEvent(43, "Air Reflector", function()
+    XeenQuests.hook("m37.reflector_air")
 end, "Air Reflector")
 
 -- evt:thing:swallowed_wagon

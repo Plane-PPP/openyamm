@@ -26,6 +26,10 @@ end
 -- ---------------------------------------------------------------------------------------------------------------------
 -- Map hooks (QUESTS_FORMAT.md section 7). A map event calls XeenQuests.hook("m2.invoice_crate"); a door asks
 -- XeenQuests.can(name) first. A hook runs once when it has a `once` qbit, and returns whether it ran.
+-- A `harvest` hook (a plant several map events call) runs `harvest` times at each calling event, then shows its else
+-- line until the map refills: a map variable per spot, cleared at the refill as MM6-MM8's numbered map variables (the
+-- campfires, znwc's reagent finds). What the party carries does not matter (X1 p26, 2026-11-24: one Phirna root at
+-- a time, thrown away and dug again, gave 60 potions).
 
 function XeenQuests.can(name)
     local hook = XeenQuests.hooks[name]
@@ -51,7 +55,12 @@ function XeenQuests.hook(name)
         evt.StatusText("Unknown Xeen quest hook: " .. tostring(name))
         return false
     end
-    if hook.once ~= nil and IsQBitSet(QBit(hook.once)) then
+    local spot = nil
+    if hook.harvest ~= nil then
+        spot = "xeen.harvest." .. name .. "." .. tostring(CurrentEventId())
+    end
+    if (hook.once ~= nil and IsQBitSet(QBit(hook.once)))
+        or (spot ~= nil and evt.GetMapVar(spot, 0) >= hook.harvest) then
         if hook.elseText ~= nil then
             if hook.elseStatus then
                 XeenQuests.statusLine(hook.elseText())
@@ -70,6 +79,9 @@ function XeenQuests.hook(name)
             end
         end
         return false
+    end
+    if spot ~= nil then
+        evt.SetMapVar(spot, evt.GetMapVar(spot, 0) + 1)
     end
     hook.run()
     return true
@@ -229,6 +241,8 @@ end
 -- NOTES "Falls"; each map's owner confirms its point at install). P2's islands fall back onto its own Gale Landing
 -- (D-58 P2 Q1: the same map, from Xeen.SkyFallHeight above it, with falling damage).
 Xeen.SkyFalls = {
+    -- x9: X2's island crown at 768 (D-174: 3.3's island jetty cut had dipped it to 736); the fall stays 850 (X9's
+    -- fall playtests); tools/xeen/check_sky_falls.py compares this table with the maps' ground.
     x9 = {-15360, 3072, 768, 0, "xeen_x2.odm"},
     p5 = {-4608, 2560, 1504, 1536, "xeen_x5.odm"},
     d7_ab12 = {13824, -7680, 1672, 1536, "xeen_d6.odm"},   -- A1-B2: before the Necropolis' gate

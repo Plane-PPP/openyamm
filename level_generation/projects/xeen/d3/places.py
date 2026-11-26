@@ -500,7 +500,9 @@ def structures():
                     leaf['condition'] = {'lua': hook_lua('q-d8.sandcaster_gate')}
                 S(leaf)
     # ======== the square: paving, the mirror, Omid's deep well, the original lines (aaze0031) ==================
-    S({'id': 'thing:sc_square', 'kind': 'platform', 'at': [36.5, 30], 'size': [3328, 2816], 'height': 16,
+    # platforms.through (2026-11-24): the quarter terrace's foot rose 54 through the paving's north-east corner (x
+    # 39.5-39.75, y 27.25-27.6); the paving starts half a cell further south, where the land is level
+    S({'id': 'thing:sc_square', 'kind': 'platform', 'at': [36.5, 30.25], 'size': [3328, 2560], 'height': 16,
        'textures': {'top': 't30a05c', 'wall': 't30a05a'}, 'title': "Sandcaster's square"})
     S({'id': 'thing:sc_mirror', 'kind': 'portal', 'at': list(MIRROR), 'radius': 112, 'sides': 12, 'turn': 90,
        'textures': {'membrane': {'texture': 'xmirror'}},
@@ -647,7 +649,10 @@ def structures():
     gorge_rock(S)
     crest_rock(S)
     # ======== Wrath Bridge, the falls over the rim, the Rim Watch ==============================================
+    # D-170 (2026-11-25): the west end stands 24 over a pad that runs 1.5 cells on up the bank (`pad_beyond`,
+    # common/wild.py): the road graded through the end lifted an end-cell pad back up and the end's edge lay on it
     S({'id': 'thing:wrath_bridge', 'kind': 'bridge', 'line': [[73.6, 46], [77.75, 46]], 'width': 640,
+       'raise': 24, 'pad_beyond': 1.5,
        'arches': {'count': 2, 'rise': 160, 'form': 'segment', 'pier_width': 256}, 'kerb': 96,
        'textures': {'deck': 't30a05c', 'side': 't30c01', 'pier': 't30c01'}, 'title': 'Wrath Bridge'})
     # U-12/D-112 (agent xeen-rimmap-c, 2026-11-23): the line on the river's mouth, pouring straight east over the rim
@@ -765,7 +770,9 @@ def structures():
        'effects': [{'text': "A courier from Lakeside took the high path round Wrathtop and never came down."}]})
     S(deco('thing:courier_bones', '7dec18', (98.1, 21.5)))
     # ======== dressing in the towns: barrels in pairs against walls, palms in yards (DRESSING.md) =============
-    for i, (p1, p2) in enumerate([((32.75, 34.6), (32.75, 34.9)), ((39.75, 33.6), (39.75, 33.9)),
+    # F40 (2026-11-24): the first pair stood inside Saffron House (sc_houses#10, x 32.09-32.88, y 33.59-34.91, as
+    # built); now against its south wall, outside
+    for i, (p1, p2) in enumerate([((32.3, 35.03), (32.62, 35.03)), ((39.75, 33.6), (39.75, 33.9)),
                                   ((45.6, 34.85), (45.9, 34.85)), ((27.85, 25.3), (28.15, 25.3)),
                                   ((63.85, 46.6), (63.85, 46.9))]):
         S(deco('thing:barrel_%d' % (i + 1), 'bigbarel', p1))
@@ -820,6 +827,12 @@ CRAGS = [((91.5, 28.5), 576, 20), ((93.0, 25.5), 512, -15), ((94.5, 23.0), 448, 
          ((92.0, 31.5), 448, 30), ((100.0, 37.5), 448, -20)]
 
 
+# F59 (2026-11-25, town_fit_check things.overhang): a crag on the crest's flank stood on the land at its middle and
+# hung 29-233 over the slope falling away under the rest of its foot (the build of 2026-11-24): each such crag sinks
+# its foot below the lowest land under it (the fall, a 32 step and 32 more) and grows by as much, the same top
+SINK = {'crag_3': 160, 'crag_4': 192, 'crag_5': 192, 'crag_8': 96, 'crag_10': 64, 'crag_11': 128, 'crag_13': 288}
+
+
 def crest_rock(S):
     """The Wrath crest's rock: pinnacles (obelisks in the world's rock: a broad tapering shaft, a low tip) along the
     ridge and in its notches."""
@@ -828,8 +841,10 @@ def crest_rock(S):
         if h < 320:
             continue
         w = min(w, h)                          # an obelisk is at least as high as wide
-        S({'id': 'thing:crag_%d' % k, 'kind': 'obelisk', 'at': [x, y], 'height': h, 'width': w, 'taper': 0.45,
-           'tip': int(w * 0.35), 'turn': turn, 'textures': dict(ROCK), 'title': 'The Wrath crest'})
+        sink = SINK.get('crag_%d' % k, 0)
+        S({'id': 'thing:crag_%d' % k, 'kind': 'obelisk', 'at': [x, y], 'height': h + sink, 'width': w, 'taper': 0.45,
+           'tip': int(w * 0.35), 'turn': turn, 'textures': dict(ROCK), 'title': 'The Wrath crest',
+           **({'raise': -sink} if sink else {})})
 
 
 def fruit_huts(S):

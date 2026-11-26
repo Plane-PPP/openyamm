@@ -7,6 +7,24 @@
     "format"
   ],
   "properties": {
+    "decoration_feet": {
+      "description": "Optional bearing points of a 3D decoration in native map units [east, north, up] from its origin at zero facing. Placed and scattered instances use the lowest height under their rotated feet across the native ground and the rendered terrain triangles at each subdivision level. Give a wide base points across its sole and a multi-legged or arched prop points under its feet. Decorations without an entry use the native ground at their origin.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array", "minItems": 1,
+        "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
+      }
+    },
+    "wall_tiles": {
+      "type": "object",
+      "description": "Outdoor wall textures tiled continuously across coplanar building bays, sills, jambs and separate wall pieces. Each entry gives the bitmap's logical width and height in texels. Omit paintings fitted to a single door or window.",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": {"type": "integer", "minimum": 1, "maximum": 32767}
+      }
+    },
     "format": {
       "description": "Version of the sketch's format: 1 has keys on its lists' items (the core writes 1 whenever it writes the file); 0, the same without keys, is read as before.",
       "enum": [
@@ -1698,6 +1716,24 @@
                     "house"
                   ]
                 },
+                "verge": {
+                  "$ref": "#/$defs/building/properties/verge",
+                  "x-kinds": [
+                    "house"
+                  ]
+                },
+                "barge": {
+                  "$ref": "#/$defs/building/properties/barge",
+                  "x-kinds": [
+                    "house"
+                  ]
+                },
+                "verge_walls": {
+                  "$ref": "#/$defs/building/properties/verge_walls",
+                  "x-kinds": [
+                    "house"
+                  ]
+                },
                 "hip": {
                   "$ref": "#/$defs/building/properties/hip",
                   "x-kinds": [
@@ -1941,6 +1977,9 @@
                     "roof_pitch",
                     "eaves",
                     "fascia",
+                    "verge",
+                    "barge",
+                    "verge_walls",
                     "hip",
                     "cap",
                     "half_hip",
@@ -2253,6 +2292,12 @@
             "description": "A name: the entry keeps `spacing` also from the decorations of the entries of the same group placed before it (one stand drawn as several entries).",
             "type": "string"
           },
+          "support_radius": {
+            "description": "Radius in map units used to check for level ground under each scattered decoration. Defaults to the placement radius from the decoration table. Set it explicitly to preserve an established distribution when a fitted mesh replaces a cylinder. The candidate sequence stays the same.",
+            "type": "number",
+            "minimum": 0,
+            "x-unit": "map"
+          },
           "close_share": {
             "description": "The share of the count (0 to 1) that may stand closer than `spacing`, down to `close_spacing` (shipped forests: about 0.1 at 1.0 cell where the rest keep 1.4). Give both.",
             "type": "number",
@@ -2504,6 +2549,7 @@
               "count",
               "spacing",
               "spacing_group",
+              "support_radius",
               "close_share",
               "close_spacing",
               "edge_thin",
@@ -3278,6 +3324,13 @@
               "model"
             ]
           },
+          "drop_overlaps": {
+            "description": "Model: true drops, of each two faces of the models taken that lie in one plane over each other (facing the same way, or back to back where that is seen), the smaller (the later of two alike), so each place keeps one face, drawn from both sides as the game draws every outdoor face. For a shipped model that flickers in its original: MM7's Lady Catherine, Nystor's ship on Xeen's X2 (its hull boards and trim back to back, two trims on each other).",
+            "type": "boolean",
+            "x-kinds": [
+              "model"
+            ]
+          },
           "decoration": {
             "description": "Decoration: its internal name in engine/data_tables/decoration_data.txt (`oymap assets <text> --kind decoration` lists them).",
             "type": "string",
@@ -3327,7 +3380,7 @@
                     },
                     "fit": {
                       "type": "boolean",
-                      "description": "Building parts: lay the picture once over each bay (with `size`)."
+                      "description": "Building parts lay the picture once over each bay. A doorway's door lays it once over each leaf. Both use the native texel dimensions in `size`."
                     },
                     "size": {
                       "type": "array",
@@ -3449,6 +3502,27 @@
           },
           "fascia": {
             "$ref": "#/$defs/building/properties/fascia",
+            "x-kinds": [
+              "building",
+              "wall"
+            ]
+          },
+          "verge": {
+            "$ref": "#/$defs/building/properties/verge",
+            "x-kinds": [
+              "building",
+              "wall"
+            ]
+          },
+          "barge": {
+            "$ref": "#/$defs/building/properties/barge",
+            "x-kinds": [
+              "building",
+              "wall"
+            ]
+          },
+          "verge_walls": {
+            "$ref": "#/$defs/building/properties/verge_walls",
             "x-kinds": [
               "building",
               "wall"
@@ -5016,6 +5090,9 @@
               "roof_pitch",
               "eaves",
               "fascia",
+              "verge",
+              "barge",
+              "verge_walls",
               "hip",
               "cap",
               "half_hip",
@@ -6547,6 +6624,38 @@
           "x-kinds": "all",
           "x-unit": "map"
         },
+        "verge": {
+          "description": "A box's gable roof: how far its slopes run on past each gable end, map units, so the roof shows its edge over the gable (its verge), with a barge board under that edge (`barge`). Left out: the slopes end in the gable walls' planes, as the shipped Harmondale houses do. Not with `half_hip` or `eaves_walls`.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 256,
+          "x-kinds": "all",
+          "x-unit": "map"
+        },
+        "barge": {
+          "description": "A gable roof with a `verge`: the height of the barge board under the roof's edge at each gable end, in the `trim` texture, map units. Left out: the `fascia`, else 24; 0: no board.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 128,
+          "x-kinds": "all",
+          "x-unit": "map"
+        },
+        "verge_walls": {
+          "description": "A gable roof with a `verge`: the gable ends that take it, by their walls (s, e, n, w on the box before `turn`); left out: both. The other end stays flush with its wall, where a wing or a shed stands against it.",
+          "type": "array",
+          "items": {
+            "enum": [
+              "s",
+              "e",
+              "n",
+              "w"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "x-kinds": "all"
+        },
         "hip": {
           "description": "Hip roof: how far the ridge is drawn in from each end, map units. On a box: left out, 112 on an ordinary mm8 house, else half the span (slopes alike on all four sides). On an outline or round part: left out, every wall slopes alike to where the outline is deepest; given, the ridge runs along `ridge_along` (or the longest wall) and the end walls' slopes reach it after this run (a house with cut corners: Ravenshore's Hostel). A gable with `half_hip` (S8d): how far its hips reach in from each end. A tent with `roof: hip` (S8d): how far its ends slope in.",
           "type": "number",
@@ -7141,6 +7250,9 @@
             "eaves",
             "eaves_walls",
             "fascia",
+            "verge",
+            "barge",
+            "verge_walls",
             "hip",
             "cap",
             "half_hip",
@@ -7398,6 +7510,35 @@
           "minimum": 0,
           "maximum": 256,
           "x-unit": "map"
+        },
+        "verge": {
+          "description": "A box's gable roof: how far its slopes run on past each gable end, map units, so the roof shows its edge over the gable (its verge), with a barge board under that edge (`barge`). Left out: the slopes end in the gable walls' planes, as the shipped Harmondale houses do. Not with `half_hip` or `eaves_walls`.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 256,
+          "x-unit": "map"
+        },
+        "barge": {
+          "description": "A gable roof with a `verge`: the height of the barge board under the roof's edge at each gable end, in the `trim` texture, map units. Left out: the `fascia`, else 24; 0: no board.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 128,
+          "x-unit": "map"
+        },
+        "verge_walls": {
+          "description": "A gable roof with a `verge`: the gable ends that take it, by their walls (s, e, n, w on the box before `turn`); left out: both. The other end stays flush with its wall, where a wing or a shed stands against it.",
+          "type": "array",
+          "items": {
+            "enum": [
+              "s",
+              "e",
+              "n",
+              "w"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true
         },
         "hip": {
           "description": "Hip roof: how far the ridge is drawn in from each end, map units. On a box: left out, 112 on an ordinary mm8 house, else half the span (slopes alike on all four sides). On an outline or round part: left out, every wall slopes alike to where the outline is deepest; given, the ridge runs along `ridge_along` (or the longest wall) and the end walls' slopes reach it after this run (a house with cut corners: Ravenshore's Hostel). A gable with `half_hip` (S8d): how far its hips reach in from each end. A tent with `roof: hip` (S8d): how far its ends slope in.",
@@ -8157,6 +8298,9 @@
             "roof_pitch",
             "eaves",
             "fascia",
+            "verge",
+            "barge",
+            "verge_walls",
             "hip",
             "cap",
             "half_hip",

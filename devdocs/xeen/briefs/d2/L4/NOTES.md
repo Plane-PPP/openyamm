@@ -323,3 +323,42 @@ Rebuilt on merge point 41, installed with its bake 01:20. Dungeon doors with row
   check_faces 1 (sprite_falls), D-85 0 / DIS 0. Build warning kept: `gates.road_off` on `footbridge`.
 - Tests: walk x2 and hostility pass.
 - Generated twice (the rescue's return points from the first build's land, `XEEN_WILD_MAPS`), built, villagers placed, recorded (`agent:xeen-rimmap-c`), checked in a private hard-link root, installed with its bake, terrain weights, the minimap re-rendered and its void painted (`tools/xeen/void_minimap.py`). Scripts `output/xeen_rimmap_c/build.sh`, `install.sh`, `tests.sh`, `tours.py`; logs `output/xeen_rimmap_c/run_<key>/`; captures `output/xeen_rimmap_c/cap/<key>_after/` (day and night, against `output/xeen_rim/before/<key>/`).
+
+## Final outdoor round (2026-11-24, `xeen-fb3-final-dark`)
+
+- DD-11A/B's troll-hole landings follow A7's moved starts: `HOLE_INSIDE` (80, -208) and (144, -208); `gen_walk.py`
+  likewise.
+- D-120: the fairy ring and its nine caps at `FAIRY` (21.5, 96.5) in the village's empty south-west corner (it stood at
+  (16, 88), past the bounds at cell 18.9); a calm patch there. Three wolf markers past the bounds moved in: (16, 38) to
+  (22, 36), (112, 80) to (106, 78), (118, 95) to (107.5, 86) (`reach.spawn`).
+- The rope walks: the four tree decks they join stand at 700 (the guild's was 720, house 1's 680: a walk's end met its
+  deck 34-40 under it, `bridges.step`). The charred stumps on the palisade lines are shown only when the palisade is
+  hidden: `town_fit_check props.in_wall` now skips a decoration shown by the event that hides the model.
+- Classic kit `fit_maps`, `dd10b_adit` hood, `footbridge`/`log_bridge` ends from the studio.
+- Checks: town_fit 0, check_reach 0, check_faces 0, door 0, wall 0, check_wild 0, audit 0 errors, D-85 0. Playtests:
+  walk 391, hostility 67 pass.
+
+## Hull collision rebuild, D-136, D-138 (2026-11-24, `xeen-fb3-hull`)
+
+- The world's hull is solid now (its bindings carry `collision: model`; oymap `oymap_1944` pinned by the orchestrator).
+- D-138: troll markers moved past D-15's 2,000 from the Troll Holes' return spots (their circles' edges):
+  `pop:trolls` 1 (58, 79) to (56, 80.5) (was 1,717 from DD-11A's, now 2,315), 4 (63, 96) to (61.5, 95.5) (1,824 from
+  DD-11C's, now 2,325), 3 (72, 89) to (72, 89.5) (its circle's edge 1,989 from DD-11B's). The troll plain is flat
+  (land 900-1,000): no spot short of the trolls' 5,120 notice range is hidden by the land, so they stand at the nearest
+  places past 2,000 that still face the holes. Built: spawn 23 at (-4768, -8384), 3,524 from DD-11A's; spawn 30 at
+  (-1568, -16192), 3,334 from DD-11C's. `gen.py` now refuses any marker circle within 2,000 of a hole's return
+  spot (was 512, trolls only).
+- D-136 (kept): Q-D11's fort camps, groups 1 and 2 (Ogres, Ogre Brutes, an Ogre Chief each: no row shoots or casts,
+  so no member moved), stay at the DD-13 gates, 927-1,691 from `entrance:dd13_west`/`dd13_east`; they guard the gates
+  from outside. `v.sh` runs `x2/check_d85.py --kept-group 1 --kept-group 2`.
+
+## D-142, D-157, D-162, F59, F63 (2026-11-25, `xeen-fb4-outdoor3` sub-agent D)
+
+- `gen.py d142_enforce()` (common/d142.py): 11 circles moved: west sprites 1 (party start 5,600 < 5,888), seven troll
+  circles off the DD-11 holes (2,196-3,808 before), woods wolves 2 off the tower lane, and (F63, `hull_reason`) west
+  sprites 3 and woods wolves 6 in from the bounds. D2 is in `check_arrivals.D142_EXITS`.
+- The road ogre groups 3, 4 three cells down the caravan road (62.5, 42.5) and (96.5, 42.2): 4,096 from DD-13's gate
+  exits (3,119 / 3,132 before). Kept groups (D-136, D-162): 1, 2 only (Q-D11's fort camps at DD-13's gates;
+  `check_d85.py --kept-group 1 --kept-group 2`).
+- `landmark_crystals_4` sunk 32 into the pass's south slope (`decorations.slope`, 26 over its rim before).
+- Left: `faces.on_land` 1, the log bridge's deck (the bridge-end pad kind, common/wild.py DECK_LIFT is off).

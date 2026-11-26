@@ -27,9 +27,9 @@ namespace OpenYAMM::Game
 namespace
 {
 // The mod's own header (OYMINO1) numbers its versions apart from upstream's (OYSAVE1); saveSchemaVersion maps each mod
-// version to the upstream layout it was written with. 202 is upstream 201 (OpenYAMM 3.2).
-constexpr uint32_t SaveVersion = 202;
-constexpr uint32_t UpstreamSaveVersion = 201;
+// version to the upstream layout it was written with. 203 is upstream 202 (OpenYAMM 3.4).
+constexpr uint32_t SaveVersion = 203;
+constexpr uint32_t UpstreamSaveVersion = 202;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -360,6 +360,9 @@ constexpr uint32_t SaveVersionMawXeenBank = 200;
 // A Regenerating boss counts the damage it took (hundredths of a percent of its health) instead of the hits; an older
 // save's hits count 1 % each, which weakens it as much as before.
 constexpr uint32_t SaveVersionRegeneratingDamage = 201;
+// The party's loot pouch (ItemPouch::Loot, the leather pouch tab), after the items that wait for room; older saves have
+// none.
+constexpr uint32_t SaveVersionLootPouch = 202;
 constexpr char SaveMagic[8] = {'O', 'Y', 'M', 'I', 'N', 'O', '1', '\0'};
 constexpr char LegacySaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
@@ -383,6 +386,7 @@ std::optional<uint32_t> saveSchemaVersion(bool modHeader, uint32_t version)
     case 180: return 179;
     case 184: return 183;
     case 194: return 193;
+    case 202: return 201;
     case SaveVersion: return UpstreamSaveVersion;
     default: return std::nullopt;
     }
@@ -2482,6 +2486,7 @@ void writeValue(BinaryWriter &writer, const Party::Snapshot &value)
     writeValue(writer, value.pouches[size_t(ItemPouch::Alchemy)]);
     writeValue(writer, value.campaign.questPouch);
     writeValue(writer, value.waitingGivenItems);
+    writeValue(writer, value.pouches[size_t(ItemPouch::Loot)]);
 }
 
 bool readValue(BinaryReader &reader, Party::Snapshot &value)
@@ -2540,6 +2545,7 @@ bool readValue(BinaryReader &reader, Party::Snapshot &value)
         && (reader.version() < SaveVersionLastOutdoorMap || readValue(reader, value.lastOutdoorMapFileName))
         && readPouches(reader, value)
         && (reader.version() < SaveVersionWaitingGivenItems || readValue(reader, value.waitingGivenItems))
+        && (reader.version() < SaveVersionLootPouch || readValue(reader, value.pouches[size_t(ItemPouch::Loot)]))
         && migrateMm9HirelingStats(reader, value);
 }
 
