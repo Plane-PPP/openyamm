@@ -50,6 +50,7 @@ class TrainerDirectory;
 struct Mm9Hireling;
 struct Mm9HirelingPassives;
 class Mm9HirelingTable;
+class RosterTable;
 enum class Mm9HirelingKind : uint8_t;
 
 struct LloydBeacon
@@ -905,6 +906,24 @@ public:
     bool dismissMemberToAdventurersInn(size_t memberIndex);
     bool replaceMemberWithRosterEntry(size_t memberIndex, const RosterEntry &rosterEntry);
     bool hasRosterMember(uint32_t rosterId) const;
+    // The engine's roster (GameDataRepository::rosterTable: roster.txt with the rows rulesets and mods add), for
+    // joinFromRoster.
+    void setRosterTable(const RosterTable *pRosterTable);
+    const RosterTable *rosterTable() const;
+
+    enum class RosterJoinResult
+    {
+        Joined,       // in the party now
+        WaitsAtInn,   // the party was full: the Adventurer's Inn keeps them, as MM8's roster offers do
+        AlreadyAlong, // in the party or at the inn already: nothing changes
+        SoloRun,      // nobody joins a solo run
+        UnknownRow,   // no roster row with that id (or no roster table)
+    };
+
+    // A script's recruit (evt.JoinParty): the roster row rosterId joins the party, or waits at the Adventurer's Inn
+    // when the party is full. Any world's script may call it with a row of the engine's roster, unlike MM8's roster
+    // offers, which are bound to NPC topics 601-649.
+    RosterJoinResult joinFromRoster(uint32_t rosterId);
     bool hasAward(uint32_t awardId) const;
     bool hasAward(size_t memberIndex, uint32_t awardId) const;
     void addAward(uint32_t awardId);
@@ -1191,6 +1210,7 @@ private:
     const ClassSkillTable *m_pClassSkillTable = nullptr;
     const TrainerDirectory *m_pTrainerDirectory = nullptr;
     const Mm9HirelingTable *m_pMm9HirelingTable = nullptr;
+    const RosterTable *m_pRosterTable = nullptr;
     const GameRules *m_pRules = nullptr;
 
     // Not copied with the party; kept by assignment (setStatistics).
